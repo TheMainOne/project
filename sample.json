@@ -1,0 +1,111 @@
+[{
+    "material": "W224100-423",
+    "description": "20 mm Stopper, Igloo, Omniflex",
+    "supplier": "",
+    "supplier item number": "",
+    "components": ["50101073A"],
+    "country of origin": "",
+    "status": "Active",
+    "regulatory compliance": [],
+    "BOM component": "BAG, 6 x 8 x 2 MIL, ROLL, WHT & CLR"
+},
+{
+    "material": "50101073A",
+    "description": "20MM STOPPER, OMNI FLEX 3G IGLOO LYO",
+    "supplier": "DATWYLER",
+    "supplier item number": "40003527",
+    "components": ["50100579"],
+    "country of origin": "US",
+    "status": "Active",
+    "regulatory compliance": ["Melamine-free", "PFAS", "GMO", "EU POP", "RoHS 2"],
+    "BOM component": ""
+},
+{
+    "material": "W001002B",
+    "description": "13MM STOPPER, 2 LEG LYO, BUTYL GRY, SILZD",
+    "supplier": "DATWYLER",
+    "supplier item number": "110006195",
+    "components": [],
+    "country of origin": "US",
+    "status": "Active",
+    "regulatory compliance": ["Melamine-free", "PFAS", "GMO", "EU POP", "RoHS 2"],
+    "BOM component": ""
+},
+{
+    "material": "W008761A",
+    "description": "15MM ECDT, LDPE NAT, .020 SQ",
+    "supplier": "Amcor",
+    "supplier item number": "11954-158",
+    "components": [],
+    "country of origin": "US",
+    "status": "Active",
+    "regulatory compliance": ["EU REACH"," PFAS", "FDA"],
+    "BOM component": ""
+},
+{
+    "material": "WC000523A",
+    "description": "10mL SERUM VIAL, USBB, CLR, EP, PLAS PAL",
+    "supplier": "",
+    "supplier item number": "",
+    "components": ["97155269585"],
+    "country of origin": "US",
+    "status": "Active",
+    "regulatory compliance": [],
+    "BOM component": "PALLET, PLASTIC, 48 x 40 & CTN 21-5/8 x 13-1/4"
+},
+{
+    "material": "97155269585",
+    "description": "10mL SERUM VIAL, USBB, CLR, EP, PLAS PAL",
+    "supplier": "Rockwood plant",
+    "supplier item number": "97155269585",
+    "components": [],
+    "country of origin": "US",
+    "status": "Active",
+    "regulatory compliance": ["EU REACH"],
+    "BOM component": ""
+},
+{
+    "material": "W217957",
+    "description": "250 mL,Bs Rd, TypIII Amb,PTFE/PE Lnr, S/C",
+    "supplier": "",
+    "supplier item number": "",
+    "components": ["W010243", "W010642C"],
+    "country of origin": "India",
+    "status": "Active",
+    "regulatory compliance": [""],
+    "BOM component": "Carton, Insert, Autoclavng CTD"
+},
+{
+    "material": "W010243",
+    "description": "8 OZ BTL, TYPE III AMB, PVC CTD",
+    "supplier": "Piramal",
+    "supplier item number": "A3X1113QRQQ590104X",
+    "components": [],
+    "country of origin": "India",
+    "status": "Active",
+    "regulatory compliance": ["EU RoHS", "EU REACH", "FDA", "Melamine-free"],
+    "BOM component": ""
+},
+{
+    "material": "W010642C",
+    "description": "24MM CAP, PP, WHT, PTFE/F217 LNR",
+    "supplier": "Amcor",
+    "supplier item number": "12701-200",
+    "components": [],
+    "country of origin": "US",
+    "status": "Active",
+    "regulatory compliance": ["EU RoHS", "EU REACH", "FDA", "Melamine-free"],
+    "BOM component": ""
+},
+{
+    "material": "W011280S",
+    "description": "10mL SERUM BTL, TYPE I AMB, SW MOD UNIT",
+    "supplier": "Shandong",
+    "supplier item number": "10YBZ15203",
+    "components": [],
+    "country of origin": "China",
+    "status": "Active",
+    "regulatory compliance": ["FDA", "Melamine-free"],
+    "BOM component": ""
+}
+]
