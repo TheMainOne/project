@@ -1,8 +1,9 @@
 import mongoose from "mongoose";
 import { listOfMaterials } from "../services/index.js";
+import ctrlWrapper from "../middlewares/ctrlWrapper.js"
 
-  export const getAllMaterials = async (req, res, next) => {
-    try {
+const getAllMaterials = async (req, res, next) => {
+
   
       const results = await listOfMaterials();
       console.log(results);
@@ -13,9 +14,9 @@ import { listOfMaterials } from "../services/index.js";
           materials: results,
         },
       });
-    } catch (e) {
-      console.error(e);
-      next(e);
-    }
+
   };
   
+  export default {
+    getAll: ctrlWrapper(getAllMaterials),
+  }
