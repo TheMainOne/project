@@ -8,6 +8,8 @@ const router = express.Router();
 
 // Assigning new paths for the router
 router.get("/", controllers.getAll);
+router.get("/:id", controllers.getById);
+
 
 
 export default router;

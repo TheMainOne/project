@@ -5,6 +5,7 @@ const MaterialSchema = new mongoose.Schema(
   {
     material: { type: String, required: true },
     description: { type: String, required: true },
+    storageLocation: {type: String, default: ""},
     supplier: { type: String, default: "" },
     supplierItemNumber: { type: String, default: "" },
     components: { type: [String], default: [] },
@@ -22,6 +23,7 @@ const MaterialSchema = new mongoose.Schema(
 const validateMaterialSchema = Joi.object({
   material: Joi.string().required(),
   description: Joi.string().required(),
+  storageLocation: Joi.string().default(""),
   supplier: Joi.string().default(""),
   supplierItemNumber: Joi.string().default(""),
   components: Joi.array().items(Joi.string()).default([]),
