@@ -29,12 +29,19 @@ app.use(express.json());
 // app.use("/api/auth", authRouter);
 app.use("/api/materials", router);
 
-// app.use((_, res, __) => {
-//   res.status(404).json({
-//     status: "error",
-//     code: 404,
-//     message: "Use api on routes: /api/contacts",
-//     data: "Not found",
-//   });
-// });
-// app.use(errorHandler);
+
+app.use((err, req, res, next) => {
+  const statusCode = err.status || 500;
+  res.status(statusCode).json({
+    status: "error",
+    message: err.message,
+  });
+});
+app.use((_, res, __) => {
+  res.status(404).json({
+    status: "error",
+    code: 404,
+    message: "Use api on routes: /api/contacts",
+    data: "Not found",
+  });
+});

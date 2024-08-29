@@ -1,17 +1,36 @@
 import mongoose from "mongoose";
 import Joi from "joi";
+import joiObjectId from 'joi-objectid';
 
-const MaterialSchema = new mongoose.Schema(
+Joi.objectId = joiObjectId(Joi);
+
+const ComponentSchema = new mongoose.Schema(
   {
-    material: { type: String, required: true },
+    partNumber: { type: String, required: true },
+    parentID: {type: mongoose.Schema.Types.ObjectId, ref: 'Material', default: null},
     description: { type: String, required: true },
-    storageLocation: {type: String, default: ""},
     supplier: { type: String, default: "" },
     supplierItemNumber: { type: String, default: "" },
-    components: { type: [String], default: [] },
+    components: { type: [this], default: [] }, // Рекурсивная вложенность
     countryOfOrigin: { type: String, default: "" },
     status: { type: String, default: "Active" },
     regulatoryCompliance: { type: [String], default: [] },
+    BOMComponent: { type: String, default: "" }
+  },
+  { _id: false }
+);
+
+const MaterialSchema = new mongoose.Schema(
+  {
+    partNumber: { type: String, required: true },
+    description: { type: String, required: true },
+    supplier: { type: String, default: "" },
+    supplierItemNumber: { type: String, default: "" },
+    parentID: { type: mongoose.Schema.Types.ObjectId, ref: 'Material', default: null }, 
+    components: { type: [ComponentSchema], default: [] }, // Вложенные компоненты
+    countryOfOrigin: { type: String, default: "" },
+    status: { type: String, default: "Active" },
+    regulatoryCompliance: { type: [String], default: [] }, // Или массив ObjectId для ссылок
     BOMComponent: { type: String, default: "" },
   },
   {
@@ -20,17 +39,31 @@ const MaterialSchema = new mongoose.Schema(
   }
 );
 
-const validateMaterialSchema = Joi.object({
-  material: Joi.string().required(),
+
+const ComponentSchemaJoi = Joi.object({
+  partNumber: Joi.string().required(),
+  parentID: Joi.objectId().allow(null), 
   description: Joi.string().required(),
-  storageLocation: Joi.string().default(""),
   supplier: Joi.string().default(""),
   supplierItemNumber: Joi.string().default(""),
-  components: Joi.array().items(Joi.string()).default([]),
+  components: Joi.array().items(Joi.link('#ComponentSchema')).default([]), 
   countryOfOrigin: Joi.string().default(""),
   status: Joi.string().required(),
   regulatoryCompliance: Joi.array().items(Joi.string()).default([]),
-  BOMComponent: Joi.string().default(""),
+  BOMcomponent: Joi.string().default("").allow(""), 
+}).id('ComponentSchema');
+
+const validateMaterialSchema = Joi.object({
+  partNumber: Joi.string().required(),
+  description: Joi.string().required(),
+  supplier: Joi.string().default("").allow(""),
+  supplierItemNumber: Joi.string().default("").allow(""),
+  parentID: Joi.objectId().allow(null), 
+  components: Joi.array().items(ComponentSchemaJoi).default([]),
+  countryOfOrigin: Joi.string().default(""),
+  status: Joi.string().required(),
+  regulatoryCompliance: Joi.array().items(Joi.string()).default([]),
+  BOMcomponent: Joi.string().default(""), // Заменено на латинскую "C"
 });
 
 export const materialSchema = {

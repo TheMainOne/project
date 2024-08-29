@@ -1,5 +1,8 @@
 import express from "express";
 import controllers from "../controllers/index.js";
+import isValidId from "../middlewares/isValidId.js";
+import validateBody from "../middlewares/validateBody.js";
+import { materialSchema } from "../services/schemas/material.js";
 
 
 // creating a new router
@@ -8,7 +11,8 @@ const router = express.Router();
 
 // Assigning new paths for the router
 router.get("/", controllers.getAll);
-router.get("/:id", controllers.getById);
+router.get("/:id", isValidId, controllers.getById);
+router.put("/:id", isValidId, validateBody(materialSchema.validateMaterialSchema), controllers.updateByID);
 
 
 
