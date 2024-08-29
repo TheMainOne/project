@@ -34,6 +34,32 @@ const getByID = async (req, res) => {
   });
 };
 
+const createMaterial = async (req, res) => {
+  const { partNumber } = req.body;
+
+  const existingMaterial = await Material.findOne({ partNumber });
+
+  if (existingMaterial) {
+    return res.status(409).json({
+      status: "error",
+      code: 409,
+      message: "Material with this part number already exists",
+      data: {
+        material: existingMaterial,
+      },
+    });
+  }
+
+  const newMaterial = await Material.create({ ...req.body });
+
+  res.status(201).json({
+    status: "success",
+    code: 201,
+    data: {
+      material: newMaterial,
+    },
+  });
+}
 
 const updateByID = async (req, res) => {
   const { id } = req.params;
@@ -78,4 +104,5 @@ export default {
   getAll: ctrlWrapper(getAllMaterials),
   getById: ctrlWrapper(getByID),
   updateByID: ctrlWrapper(updateByID),
+  createMaterial: ctrlWrapper(createMaterial),
 };

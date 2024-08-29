@@ -63,11 +63,25 @@ const validateMaterialSchema = Joi.object({
   countryOfOrigin: Joi.string().default(""),
   status: Joi.string().required(),
   regulatoryCompliance: Joi.array().items(Joi.string()).default([]),
-  BOMcomponent: Joi.string().default(""), // Заменено на латинскую "C"
+  BOMcomponent: Joi.string().default("").allow(""), 
+});
+
+const updateMaterialSchema = Joi.object({
+  partNumber: Joi.string(),
+  description: Joi.string(),
+  supplier: Joi.string().allow(""),
+  supplierItemNumber: Joi.string().allow(""),
+  parentID: Joi.objectId().allow(null), 
+  components: Joi.array().items(ComponentSchemaJoi).optional(),
+  countryOfOrigin: Joi.string(),
+  status: Joi.string(),
+  regulatoryCompliance: Joi.array().items(Joi.string()),
+  BOMcomponent: Joi.string(), 
 });
 
 export const materialSchema = {
   validateMaterialSchema,
+  updateMaterialSchema,
 };
 
 const Material = mongoose.model("Material", MaterialSchema, "materials");
