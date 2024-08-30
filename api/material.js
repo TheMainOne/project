@@ -1,5 +1,5 @@
 import express from "express";
-import controllers from "../controllers/index.js";
+import controllers from "../controllers/materialsController.js";
 import isValidId from "../middlewares/isValidId.js";
 import validateBody from "../middlewares/validateBody.js";
 import { materialSchema } from "../services/schemas/material.js";
