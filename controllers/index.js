@@ -100,9 +100,29 @@ const updateByID = async (req, res) => {
     });
 }
 
+export const deleteMaterial = async (req, res) => {
+  const { id } = req.params;
+
+  const deletedMaterial = await Material.findByIdAndDelete(id);
+
+  if (!deletedMaterial) {
+    throw HttpError(404, "Material not found");
+  }
+
+  res.status(200).json({
+    status: "success",
+    code: 200,
+    message: "Material deleted successfully",
+    data: { deletedMaterial },
+  });
+};
+
+
+
 export default {
   getAll: ctrlWrapper(getAllMaterials),
   getById: ctrlWrapper(getByID),
   updateByID: ctrlWrapper(updateByID),
   createMaterial: ctrlWrapper(createMaterial),
+  deleteMaterial: ctrlWrapper(deleteMaterial),
 };

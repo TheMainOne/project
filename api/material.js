@@ -14,6 +14,7 @@ router.get("/", controllers.getAll);
 router.get("/:id", isValidId, controllers.getById);
 router.post("/", validateBody(materialSchema.validateMaterialSchema), controllers.createMaterial);
 router.put("/:id", isValidId, validateBody(materialSchema.updateMaterialSchema), controllers.updateByID);
+router.delete("/:id", isValidId, controllers.deleteMaterial);
 
 
 
