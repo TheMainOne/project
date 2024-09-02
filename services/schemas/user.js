@@ -1,4 +1,5 @@
 import mongoose from "mongoose";
+import bcrypt from "bcrypt";
 import Joi from "joi";
 
 const emailValidation = /^[a-zA-Z0-9+_.-]+@[a-zA-Z0-9.-]+$/;
@@ -34,6 +35,20 @@ const userSchema = new mongoose.Schema(
     timestamps: true,
   }
 );
+
+// Хеширование пароля перед сохранением
+userSchema.pre('save', async function (next) {
+  if (!this.isModified('password')) {
+    return next();
+  }
+  this.password = await bcrypt.hash(this.password, 12);
+  next();
+});
+
+// Метод для проверки пароля при логине
+userSchema.methods.comparePassword = function (candidatePassword) {
+  return bcrypt.compare(candidatePassword, this.password);
+};
 
 const registerSchema = Joi.object({
   password: Joi.string().required(),

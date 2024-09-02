@@ -1,0 +1,12 @@
+import express from "express";
+import controllers from "../controllers/authController.js";
+import authenticate from "../middlewares/authenticate.js";
+import "../services/passport/passport.js";
+
+const authRouter = express.Router();
+
+authRouter.post("/register", controllers.register);
+authRouter.post("/login", controllers.login);
+authRouter.post("/logout", authenticate, controllers.logout);
+
+export default authRouter;

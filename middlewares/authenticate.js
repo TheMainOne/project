@@ -1,31 +1,18 @@
-import jwt from "jsonwebtoken";
-import User from "../services/schemas/user.js";
-import HttpError from '../middlewares/HttpError.js'; 
-import dotenv from 'dotenv';
-dotenv.config();
+import passport from 'passport';
 
-const SECRET_KEY = process.env.SECRET_KEY;
-
-
-const authenticate = async (req, res, next) => {
-    const {authorization = ""} = req.headers;
-    const [bearer, token] = authorization.split(" ");
-
-    if (bearer !== "Bearer") {
-        next (HttpError(401));
-    }
-
-    try {
-        const {id} = jwt.verify(token, SECRET_KEY);
-        const user = await User.findById(id);
-        if (!user || !user.token || user.token !== token) {
-            next (HttpError(401));
-        }
-        req.user = user;
-        next();
-    } catch (error) {
-        next (HttpError(401));
-    }
-}
+const authenticate = (req, res, next) => {
+    passport.authenticate('jwt', { session: false }, (err, user, info) => {
+      if (err) {
+        console.error("Authentication error:", err); 
+        return res.status(500).json({ message: 'Internal Server Error', error: err.message });
+      }
+      if (!user) {
+        const message = info ? info.message : 'Unauthorized';
+        return res.status(401).json({ message: message });
+      }
+      req.user = user;
+      next();
+    })(req, res, next);
+  };
 
 export default authenticate;

@@ -1,9 +1,11 @@
 import express from "express";
+import passport from 'passport';
 import morgan from "morgan";
 import cors from "cors";
 import mongoose from "mongoose";
 import dotenv from "dotenv";    
 import router from "./api/material.js";
+import authRouter from "./api/auth.js";
 
 dotenv.config();
 
@@ -27,7 +29,9 @@ app.use(cors());
 app.use(express.json());
 
 // app.use("/api/auth", authRouter);
-app.use("/api/materials", router);
+app.use("/", router);
+app.use("/", authRouter);
+
 
 
 app.use((err, req, res, next) => {
@@ -41,7 +45,7 @@ app.use((_, res, __) => {
   res.status(404).json({
     status: "error",
     code: 404,
-    message: "Use api on routes: /api/contacts",
+    message: "Use api on routes: /api/materials",
     data: "Not found",
   });
 });
