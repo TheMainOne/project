@@ -14,8 +14,9 @@ const ComponentSchema = new mongoose.Schema(
     components: { type: [this], default: [] }, // Рекурсивная вложенность
     countryOfOrigin: { type: String, default: "" },
     status: { type: String, default: "Active" },
-    regulatoryCompliance: { type: [String], default: [] },
-    BOMComponent: { type: String, default: "" }
+    regulatoryCompliance: [{ type: mongoose.Schema.Types.ObjectId, ref: 'RegulatoryAct' }], // Ссылка на регулирующие акты
+    BOMComponent: { type: String, default: "" },
+    storagePath: {type: String, default: ""},
   },
   { _id: false }
 );
@@ -30,8 +31,9 @@ const MaterialSchema = new mongoose.Schema(
     components: { type: [ComponentSchema], default: [] }, // Вложенные компоненты
     countryOfOrigin: { type: String, default: "" },
     status: { type: String, default: "Active" },
-    regulatoryCompliance: { type: [String], default: [] }, // Или массив ObjectId для ссылок
+    regulatoryCompliance: [{ type: mongoose.Schema.Types.ObjectId, ref: 'RegulatoryAct' }], // Ссылка на регулирующие акты
     BOMComponent: { type: String, default: "" },
+    storagePath: {type: String, default: ""},
   },
   {
     versionKey: false,
