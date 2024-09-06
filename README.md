@@ -6,6 +6,8 @@
 | `POST`             | `/login`                                 | Login an existing user in the system.    |
 | `POST`             | `/logout`                                | logout an existing user in the system.   |
 
+_________________________________________
+
 **1. Регистрация нового пользователя**
     Метод: POST
 
@@ -54,6 +56,8 @@ Content-Type: application/json
 - **201 Created** — успешный запрос
 - **500 Internal Server Error** — ошибка сервера
 - **409 Conflict** — юзер с таким email или именем уже существует
+
+_________________________________________
 
 **2. Логинизация нового пользователя**
     Метод: POST
@@ -113,7 +117,7 @@ URL: /logout
 
 Bearer Token: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6IjY2ZGFmYjczNjUwMjMxYmZhNzMzOTQxMSIsImlhdCI6MTcyNTYzMTcwMSwiZXhwIjoxNzI1NjM1MzAxfQ.h1_Vm90RKN5Xx0ez4LlzEXDc4_8k2BZPGEv6Sb_DEe8
 
-```
+
 Пример запроса:
 
 **POST /logout**
