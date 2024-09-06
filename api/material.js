@@ -1,5 +1,4 @@
 import express from "express";
-import passport from "passport";
 import controllers from "../controllers/materialsController.js";
 import isValidId from "../middlewares/isValidId.js";
 import validateBody from "../middlewares/validateBody.js";

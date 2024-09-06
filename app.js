@@ -6,6 +6,8 @@ import mongoose from "mongoose";
 import dotenv from "dotenv";    
 import router from "./api/material.js";
 import authRouter from "./api/auth.js";
+import regulationRouter from "./api/regulation.js";
+
 
 dotenv.config();
 
@@ -28,12 +30,13 @@ app.use(morgan("tiny"));
 app.use(cors());
 app.use(express.json());
 
-// app.use("/api/auth", authRouter);
+// connecting api routes
 app.use("/", router);
 app.use("/", authRouter);
+app.use("/", regulationRouter);
 
 
-
+// error handlers
 app.use((err, req, res, next) => {
   const statusCode = err.status || 500;
   res.status(statusCode).json({
