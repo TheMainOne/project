@@ -298,29 +298,45 @@ URL: /api/materials
 Параметры запроса:  
 *Добавить Bearer Token в headers при запросе*  
 ```json
-{
-  "partNumber": "50101073A", (required)
-  "description": "20MM STOPPER, OMNI FLEX 3G IGLOO LYO", (required)
-  "supplier": "DATWYLER", (optional)
-  "supplierItemNumber": "40003527", (optional)
-  "parentID": "66d0764dd8bdd28e5e126fd6", (optional)
-  "components": [
-    {
-      "partNumber": "30101073B",
-      "description": "Component A",
-      "supplier": "Supplier A",
-      "supplierItemNumber": "123456",
-      "countryOfOrigin": "US",
-      "status": "Active",
-      "regulatoryCompliance": ["EU REACH", "RoHS"],
-      "BOMcomponent": "BOM123"
-    }
-  ], (optional)
-  "countryOfOrigin": "US", (optional)
-  "status": "Active", (required)
-  "regulatoryCompliance": ["EU REACH", "RoHS"], (optional)
-  "BOMcomponent": "BOM5010" (optional)
-}
+ {
+                "partNumber": "W224100-021", (required)
+                "parentID": null, (optional)
+                "description": "20 mm Stopper, Igloo, Omniflex", (required)
+                "supplier": "", (optional)
+                "supplierItemNumber": "", (optional)
+                "components": [
+                    {
+                        "storagePath": "",
+                        "partNumber": "50101073A",
+                        "parentID": "66d0764dd8bdd28e5e126fd6",
+                        "description": "20MM STOPPER, OMNI FLEX 3G IGLOO LYO",
+                        "supplier": "DATWYLER",
+                        "supplierItemNumber": "40003527",
+                        "components": [],
+                        "countryOfOrigin": "US",
+                        "status": "Active",
+                        "regulatoryCompliance": [
+                            {
+                                "title": "EU REACH",
+                                "description": "Regulation concerning the Registration, Evaluation, Authorisation and Restriction of Chemicals",
+                                "status": "pending"
+                            }
+                        ],
+                        "BOMcomponent": ""
+                    }
+                ], (optional)
+                "countryOfOrigin": "US", (optional)
+                "status": "Active", (required)
+                "regulatoryCompliance": [
+                    {
+                        "title": "EU REACH",
+                        "description": "Regulation concerning the Registration, Evaluation, Authorisation and Restriction of Chemicals",
+                        "status": "pending"
+                    }
+                ], (optional)
+                "BOMcomponent": "", (optional)
+                "storagePath": "" (optional)
+            }
 ```
 Пример запроса:
 
@@ -328,29 +344,45 @@ URL: /api/materials
 
 *Bearer Token*  
 ```json
-{
-  "partNumber": "50101073A",
-  "description": "20MM STOPPER, OMNI FLEX 3G IGLOO LYO",
-  "supplier": "DATWYLER",
-  "supplierItemNumber": "40003527",
-  "parentID": "66d0764dd8bdd28e5e126fd6",
-  "components": [
-    {
-      "partNumber": "30101073B",
-      "description": "Component A",
-      "supplier": "Supplier A",
-      "supplierItemNumber": "123456",
-      "countryOfOrigin": "US",
-      "status": "Active",
-      "regulatoryCompliance": ["EU REACH", "RoHS"],
-      "BOMcomponent": "BOM123"
-    }
-  ],
-  "countryOfOrigin": "US",
-  "status": "Active",
-  "regulatoryCompliance": ["EU REACH", "RoHS"],
-  "BOMcomponent": "BOM5010"
-} 
+ {
+                "partNumber": "W224100-021",
+                "parentID": null,
+                "description": "20 mm Stopper, Igloo, Omniflex",
+                "supplier": "",
+                "supplierItemNumber": "",
+                "components": [
+                    {
+                        "storagePath": "",
+                        "partNumber": "50101073A",
+                        "parentID": "66d0764dd8bdd28e5e126fd6",
+                        "description": "20MM STOPPER, OMNI FLEX 3G IGLOO LYO",
+                        "supplier": "DATWYLER",
+                        "supplierItemNumber": "40003527",
+                        "components": [],
+                        "countryOfOrigin": "US",
+                        "status": "Active",
+                        "regulatoryCompliance": [
+                            {
+                                "title": "EU REACH",
+                                "description": "Regulation concerning the Registration, Evaluation, Authorisation and Restriction of Chemicals",
+                                "status": "pending"
+                            }
+                        ],
+                        "BOMcomponent": ""
+                    }
+                ],
+                "countryOfOrigin": "US",
+                "status": "Active",
+                "regulatoryCompliance": [
+                    {
+                        "title": "EU REACH",
+                        "description": "Regulation concerning the Registration, Evaluation, Authorisation and Restriction of Chemicals",
+                        "status": "pending"
+                    }
+                ],
+                "BOMcomponent": "",
+                "storagePath": ""
+            }
 ```
 Пример ответа:
 ```json
@@ -359,20 +391,46 @@ URL: /api/materials
     "code": 201,
     "data": {
         "material": {
-            "partNumber": "50101821A",
-            "description": "20MM STOPPER, OMNI FLEX 3G IGLOO LYO",
-            "supplier": "DATWYLER",
-            "supplierItemNumber": "40003527",
-            "parentID": "66d0764dd8bdd28e5e126fd6",
-            "components": [],
+            "partNumber": "W224100-021",
+            "description": "20 mm Stopper, Igloo, Omniflex",
+            "supplier": "",
+            "supplierItemNumber": "",
+            "parentID": null,
+            "components": [
+                {
+                    "partNumber": "50101073A",
+                    "parentID": "66d0764dd8bdd28e5e126fd6",
+                    "description": "20MM STOPPER, OMNI FLEX 3G IGLOO LYO",
+                    "supplier": "DATWYLER",
+                    "supplierItemNumber": "40003527",
+                    "components": [],
+                    "countryOfOrigin": "US",
+                    "status": "Active",
+                    "regulatoryCompliance": [
+                        {
+                            "title": "EU REACH",
+                            "description": "Regulation concerning the Registration, Evaluation, Authorisation and Restriction of Chemicals",
+                            "status": "pending"
+                        }
+                    ],
+                    "BOMcomponent": "",
+                    "storagePath": ""
+                }
+            ],
             "countryOfOrigin": "US",
             "status": "Active",
-            "regulatoryCompliance": [],
-            "BOMComponent": "",
+            "regulatoryCompliance": [
+                {
+                    "title": "EU REACH",
+                    "description": "Regulation concerning the Registration, Evaluation, Authorisation and Restriction of Chemicals",
+                    "status": "pending"
+                }
+            ],
+            "BOMcomponent": "",
             "storagePath": "",
-            "_id": "66db21db99e34d46664ba7c1",
-            "createdAt": "2024-09-06T15:38:03.664Z",
-            "updatedAt": "2024-09-06T15:38:03.664Z"
+            "_id": "66db37eb094cb688dc2a79fc",
+            "createdAt": "2024-09-06T17:12:11.819Z",
+            "updatedAt": "2024-09-06T17:12:11.819Z"
         }
     }
 }
