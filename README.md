@@ -22,7 +22,8 @@ URL: /signup
   "role": "somerole" (enum: ["employee", "admin", "manager"] (optional, default = "employee")
 }
 ```
-    Пример запроса:
+
+Пример запроса:
 
 **POST /register**
 Content-Type: application/json
