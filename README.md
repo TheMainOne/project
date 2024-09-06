@@ -442,8 +442,75 @@ URL: /api/materials
 - **401 Unauthorized** — Неавторизованный юзер
 - **409 Conflict** — материал с таким partNumber уже есть в базе данных
 
+_________________________________________
 
+**4. Изменение существующего в базе данных материала**
+    Метод: PUT
 
+URL: /api/materials/:id
+
+Описание: Изменение свойств материала в базе данных.
+
+Параметры запроса:  
+*Добавить Bearer Token в headers при запросе*  
+
+```json
+{
+            "partNumber": "W224100-021", (optional)
+            "description": "20 mm Stopper, Igloo, Omniflex", (optional)
+            "supplier": "", (optional)
+            "supplierItemNumber": "", (optional)
+            "parentID": null, (optional)
+            "countryOfOrigin": "", (optional)
+            "status": "Active", (optional)
+            "BOMcomponent": "", (optional)
+            "storagePath": "", (optional)
+            "components": [], (optional)
+            "regulatoryCompliance": [] (optional)
+        }
+```
+
+Пример запроса:
+
+**PUT /api/materials/:id**
+
+*Bearer Token*  
+```json
+{
+            "partNumber": "W224100-021",
+            "description": "20 oz bottle"
+        }
+```
+Пример ответа:
+```json
+{
+    "status": "success",
+    "code": 200,
+    "data": {
+        "material": {
+            "_id": "66db38df094cb688dc2a7a00",
+            "partNumber": "W224100-021",
+            "description": "20 oz bottle",
+            "supplier": "",
+            "supplierItemNumber": "",
+            "parentID": null,
+            "countryOfOrigin": "",
+            "status": "Active",
+            "BOMcomponent": "",
+            "storagePath": "",
+            "components": [],
+            "regulatoryCompliance": [],
+            "createdAt": "2024-09-06T17:16:15.483Z",
+            "updatedAt": "2024-09-06T17:24:18.562Z"
+        }
+    }
+}
+```
+Статусы ответов:
+
+- **200 OK** — успешный запрос
+- **500 Internal Server Error** — ошибка сервера
+- **401 Unauthorized** — Неавторизованный юзер
 _________________________________________
 
 #### Our API endpoints for managing regulatory
