@@ -24,7 +24,7 @@ const ComponentSchema = new mongoose.Schema(
     countryOfOrigin: { type: String, default: "" },
     status: { type: String, default: "Active" },
     regulatoryCompliance: { type: [RegulatoryComplianceSchema], default: [] },
-    BOMComponent: { type: String, default: "" },
+    BOMcomponent: { type: String, default: "" },
     storagePath: {type: String, default: ""},
   },
   { _id: false }
@@ -41,7 +41,7 @@ const MaterialSchema = new mongoose.Schema(
     countryOfOrigin: { type: String, default: "" },
     status: { type: String, default: "Active" },
     regulatoryCompliance: { type: [RegulatoryComplianceSchema], default: [] }, // Ссылка на регулирующие акты
-    BOMComponent: { type: String, default: "" },
+    BOMcomponent: { type: String, default: "" },
     storagePath: {type: String, default: ""},
   },
   {
@@ -49,6 +49,12 @@ const MaterialSchema = new mongoose.Schema(
     timestamps: true,
   }
 );
+
+const RegulatoryComplianceSchemaJoi = Joi.object({
+  title: Joi.string().required(),
+  description: Joi.string().required(),
+  status: Joi.string().default('pending')
+});
 
 
 const ComponentSchemaJoi = Joi.object({
@@ -60,9 +66,11 @@ const ComponentSchemaJoi = Joi.object({
   components: Joi.array().items(Joi.link('#ComponentSchema')).default([]), 
   countryOfOrigin: Joi.string().default(""),
   status: Joi.string().required(),
-  regulatoryCompliance: Joi.array().items(Joi.string()).default([]),
+  regulatoryCompliance: Joi.array().items(RegulatoryComplianceSchemaJoi).default([]),
   BOMcomponent: Joi.string().default("").allow(""), 
+  storagePath: Joi.string().default("").allow(""), 
 }).id('ComponentSchema');
+
 
 const validateMaterialSchema = Joi.object({
   partNumber: Joi.string().required(),
@@ -73,9 +81,12 @@ const validateMaterialSchema = Joi.object({
   components: Joi.array().items(ComponentSchemaJoi).default([]),
   countryOfOrigin: Joi.string().default(""),
   status: Joi.string().required(),
-  regulatoryCompliance: Joi.array().items(Joi.string()).default([]),
+  regulatoryCompliance: Joi.array().items(RegulatoryComplianceSchemaJoi).default([]),
   BOMcomponent: Joi.string().default("").allow(""), 
+  storagePath: Joi.string().default("").allow(""),  
 });
+
+
 
 const updateMaterialSchema = Joi.object({
   partNumber: Joi.string(),
@@ -86,8 +97,9 @@ const updateMaterialSchema = Joi.object({
   components: Joi.array().items(ComponentSchemaJoi).optional(),
   countryOfOrigin: Joi.string(),
   status: Joi.string(),
-  regulatoryCompliance: Joi.array().items(Joi.string()),
-  BOMcomponent: Joi.string(), 
+  regulatoryCompliance: Joi.array().items(RegulatoryComplianceSchemaJoi).optional(), 
+  BOMcomponent: Joi.string(),
+  storagePath: Joi.string().default("").allow(""), 
 });
 
 export const materialSchema = {
