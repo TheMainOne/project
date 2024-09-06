@@ -1,31 +1,35 @@
-1. Регистрация нового пользователя
-Метод: POST
+#### Our API Endpoints for User registration, login, and logout
 
-URL: /register
+| Method             | URL                                      | Description                              |
+| ------------------ | ---------------------------------------- | ---------------------------------------- |
+| `POST`             | `/signup`                                | Register a New User in the System.       |
+| `POST`             | `/login`                                 | Login an existing user in the system.    |
+| `POST`             | `/logout`                                | logout an existing user in the system.   |
+
+**1. Регистрация нового пользователя**
+    Метод: POST
+
+URL: /signup
 
 Описание: Регистрирует нового пользователя в системе.
 
 Параметры запроса (json-файл с полями):
+- email (required)
+- password (required)
+- name (required)
+- role (["employee", "admin", "manager"]) (optional, default = "employee")
+    Пример запроса:
 
-email (required)
-password (required)
-name (required)
-role (["employee", "admin", "manager"]) (optional, default = "employee")
-Пример запроса:
-
-json
-Copy code
-POST /register
+**POST /register**
 Content-Type: application/json
+```json
 {
   "email": "test@gmail.com",
   "password": "test",
   "name": "TestName"
 }
 Пример ответа:
-
-json
-Copy code
+```json
 {
   "status": "success",
   "code": 201,
@@ -38,21 +42,14 @@ Copy code
     }
   }
 }
+
 Статусы ответов:
 
 201 Created — успешный запрос
 500 Internal Server Error — ошибка сервера
 409 Conflict — юзер с таким email или именем уже существует
 
-#### Our API Endpoints for User registration, login, and logout
-
-| Method             | URL                                      | Description                              |
-| ------------------ | ---------------------------------------- | ---------------------------------------- |
-| `POST`             | `/signup`                                | Register a New User in the System.       |
-| `POST`             | `/login`                                 | Login an existing user in the system.    |
-| `POST`             | `/logout`                                | logout an existing user in the system.   |
    
-
 #### Our API endpoints for managing materials
 
 | Method             | URL                                      | Description                              |
