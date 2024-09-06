@@ -114,7 +114,8 @@ URL: /logout
 Описание: Выход существующего пользователя из системы.
 
 Параметры запроса:  
-*Добавить Bearer Token* в headers при запросе  
+*Добавить Bearer Token в headers при запросе*  
+Body: пустое
 
 
 Пример запроса:
@@ -123,7 +124,7 @@ URL: /logout
 Content-Type: application/json
 
 *Bearer Token*  
-
+Body: пустое
 
 Пример ответа:
 ```json
@@ -142,10 +143,6 @@ Content-Type: application/json
 
 _________________________________________
 
-
-
-
-
    
 #### Our API endpoints for managing materials
 
@@ -157,6 +154,66 @@ _________________________________________
 | `PUT`              | `/api/materials/:id`                     | Update material by id.                   |
 | `DELETE`           | `/api/materials/:id`                     | Delete material by id.                   |
 
+_________________________________________
+
+**1. Получение всех матералов**
+    Метод: GET
+
+URL: /api/materials
+
+Описание: Получение всех материалов хранящихся в базе данных.
+
+Параметры запроса:  
+*Добавить Bearer Token в headers при запросе*  
+Body: пустое
+
+Пример запроса:
+
+**GET /api/materials**
+
+*Bearer Token*  
+Body: пустое  
+
+Пример ответа:
+```json
+{
+    "status": "success",
+    "code": 200,
+    "data": {
+        "materials": [
+            {
+                "_id": "66d0764dd8bdd28e5e126fd9",
+                "partNumber": "W008761A",
+                "parentID": null,
+                "description": "15MM ECDT, LDPE NAT, .020 SQ",
+                "supplier": "Amcor",
+                "supplierItemNumber": "11954-158",
+                "components": [],
+                "countryOfOrigin": "US",
+                "status": "Active",
+                "regulatoryCompliance": [
+                    {
+                        "title": "EU REACH",
+                        "description": "Regulation concerning the Registration, Evaluation, Authorisation and Restriction of Chemicals",
+                        "status": "pending"
+                    }
+                ],
+                "BOMcomponent": "",
+                "BOMComponent": "",
+                "storagePath": "",
+                "updatedAt": "2024-09-03T17:53:59.329Z"
+            }]
+```
+Статусы ответов:
+
+- **200 OK** — успешный запрос
+- **500 Internal Server Error** — ошибка сервера
+- **401 Unauthorized** — Неавторизованный юзер
+
+
+
+
+_________________________________________
 
 #### Our API endpoints for managing regulatory
 
