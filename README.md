@@ -55,7 +55,7 @@ Content-Type: application/json
 - **500 Internal Server Error** — ошибка сервера
 - **409 Conflict** — юзер с таким email или именем уже существует
 
-**1. Логинизация нового пользователя**
+**2. Логинизация нового пользователя**
     Метод: POST
 
 URL: /login
@@ -99,6 +99,46 @@ Content-Type: application/json
 - **200 OK** — успешный запрос
 - **500 Internal Server Error** — ошибка сервера
 - **401 Unauthorized** — Неправильный емейл или пароль
+
+_________________________________________
+
+**3. Логаут существующего пользователя**
+    Метод: POST
+
+URL: /logout
+
+Описание: Выход существующего пользователя из системы.
+
+Параметры запроса:
+
+Bearer Token: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6IjY2ZGFmYjczNjUwMjMxYmZhNzMzOTQxMSIsImlhdCI6MTcyNTYzMTcwMSwiZXhwIjoxNzI1NjM1MzAxfQ.h1_Vm90RKN5Xx0ez4LlzEXDc4_8k2BZPGEv6Sb_DEe8
+
+```
+Пример запроса:
+
+**POST /logout**
+Content-Type: application/json
+
+Bearer Token: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6IjY2ZGFmYjczNjUwMjMxYmZhNzMzOTQxMSIsImlhdCI6MTcyNTYzMTcwMSwiZXhwIjoxNzI1NjM1MzAxfQ.h1_Vm90RKN5Xx0ez4LlzEXDc4_8k2BZPGEv6Sb_DEe8  
+
+
+Пример ответа:
+```json
+{
+    "status": "success",
+    "code": 200,
+    "message": "Successfully logged out"
+}
+```
+Статусы ответов:
+
+- **200 OK** — успешный запрос
+- **500 Internal Server Error** — ошибка сервера
+- **401 Unauthorized** — Неправильная подпись JWT-Token
+
+
+
+
 
 
 
