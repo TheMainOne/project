@@ -19,7 +19,7 @@ URL: /signup
   "email": "someemail@gmail.com", (required)
   "password": "somepassword", (required)
   "name": "somename", (required)
-  "role": "somerole" (["employee", "admin", "manager"]) (optional, default = "employee")
+  "role": "somerole" (enum: ["employee", "admin", "manager"] (optional, default = "employee")
 }
 ```
     Пример запроса:
