@@ -513,6 +513,87 @@ URL: /api/materials/:id
 - **401 Unauthorized** — Неавторизованный юзер
 _________________________________________
 
+**5. Удаление существующего в базе данных материала**
+    Метод: DELETE
+
+URL: /api/materials/:id
+
+Описание: Удаление материала из базы данных.
+
+Параметры запроса:  
+*Добавить Bearer Token в headers при запросе*  
+Body: пустое  
+
+
+Пример запроса:
+
+**DELETE /api/materials/:id**
+
+*Bearer Token*  
+Body: пустое  
+
+```
+Пример ответа:
+```json
+{
+    "status": "success",
+    "code": 200,
+    "message": "Material deleted successfully",
+    "data": {
+        "deletedMaterial": {
+            "_id": "66db37eb094cb688dc2a79fc",
+            "partNumber": "W224100-021",
+            "description": "20 mm Stopper, Igloo, Omniflex",
+            "supplier": "",
+            "supplierItemNumber": "",
+            "parentID": null,
+            "components": [
+                {
+                    "partNumber": "50101073A",
+                    "parentID": "66d0764dd8bdd28e5e126fd6",
+                    "description": "20MM STOPPER, OMNI FLEX 3G IGLOO LYO",
+                    "supplier": "DATWYLER",
+                    "supplierItemNumber": "40003527",
+                    "components": [],
+                    "countryOfOrigin": "US",
+                    "status": "Active",
+                    "regulatoryCompliance": [
+                        {
+                            "title": "EU REACH",
+                            "description": "Regulation concerning the Registration, Evaluation, Authorisation and Restriction of Chemicals",
+                            "status": "pending"
+                        }
+                    ],
+                    "BOMcomponent": "",
+                    "storagePath": ""
+                }
+            ],
+            "countryOfOrigin": "US",
+            "status": "Active",
+            "regulatoryCompliance": [
+                {
+                    "title": "EU REACH",
+                    "description": "Regulation concerning the Registration, Evaluation, Authorisation and Restriction of Chemicals",
+                    "status": "pending"
+                }
+            ],
+            "BOMcomponent": "",
+            "storagePath": "",
+            "createdAt": "2024-09-06T17:12:11.819Z",
+            "updatedAt": "2024-09-06T17:12:11.819Z"
+        }
+    }
+}
+```
+Статусы ответов:
+
+- **200 OK** — успешный запрос
+- **500 Internal Server Error** — ошибка сервера
+- **401 Unauthorized** — Неавторизованный юзер
+
+_________________________________________
+
+
 #### Our API endpoints for managing regulatory
 
 | Method             | URL                                      | Description                              |
@@ -522,4 +603,8 @@ _________________________________________
 | `POST`             | `/api/regulatories`                      | Create a new regulation.                 |
 | `PUT`              | `/api/regulatories/:id`                  | Update regulation by id.                 |
 | `DELETE`           | `/api/regulatories/:id`                  | Delete regulation by id.                 |
+
+
+
+#### Надо дописать по регуляторке ендпоинты
 
