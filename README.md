@@ -29,6 +29,15 @@ Content-Type: application/json
 500 Internal Server Error — ошибка сервера.
 409 Conflict - юзер, с таким емейлом или именем уже есть
 
+#### Our API Endpoints for User registration, login, and logout
+
+| Method             | URL                                      | Description                              |
+| ------------------ | ---------------------------------------- | ---------------------------------------- |
+| `POST`             | `/signup`                                | Register a New User in the System.       |
+| `POST`             | `/login`                                 | Login an existing user in the system.    |
+| `POST`             | `/logout`                                | logout an existing user in the system.   |
+   
+
 #### Our API endpoints for managing materials
 
 | Method             | URL                                      | Description                              |
@@ -38,3 +47,15 @@ Content-Type: application/json
 | `POST`             | `/api/materials`                         | Create a new material.                   |
 | `PUT`              | `/api/materials/:id`                     | Update material by id.                   |
 | `DELETE`           | `/api/materials/:id`                     | Delete material by id.                   |
+
+
+#### Our API endpoints for managing regulatory
+
+| Method             | URL                                      | Description                              |
+| ------------------ | ---------------------------------------- | ---------------------------------------- |
+| `GET`              | `/api/regulatories`                      | Retrieve all regulatories.               |
+| `GET`              | `/api/regulatories/:id`                  | Retrieve regulation by id.               |
+| `POST`             | `/api/regulatories`                      | Create a new regulation.                 |
+| `PUT`              | `/api/regulatories/:id`                  | Update regulation by id.                 |
+| `DELETE`           | `/api/regulatories/:id`                  | Delete regulation by id.                 |
+
