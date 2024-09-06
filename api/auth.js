@@ -5,7 +5,7 @@ import "../services/passport/passport.js";
 
 const authRouter = express.Router();
 
-authRouter.post("/register", controllers.register);
+authRouter.post("/signup", controllers.register);
 authRouter.post("/login", controllers.login);
 authRouter.post("/logout", authenticate, controllers.logout);
 

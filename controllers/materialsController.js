@@ -8,11 +8,15 @@ const getAllMaterials = async (req, res) => {
 
   const results = await Material.find({}).skip(skip).limit(limit).exec();
 
+  const count = await Material.countDocuments();
+
   res.json({
     status: "success",
     code: 200,
     data: {
       materials: results,
+      totalPages: Math.ceil(count / limit),
+      currentPage: page,
     },
   });
 };
@@ -68,7 +72,7 @@ const updateByID = async (req, res) => {
       return res.status(400).json({
         status: "error",
         code: 400,
-        message: "Contact ID is required",
+        message: "The Regulation ID is required to perform the update operation",
       });
     }
 
@@ -76,7 +80,7 @@ const updateByID = async (req, res) => {
     return res.status(400).json({
       status: "error",
       code: 400,
-      message: "No fields sent for update",
+      message: "No fields were provided for the update.",
     });
   }
   
@@ -99,7 +103,7 @@ const updateByID = async (req, res) => {
     });
 }
 
-export const deleteMaterial = async (req, res) => {
+const deleteMaterial = async (req, res) => {
   const { id } = req.params;
 
   const deletedMaterial = await Material.findByIdAndDelete(id);

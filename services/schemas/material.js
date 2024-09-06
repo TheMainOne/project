@@ -4,6 +4,15 @@ import joiObjectId from 'joi-objectid';
 
 Joi.objectId = joiObjectId(Joi);
 
+const RegulatoryComplianceSchema = new mongoose.Schema(
+  {
+    title: { type: String, required: true },
+    description: { type: String, required: true },
+    status: { type: String, default: 'pending' }, // Добавляем статус акта
+  },
+  { _id: false }
+);
+
 const ComponentSchema = new mongoose.Schema(
   {
     partNumber: { type: String, required: true },
@@ -14,7 +23,7 @@ const ComponentSchema = new mongoose.Schema(
     components: { type: [this], default: [] }, // Рекурсивная вложенность
     countryOfOrigin: { type: String, default: "" },
     status: { type: String, default: "Active" },
-    regulatoryCompliance: [{ type: mongoose.Schema.Types.ObjectId, ref: 'RegulatoryAct' }], // Ссылка на регулирующие акты
+    regulatoryCompliance: { type: [RegulatoryComplianceSchema], default: [] },
     BOMComponent: { type: String, default: "" },
     storagePath: {type: String, default: ""},
   },
@@ -31,7 +40,7 @@ const MaterialSchema = new mongoose.Schema(
     components: { type: [ComponentSchema], default: [] }, // Вложенные компоненты
     countryOfOrigin: { type: String, default: "" },
     status: { type: String, default: "Active" },
-    regulatoryCompliance: [{ type: mongoose.Schema.Types.ObjectId, ref: 'RegulatoryAct' }], // Ссылка на регулирующие акты
+    regulatoryCompliance: { type: [RegulatoryComplianceSchema], default: [] }, // Ссылка на регулирующие акты
     BOMComponent: { type: String, default: "" },
     storagePath: {type: String, default: ""},
   },
