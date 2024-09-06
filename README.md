@@ -25,7 +25,7 @@ URL: /signup
 
 Пример запроса:
 
-**POST /register**
+**POST /signup**
 Content-Type: application/json
 ```json
 {
@@ -52,8 +52,8 @@ Content-Type: application/json
 Статусы ответов:
 
 201 Created — успешный запрос
-500 Internal Server Error — ошибка сервера
-409 Conflict — юзер с таким email или именем уже существует
+    500 Internal Server Error — ошибка сервера
+    409 Conflict — юзер с таким email или именем уже существует
 
    
 #### Our API endpoints for managing materials
