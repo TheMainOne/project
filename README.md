@@ -114,8 +114,7 @@ URL: /logout
 Описание: Выход существующего пользователя из системы.
 
 Параметры запроса:  
-Добавить Bearer Token:  
-eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6IjY2ZGFmYjczNjUwMjMxYmZhNzMzOTQxMSIsImlhdCI6MTcyNTYzMTcwMSwiZXhwIjoxNzI1NjM1MzAxfQ.h1_Vm90RKN5Xx0ez4LlzEXDc4_8k2BZPGEv6Sb_DEe8
+*Добавить Bearer Token*  
 
 
 Пример запроса:
@@ -123,7 +122,7 @@ eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6IjY2ZGFmYjczNjUwMjMxYmZhNzMzOTQxMSI
 **POST /logout**
 Content-Type: application/json
 
-Bearer Token: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6IjY2ZGFmYjczNjUwMjMxYmZhNzMzOTQxMSIsImlhdCI6MTcyNTYzMTcwMSwiZXhwIjoxNzI1NjM1MzAxfQ.h1_Vm90RKN5Xx0ez4LlzEXDc4_8k2BZPGEv6Sb_DEe8  
+*Bearer Token*  
 
 
 Пример ответа:
