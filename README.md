@@ -29,6 +29,9 @@ Content-Type: application/json
 500 Internal Server Error — ошибка сервера.
 409 Conflict - юзер, с таким емейлом или именем уже есть
 
+#### Tips on what NOT to do
+
+Hopefully you’re already aware of this. But not at any given time should your endpoint end with `.json`, `.xml` or `.something`. If in doubt, reach out to one of the backend developers at Nodes.
 
 | Method   | URL                                      | Description                              |
 | -------- | ---------------------------------------- | ---------------------------------------- |
