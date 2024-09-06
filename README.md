@@ -51,9 +51,10 @@ Content-Type: application/json
 ```
 Статусы ответов:
 
-201 Created — успешный запрос
-    500 Internal Server Error — ошибка сервера
-    409 Conflict — юзер с таким email или именем уже существует
+- **201 Created** — успешный запрос
+- **500 Internal Server Error** — ошибка сервера
+- **409 Conflict** — юзер с таким email или именем уже существует
+
 
    
 #### Our API endpoints for managing materials
