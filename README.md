@@ -14,10 +14,14 @@ URL: /signup
 Описание: Регистрирует нового пользователя в системе.
 
 Параметры запроса (json-файл с полями):
-- email (required)
-- password (required)
-- name (required)
-- role (["employee", "admin", "manager"]) (optional, default = "employee")
+```json
+{
+  "email": "someemail@gmail.com", (required)
+  "password": "somepassword", (required)
+  "name": "somename", (required)
+  "role": "somerole" (["employee", "admin", "manager"]) (optional, default = "employee")
+}
+```
     Пример запроса:
 
 **POST /register**
@@ -30,7 +34,7 @@ Content-Type: application/json
 }
 ```
 Пример ответа:
-
+```json
 {
   "status": "success",
   "code": 201,
@@ -43,7 +47,7 @@ Content-Type: application/json
     }
   }
 }
-
+```
 Статусы ответов:
 
 201 Created — успешный запрос
