@@ -55,6 +55,53 @@ Content-Type: application/json
 - **500 Internal Server Error** — ошибка сервера
 - **409 Conflict** — юзер с таким email или именем уже существует
 
+**1. Логинизация нового пользователя**
+    Метод: POST
+
+URL: /login
+
+Описание: Вход существующего пользователя в систему.
+
+Параметры запроса (json-файл с полями):
+```json
+{
+"email": "test@gmail.com", (required)
+"password": "test" (required)
+}
+```
+Пример запроса:
+
+**POST /login**
+Content-Type: application/json
+```json
+{
+"email": "test@gmail.com", 
+"password": "test"
+}
+```
+Пример ответа:
+```json
+{
+    "status": "success",
+    "code": 200,
+    "data": {
+        "user": {
+            "id": "66d34e63cf1f9c8fea704737",
+            "email": "test@gmail.com",
+            "role": "admin"
+        },
+        "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6IjY2ZDM0ZTYzY2YxZjljOGZlYTcwNDczNyIsImlhdCI6MTcyNTYzMTU4NSwiZXhwIjoxNzI1NjM1MTg1fQ.x-sbM9MPrbr5EonkwYiMsIJ-hKWXVHbH3-ZqDikocbU"
+    }
+}
+```
+Статусы ответов:
+
+- **200 OK** — успешный запрос
+- **500 Internal Server Error** — ошибка сервера
+- **401 Unauthorized** — Неправильный емейл или пароль
+
+
+
 
    
 #### Our API endpoints for managing materials
