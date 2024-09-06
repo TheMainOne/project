@@ -31,10 +31,10 @@ Content-Type: application/json
 
 #### Our API endpoints for managing materials
 
-| Method   | URL                                      | Description                              |
-| -------- | ---------------------------------------- | ---------------------------------------- |
-| `GET`    | `/api/materials`                         | Retrieve all materials.                  |
-| `GET`    | `/api/materials/:id`                     | Retrieve material by id.                 |
-| `POST`   | `/api/materials`                         | Create a new material.                   |
-| `PUT`    | `/api/materials/:id`                     | Update material by id.                   |
-| `DELETE` | `/api/materials/:id`                     | Delete material by id.                   |
+| Method             | URL                                      | Description                              |
+| ------------------ | ---------------------------------------- | ---------------------------------------- |
+| `GET`              | `/api/materials`                         | Retrieve all materials.                  |
+| `GET`              | `/api/materials/:id`                     | Retrieve material by id.                 |
+| `POST`             | `/api/materials`                         | Create a new material.                   |
+| `PUT`              | `/api/materials/:id`                     | Update material by id.                   |
+| `DELETE`           | `/api/materials/:id`                     | Delete material by id.                   |
