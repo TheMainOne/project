@@ -28,8 +28,9 @@ Content-Type: application/json
   "password": "test",
   "name": "TestName"
 }
+```
 Пример ответа:
-```json
+
 {
   "status": "success",
   "code": 201,
