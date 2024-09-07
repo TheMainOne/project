@@ -731,8 +731,8 @@ _________________________________________
   Authorization: Bearer <token>
 
   {
-    "title": "EU REACH Updated",
-    "description": "Updated description"
+    "title": "EU REACH Updated", (optional)
+    "description": "Updated description" (optional)
   }
   ```
 
