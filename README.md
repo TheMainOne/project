@@ -603,7 +603,184 @@ _________________________________________
 | `PUT`              | `/api/regulatories/:id`                  | Update regulation by id.                 |
 | `DELETE`           | `/api/regulatories/:id`                  | Delete regulation by id.                 |
 
+_________________________________________  
 
+#### 1. Получение всех регулирующих актов
 
-#### Надо дописать по регуляторке ендпоинты
+- **Метод:** GET
+- **URL:** `/api/regulatories`
+- **Описание:** Возвращает список всех регулирующих актов.
+- **Требования:** Аутентификация пользователя.
+- **Пример запроса:**
+  ```
+  GET /api/regulatories
+  Authorization: Bearer <token>
+  ```
+- **Пример ответа:**
+  ```json
+  {
+    "status": "success",
+    "code": 200,
+    "data": {
+      "regulations": [
+        {
+          "_id": "60f5c4463e85f20a545f57c3",
+          "title": "EU REACH",
+          "description": "Regulation concerning the Registration, Evaluation, Authorisation and Restriction of Chemicals"
+        },
+        {
+          "_id": "60f5c4463e85f20a545f57c4",
+          "title": "EU RoHS",
+          "description": "Restriction of Hazardous Substances Directive"
+        }
+      ]
+    }
+  }
+  ```
+- **Статусы ответов:**
+  - 200 OK — успешный запрос.
+  - 401 Unauthorized — ошибка аутентификации.
+  - 500 Internal Server Error — ошибка сервера.
+
+---
+
+#### 2. Получение конкретного регулирующего акта по ID
+
+- **Метод:** GET
+- **URL:** `/api/regulatories/:id`
+- **Описание:** Возвращает данные конкретного регулирующего акта по его ID.
+- **Требования:** Аутентификация пользователя, корректный ID.
+- **Пример запроса:**
+  ```
+  GET /api/regulatories/60f5c4463e85f20a545f57c3
+  Authorization: Bearer <token>
+  ```
+- **Пример ответа:**
+  ```json
+  {
+    "status": "success",
+    "code": 200,
+    "data": {
+      "_id": "60f5c4463e85f20a545f57c3",
+      "title": "EU REACH",
+      "description": "Regulation concerning the Registration, Evaluation, Authorisation and Restriction of Chemicals"
+    }
+  }
+  ```
+- **Статусы ответов:**
+  - 200 OK — успешный запрос.
+  - 400 Bad Request — некорректный ID.
+  - 401 Unauthorized — ошибка аутентификации.
+  - 404 Not Found — акт не найден.
+  - 500 Internal Server Error — ошибка сервера.
+
+---
+
+#### 3. Добавление нового регулирующего акта
+
+- **Метод:** POST
+- **URL:** `/api/regulatories`
+- **Описание:** Добавляет новый регулирующий акт в базу данных.
+- **Требования:** Аутентификация пользователя, корректное тело запроса.
+- **Пример запроса:**
+
+  ```
+  POST /api/regulatories
+  Content-Type: application/json
+  Authorization: Bearer <token>
+
+  {
+    "title": "EU REACH",
+    "description": "Regulation concerning the Registration, Evaluation, Authorisation and Restriction of Chemicals"
+  }
+  ```
+
+- **Пример ответа:**
+  ```json
+  {
+    "status": "success",
+    "code": 201,
+    "data": {
+      "regulation": {
+        "_id": "60f5c4463e85f20a545f57c3",
+        "title": "EU REACH",
+        "description": "Regulation concerning the Registration, Evaluation, Authorisation and Restriction of Chemicals"
+      }
+    }
+  }
+  ```
+- **Статусы ответов:**
+  - 201 Created — акт успешно добавлен.
+  - 400 Bad Request — неверный формат данных.
+  - 401 Unauthorized — ошибка аутентификации.
+  - 500 Internal Server Error — ошибка сервера.
+
+---
+
+#### 4. Обновление существующего регулирующего акта
+
+- **Метод:** PUT
+- **URL:** `/api/regulatories/:id`
+- **Описание:** Обновляет данные существующего регулирующего акта.
+- **Требования:** Аутентификация пользователя, корректный ID и тело запроса.
+- **Пример запроса:**
+
+  ```
+  PUT /api/regulatories/60f5c4463e85f20a545f57c3
+  Content-Type: application/json
+  Authorization: Bearer <token>
+
+  {
+    "title": "EU REACH Updated",
+    "description": "Updated description"
+  }
+  ```
+
+- **Пример ответа:**
+  ```json
+  {
+    "status": "success",
+    "code": 200,
+    "data": {
+      "_id": "60f5c4463e85f20a545f57c3",
+      "title": "EU REACH Updated",
+      "description": "Updated description"
+    }
+  }
+  ```
+- **Статусы ответов:**
+  - 200 OK — акт успешно обновлен.
+  - 400 Bad Request — неверный формат данных или ID.
+  - 401 Unauthorized — ошибка аутентификации.
+  - 404 Not Found — акт не найден.
+  - 500 Internal Server Error — ошибка сервера.
+
+---
+
+#### 5. Удаление регулирующего акта
+
+- **Метод:** DELETE
+- **URL:** `/api/regulatories/:id`
+- **Описание:** Удаляет регулирующий акт по ID.
+- **Требования:** Аутентификация пользователя, корректный ID.
+- **Пример запроса:**
+  ```
+  DELETE /api/regulatories/60f5c4463e85f20a545f57c3
+  Authorization: Bearer <token>
+  ```
+- **Пример ответа:**
+  ```json
+  {
+    "status": "success",
+    "code": 200,
+    "message": "Regulation deleted successfully"
+  }
+  ```
+- **Статусы ответов:**
+  - 200 OK — акт успешно удален.
+  - 400 Bad Request — неверный ID.
+  - 401 Unauthorized — ошибка аутентификации.
+  - 404 Not Found — акт не найден.
+  - 500 Internal Server Error — ошибка сервера.
+
 
