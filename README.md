@@ -690,8 +690,8 @@ _________________________________________
   Authorization: Bearer <token>
 
   {
-    "title": "EU REACH",
-    "description": "Regulation concerning the Registration, Evaluation, Authorisation and Restriction of Chemicals"
+    "title": "EU REACH", (required)
+    "description": "Regulation concerning the Registration, Evaluation, Authorisation and Restriction of Chemicals" (required)
   }
   ```
 
