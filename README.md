@@ -1,5 +1,6 @@
 # Навигация по документу
-1.[API Endpoints для регистрации, логинизации и разлогинизации юзера](#our-api-endpoints-for-user-registration-login-and-logout)
+1.[API Endpoints для регистрации, логинизации и разлогинизации юзера](#our-api-endpoints-for-user-registration-login-and-logout)  
+
 2.[API Endpoints для управления материалами](#our-api-endpoints-for-managing-materials)
 
 3. [API Endpoints для управления регулирующими актами](#our-api-endpoints-for-managing-regulatory)
