@@ -22,6 +22,12 @@
 
 
 
+
+
+
+
+ _________________________________________
+
 #### Our API Endpoints for User registration, login, and logout
 
 | Method             | URL                                      | Description                              |
