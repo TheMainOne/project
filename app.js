@@ -7,6 +7,7 @@ import dotenv from "dotenv";
 import router from "./api/material.js";
 import authRouter from "./api/auth.js";
 import regulationRouter from "./api/regulation.js";
+import supplierRouter from "./api/supplier.js";
 
 
 dotenv.config();
@@ -34,6 +35,7 @@ app.use(express.json());
 app.use("/", router);
 app.use("/", authRouter);
 app.use("/", regulationRouter);
+app.use("/", supplierRouter);
 
 
 // error handlers
