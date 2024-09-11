@@ -18,10 +18,10 @@
    - [Получение конкретного регулирующего акта по ID](#2-получение-конкретного-регулирующего-акта-по-id)
    - [Добавление нового регулирующего акта](#3-добавление-нового-регулирующего-акта)
    - [Изменение регулирующего акта](#4-обновление-существующего-регулирующего-акта)
-   - [Удаление регулирующего акта](#5-удаление-регулирующего-акта)
+   - [Удаление регулирующего акта](#5-удаление-регулирующего-акта)  
 
-
-
+4. [API Endpoints для управления поставщиками](#our-api-endpoints-for-managing-suppliers)
+   - [Получение всех поставщиков](#1-получение-всех-поставщиков)
 
 
 
@@ -818,5 +818,66 @@ _________________________________________
   - 401 Unauthorized — ошибка аутентификации.
   - 404 Not Found — акт не найден.
   - 500 Internal Server Error — ошибка сервера.
+ 
+_________________________________________  
 
 
+#### Our API endpoints for managing suppliers
+
+| Method             | URL                                      | Description                              |
+| ------------------ | ---------------------------------------- | ---------------------------------------- |
+| `GET`              | `/api/suppliers`                         | Retrieve all suppliers.                  |
+| `GET`              | `/api/regulatories/:id`                  | Retrieve regulation by id.               |
+| `POST`             | `/api/regulatories`                      | Create a new regulation.                 |
+| `PUT`              | `/api/regulatories/:id`                  | Update regulation by id.                 |
+| `DELETE`           | `/api/regulatories/:id`                  | Delete regulation by id.                 |
+
+_________________________________________  
+
+#### 1. Получение всех поставщиков
+
+- **Метод:** GET
+- **URL:** `/api/suppliers`
+- **Описание:** Возвращает список всех поставщиков.
+- **Требования:** Аутентификация пользователя.
+- **Пример запроса:**
+  ```
+  GET /api/suppliers
+  Authorization: Bearer <token>
+  ```
+- **Пример ответа:**
+  ```json
+  {
+    "status": "success",
+    "code": 200,
+    "data": {
+        "suppliers": [
+            {
+                "_id": "66e06c7a19dd65f3c2e41b7e",
+                "name": "Datwyler",
+                "contactPersons": [
+                    {
+                        "name": "Gail",
+                        "email": "gail@datwyler.com",
+                        "phone": "8567897623",
+                        "position": "customer service",
+                        "_id": "66e06c7a19dd65f3c2e41b7f"
+                    }
+                ],
+                "email": "datwyler@datwyler.com",
+                "factories": [],
+                "licensesAndCertifications": [],
+                "files": [],
+                "createdAt": "2024-09-10T15:57:46.960Z",
+                "updatedAt": "2024-09-10T15:57:46.960Z"
+            }
+        ],
+        "totalPages": 1,
+        "currentPage": 1
+    }
+}
+  ```
+- **Статусы ответов:**
+  - 200 OK — успешный запрос.
+  - 401 Unauthorized — ошибка аутентификации.
+  - 500 Internal Server Error — ошибка сервера.
