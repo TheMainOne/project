@@ -235,7 +235,9 @@ Body: пустое
                 "BOMComponent": "",
                 "storagePath": "",
                 "updatedAt": "2024-09-03T17:53:59.329Z"
-            }]}}
+            },
+        "totalPages": 2,
+        "currentPage": 1]}}
 ```
 Статусы ответов:
 
