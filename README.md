@@ -879,9 +879,58 @@ _________________________________________
     }
 }
   ```
+  ```
 - **Статусы ответов:**
   - 200 OK — успешный запрос.
   - 401 Unauthorized — ошибка аутентификации.
+  - 500 Internal Server Error — ошибка сервера.  
+
+_________________________________________
+
+
+#### 2. Получение конкретного поставщика по ID
+
+- **Метод:** GET
+- **URL:** `/api/suppliers/:id`
+- **Описание:** Возвращает данные конкретного поставщика по его ID.
+- **Требования:** Аутентификация пользователя, корректный ID.
+- **Пример запроса:**
+  ```
+  GET /api/suppliers/60f5c4463e85f20a545f57c3
+  Authorization: Bearer <token>
+  ```
+- **Пример ответа:**
+    ```json
+  {
+    "status": "success",
+    "code": 200,
+    "data": {
+        "supplier": {
+            "_id": "66e06c7a19dd65f3c2e41b7e",
+            "name": "Datwyler",
+            "contactPersons": [
+                {
+                    "name": "Gail",
+                    "email": "gail@datwyler.com",
+                    "phone": "8567897623",
+                    "position": "customer service",
+                    "_id": "66e06c7a19dd65f3c2e41b7f"
+                }
+            ],
+            "email": "datwyler@datwyler.com",
+            "factories": [],
+            "licensesAndCertifications": [],
+            "files": []
+        }
+    }
+}
+```
+```
+- **Статусы ответов:**
+  - 200 OK — успешный запрос.
+  - 400 Bad Request — некорректный ID.
+  - 401 Unauthorized — ошибка аутентификации.
+  - 404 Not Found — Поставщик не найден.
   - 500 Internal Server Error — ошибка сервера.
 
-
+---
