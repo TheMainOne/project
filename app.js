@@ -8,6 +8,7 @@ import router from "./api/material.js";
 import authRouter from "./api/auth.js";
 import regulationRouter from "./api/regulation.js";
 import supplierRouter from "./api/supplier.js";
+import uploadFileRouter from "./api/upload.js";
 
 
 dotenv.config();
@@ -31,11 +32,16 @@ app.use(morgan("tiny"));
 app.use(cors());
 app.use(express.json());
 
+// Настройка папки для статической раздачи файлов
+app.use('/uploads', express.static('uploads'));
+
 // connecting api routes
 app.use("/", router);
 app.use("/", authRouter);
 app.use("/", regulationRouter);
 app.use("/", supplierRouter);
+app.use("/", uploadFileRouter);
+
 
 
 // error handlers
