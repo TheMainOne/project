@@ -829,10 +829,10 @@ _________________________________________
 | Method             | URL                                      | Description                              |
 | ------------------ | ---------------------------------------- | ---------------------------------------- |
 | `GET`              | `/api/suppliers`                         | Retrieve all suppliers.                  |
-| `GET`              | `/api/regulatories/:id`                  | Retrieve regulation by id.               |
-| `POST`             | `/api/regulatories`                      | Create a new regulation.                 |
-| `PUT`              | `/api/regulatories/:id`                  | Update regulation by id.                 |
-| `DELETE`           | `/api/regulatories/:id`                  | Delete regulation by id.                 |
+| `GET`              | `/api/suppliers/:id`                     | Retrieve supplier by id.                 |
+| `POST`             | `/api/suppliers`                         | Create a new supplier.                   |
+| `PUT`              | `/api/suppliers/:id`                     | Update supplier by id.                   |
+| `DELETE`           | `/api/suppliers/:id`                     | Delete supplier by id.                   |
 
 _________________________________________  
 
@@ -883,3 +883,5 @@ _________________________________________
   - 200 OK — успешный запрос.
   - 401 Unauthorized — ошибка аутентификации.
   - 500 Internal Server Error — ошибка сервера.
+
+
