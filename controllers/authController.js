@@ -101,12 +101,26 @@ const checkToken = async (req, res) => {
       throw HttpError(404, "The user with the provided token has not been found");
     }
 
+
+
     res.status(200).json({
       status: 'success',
+      code: 200,
       data: {
-        user,
+        user: {
+          _id: user._id,
+          username: user.name,
+          role: user.role,
+        }
       },
     });
+
+    // res.status(200).json({
+    //   status: 'success',
+    //   data: {
+    //     user,
+    //   },
+    // });
 };
 
 export default {
