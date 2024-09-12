@@ -172,6 +172,50 @@ Body: пустое
 - **500 Internal Server Error** — ошибка сервера
 - **401 Unauthorized** — Неправильная подпись JWT-Token
 
+_________________________________________
+
+#### 4. Проверка Tokena
+
+    Метод: POST
+
+URL: /token
+
+Описание: Проверка токена на валидность и expired. Если токен проходит проверку, сервер отдает обьект юзера
+
+Параметры запроса:  
+*Добавить Bearer Token в headers при запросе*  
+Body: пустое
+
+
+Пример запроса:
+
+**POST /token**
+Content-Type: application/json
+
+*Bearer Token*  
+Body: пустое
+
+Пример ответа:
+```json
+{
+    "status": "success",
+    "data": {
+        "user": {
+            "_id": "66dafb73650231bfa7339411",
+            "email": "test@gmail.com",
+            "name": "TestName",
+            "role": "employee",
+            "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6IjY2ZGFmYjczNjUwMjMxYmZhNzMzOTQxMSIsImlhdCI6MTcyNjE1NTYwNiwiZXhwIjoxNzI2MTc3MjA2fQ.RGbpRqN7jmv0arRIEBk_TMHUl_SPA_KilBYvhzhhIcg"
+        }
+    }
+}
+```
+Статусы ответов:
+
+- **200 OK** — успешный запрос
+- **500 Internal Server Error** — ошибка сервера
+- **401 Unauthorized** — Неправильная подпись JWT-Token, token expired
+
 
 _________________________________________
 
