@@ -4,11 +4,13 @@ import morgan from "morgan";
 import cors from "cors";
 import mongoose from "mongoose";
 import dotenv from "dotenv";    
+import errorHandler from "./middlewares/errorHandler.js";
 import router from "./api/material.js";
 import authRouter from "./api/auth.js";
 import regulationRouter from "./api/regulation.js";
 import supplierRouter from "./api/supplier.js";
 import uploadFileRouter from "./api/upload.js";
+
 
 
 dotenv.config();
@@ -45,13 +47,8 @@ app.use("/", uploadFileRouter);
 
 
 // error handlers
-app.use((err, req, res, next) => {
-  const statusCode = err.status || 500;
-  res.status(statusCode).json({
-    status: "error",
-    message: err.message,
-  });
-});
+app.use(errorHandler);
+
 app.use((_, res, __) => {
   res.status(404).json({
     status: "error",
