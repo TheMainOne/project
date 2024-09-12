@@ -121,11 +121,11 @@ Content-Type: application/json
     "code": 200,
     "data": {
         "user": {
-            "id": "66d34e63cf1f9c8fea704737",
+            "_id": "66dafb73650231bfa7339411",
             "email": "test@gmail.com",
-            "role": "admin"
+            "role": "employee"
         },
-        "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6IjY2ZDM0ZTYzY2YxZjljOGZlYTcwNDczNyIsImlhdCI6MTcyNTYzMTU4NSwiZXhwIjoxNzI1NjM1MTg1fQ.x-sbM9MPrbr5EonkwYiMsIJ-hKWXVHbH3-ZqDikocbU"
+        "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6IjY2ZGFmYjczNjUwMjMxYmZhNzMzOTQxMSIsImlhdCI6MTcyNjE2Nzk2OSwiZXhwIjoxNzI2MTg5NTY5fQ.6rfL7BX0y63k3_gz2KQKJSqEIkIA4WgY6vlPaWQLg5g"
     }
 }
 ```
@@ -199,13 +199,12 @@ Body: пустое
 ```json
 {
     "status": "success",
+    "code": 200,
     "data": {
         "user": {
             "_id": "66dafb73650231bfa7339411",
-            "email": "test@gmail.com",
-            "name": "TestName",
-            "role": "employee",
-            "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6IjY2ZGFmYjczNjUwMjMxYmZhNzMzOTQxMSIsImlhdCI6MTcyNjE1NTYwNiwiZXhwIjoxNzI2MTc3MjA2fQ.RGbpRqN7jmv0arRIEBk_TMHUl_SPA_KilBYvhzhhIcg"
+            "username": "TestName",
+            "role": "employee"
         }
     }
 }
