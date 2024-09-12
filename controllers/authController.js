@@ -58,7 +58,7 @@ const loginUser = async (req, res) => {
     code: 200,
     data: {
       user: {
-        id: user._id,
+        _id: user._id,
         username: user.username,
         email: user.email,
         role: user.role,
@@ -95,7 +95,7 @@ const checkToken = async (req, res) => {
 
 
     // Получаем данные пользователя из базы по ID из токена
-    const user = await User.findById(decoded.id).select('-password'); 
+    const user = await User.findById(decoded.id).select('-password -createdAt -updatedAt'); 
 
     if (!user) {
       throw HttpError(404, "The user with the provided token has not been found");
