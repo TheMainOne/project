@@ -10,7 +10,10 @@
    - [Получение одного материала по ID](#2-получение-одного-материала-по-id)
    - [Добавление нового материала в базу данных](#3-добавление-нового-материала-в-базу-данных)
    - [Изменение существующего в базе данных материала](#4-изменение-существующего-в-базе-данных-материала)
-   - [Удаление существующего в базе данных материала ](#5-удаление-существующего-в-базе-данных-материала)
+   - [Удаление существующего в базе данных материала](#5-удаление-существующего-в-базе-данных-материала)
+   - [Поиск материалов в базе данных по частичному совпадению их partNumber](#6-поиск-материалов-в-базе-данных-по-частичному-совпадению-их-partnumber)
+  
+#### 6. Поиск материалов в базе данных по частичному совпадению их partNumber
 
 
 3. [API Endpoints для управления регулирующими актами](#our-api-endpoints-for-managing-regulatory)
@@ -672,6 +675,90 @@ Body: пустое
 - **401 Unauthorized** — Неавторизованный юзер
 
 _________________________________________
+
+
+#### 6. Поиск материалов в базе данных по частичному совпадению их partNumber
+
+    Метод: GET
+
+URL: /api/materials/search
+
+Описание: Получение всех материалов, partNumber которых частично совпадает с переданными данными.
+
+Параметры запроса:  
+*Добавить Bearer Token в headers при запросе*  
+В Params передать partNumber со значением
+Body: пустое
+
+Пример запроса:
+
+**GET /api/materials/search?partNumber=W00**
+
+*Bearer Token*  
+Params: partNumber=W00
+Body: пустое  
+
+Пример ответа:
+```json
+{
+    "status": "success",
+    "code": 200,
+    "data": [
+        {
+            "_id": "66d0764dd8bdd28e5e126fd8",
+            "partNumber": "W001002B",
+            "parentID": null,
+            "description": "13MM STOPPER, 2 LEG LYO, BUTYL GRY, SILZD",
+            "supplier": "DATWYLER",
+            "supplierItemNumber": "110006195",
+            "components": [],
+            "countryOfOrigin": "US",
+            "status": "Active",
+            "regulatoryCompliance": [
+                {
+                    "title": "EU REACH",
+                    "description": "Regulation concerning the Registration, Evaluation, Authorisation and Restriction of Chemicals",
+                    "status": "pending"
+                }
+            ],
+            "BOMcomponent": "",
+            "BOMComponent": "",
+            "storagePath": "",
+            "updatedAt": "2024-09-03T17:53:59.299Z"
+        },
+        {
+            "_id": "66d0764dd8bdd28e5e126fd9",
+            "partNumber": "W008761A",
+            "parentID": null,
+            "description": "15MM ECDT, LDPE NAT, .020 SQ",
+            "supplier": "Amcor",
+            "supplierItemNumber": "11954-158",
+            "components": [],
+            "countryOfOrigin": "US",
+            "status": "Active",
+            "regulatoryCompliance": [
+                {
+                    "title": "EU REACH",
+                    "description": "Regulation concerning the Registration, Evaluation, Authorisation and Restriction of Chemicals",
+                    "status": "pending"
+                }
+            ],
+            "BOMcomponent": "",
+            "BOMComponent": "",
+            "storagePath": "",
+            "updatedAt": "2024-09-03T17:53:59.329Z"
+        }
+    ]
+}
+```
+Статусы ответов:
+
+- **200 OK** — успешный запрос
+- **500 Internal Server Error** — ошибка сервера
+- **401 Unauthorized** — Неавторизованный юзер
+- **400 Bad request** — переданный параметр пустой
+
+_________________________________________  
 
 
 #### Our API endpoints for managing regulatory
