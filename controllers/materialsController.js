@@ -6,7 +6,11 @@ const getAllMaterials = async (req, res) => {
   const { page = 1, limit = 10 } = req.query;
   const skip = (page - 1) * limit;
 
-  const results = await Material.find({}).skip(skip).limit(limit).exec();
+  const materials = await Material.find({})
+  .sort({ createdAt: -1 }) // Сортировка по полю `createdAt`: -1 означает от новых к старым
+  .skip(skip)
+  .limit(limit)
+  .exec();
 
   const count = await Material.countDocuments();
 
@@ -14,7 +18,7 @@ const getAllMaterials = async (req, res) => {
     status: "success",
     code: 200,
     data: {
-      materials: results,
+      materials,
       totalPages: Math.ceil(count / limit),
       currentPage: page,
     },
