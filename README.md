@@ -1125,3 +1125,348 @@ Body: пустое
 
 _________________________________________  
 
+#### 4. Добавление нового поставщика 
+
+- **Метод:** POST
+- **URL:** `/api/suppliers`
+- **Описание:** Создает нового поставщика в базе данных.
+- **Требования:** Аутентификация пользователя, корректное тело запроса.
+- **Пример запроса:**  
+
+  GET /api/suppliers
+  Authorization: Bearer <token>
+```json
+  {
+    "name": "SupplierName", required()
+    "contactPersons": [
+        {
+            "name": "John Doe", required()
+            "email": "john.doe@example.com", required()
+            "phone": "123456789", optional()
+            "position": "Manager" optional()
+        }
+    ], optional()
+    "email": "supplier@example.com", required()
+    "phone": "987654321", optional()
+    "website": "https://example.com", optional()
+    "address": {
+        "street": "123 Main St", optional()
+        "city": "Somewhere", optional()
+        "state": "SomeState", optional()
+        "country": "CountryName", optional()
+        "postalCode": "12345" optional()
+    }, optional()
+    "factories": [
+        {
+            "name": "Factory1", required()
+            "location": {
+                "street": "Factory St", optional()
+                "city": "Factory City", optional()
+                "state": "Factory State", optional()
+                "country": "Factory Country", required()
+                "postalCode": "54321" optional()
+            },
+            "productionCapacity": 5000, optional()
+            "certifications": [
+                "ISO9001",
+                "ISO14001"
+            ] optional()
+        }
+    ], optional()
+    "licensesAndCertifications": [
+        {
+            "name": "CertificationName", required()
+            "issueDate": "2022-01-01", optional()
+            "expiryDate": "2023-01-01", optional()
+            "issuingAuthority": "Certification Authority" optional()
+        }
+    ], optional()
+    "files": [
+        {
+            "fileName": "file.pdf", required()
+            "fileUrl": "https://example.com/file.pdf", optional()
+            "uploadDate": "2023-01-01", optional()
+            "uploadedBy": "User" optional()
+        }
+    ] optional()
+}
+```  
+- **Пример ответа:**
+```json
+{
+    "status": "success",
+    "code": 201,
+    "data": {
+        "supplier": {
+            "name": "SupplierName",
+            "contactPersons": [
+                {
+                    "name": "John Doe",
+                    "email": "john.doe@example.com",
+                    "phone": "123456789",
+                    "position": "Manager",
+                    "_id": "66e45a4bcb052d6cee551f78"
+                }
+            ],
+            "email": "supplier@example.com",
+            "phone": "987654321",
+            "website": "https://example.com",
+            "address": {
+                "street": "123 Main St",
+                "city": "Somewhere",
+                "state": "SomeState",
+                "country": "CountryName",
+                "postalCode": "12345"
+            },
+            "factories": [
+                {
+                    "name": "Factory1",
+                    "location": {
+                        "street": "Factory St",
+                        "city": "Factory City",
+                        "state": "Factory State",
+                        "country": "Factory Country",
+                        "postalCode": "54321"
+                    },
+                    "productionCapacity": 5000,
+                    "certifications": [
+                        "ISO9001",
+                        "ISO14001"
+                    ],
+                    "_id": "66e45a4bcb052d6cee551f79"
+                }
+            ],
+            "licensesAndCertifications": [
+                {
+                    "name": "CertificationName",
+                    "issueDate": "2022-01-01T00:00:00.000Z",
+                    "expiryDate": "2023-01-01T00:00:00.000Z",
+                    "issuingAuthority": "Certification Authority",
+                    "_id": "66e45a4bcb052d6cee551f7a"
+                }
+            ],
+            "files": [
+                {
+                    "fileName": "file.pdf",
+                    "fileUrl": "https://example.com/file.pdf",
+                    "uploadDate": "2023-01-01T00:00:00.000Z",
+                    "uploadedBy": "User",
+                    "_id": "66e45a4bcb052d6cee551f7b"
+                }
+            ],
+            "_id": "66e45a4bcb052d6cee551f77",
+            "createdAt": "2024-09-13T15:29:15.291Z",
+            "updatedAt": "2024-09-13T15:29:15.291Z"
+        }
+    }
+}
+```
+
+- **Статусы ответов:**
+- **201 Created** — успешный запрос
+- **500 Internal Server Error** — ошибка сервера
+- **401 Unauthorized** — неавторизованный юзер
+- **409 Conflict** — поставщик с таким именем уже есть в базе данных
+ 
+_________________________________________  
+
+
+#### 5. Изменение существующего в базе данных поставщика
+
+    Метод: PUT
+
+URL: /api/suppliers/:id
+
+Описание: Изменение свойств поставщика в базе данных.
+
+Параметры запроса:  
+*Добавить Bearer Token в headers при запросе*  
+
+Пример запроса:
+
+**PUT /api/suppliers/:id**
+
+*Bearer Token*  
+```json
+{
+    "name": "Amcor", optional()
+    "contactPersons": [
+        {
+            "name": "John Doe", optional()
+            "email": "john.doe@example.com", optional()
+            "phone": "123456789", optional()
+            "position": "Manager" optional()
+        }
+    ], optional()
+    "email": "supplier@example.com", optional()
+    "phone": "987654321", optional()
+    "website": "https://example.com", optional()
+    "address": {
+        "street": "123 Main St", optional()
+        "city": "Somewhere", optional()
+        "state": "SomeState", optional()
+        "country": "CountryName", optional()
+        "postalCode": "12345" optional()
+    }, optional()
+    "factories": [
+        {
+            "name": "Factory1", optional()
+            "location": {
+                "street": "Factory St", optional()
+                "city": "Factory City", optional()
+                "state": "Factory State", optional()
+                "country": "Factory Country", optional()
+                "postalCode": "54321" optional()
+            }, optional()
+            "productionCapacity": 5000, optional()
+            "certifications": [
+                "ISO9001",
+                "ISO14001"
+            ] optional()
+        }
+    ],
+    "licensesAndCertifications": [
+        {
+            "name": "CertificationName", optional()
+            "issueDate": "2022-01-01", optional()
+            "expiryDate": "2023-01-01", optional()
+            "issuingAuthority": "Certification Authority" optional()
+        }
+    ],
+    "files": [
+        {
+            "fileName": "file.pdf", optional()
+            "fileUrl": "https://example.com/file.pdf", optional()
+            "uploadDate": "2023-01-01", optional()
+            "uploadedBy": "User" optional()
+        } 
+    ] optional()
+}
+```
+
+Пример ответа:
+```json
+{
+    "status": "success",
+    "code": 200,
+    "data": {
+        "supplier": {
+            "address": {
+                "street": "123 Main St",
+                "city": "Somewhere",
+                "state": "SomeState",
+                "country": "CountryName",
+                "postalCode": "12345"
+            },
+            "_id": "66e45a4bcb052d6cee551f77",
+            "name": "Amcor",
+            "contactPersons": [
+                {
+                    "name": "John Doe",
+                    "email": "john.doe@example.com",
+                    "phone": "123456789",
+                    "position": "Manager",
+                    "_id": "66e45a4bcb052d6cee551f78"
+                }
+            ],
+            "email": "supplier@example.com",
+            "phone": "987654321",
+            "website": "https://example.com",
+            "factories": [
+                {
+                    "location": {
+                        "street": "Factory St",
+                        "city": "Factory City",
+                        "state": "Factory State",
+                        "country": "Factory Country",
+                        "postalCode": "54321"
+                    },
+                    "name": "Factory1",
+                    "productionCapacity": 5000,
+                    "certifications": [
+                        "ISO9001",
+                        "ISO14001"
+                    ],
+                    "_id": "66e45a4bcb052d6cee551f79"
+                }
+            ],
+            "licensesAndCertifications": [
+                {
+                    "name": "CertificationName",
+                    "issueDate": "2022-01-01T00:00:00.000Z",
+                    "expiryDate": "2023-01-01T00:00:00.000Z",
+                    "issuingAuthority": "Certification Authority",
+                    "_id": "66e45a4bcb052d6cee551f7a"
+                }
+            ],
+            "files": [
+                {
+                    "fileName": "file.pdf",
+                    "fileUrl": "https://example.com/file.pdf",
+                    "uploadDate": "2023-01-01T00:00:00.000Z",
+                    "uploadedBy": "User",
+                    "_id": "66e45a4bcb052d6cee551f7b"
+                }
+            ],
+            "createdAt": "2024-09-13T15:29:15.291Z",
+            "updatedAt": "2024-09-13T15:42:45.536Z"
+        }
+    }
+}
+```
+Статусы ответов:
+
+- **200 OK** — успешный запрос
+- **500 Internal Server Error** — ошибка сервера
+- **401 Unauthorized** — Неавторизованный юзер
+_________________________________________
+
+
+#### 5. Удаление поставщика
+
+- **Метод:** DELETE
+- **URL:** `/api/suppliers/:id`
+- **Описание:** Удаляет поставщика по ID.
+- **Требования:** Аутентификация пользователя, корректный ID.
+- **Пример запроса:**
+  ```
+  DELETE /api/suppliers/60f5c4463e85f20a545f57c3
+  Authorization: Bearer <token>
+  ```
+- **Пример ответа:**
+  ```json
+{
+    "status": "success",
+    "code": 200,
+    "message": "Supplier deleted successfully",
+    "data": {
+        "deletedSupplier": {
+            "_id": "66e06c7a19dd65f3c2e41b7e",
+            "name": "Datwyler",
+            "contactPersons": [
+                {
+                    "name": "Gail",
+                    "email": "gail@datwyler.com",
+                    "phone": "8567897623",
+                    "position": "customer service",
+                    "_id": "66e06c7a19dd65f3c2e41b7f"
+                }
+            ],
+            "email": "datwyler@datwyler.com",
+            "factories": [],
+            "licensesAndCertifications": [],
+            "files": [],
+            "createdAt": "2024-09-10T15:57:46.960Z",
+            "updatedAt": "2024-09-10T15:57:46.960Z"
+        }
+    }
+}
+  ```
+- **Статусы ответов:**
+  - 200 OK — поставщик успешно удален.
+  - 400 Bad Request — неверный ID.
+  - 401 Unauthorized — ошибка аутентификации.
+  - 404 Not Found — поставщик не найден.
+  - 500 Internal Server Error — ошибка сервера.
+ 
+_________________________________________  
