@@ -10,6 +10,7 @@ const router = express.Router();
 
 // Assigning new paths for the router
 router.get("/api/materials", authenticate, controllers.getAll);
+router.get("/api/materials/search", controllers.searchMaterialsByPartNumber);
 router.get("/api/materials/:id", authenticate, isValidId, controllers.getById);
 router.post(
   "/api/materials",

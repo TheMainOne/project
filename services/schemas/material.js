@@ -32,7 +32,7 @@ const ComponentSchema = new mongoose.Schema(
 
 const MaterialSchema = new mongoose.Schema(
   {
-    partNumber: { type: String, required: true },
+    partNumber: { type: String, required: true, unique: true },
     description: { type: String, required: true },
     supplier: { type: String, default: "" },
     supplierItemNumber: { type: String, default: "" },

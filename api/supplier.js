@@ -13,6 +13,11 @@ supplierRouter.get(
     controllers.getAllSuppliers
   );
   supplierRouter.get(
+    "/api/suppliers/search",
+    authenticate,
+    controllers.searchSuppliersByName
+  );
+  supplierRouter.get(
     "/api/suppliers/:id",
     authenticate,
     isValidId,

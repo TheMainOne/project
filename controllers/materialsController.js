@@ -7,7 +7,7 @@ const getAllMaterials = async (req, res) => {
   const skip = (page - 1) * limit;
 
   const materials = await Material.find({})
-  .sort({ createdAt: -1 }) // Сортировка по полю `createdAt`: -1 означает от новых к старым
+  .sort({ createdAt: -1 }) // Сортирует материалы от новых к более старым 
   .skip(skip)
   .limit(limit)
   .exec();
@@ -124,6 +124,25 @@ const deleteMaterial = async (req, res) => {
   });
 };
 
+const searchMaterialsByPartNumber = async (req, res) => {
+    const { partNumber } = req.query;
+
+    if (!partNumber) {
+      throw HttpError(400, "Kindly provide a part number to search");
+    }
+
+    // Используем регулярное выражение для поиска по частичному совпадению
+    const materials = await Material.find({
+      partNumber: { $regex: partNumber, $options: 'i' }, // 'i' делает поиск нечувствительным к регистру
+    }).limit(10); // Ограничиваем количество результатов до 10
+
+    res.status(200).json({
+      status: 'success',
+      code: 200,
+      data: materials,
+    });
+};
+
 
 
 export default {
@@ -132,4 +151,5 @@ export default {
   updateByID: ctrlWrapper(updateByID),
   createMaterial: ctrlWrapper(createMaterial),
   deleteMaterial: ctrlWrapper(deleteMaterial),
+  searchMaterialsByPartNumber: ctrlWrapper(searchMaterialsByPartNumber)
 };
