@@ -686,7 +686,7 @@ URL: /api/materials/search
 
 Параметры запроса:  
 *Добавить Bearer Token в headers при запросе*  
-В Params передать partNumber со значением
+В Params передать partNumber со значением  
 Body: пустое
 
 Пример запроса:
@@ -694,7 +694,7 @@ Body: пустое
 **GET /api/materials/search?partNumber=W00**
 
 *Bearer Token*  
-Params: partNumber=W00
+Params: partNumber=W00  
 Body: пустое  
 
 Пример ответа:
