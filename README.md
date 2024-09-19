@@ -542,18 +542,18 @@ URL: /api/materials/:id
 
 ```json
 {
-            "partNumber": "W224100-021", (optional)
-            "description": "20 mm Stopper, Igloo, Omniflex", (optional)
-            "supplier": "", (optional)
-            "supplierItemNumber": "", (optional)
-            "parentID": null, (optional)
-            "countryOfOrigin": "", (optional)
-            "status": "Active", (optional)
-            "BOMcomponent": "", (optional)
-            "storagePath": "", (optional)
-            "components": [], (optional)
-            "regulatoryCompliance": [] (optional)
-        }
+  "partNumber": "W224100-021",  // (optional) Разрешена пустая строка или отсутствие поля
+  "description": "20 mm Stopper, Igloo, Omniflex",  // (optional) Разрешена пустая строка или отсутствие поля
+  "supplier": "",  // (optional) Разрешена пустая строка
+  "supplierItemNumber": "",  // (optional) Разрешена пустая строка
+  "parentID": null,  // (optional) Разрешено null или отсутствие поля
+  "countryOfOrigin": "",  // (optional) Разрешена пустая строка
+  "status": "Active",  // (optional) Разрешена пустая строка или отсутствие поля
+  "BOMcomponent": "",  // (optional) Разрешена пустая строка
+  "storagePath": "",  // (optional) Разрешена пустая строка
+  "components": [],  // (optional) Массив может быть опущен или пустым (Но, если надо изменить какое-то поле внутри обьекта надо передавать весь обьект или обьекты со всеми полями и менять только то значение, которое нужно. Иначе, база данных удалит все остальные данные в обьекте)
+  "regulatoryCompliance": []  // (optional) Массив может быть опущен или пустым (Но, если надо изменить какое-то поле внутри обьекта надо передавать весь обьект или обьекты со всеми полями и менять только то значение, которое нужно. Иначе, база данных удалит все остальные данные в обьекте)
+}
 ```
 
 Пример запроса:
