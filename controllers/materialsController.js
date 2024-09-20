@@ -1,7 +1,9 @@
 import Material from "../services/schemas/material.js";
 import ctrlWrapper from "../middlewares/ctrlWrapper.js";
 import HttpError from "../middlewares/HttpError.js";
+import Regulation from "../services/schemas/regulation.js";
 import { isValidObjectId } from "mongoose";
+import { updateParentRegulatoryCompliance } from "../utils/materialHelpers.js"
 
 const getAllMaterials = async (req, res) => {
   const { page = 1, limit = 10 } = req.query;
@@ -44,7 +46,7 @@ const getByID = async (req, res) => {
 };
 
 const createMaterial = async (req, res) => {
-  const { partNumber } = req.body;
+  const { partNumber, regulatoryCompliance = [] } = req.body;
 
   const existingMaterial = await Material.findOne({ partNumber });
 
@@ -54,10 +56,24 @@ const createMaterial = async (req, res) => {
       code: 409,
       message: "Material with this part number already exists",
       data: {
-        material: existingMaterial,
+        material: existingMaterial, 
       },
     });
   }
+
+    // Проверяем, что регуляторные акты существуют в коллекции regulations и если существуют присваиваем им правильный _id
+    if (regulatoryCompliance.length > 0) {
+      for (const compliance of regulatoryCompliance) {
+        const regulation = await Regulation.findById(compliance._id);
+        if (!regulation) {
+          return res.status(404).json({
+            status: "error",
+            code: 404,
+            message: `Regulation with ID ${compliance._id} not found. Please create a new regulation first.`,
+          });
+        }
+      }
+    }
 
   const newMaterial = await Material.create({ ...req.body });
 
@@ -70,60 +86,6 @@ const createMaterial = async (req, res) => {
   });
 }
 
-
-function updateParentRegulatoryCompliance(parentMaterial) {
-  const allRegulations = new Map();
-
-  // Рекурсивная функция для обхода всех компонентов
-  function traverseComponents(components) {
-    components.forEach(component => {
-      component.regulatoryCompliance.forEach(regulation => {
-        if (!allRegulations.has(regulation.title)) {
-          allRegulations.set(regulation.title, { ...regulation, status: [] });
-        }
-
-        // Добавляем статус для каждой регуляции
-        const regulationData = allRegulations.get(regulation.title);
-        regulationData.status.push(regulation.status);
-      });
-
-      // Если у компонента есть вложенные компоненты, продолжаем обход рекурсивно
-      if (component.components && component.components.length > 0) {
-        traverseComponents(component.components);
-      }
-    });
-  }
-
-  // Запускаем рекурсивную функцию для компонентов родителя
-  traverseComponents(parentMaterial.components);
-
-  // Определяем статус для каждой регуляции у родителя
-  const updatedRegulatoryCompliance = [];
-  allRegulations.forEach((regulationData, title) => {
-    const statuses = regulationData.status;
-
-    let finalStatus;
-    
-    // Приоритет статусов
-    if (statuses.every(status => status === 'na')) {
-      finalStatus = 'na';
-    } else if (statuses.every(status => status === 'comply')) {
-      finalStatus = 'comply';
-    } else if (statuses.includes('does_not_comply')) {
-      finalStatus = 'does_not_comply';
-    } else if (statuses.includes('pending')) {
-      finalStatus = 'pending';
-    } else if (statuses.includes('comply') && statuses.some(status => status !== 'comply')) {
-      finalStatus = 'comply_with_exceptions';
-    }
-
-    // Устанавливаем итоговый статус
-    regulationData.status = finalStatus;
-    updatedRegulatoryCompliance.push(regulationData);
-  });
-
-  return updatedRegulatoryCompliance;
-}
 
 const updateByID = async (req, res) => {
   const { id } = req.params;
@@ -232,8 +194,6 @@ const updateByID = async (req, res) => {
     }
   });
 };
-
-
 
 
 const deleteMaterial = async (req, res) => {

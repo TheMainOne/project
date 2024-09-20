@@ -6,6 +6,7 @@
 
   const RegulatoryComplianceSchema = new mongoose.Schema(
     {
+      _id: { type: mongoose.Schema.Types.ObjectId, ref: 'Regulation', default: [] },
       title: { type: String, required: true },
       description: { type: String, required: true },
       status: { type: String, default: 'pending' }, // Добавляем статус акта
@@ -51,9 +52,10 @@
   );
 
   const RegulatoryComplianceSchemaJoi = Joi.object({
+    _id: Joi.objectId().required(),
     title: Joi.string().required(),
     description: Joi.string().required(),
-    status: Joi.string().default('pending')
+    status: Joi.string().default('pending'),
   });
 
 
@@ -77,13 +79,13 @@
     description: Joi.string().required(),
     supplier: Joi.string().default("").allow(""),
     supplierItemNumber: Joi.string().default("").allow(""),
-    parentID: Joi.objectId().allow(null), 
+    parentID: Joi.objectId().allow(null),
     components: Joi.array().items(ComponentSchemaJoi).default([]),
     countryOfOrigin: Joi.string().default(""),
     status: Joi.string().required(),
     regulatoryCompliance: Joi.array().items(RegulatoryComplianceSchemaJoi).default([]),
-    BOMcomponent: Joi.string().default("").allow(""), 
-    storagePath: Joi.string().default("").allow(""),  
+    BOMcomponent: Joi.string().default("").allow(""),
+    storagePath: Joi.string().default("").allow(""),
   });
 
   const ComponentSchemaJoiForUpdating = Joi.object({
@@ -124,20 +126,16 @@
   const updateMaterialSchema = Joi.object({
     relatedParentId: Joi.objectId().allow(null).optional().messages({
       'string.pattern.name': 'Invalid relatedParentId format. It must be a valid MongoDB ObjectId (24 characters).'
-    }),   // Добавляем поле relatedParentId
-    partNumber: Joi.string().allow("").optional(),  // Разрешаем пустую строку
-    description: Joi.string().allow("").optional(),  // Разрешаем пустую строку
-    supplier: Joi.string().allow("").optional(),  // Разрешаем пустую строку
-    supplierItemNumber: Joi.string().allow("").optional(),  // Разрешаем пустую строку
-    parentID: Joi.objectId().allow(null).optional(),  // Разрешаем null и необязательное поле
-    components: Joi.array().items(ComponentSchemaJoiForUpdating).default([]).optional(), 
-    countryOfOrigin: Joi.string().allow("").optional(),  // Разрешаем пустую строку
-    status: Joi.string().allow("").optional(),  // Разрешаем пустую строку
-    regulatoryCompliance: Joi.array().items(Joi.object({
-      title: Joi.string().allow("").optional(),
-      description: Joi.string().allow("").optional(),
-      status: Joi.string().allow("").optional(),
-    })).default([]).optional(),  
+    }), // Поле relatedParentId
+    partNumber: Joi.string().allow("").optional(),
+    description: Joi.string().allow("").optional(),
+    supplier: Joi.string().allow("").optional(),
+    supplierItemNumber: Joi.string().allow("").optional(),
+    parentID: Joi.objectId().allow(null).optional(),
+    components: Joi.array().items(ComponentSchemaJoiForUpdating).default([]).optional(),
+    countryOfOrigin: Joi.string().allow("").optional(),
+    status: Joi.string().allow("").optional(),
+    regulatoryCompliance: Joi.array().items(RegulatoryComplianceSchemaJoi).default([]).optional(),
     BOMcomponent: Joi.string().allow("").optional(),
     storagePath: Joi.string().allow("").optional(),
   });
