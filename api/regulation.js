@@ -13,6 +13,11 @@ regulationRouter.get(
   controllers.getAllRegulations
 );
 regulationRouter.get(
+  "/api/regulatories/search",
+  authenticate,
+  controllers.searchRegulationByTitle
+);
+regulationRouter.get(
   "/api/regulatories/:id",
   authenticate,
   isValidId,

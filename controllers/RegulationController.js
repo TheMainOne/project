@@ -114,6 +114,37 @@ const deleteRegulationById = async (req, res) => {
   });
 };
 
+const searchRegulationByTitle = async (req, res) => {
+  const { title } = req.query;
+
+  if (!title) {
+    throw HttpError(400, "Please provide a title to search");
+  }
+
+  // Используем регулярное выражение для поиска по частичному совпадению
+  const regulations = await Regulation.find({
+    title: { $regex: title, $options: 'i' }, // 'i' делает поиск нечувствительным к регистру
+  }).limit(10); // Ограничиваем количество результатов до 10
+
+
+    // Если ничего не найдено, возвращаем пустой массив и сообщение
+    if (regulations.length === 0) {
+      return res.status(200).json({
+        status: 'success',
+        code: 200,
+        message: 'No regulations found',
+        data: [],
+      });
+    }
+
+  res.status(200).json({
+    status: 'success',
+    code: 200,
+    data: regulations,
+  });
+};
+
+
 
 export default {
   addRegulation: ctrlWrapper(addNewRegulation),
@@ -121,4 +152,5 @@ export default {
   updateRegulation: ctrlWrapper(updateRegulationByID),
   getRegulationById: ctrlWrapper(getRegulationByID),
   deleteRegulationById: ctrlWrapper(deleteRegulationById),
+  searchRegulationByTitle: ctrlWrapper(searchRegulationByTitle)
 };
