@@ -3,18 +3,17 @@ import ctrlWrapper from "../middlewares/ctrlWrapper.js";
 import HttpError from "../middlewares/HttpError.js";
 import Regulation from "../services/schemas/regulation.js";
 import { isValidObjectId } from "mongoose";
-import { updateParentRegulatoryCompliance } from "../utils/materialHelpers.js"
+import { updateParentRegulatoryCompliance } from "../utils/materialHelpers.js";
 
 const getAllMaterials = async (req, res) => {
   const { page = 1, limit = 10 } = req.query;
   const skip = (page - 1) * limit;
 
-
   const materials = await Material.find({})
-  .sort({ createdAt: -1 }) // Сортирует материалы от новых к более старым 
-  .skip(skip)
-  .limit(limit)
-  .exec();
+    .sort({ createdAt: -1 }) // Сортирует материалы от новых к более старым
+    .skip(skip)
+    .limit(limit)
+    .exec();
 
   const count = await Material.countDocuments();
 
@@ -56,24 +55,24 @@ const createMaterial = async (req, res) => {
       code: 409,
       message: "Material with this part number already exists",
       data: {
-        material: existingMaterial, 
+        material: existingMaterial,
       },
     });
   }
 
-    // Проверяем, что регуляторные акты существуют в коллекции regulations и если существуют присваиваем им правильный _id
-    if (regulatoryCompliance.length > 0) {
-      for (const compliance of regulatoryCompliance) {
-        const regulation = await Regulation.findById(compliance._id);
-        if (!regulation) {
-          return res.status(404).json({
-            status: "error",
-            code: 404,
-            message: `Regulation with ID ${compliance._id} not found. Please create a new regulation first.`,
-          });
-        }
+  // Проверяем, что регуляторные акты существуют в коллекции regulations и если существуют присваиваем им правильный _id
+  if (regulatoryCompliance.length > 0) {
+    for (const compliance of regulatoryCompliance) {
+      const regulation = await Regulation.findById(compliance._id);
+      if (!regulation) {
+        return res.status(404).json({
+          status: "error",
+          code: 404,
+          message: `Regulation with ID ${compliance._id} not found. Please create a new regulation first.`,
+        });
       }
     }
+  }
 
   const newMaterial = await Material.create({ ...req.body });
 
@@ -84,12 +83,11 @@ const createMaterial = async (req, res) => {
       material: newMaterial,
     },
   });
-}
-
+};
 
 const updateByID = async (req, res) => {
   const { id } = req.params;
-  const { relatedParentId, ...fields } = req.body;  // Извлекаем relatedParentId, если оно есть
+  const { relatedParentId, ...fields } = req.body; // Извлекаем relatedParentId, если оно есть
 
   if (!id) {
     return res.status(400).json({
@@ -99,8 +97,6 @@ const updateByID = async (req, res) => {
     });
   }
   console.log(isValidObjectId(relatedParentId));
-
-
 
   // Если нет полей для обновления и нет relatedParentId, выкидываем ошибку
   if (!fields || Object.keys(fields).length === 0) {
@@ -113,7 +109,7 @@ const updateByID = async (req, res) => {
     }
   }
 
-  let material = await Material.findById(id);  // Ищем материал по ID
+  let material = await Material.findById(id); // Ищем материал по ID
 
   if (!material) {
     return res.status(404).json({
@@ -134,52 +130,55 @@ const updateByID = async (req, res) => {
       });
     }
 
+    // Проверяем, существует ли уже этот материал как компонент у родителя чтобы избежать дублирования
+    const isComponentAlreadyExists = newParentMaterial.components.some(
+      (comp) =>
+        comp && comp.partNumber && comp.partNumber === material.partNumber
+    );
 
-   // Проверяем, существует ли уже этот материал как компонент у родителя чтобы избежать дублирования 
-   const isComponentAlreadyExists = newParentMaterial.components.some(
-    (comp) => comp && comp.partNumber && comp.partNumber === material.partNumber
-  );
-
-  if (isComponentAlreadyExists) {
-    return res.status(400).json({
-      status: "fail",
-      code: 400,
-      message: "This material is already a component of the parent material.",
-    });
-  }
-
-
-   // Если материал уже был компонентом другого материала
-   if (material.parentID) {
-    const previousParent = await Material.findById(material.parentID);
-    if (previousParent) {
-      // Убедимся, что у previousParent есть компоненты и _id у компонента
-      previousParent.components = previousParent.components.filter(
-        comp => comp && comp._id && comp._id.toString() !== id
-      );
-      await previousParent.save();
+    if (isComponentAlreadyExists) {
+      return res.status(400).json({
+        status: "fail",
+        code: 400,
+        message: "This material is already a component of the parent material.",
+      });
     }
-  }
 
-  // Обновляем поле parentID у текущего материала перед добавлением в нового родителя
-  material.parentID = relatedParentId;
+    // Если материал уже был компонентом другого материала
+    if (material.parentID) {
+      const previousParent = await Material.findById(material.parentID);
+      if (previousParent) {
+        // Убедимся, что у previousParent есть компоненты и _id у компонента
+        previousParent.components = previousParent.components.filter(
+          (comp) => comp && comp._id && comp._id.toString() !== id
+        );
+        await previousParent.save();
+      }
+    }
 
-  // Сохраняем изменения в текущем материале
-await material.save();
+    // Обновляем поле parentID у текущего материала перед добавлением в нового родителя
+    material.parentID = relatedParentId;
 
-      // Добавляем материал в components нового родителя
-      newParentMaterial.components.push(material);
+    // Сохраняем изменения в текущем материале
+    await material.save();
+
+    // Добавляем материал в components нового родителя
+    newParentMaterial.components.push(material);
 
     // Обновляем regulatoryCompliance для родителя
-    const updatedRegulatoryCompliance = updateParentRegulatoryCompliance(newParentMaterial);
+    const updatedRegulatoryCompliance =
+      updateParentRegulatoryCompliance(newParentMaterial);
     newParentMaterial.regulatoryCompliance = updatedRegulatoryCompliance;
-
 
     await newParentMaterial.save();
   }
 
   // Обновляем материал с переданными полями
-  const result = await Material.findByIdAndUpdate(id, { $set: fields }, { new: true });
+  const result = await Material.findByIdAndUpdate(
+    id,
+    { $set: fields },
+    { new: true }
+  );
 
   if (!result) {
     return res.status(404).json({
@@ -193,11 +192,10 @@ await material.save();
     status: "success",
     code: 200,
     data: {
-      material: result
-    }
+      material: result,
+    },
   });
 };
-
 
 const deleteMaterial = async (req, res) => {
   const { id } = req.params;
@@ -217,25 +215,23 @@ const deleteMaterial = async (req, res) => {
 };
 
 const searchMaterialsByPartNumber = async (req, res) => {
-    const { partNumber } = req.query;
+  const { partNumber } = req.query;
 
-    if (!partNumber) {
-      throw HttpError(400, "Kindly provide a part number to search");
-    }
+  if (!partNumber) {
+    throw HttpError(400, "Kindly provide a part number to search");
+  }
 
-    // Используем регулярное выражение для поиска по частичному совпадению
-    const materials = await Material.find({
-      partNumber: { $regex: partNumber, $options: 'i' }, // 'i' делает поиск нечувствительным к регистру
-    }).limit(10); // Ограничиваем количество результатов до 10
+  // Используем регулярное выражение для поиска по частичному совпадению
+  const materials = await Material.find({
+    partNumber: { $regex: partNumber, $options: "i" }, // 'i' делает поиск нечувствительным к регистру
+  }).limit(10); // Ограничиваем количество результатов до 10
 
-    res.status(200).json({
-      status: 'success',
-      code: 200,
-      data: materials,
-    });
+  res.status(200).json({
+    status: "success",
+    code: 200,
+    data: materials,
+  });
 };
-
-
 
 export default {
   getAll: ctrlWrapper(getAllMaterials),
@@ -243,5 +239,5 @@ export default {
   updateByID: ctrlWrapper(updateByID),
   createMaterial: ctrlWrapper(createMaterial),
   deleteMaterial: ctrlWrapper(deleteMaterial),
-  searchMaterialsByPartNumber: ctrlWrapper(searchMaterialsByPartNumber)
+  searchMaterialsByPartNumber: ctrlWrapper(searchMaterialsByPartNumber),
 };
