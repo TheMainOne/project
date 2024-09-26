@@ -160,9 +160,12 @@ const updateByID = async (req, res) => {
       await previousParent.save();
     }
   }
-  
+
   // Обновляем поле parentID у текущего материала перед добавлением в нового родителя
   material.parentID = relatedParentId;
+
+  // Сохраняем изменения в текущем материале
+await material.save();
 
       // Добавляем материал в components нового родителя
       newParentMaterial.components.push(material);
