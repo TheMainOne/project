@@ -2,20 +2,28 @@ import Material from "../services/schemas/material.js";
 import ctrlWrapper from "../middlewares/ctrlWrapper.js";
 import HttpError from "../middlewares/HttpError.js";
 import Regulation from "../services/schemas/regulation.js";
+import filterAndSort from "../middlewares/filterAndSort.js";
 import { isValidObjectId } from "mongoose";
 import { updateParentRegulatoryCompliance } from "../utils/materialHelpers.js";
+
 
 const getAllMaterials = async (req, res) => {
   const { page = 1, limit = 10 } = req.query;
   const skip = (page - 1) * limit;
 
-  const materials = await Material.find({})
-    .sort({ createdAt: -1 }) // Сортирует материалы от новых к более старым
+  // Используем фильтры и сортировку, переданные через middleware
+  const filter = req.filter || {};
+  const sort = req.sort || { createdAt: -1 }; // Сортировка по умолчанию по дате создания
+
+  // Выполняем запрос с фильтрацией и сортировкой
+  const materials = await Material.find(filter)
+    .sort(sort)
     .skip(skip)
     .limit(limit)
     .exec();
 
-  const count = await Material.countDocuments();
+  // Считаем количество документов с учетом фильтрации
+  const count = await Material.countDocuments(filter);
 
   res.json({
     status: "success",
@@ -27,6 +35,8 @@ const getAllMaterials = async (req, res) => {
     },
   });
 };
+
+
 
 const getByID = async (req, res) => {
   const id = req.params.id;
@@ -96,7 +106,7 @@ const updateByID = async (req, res) => {
       message: "The Material ID is required to perform the update operation",
     });
   }
-  console.log(isValidObjectId(relatedParentId));
+
 
   // Если нет полей для обновления и нет relatedParentId, выкидываем ошибку
   if (!fields || Object.keys(fields).length === 0) {
@@ -234,7 +244,7 @@ const searchMaterialsByPartNumber = async (req, res) => {
 };
 
 export default {
-  getAll: ctrlWrapper(getAllMaterials),
+  getAll: [filterAndSort, ctrlWrapper(getAllMaterials)],
   getById: ctrlWrapper(getByID),
   updateByID: ctrlWrapper(updateByID),
   createMaterial: ctrlWrapper(createMaterial),
