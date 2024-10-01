@@ -250,7 +250,7 @@ URL: /api/materials
 *Добавить Bearer Token в headers при запросе*  
 Body: пустое  
 
-Параметры запроса:
+Параметры запроса:  
 sortBy (необязательный) — поле для сортировки. Возможные значения: createdAt, supplier, partNumber, countryOfOrigin, status, regulatoryCompliance.  
 sortOrder (необязательный) — порядок сортировки. Возможные значения: asc (по возрастанию) или desc (по убыванию). По умолчанию: asc.  
 supplier (необязательный) — фильтрация по поставщику (по частичному совпадению).  
