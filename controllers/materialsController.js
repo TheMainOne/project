@@ -95,9 +95,121 @@ const createMaterial = async (req, res) => {
   });
 };
 
+// const updateByID = async (req, res) => {
+//   const { id } = req.params;
+//   const { relatedParentId, ...fields } = req.body; // Извлекаем relatedParentId, если оно есть
+
+//   if (!id) {
+//     return res.status(400).json({
+//       status: "error",
+//       code: 400,
+//       message: "The Material ID is required to perform the update operation",
+//     });
+//   }
+
+
+//   // Если нет полей для обновления и нет relatedParentId, выкидываем ошибку
+//   if (!fields || Object.keys(fields).length === 0) {
+//     if (!relatedParentId) {
+//       return res.status(400).json({
+//         status: "error",
+//         code: 400,
+//         message: "No fields were provided for the update.",
+//       });
+//     }
+//   }
+
+//   let material = await Material.findById(id); // Ищем материал по ID
+
+//   if (!material) {
+//     return res.status(404).json({
+//       status: "error",
+//       code: 404,
+//       message: "Material not found",
+//     });
+//   }
+
+//   // Если в запросе передан relatedParentId
+//   if (relatedParentId) {
+//     const newParentMaterial = await Material.findById(relatedParentId);
+//     if (!newParentMaterial) {
+//       return res.status(404).json({
+//         status: "error",
+//         code: 404,
+//         message: "Parent Material not found",
+//       });
+//     }
+
+//     // Проверяем, существует ли уже этот материал как компонент у родителя чтобы избежать дублирования
+//     const isComponentAlreadyExists = newParentMaterial.components.some(
+//       (comp) =>
+//         comp && comp.partNumber && comp.partNumber === material.partNumber
+//     );
+
+//     if (isComponentAlreadyExists) {
+//       return res.status(400).json({
+//         status: "fail",
+//         code: 400,
+//         message: "This material is already a component of the parent material.",
+//       });
+//     }
+
+//     // Если материал уже был компонентом другого материала
+//     if (material.parentID) {
+//       const previousParent = await Material.findById(material.parentID);
+//       if (previousParent) {
+//         // Убедимся, что у previousParent есть компоненты и _id у компонента
+//         previousParent.components = previousParent.components.filter(
+//           (comp) => comp && comp._id && comp._id.toString() !== id
+//         );
+//         await previousParent.save();
+//       }
+//     }
+
+//     // Обновляем поле parentID у текущего материала перед добавлением в нового родителя
+//     material.parentID = relatedParentId;
+
+//     // Сохраняем изменения в текущем материале
+//     await material.save();
+
+//     // Добавляем материал в components нового родителя
+//     newParentMaterial.components.push(material);
+
+//     // Обновляем regulatoryCompliance для родителя
+//     const updatedRegulatoryCompliance =
+//       updateParentRegulatoryCompliance(newParentMaterial);
+//     newParentMaterial.regulatoryCompliance = updatedRegulatoryCompliance;
+
+//     await newParentMaterial.save();
+//   }
+
+//   // Обновляем материал с переданными полями
+//   const result = await Material.findByIdAndUpdate(
+//     id,
+//     { $set: fields },
+//     { new: true }
+//   );
+
+//   if (!result) {
+//     return res.status(404).json({
+//       status: "error",
+//       code: 404,
+//       message: "Material not found",
+//     });
+//   }
+
+//   return res.status(200).json({
+//     status: "success",
+//     code: 200,
+//     data: {
+//       material: result,
+//     },
+//   });
+// };
+
 const updateByID = async (req, res) => {
   const { id } = req.params;
-  const { relatedParentId, ...fields } = req.body; // Извлекаем relatedParentId, если оно есть
+  const { relatedParentId, regulatoryCompliance, ...fields } = req.body; // Извлекаем relatedParentId и другие поля
 
   if (!id) {
     return res.status(400).json({
@@ -107,8 +219,7 @@ const updateByID = async (req, res) => {
     });
   }
 
-
-  // Если нет полей для обновления и нет relatedParentId, выкидываем ошибку
+  // Проверяем, есть ли поля для обновления или relatedParentId
   if (!fields || Object.keys(fields).length === 0) {
     if (!relatedParentId) {
       return res.status(400).json({
@@ -140,7 +251,7 @@ const updateByID = async (req, res) => {
       });
     }
 
-    // Проверяем, существует ли уже этот материал как компонент у родителя чтобы избежать дублирования
+    // Проверяем, существует ли уже этот материал как компонент у родителя, чтобы избежать дублирования
     const isComponentAlreadyExists = newParentMaterial.components.some(
       (comp) =>
         comp && comp.partNumber && comp.partNumber === material.partNumber
@@ -158,7 +269,7 @@ const updateByID = async (req, res) => {
     if (material.parentID) {
       const previousParent = await Material.findById(material.parentID);
       if (previousParent) {
-        // Убедимся, что у previousParent есть компоненты и _id у компонента
+        // Удаляем материал из components предыдущего родителя
         previousParent.components = previousParent.components.filter(
           (comp) => comp && comp._id && comp._id.toString() !== id
         );
@@ -175,10 +286,12 @@ const updateByID = async (req, res) => {
     // Добавляем материал в components нового родителя
     newParentMaterial.components.push(material);
 
-    // Обновляем regulatoryCompliance для родителя
-    const updatedRegulatoryCompliance =
-      updateParentRegulatoryCompliance(newParentMaterial);
-    newParentMaterial.regulatoryCompliance = updatedRegulatoryCompliance;
+    // Обновляем regulatoryCompliance для родителя только если оно уже есть
+    if (newParentMaterial.regulatoryCompliance) {
+      const updatedRegulatoryCompliance =
+        updateParentRegulatoryCompliance(newParentMaterial);
+      newParentMaterial.regulatoryCompliance = updatedRegulatoryCompliance;
+    }
 
     await newParentMaterial.save();
   }

@@ -6,7 +6,7 @@
 
   const RegulatoryComplianceSchema = new mongoose.Schema(
     {
-      _id: { type: mongoose.Schema.Types.ObjectId, ref: 'Regulation', default: [] },
+      _id: { type: mongoose.Schema.Types.ObjectId, ref: 'Regulation' },
       title: { type: String, required: true },
       description: { type: String, required: true },
       status: { type: String, default: 'pending' }, // Добавляем статус акта
