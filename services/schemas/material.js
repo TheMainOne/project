@@ -6,7 +6,7 @@
 
   const RegulatoryComplianceSchema = new mongoose.Schema(
     {
-      _id: { type: mongoose.Schema.Types.ObjectId, ref: 'Regulation' },
+      regulationId: { type: mongoose.Schema.Types.ObjectId, ref: 'Regulation' },
       title: { type: String, required: true },
       description: { type: String, required: true },
       status: { type: String, default: 'pending' }, // Добавляем статус акта
@@ -52,7 +52,7 @@
   );
 
   const RegulatoryComplianceSchemaJoi = Joi.object({
-    _id: Joi.objectId().required(),
+    regulationId: Joi.objectId().required(),
     title: Joi.string().required(),
     description: Joi.string().required(),
     status: Joi.string().default('pending'),
@@ -149,3 +149,5 @@
   const Material = mongoose.model("Material", MaterialSchema, "materials");
 
   export default Material;
+
+

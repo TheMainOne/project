@@ -10,6 +10,7 @@ import authRouter from "./api/auth.js";
 import regulationRouter from "./api/regulation.js";
 import supplierRouter from "./api/supplier.js";
 import uploadFileRouter from "./api/upload.js";
+import documentsRouter from "./api/document.js";
 
 
 
@@ -43,6 +44,8 @@ app.use("/", authRouter);
 app.use("/", regulationRouter);
 app.use("/", supplierRouter);
 app.use("/", uploadFileRouter);
+app.use("/", documentsRouter);
+
 
 
 
