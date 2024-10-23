@@ -1545,6 +1545,8 @@ _________________________________________
 | Method             | URL                                      | Description                              |
 | ------------------ | ---------------------------------------- | ---------------------------------------- |
 | `POST`             | `/api/documents`                         | Create a new document.                   |
+| `GET`              | `/api/documents/`                        | Retrieve docs by mater. and regul. ID    |
+
 
 
 _________________________________________
@@ -1592,7 +1594,7 @@ _________________________________________
   "expiryDate": "2025-01-01"
 }```  
   
-  - **Пример ответа:**  
+- **Пример ответа:**  
   ```{
     "status": "success",
     "code": 201,
@@ -1619,8 +1621,7 @@ _________________________________________
             "updatedAt": "2024-10-23T14:30:06.796Z"
         }
     }
-}
-``` 
+}``` 
   
 - Проверяет наличие документа с тем же fileUrl, чтобы избежать дубликатов.
 - Обновляет поле regulatoryCompliance для материалов, указанных в materialIds. Если передано поле applyToAllSupplierMaterials и supplierId, обновляет все материалы, принадлежащие указанному поставщику.
@@ -1633,3 +1634,85 @@ _________________________________________
   - 409 Conflict — документ с таким fileUrl уже существует.
   - 500 Internal Server Error — ошибка сервера.
  
+
+#### 2. Получение документов по ID материала и ID регулирующего акта
+
+- **Метод:** GET
+- **URL:** `/api/documents`
+- **Описание:** Возвращает список всех документов, связанных с указанным материалом и регулирующим актом.
+- **Требования:** Аутентификация пользователя, корректные ID.
+- **Параметры запроса:**  
+  GET /api/documents  
+  Authorization: Bearer <token>  
+
+- **Пример запроса:**  
+  ```{
+    "materialId": "66db21db99e34d46664ba7c1",
+    "regulationId": "670fed898818777806d4dee5"
+}```  
+
+- **Пример ответа:**  
+  ```{
+    "status": "success",
+    "code": 200,
+    "data": {
+        "documents": [
+            {
+                "_id": "670fff83810aac932ef4e2fd",
+                "title": "PFAS-free statement",
+                "fileUrl": "https://example.com/pfas_free_statement.pdf",
+                "attachments": [],
+                "materialIds": [
+                    "66db21db99e34d46664ba7c1",
+                    "66eaf13facd6438f4657585c",
+                    "66eaf31890623cac72482441"
+                ],
+                "supplierId": "66eaf850a6c5520535b3a0e6",
+                "regulationId": "670fed898818777806d4dee5",
+                "applyToAllSupplierMaterials": true,
+                "type": "other",
+                "status": "comply",
+                "effectiveDate": null,
+                "expiryDate": null,
+                "documentNumber": "",
+                "description": "",
+                "category": "other",
+                "notes": "",
+                "version": 1,
+                "createdAt": "2024-10-16T18:01:39.839Z",
+                "updatedAt": "2024-10-16T18:01:39.839Z"
+            },
+            {
+                "_id": "6712c7636165a5c3d2ff679b",
+                "title": "pfas_statement",
+                "fileUrl": "https://example.com/teasaqasqwsaassaasstas.pdf",
+                "attachments": [],
+                "materialIds": [
+                    "66db21db99e34d46664ba7c1"
+                ],
+                "supplierId": null,
+                "regulationId": "670fed898818777806d4dee5",
+                "applyToAllSupplierMaterials": false,
+                "type": "other",
+                "status": "comply",
+                "effectiveDate": null,
+                "expiryDate": null,
+                "documentNumber": "",
+                "description": "",
+                "category": "other",
+                "notes": "",
+                "version": 1,
+                "createdAt": "2024-10-18T20:38:59.045Z",
+                "updatedAt": "2024-10-18T20:38:59.045Z"
+            }
+        ]
+    }
+}```  
+
+**Статусы ответов:**  
+
+200 OK — успешный запрос.  
+400 Bad Request — некорректный ID материала или акта.  
+401 Unauthorized — ошибка аутентификации.  
+404 Not Found — документы не найдены.  
+500 Internal Server Error — ошибка сервера.  
