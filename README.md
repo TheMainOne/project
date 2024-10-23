@@ -1645,8 +1645,8 @@ _________________________________________
 
 - **Пример запроса:**  
   ```{
-    "materialId": "66db21db99e34d46664ba7c1",
-    "regulationId": "670fed898818777806d4dee5"
+    "materialId": "66db21db99e34d46664ba7c1", (required)
+    "regulationId": "670fed898818777806d4dee5" (required)
 
 
 - **Пример ответа:**  
