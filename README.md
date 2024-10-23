@@ -1561,7 +1561,6 @@ _________________________________________
   POST /api/documents  
   Authorization: Bearer <token>  
   ```{
-{
   "title": String (**required**),  
   "fileUrl": String (**required**, must be a valid URI),  
   "materialIds": [String] (**optional**, must be valid MongoDB ObjectIds),  
