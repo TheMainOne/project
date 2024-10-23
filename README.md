@@ -31,6 +31,9 @@
    - [Изменение существующего в базе данных поставщика](#5-изменение-существующего-в-базе-данных-поставщика)
    - [Удаление поставщика](#6-удаление-поставщика)
 
+5. [API Endpoints для управления документами](#our-api-endpoints-for-managing-documents)
+   - [Создание нового документа](#1-создание-нового-документа)
+
 
 
  _________________________________________
@@ -1534,4 +1537,48 @@ _________________________________________
   - 404 Not Found — поставщик не найден.
   - 500 Internal Server Error — ошибка сервера.
  
-_________________________________________  
+_________________________________________    
+
+
+#### Our API Endpoints for managing documents
+
+| Method             | URL                                      | Description                              |
+| ------------------ | ---------------------------------------- | ---------------------------------------- |
+| `POST`             | `/api/documents`                         | Create a new document.                   |
+
+
+_________________________________________
+
+#### 1. Создание нового документа
+
+- **Метод:** POST
+- **URL:** `/api/documents`
+- **Описание:** Создание нового документа, связанного с отдельными материалами или всеми материалами поставщика. Позволяет добавлять документ и обновлять статус соответствия регулирующим актам для материалов.
+- **Требования:** Аутентификация пользователя, корректный ID материалов, или поставщика.
+- **Параметры запроса:**  
+  DELETE /api/documents
+  Authorization: Bearer <token>
+  ```
+{
+  "title": "Document Title", (required)
+  "fileUrl": "https://example.com/document.pdf", (required, must be a valid URI)
+  "materialIds": ["605c4463e85f20a545f57c3"], (optional, must be valid MongoDB ObjectIds)
+  "supplierId": "605c4463e85f20a545f57c2", (optional, must be a valid MongoDB ObjectId)
+  "type": "certificate", (optional, default="other")
+  "version": 1, (optional, default=1, must be at least 1)
+  "applyToAllSupplierMaterials": false, (optional, default=false, must be a boolean)
+  "regulationId": "605c4463e85f20a545f57c1", (required, must be a valid MongoDB ObjectId)
+  "status": "comply", (required, must be one of [comply, does_not_comply, pending, na, comply_with_exceptions])
+  "attachments": ["https://example.com/attachment.pdf"], (optional, must be valid URIs)
+  "effectiveDate": "2024-01-01", (optional, must be a valid date)
+  "expiryDate": "2025-01-01", (optional, must be a valid date)
+  "documentNumber": "DOC12345", (optional)
+  "description": "Description of the document", (optional)
+  "category": "technical", (optional, default="other", must be one of [legal, technical, environmental, other])
+  "notes": "Additional notes about the document", (optional)
+}
+  ```
+- **Параметры запроса:**  
+
+
+
