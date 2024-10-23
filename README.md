@@ -1580,8 +1580,7 @@ _________________________________________
   ```  
 
 - **Пример запроса:**  
-  ```
-{
+  ```{
   "title": "RoHS Compliance Certificate",
   "fileUrl": "https://example.com/rohstest.pdf",
   "materialIds": ["66fe9a2b4a190e6bc19092c6"],
@@ -1591,9 +1590,10 @@ _________________________________________
   "documentNumber": "CERT123",
   "effectiveDate": "2024-01-01",
   "expiryDate": "2025-01-01"
-}  
-  ```
+}```
+
 - **Пример ответа:**
+
   ```
 {
     "status": "success",
