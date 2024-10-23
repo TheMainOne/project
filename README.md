@@ -1558,26 +1558,26 @@ _________________________________________
 - **Параметры запроса:**  
   DELETE /api/documents
   Authorization: Bearer <token>
-  ```
+
 {
-  "title": "Document Title", (required)
-  "fileUrl": "https://example.com/document.pdf", (required, must be a valid URI)
-  "materialIds": ["605c4463e85f20a545f57c3"], (optional, must be valid MongoDB ObjectIds)
-  "supplierId": "605c4463e85f20a545f57c2", (optional, must be a valid MongoDB ObjectId)
-  "type": "certificate", (optional, default="other")
-  "version": 1, (optional, default=1, must be at least 1)
-  "applyToAllSupplierMaterials": false, (optional, default=false, must be a boolean)
-  "regulationId": "605c4463e85f20a545f57c1", (required, must be a valid MongoDB ObjectId)
-  "status": "comply", (required, must be one of [comply, does_not_comply, pending, na, comply_with_exceptions])
-  "attachments": ["https://example.com/attachment.pdf"], (optional, must be valid URIs)
-  "effectiveDate": "2024-01-01", (optional, must be a valid date)
-  "expiryDate": "2025-01-01", (optional, must be a valid date)
-  "documentNumber": "DOC12345", (optional)
-  "description": "Description of the document", (optional)
-  "category": "technical", (optional, default="other", must be one of [legal, technical, environmental, other])
-  "notes": "Additional notes about the document", (optional)
+  "title": "Document Title", (required)  
+  "fileUrl": "https://example.com/document.pdf", (required, must be a valid URI)  
+  "materialIds": ["605c4463e85f20a545f57c3"], (optional, must be valid MongoDB ObjectIds)  
+  "supplierId": "605c4463e85f20a545f57c2", (optional, must be a valid MongoDB ObjectId)  
+  "type": "certificate", (optional, default="other")  
+  "version": 1, (optional, default=1, must be at least 1)  
+  "applyToAllSupplierMaterials": false, (optional, default=false, must be a boolean)  
+  "regulationId": "605c4463e85f20a545f57c1", (required, must be a valid MongoDB ObjectId)  
+  "status": "comply", (required, must be one of [comply, does_not_comply, pending, na, comply_with_exceptions])  
+  "attachments": ["https://example.com/attachment.pdf"], (optional, must be valid URIs)  
+  "effectiveDate": "2024-01-01", (optional, must be a valid date)  
+  "expiryDate": "2025-01-01", (optional, must be a valid date)  
+  "documentNumber": "DOC12345", (optional)  
+  "description": "Description of the document", (optional)  
+  "category": "technical", (optional, default="other", must be one of [legal, technical, environmental, other])  
+  "notes": "Additional notes about the document", (optional)  
 }
-  ```
+
 - **Параметры запроса:**  
 
 
