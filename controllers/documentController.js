@@ -5,6 +5,7 @@ import Material from "../services/schemas/material.js"
 import ctrlWrapper from "../middlewares/ctrlWrapper.js";
 import HttpError from "../middlewares/HttpError.js";
 import {updateParentRegulatoryCompliance} from "../utils/materialHelpers.js"
+import { isValidObjectId } from "mongoose";
 
 
   // что мне нужно сделать:
@@ -212,7 +213,59 @@ console.log(`Updated materials: ${JSON.stringify(updatedMaterials, null, 2)}`);
   });
 };
 
+const getDocumentsForMaterialAndRegulation = async (req, res) => {
+    const { materialId, regulationId } = req.body; // Получение параметров из запроса
+
+
+    // Проверка наличия обязательных параметров
+    if (!materialId || !regulationId) {
+      throw HttpError(400, "Both materialId and regulationId are required");
+    }
+
+    // Проверка на валидный Mongoose ObjectID
+    if (!isValidObjectId(materialId)) {
+      throw HttpError(400, `${materialId} is not a valid ObjectId.`);
+    }
+    if (!isValidObjectId(regulationId)) {
+      throw HttpError(400, `${regulationId} is not a valid ObjectId.`);
+    }
+
+    // Проверка существования материала
+    const material = await Material.findById(materialId);
+    if (!material) {
+      throw HttpError(404, `Material with ID ${materialId} not found`);
+    }
+
+    // Проверка существования регулирования
+    const regulation = await Regulation.findById(regulationId);
+    if (!regulation) {
+      throw HttpError(404, `Regulation with ID ${regulationId} not found`);
+    }
+
+    // Поиск документов по materialId и regulationId
+    const documents = await Document.find({
+      materialIds: materialId,
+      regulationId: regulationId,
+    }).lean();
+
+    // Проверка наличия документов
+    if (!documents || documents.length === 0) {
+      throw HttpError(404, "No documents found for the specified material and regulation");
+    }
+
+    res.status(200).json({
+      status: "success",
+      code: 200,
+      data: {
+        documents,
+      },
+    });
+
+};
+
+
 export default {
     createDocument: ctrlWrapper(createDocument),
+    getDocumentsForMaterialAndRegulation: ctrlWrapper(getDocumentsForMaterialAndRegulation),
   };
   

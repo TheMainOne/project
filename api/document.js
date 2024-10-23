@@ -7,10 +7,16 @@ import { documentValidation } from "../services/schemas/document.js";
 const documentsRouter = express.Router();
 
 documentsRouter.post(
-    "/api/documents",
-    authenticate,
-    validateBody(documentValidation.documentValidationSchema),
-    controllers.createDocument
-  );
+  "/api/documents",
+  authenticate,
+  validateBody(documentValidation.documentValidationSchema),
+  controllers.createDocument
+);
 
-  export default documentsRouter;
+documentsRouter.get(
+  "/api/documents",
+  authenticate,
+  controllers.getDocumentsForMaterialAndRegulation
+);
+
+export default documentsRouter;
