@@ -1556,10 +1556,10 @@ _________________________________________
 - **Описание:** Создание нового документа, связанного с отдельными материалами или всеми материалами поставщика. Позволяет добавлять документ и обновлять статус соответствия регулирующим актам для материалов.
 - **Требования:** Аутентификация пользователя, корректный ID материалов, или поставщика.
 - **Параметры запроса:**  
-  DELETE /api/documents  
-  Authorization: Bearer <token>
+  POST /api/documents  
+  Authorization: Bearer <token>  
   ```{
-  "title": "Document Title", (required)  
+  {"title": "Document Title", (required)  
   "fileUrl": "https://example.com/document.pdf", (required, must be a valid URI)  
   "materialIds": ["605c4463e85f20a545f57c3"], (optional, must be valid MongoDB ObjectIds)  
   "supplierId": "605c4463e85f20a545f57c2", (optional, must be a valid MongoDB ObjectId)  
@@ -1574,7 +1574,7 @@ _________________________________________
   "documentNumber": "DOC12345", (optional)  
   "description": "Description of the document", (optional)  
   "category": "technical", (optional, default="other", must be one of [legal, technical, environmental, other])  
-  "notes": "Additional notes about the document", (optional)  
+  "notes": "Additional notes about the document", (optional)}  
 } 
 
 - **Пример запроса:**  
