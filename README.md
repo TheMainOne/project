@@ -1575,7 +1575,7 @@ _________________________________________
   "description": "Description of the document", (optional)  
   "category": "technical", (optional, default="other", must be one of [legal, technical, environmental, other])  
   "notes": "Additional notes about the document", (optional)  
-} ```  
+} 
 
 - **Пример запроса:**  
   ```{
