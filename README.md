@@ -1575,7 +1575,8 @@ _________________________________________
   "documentNumber": "DOC12345", (optional)  
   "description": "Description of the document", (optional)  
   "category": "technical", (optional, default="other", must be one of [legal, technical, environmental, other])  
-  "notes": "Additional notes about the document", (optional)}  
+  "notes": "Additional notes about the document", (optional)
+  }  
 
 
 - **Пример запроса:**  
