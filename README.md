@@ -1559,7 +1559,8 @@ _________________________________________
   POST /api/documents  
   Authorization: Bearer <token>  
   ```{
-  {"title": "Document Title", (required)  
+  {
+  "title": "Document Title", (required)  
   "fileUrl": "https://example.com/document.pdf", (required, must be a valid URI)  
   "materialIds": ["605c4463e85f20a545f57c3"], (optional, must be valid MongoDB ObjectIds)  
   "supplierId": "605c4463e85f20a545f57c2", (optional, must be a valid MongoDB ObjectId)  
@@ -1575,7 +1576,7 @@ _________________________________________
   "description": "Description of the document", (optional)  
   "category": "technical", (optional, default="other", must be one of [legal, technical, environmental, other])  
   "notes": "Additional notes about the document", (optional)}  
-} 
+
 
 - **Пример запроса:**  
   ```{
