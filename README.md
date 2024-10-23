@@ -1556,9 +1556,9 @@ _________________________________________
 - **Описание:** Создание нового документа, связанного с отдельными материалами или всеми материалами поставщика. Позволяет добавлять документ и обновлять статус соответствия регулирующим актам для материалов.
 - **Требования:** Аутентификация пользователя, корректный ID материалов, или поставщика.
 - **Параметры запроса:**  
-  DELETE /api/documents
+  DELETE /api/documents  
   Authorization: Bearer <token>
-
+  ```
 {
   "title": "Document Title", (required)  
   "fileUrl": "https://example.com/document.pdf", (required, must be a valid URI)  
@@ -1577,8 +1577,52 @@ _________________________________________
   "category": "technical", (optional, default="other", must be one of [legal, technical, environmental, other])  
   "notes": "Additional notes about the document", (optional)  
 }
+  ```  
 
-- **Параметры запроса:**  
+- **Пример запроса:**  
+  ```
+{
+  "title": "RoHS Compliance Certificate",
+  "fileUrl": "https://example.com/rohstest.pdf",
+  "materialIds": ["66fe9a2b4a190e6bc19092c6"],
+  "type": "certificate",
+  "regulationId": "66eaf1bf90623cac72482436",
+  "status": "comply",
+  "documentNumber": "CERT123",
+  "effectiveDate": "2024-01-01",
+  "expiryDate": "2025-01-01"
+}  
+  ```
+- **Пример ответа:**
+  ```
+{
+    "status": "success",
+    "code": 201,
+    "data": {
+        "document": {
+            "title": "RoHS Compliance Certificate",
+            "fileUrl": "https://example.com/rohstest.pdf",
+            "attachments": [],
+            "materialIds": ["66fe9a2b4a190e6bc19092c6"],
+            "supplierId": null,
+            "regulationId": "66eaf1bf90623cac72482436",
+            "applyToAllSupplierMaterials": false,
+            "type": "other",
+            "status": "does_not_comply",
+            "effectiveDate": null,
+            "expiryDate": null,
+            "documentNumber": "",
+            "description": "",
+            "category": "other",
+            "notes": "",
+            "version": 1,
+            "_id": "6719086e4bcecac31e425d15",
+            "createdAt": "2024-10-23T14:30:06.796Z",
+            "updatedAt": "2024-10-23T14:30:06.796Z"
+        }
+    }
+}
+  ```
 
 
 
