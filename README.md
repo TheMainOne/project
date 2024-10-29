@@ -1642,11 +1642,8 @@ _________________________________________
   GET /api/documents  
   Authorization: Bearer <token>  
 
-- **Пример запроса:**  
-  ```{
-    "materialId": "66db21db99e34d46664ba7c1", (required)
-    "regulationId": "670fed898818777806d4dee5" (required)
-
+- **Пример запроса:**
+localhost:3000/api/documents?regulationId=670fed898818777806d4dee5&materialId=66db21db99e34d46664ba7c1  
 
 - **Пример ответа:**  
   ```{
