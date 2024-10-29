@@ -214,7 +214,7 @@ console.log(`Updated materials: ${JSON.stringify(updatedMaterials, null, 2)}`);
 };
 
 const getDocumentsForMaterialAndRegulation = async (req, res) => {
-    const { materialId, regulationId } = req.body; // Получение параметров из запроса
+  const { materialId, regulationId } = req.query; // Получение параметров из запроса
 
 
     // Проверка наличия обязательных параметров
