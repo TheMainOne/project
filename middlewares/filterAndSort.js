@@ -1,5 +1,5 @@
 const filterAndSort = (req, res, next) => {
-  const { sortBy, sortOrder = 'asc', supplier, status, partNumber, countryOfOrigin, regulatoryCompliance, complianceStatus, parentID, componentPartNumber } = req.query;
+  const { sortBy, sortOrder = 'asc', supplier, status, partNumber, countryOfOrigin, regulatoryCompliance, complianceStatus, parentID, componentPartNumber, description  } = req.query;
 
   const filter = {};
   const sort = {};
@@ -23,6 +23,11 @@ const filterAndSort = (req, res, next) => {
   if (countryOfOrigin) {
     filter.countryOfOrigin = { $regex: countryOfOrigin, $options: 'i' };
   }
+
+    // Фильтрация по описанию
+    if (description) {
+      filter.description = { $regex: description, $options: 'i' };
+    }
 
   // Фильтрация по parentID
   if (parentID) {
