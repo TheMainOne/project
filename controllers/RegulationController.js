@@ -1,6 +1,10 @@
 import Regulation from "../services/schemas/regulation.js";
+import Supplier from '../services/schemas/supplier.js';
+import Document from "../services/schemas/document.js";
+import Material from "../services/schemas/material.js";
 import ctrlWrapper from "../middlewares/ctrlWrapper.js";
 import HttpError from "../middlewares/HttpError.js";
+import {updateParentRegulatoryCompliance} from "../utils/materialHelpers.js"
 
 
 
@@ -65,6 +69,175 @@ const addNewRegulation = async (req, res) => {
     },
   });
 };
+
+const addNewRegulationWithDocument = async (req, res) => {
+  const {
+    regulationTitle,
+    regulationDescription,
+    documentTitle,
+    status,
+    applyToAllSupplierMaterials,
+    materialId,
+    supplierId,
+    type,
+    version,
+    attachments,
+    effectiveDate,
+    expiryDate,
+    documentNumber,
+    category,
+    notes,
+  } = req.body;
+
+  const userId = req.user._id;
+
+  // Проверка на обязательные поля
+  if (!regulationTitle || !regulationDescription) {
+    throw HttpError(400, "Request body is missing required fields. Please add regulationTitle and regulationDescription");
+  }
+
+  // Проверка наличия либо materialId, либо applyToAllSupplierMaterials и supplierId
+  if (!(materialId || (applyToAllSupplierMaterials && supplierId))) {
+    throw HttpError(400, "Either materialId or applyToAllSupplierMaterials with a valid supplierId must be provided.");
+  }
+
+  const existingRegulation = await Regulation.findOne({ title: regulationTitle });
+  if (existingRegulation) {
+    throw HttpError(409, "Regulation with this title already exists.");
+  }
+
+  // Создание нового regulation 
+  const newRegulation = await Regulation.create({ title: regulationTitle, description: regulationDescription });
+
+  let fileUrl = null;
+  if (req.file) {
+    fileUrl = req.file.path; 
+  }
+
+  // Определяем массив идентификаторов материалов
+  let materialIds = applyToAllSupplierMaterials ? [] : [materialId];
+  
+  // Функция для обновления regulatoryCompliance для указанных материалов и их родителей
+  const updateRegulatoryComplianceForMaterials = async (materialIds, regulationId, status, regulationTitle, regulationDescription) => {
+    const materials = await Material.find({ _id: { $in: materialIds } }).lean();
+
+    if (!materials || materials.length === 0) {
+      console.log('No materials found for given materialIds.');
+      return;
+    }
+
+    // Обновляем compliance для дочерних материалов
+    const bulkOperations = materials.map((material) => {
+      console.log("Processing material ID:", material._id);
+      const updateOps = {
+        updateOne: {
+          filter: { _id: material._id, "regulatoryCompliance.regulationId": regulationId },
+          update: { $set: { "regulatoryCompliance.$.status": status } }
+        }
+      };
+
+      const addRegulationOps = {
+        updateOne: {
+          filter: { _id: material._id, "regulatoryCompliance.regulationId": { $ne: regulationId } },
+          update: {
+            $addToSet: {
+              regulatoryCompliance: {
+                regulationId: regulationId,
+                title: regulationTitle,
+                description: regulationDescription,
+                status: status || "pending",
+              }
+            }
+          }
+        }
+      };
+      console.log("Adding operations for material:", material._id);
+      return [updateOps, addRegulationOps];
+    }).flat();
+
+    if (bulkOperations.length > 0) {
+      await Material.bulkWrite(bulkOperations);
+    }
+
+    const updatedMaterials = await Material.find({ _id: { $in: materialIds } }).lean();
+   
+
+    const parentMaterialIds = materials.filter(m => m.parentID).map(m => m.parentID);
+    if (parentMaterialIds.length > 0) {
+      const parentMaterials = await Material.find({ _id: { $in: parentMaterialIds } });
+      for (const parentMaterial of parentMaterials) {
+      
+
+        const updatedRegulatoryCompliance = await updateParentRegulatoryCompliance(parentMaterial, {
+          regulationId,
+          title: regulationTitle,
+          description: regulationDescription,
+          status
+        });
+ 
+
+        parentMaterial.regulatoryCompliance = updatedRegulatoryCompliance;
+        parentMaterial.components = parentMaterial.components.map(component => {
+          const matchingMaterial = updatedMaterials.find(m => m.partNumber === component.partNumber);
+          if (matchingMaterial && matchingMaterial.regulatoryCompliance && matchingMaterial.regulatoryCompliance.length > 0) {
+
+            component.regulatoryCompliance = matchingMaterial.regulatoryCompliance;
+          }
+          return component;
+        });
+
+        await parentMaterial.save();
+      }
+    }
+  };
+
+  if (applyToAllSupplierMaterials && supplierId) {
+    const supplier = await Supplier.findById(supplierId);
+    if (!supplier) {
+      throw HttpError(404, `Supplier with ID ${supplierId} not found`);
+    }
+  
+    // Поиск материалов по имени поставщика, если поле supplier в материалах — это строка
+    const supplierMaterials = await Material.find({ supplier: { $regex: new RegExp(`^${supplier.name}$`, 'i') } });
+    
+    if (supplierMaterials.length === 0) {
+      throw HttpError(404, `No materials found for supplier with ID ${supplierId}`);
+    }
+    
+    materialIds = supplierMaterials.map((material) => material._id);
+    await updateRegulatoryComplianceForMaterials(materialIds, newRegulation._id, status, regulationTitle, regulationDescription);
+  }
+
+  const newDocument = await Document.create({
+    title: documentTitle,
+    fileUrl,
+    materialIds,
+    supplierId: supplierId || null,
+    applyToAllSupplierMaterials: !!applyToAllSupplierMaterials,
+    uploadedBy: userId,
+    type: type || "other",
+    version: version || 1,
+    regulationId: newRegulation._id,
+    status: status || "pending",
+    attachments: attachments || [],
+    effectiveDate: effectiveDate || null,
+    expiryDate: expiryDate || null,
+    documentNumber: documentNumber || "",
+    description: regulationDescription || "",
+    category: category || "other",
+    notes: notes || "",
+  });
+
+  res.status(201).json({
+    status: "success",
+    code: 201,
+    data: {
+      regulation: newRegulation,
+      document: newDocument,
+    },
+  });
+};
+
 
 const updateRegulationByID = async (req, res) => {
   const { id } = req.params;
@@ -152,5 +325,6 @@ export default {
   updateRegulation: ctrlWrapper(updateRegulationByID),
   getRegulationById: ctrlWrapper(getRegulationByID),
   deleteRegulationById: ctrlWrapper(deleteRegulationById),
-  searchRegulationByTitle: ctrlWrapper(searchRegulationByTitle)
+  searchRegulationByTitle: ctrlWrapper(searchRegulationByTitle),
+  addNewRegulationWithDocument: ctrlWrapper(addNewRegulationWithDocument)
 };

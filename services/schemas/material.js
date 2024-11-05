@@ -6,7 +6,7 @@
 
   const RegulatoryComplianceSchema = new mongoose.Schema(
     {
-      regulationId: { type: mongoose.Schema.Types.ObjectId, ref: 'Regulation' },
+      _id: { type: mongoose.Schema.Types.ObjectId, ref: 'Regulation' },
       title: { type: String, required: true },
       description: { type: String, required: true },
       status: { type: String, default: 'pending' }, // Добавляем статус акта
@@ -17,18 +17,18 @@
   const ComponentSchema = new mongoose.Schema(
     {
       partNumber: { type: String, required: true },
-      parentID: {type: mongoose.Schema.Types.ObjectId, ref: 'Material', default: null},
+      parentID: { type: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Material' }], default: [] },
       description: { type: String, required: true },
       supplier: { type: String, default: "" },
       supplierItemNumber: { type: String, default: "" },
       components: { type: [this], default: [] }, // Рекурсивная вложенность
       countryOfOrigin: { type: String, default: "" },
-      status: { type: String, default: "Active" },
+      status: { type: String, default: "active" },
       regulatoryCompliance: { type: [RegulatoryComplianceSchema], default: [] },
       BOMcomponent: { type: String, default: "" },
       storagePath: {type: String, default: ""},
     },
-    { _id: false }
+    { _id: true }
   );
 
   const MaterialSchema = new mongoose.Schema(
@@ -37,10 +37,10 @@
       description: { type: String, required: true },
       supplier: { type: String, default: "" },
       supplierItemNumber: { type: String, default: "" },
-      parentID: { type: mongoose.Schema.Types.ObjectId, ref: 'Material', default: null }, 
+      parentID: { type: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Material' }], default: [] },
       components: { type: [ComponentSchema], default: [] }, // Вложенные компоненты
       countryOfOrigin: { type: String, default: "" },
-      status: { type: String, default: "Active" },
+      status: { type: String, default: "active" },
       regulatoryCompliance: { type: [RegulatoryComplianceSchema], default: [] }, // Ссылка на регулирующие акты
       BOMcomponent: { type: String, default: "" },
       storagePath: {type: String, default: ""},
@@ -52,7 +52,7 @@
   );
 
   const RegulatoryComplianceSchemaJoi = Joi.object({
-    regulationId: Joi.objectId().required(),
+    _id: Joi.objectId().required(),
     title: Joi.string().required(),
     description: Joi.string().required(),
     status: Joi.string().default('pending'),
@@ -61,7 +61,7 @@
 
   const ComponentSchemaJoi = Joi.object({
     partNumber: Joi.string().required(),
-    parentID: Joi.objectId().allow(null), 
+    parentID: Joi.array().items(Joi.objectId()).default([]),
     description: Joi.string().required(),
     supplier: Joi.string().default(""),
     supplierItemNumber: Joi.string().default(""),
@@ -79,7 +79,7 @@
     description: Joi.string().required(),
     supplier: Joi.string().default("").allow(""),
     supplierItemNumber: Joi.string().default("").allow(""),
-    parentID: Joi.objectId().allow(null),
+    parentID: Joi.array().items(Joi.objectId()).default([]),
     components: Joi.array().items(ComponentSchemaJoi).default([]),
     countryOfOrigin: Joi.string().default(""),
     status: Joi.string().required(),
@@ -90,13 +90,13 @@
 
   const ComponentSchemaJoiForUpdating = Joi.object({
     partNumber: Joi.string().allow("").optional(), 
-    parentID: Joi.objectId().allow(null).optional(), 
+    parentID: Joi.array().items(Joi.objectId()).default([]).optional(),
     description: Joi.string().allow("").optional(),  
     supplier: Joi.string().allow("").optional(),  
     supplierItemNumber: Joi.string().allow("").optional(),  
     components: Joi.array().items(Joi.object({ 
       partNumber: Joi.string().allow("").optional(),
-      parentID: Joi.objectId().allow(null).optional(),
+      parentID: Joi.array().items(Joi.objectId()).default([]).optional(),
       description: Joi.string().allow("").optional(),
       supplier: Joi.string().allow("").optional(),
       supplierItemNumber: Joi.string().allow("").optional(),
@@ -131,7 +131,7 @@
     description: Joi.string().allow("").optional(),
     supplier: Joi.string().allow("").optional(),
     supplierItemNumber: Joi.string().allow("").optional(),
-    parentID: Joi.objectId().allow(null).optional(),
+    parentID: Joi.array().items(Joi.objectId()).default([]).optional(),
     components: Joi.array().items(ComponentSchemaJoiForUpdating).default([]).optional(),
     countryOfOrigin: Joi.string().allow("").optional(),
     status: Joi.string().allow("").optional(),

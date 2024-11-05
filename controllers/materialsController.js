@@ -1,10 +1,10 @@
 import Material from "../services/schemas/material.js";
+import Supplier from "../services/schemas/supplier.js"
+import Document from "../services/schemas/document.js";
+import Regulation from "../services/schemas/regulation.js";
 import ctrlWrapper from "../middlewares/ctrlWrapper.js";
 import HttpError from "../middlewares/HttpError.js";
-import Regulation from "../services/schemas/regulation.js";
 import filterAndSort from "../middlewares/filterAndSort.js";
-import { isValidObjectId } from "mongoose";
-import { updateParentRegulatoryCompliance } from "../utils/materialHelpers.js";
 
 
 const getAllMaterials = async (req, res) => {
@@ -36,8 +36,6 @@ const getAllMaterials = async (req, res) => {
   });
 };
 
-
-
 const getByID = async (req, res) => {
   const id = req.params.id;
 
@@ -55,7 +53,7 @@ const getByID = async (req, res) => {
 };
 
 const createMaterial = async (req, res) => {
-  const { partNumber, regulatoryCompliance = [] } = req.body;
+  const { partNumber, supplier, regulatoryCompliance = [] } = req.body;
 
   const existingMaterial = await Material.findOne({ partNumber });
 
@@ -84,7 +82,78 @@ const createMaterial = async (req, res) => {
     }
   }
 
-  const newMaterial = await Material.create({ ...req.body });
+   // Инициализируем updatedRegulatoryCompliance с предоставленным regulatoryCompliance
+   let updatedRegulatoryCompliance = [...regulatoryCompliance];
+
+  let supplierId = null;
+  let supplierDocuments = [];
+
+  // Если указан поставщик, выполняем дополнительную логику
+  if (supplier) {
+    const supplierRecord = await Supplier.findOne({ name: supplier });
+    if (supplierRecord) {
+      supplierId = supplierRecord._id;
+
+  // Поиск документов, применимых ко всем материалам поставщика
+  supplierDocuments = await Document.find({
+    applyToAllSupplierMaterials: true,
+    supplierId: supplierId,
+  });
+
+      if (supplierDocuments.length > 0) {
+        for (const doc of supplierDocuments) {
+          // Получаем информацию о регуляторном акте
+          const regulation = await Regulation.findById(doc.regulationId);
+          if (!regulation) {
+            return res.status(404).json({
+              status: "error",
+              code: 404,
+              message: `Regulation with ID ${doc.regulationId} not found.`,
+            });
+          }
+
+          // Проверяем, есть ли уже этот регуляторный акт в regulatoryCompliance
+          const existingComplianceIndex = updatedRegulatoryCompliance.findIndex(
+            (comp) => comp._id.toString() === doc.regulationId.toString()
+          );
+
+          if (existingComplianceIndex > -1) {
+            // Обновляем статус на основе статуса из документа
+            updatedRegulatoryCompliance[existingComplianceIndex].status = doc.status;
+          } else {
+            // Добавляем новый регуляторный акт
+            updatedRegulatoryCompliance.push({
+              _id: doc.regulationId,
+              title: regulation.title,
+              description: regulation.description,
+              status: doc.status || "pending",
+            });
+          }
+        }
+      }
+    } else {
+      // Если поставщик не найден в базе данных
+      console.warn(`Supplier with name "${supplier}" not found.`);
+      throw HttpError(404, "Supplier was not found in the database");
+    }
+  }
+
+    // Создаем новый материал с обновленным regulatoryCompliance
+  const newMaterial = await Material.create({
+    ...req.body,
+    regulatoryCompliance: updatedRegulatoryCompliance,
+  });
+
+  // После создания материала добавляем его _id в materialIds документов
+  if (supplierId && supplierDocuments.length > 0) {
+    for (const doc of supplierDocuments) {
+      // Проверяем, есть ли уже _id материала в materialIds
+      if (!doc.materialIds.includes(newMaterial._id)) {
+        doc.materialIds.push(newMaterial._id);
+        await doc.save();
+      }
+    }
+  }
 
   res.status(201).json({
     status: "success",
@@ -141,8 +210,10 @@ const updateByID = async (req, res) => {
 
     // Проверяем, существует ли уже этот материал как компонент у родителя, чтобы избежать дублирования
     const isComponentAlreadyExists = newParentMaterial.components.some(
-      (comp) =>
-        comp && comp.partNumber && comp.partNumber === material.partNumber
+      (comp) => comp &&
+        comp._id &&
+        comp._id.equals(material._id)
+
     );
 
     if (isComponentAlreadyExists) {
@@ -153,40 +224,90 @@ const updateByID = async (req, res) => {
       });
     }
 
-    // Если материал уже был компонентом другого материала
-    if (material.parentID) {
-      const previousParent = await Material.findById(material.parentID);
-      if (previousParent) {
-        // Удаляем материал из components предыдущего родителя
-        previousParent.components = previousParent.components.filter(
-          (comp) => comp && comp._id && comp._id.toString() !== id
-        );
-        await previousParent.save();
-      }
-    }
 
     // Обновляем поле parentID у текущего материала перед добавлением в нового родителя
-    material.parentID = relatedParentId;
-
-    // Сохраняем изменения в текущем материале
-    await material.save();
-
-    // Добавляем материал в components нового родителя
-    newParentMaterial.components.push(material);
-
-    // Обновляем regulatoryCompliance для родителя только если оно уже есть
-    if (newParentMaterial.regulatoryCompliance) {
-      const updatedRegulatoryCompliance =
-        updateParentRegulatoryCompliance(newParentMaterial);
-      newParentMaterial.regulatoryCompliance = updatedRegulatoryCompliance;
+    if (!material.parentID.includes(relatedParentId)) {
+      material.parentID.push(relatedParentId);
+      await material.save();
     }
+    
 
-    await newParentMaterial.save();
+ // Добавляем материал в components нового родителя
+ newParentMaterial.components.push({
+  _id: material._id,
+  partNumber: material.partNumber,
+  description: material.description,
+  supplier: material.supplier,
+  supplierItemNumber: material.supplierItemNumber,
+  components: material.components,
+  parentID: material.parentID,
+  countryOfOrigin: material.countryOfOrigin,
+  status: material.status,
+  regulatoryCompliance: material.regulatoryCompliance,
+  BOMcomponent: material.BOMcomponent,
+  storagePath: material.storagePath,
+});
+
+// Собираем все уникальные regulatoryCompliance из компонентов
+const complianceMap = new Map();
+
+
+if (newParentMaterial.components && Array.isArray(newParentMaterial.components)) {
+  for (const component of newParentMaterial.components) {
+    if (component.regulatoryCompliance && Array.isArray(component.regulatoryCompliance)) {
+      for (const compCompliance of component.regulatoryCompliance) {
+        const key = compCompliance.title; // Предполагаем наличие уникального идентификатора регуляторного акта
+
+        if (!complianceMap.has(key)) {
+          complianceMap.set(key, {
+            _id: compCompliance._id,
+            title: compCompliance.title,
+            description: compCompliance.description,
+            status: compCompliance.status
+          });
+        } else {
+          // Обновляем статус на основе статусов всех компонентов
+          const existingStatus = complianceMap.get(key).status;
+          const newStatus = getCombinedStatus(existingStatus, compCompliance.status);
+          complianceMap.set(key, {
+            _id: compCompliance._id,
+            title: compCompliance.title,
+            description: compCompliance.description,
+            status: newStatus
+          });
+        }
+      }
+    }
   }
+}
+
+// Функция для определения комбинированного статуса
+function getCombinedStatus(status1, status2) {
+  const statusPriority = {
+    'does_not_comply': 1,
+    'pending': 2,
+    'comply_with_exceptions': 3,
+    'comply': 4,
+    'na': 5
+  };
+
+  if (statusPriority[status1] < statusPriority[status2]) {
+    return status1;
+  } else {
+    return status2;
+  }
+}
+
+// Обновляем regulatoryCompliance родителя на основе данных компонентов
+newParentMaterial.regulatoryCompliance = Array.from(complianceMap.values());
+
+
+await newParentMaterial.save();
+}
 
   // Обновляем материал с переданными полями
   const result = await Material.findByIdAndUpdate(
-    id,
+    id, 
     { $set: fields },
     { new: true }
   );

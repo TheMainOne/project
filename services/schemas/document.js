@@ -1,6 +1,19 @@
 import mongoose from "mongoose";
 import Joi from "joi";
 
+const UploadedBySchema = new mongoose.Schema(
+  {
+    _id: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'User',
+      required: true,
+    },
+    name: { type: String, required: true },
+    role: { type: String, required: true },
+  },
+  { _id: true } 
+);
+
 const DocumentSchema = new mongoose.Schema({
   title: { type: String, required: true },
   fileUrl: { type: String, required: true }, // Ссылка на документ
@@ -34,7 +47,7 @@ const DocumentSchema = new mongoose.Schema({
   category: { type: String, enum: ['legal', 'technical', 'environmental', 'other'], default: 'other' },
   notes: { type: String, required: false },
   version: { type: Number, default: 1 }, // Версия документа
-
+  uploadedBy: { type: UploadedBySchema, required: true },
 }, 
 {
     versionKey: false,
