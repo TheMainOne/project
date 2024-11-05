@@ -1,3 +1,4 @@
+import mongoose from 'mongoose';
 import Document from "../services/schemas/document.js";
 import Regulation from "../services/schemas/regulation.js"
 import Supplier from "../services/schemas/supplier.js"
@@ -34,7 +35,7 @@ const createDocument = async (req, res) => {
     notes
   } = req.body;
 
-  const userId = req.user._id; // Получаем ID текущего пользователя из req.user
+  const currentUser = req.user;
 
   // Проверка на существование документа с таким же fileUrl
   const existingDocument = await Document.findOne({ fileUrl });
@@ -81,18 +82,18 @@ if ((supplierId && !applyToAllSupplierMaterials) || (applyToAllSupplierMaterials
     const bulkOperations = materials.map((material) => {
         const updateOps = {
             updateOne: {
-                filter: { _id: material._id, "regulatoryCompliance.regulationId": regulationId },
+                filter: { _id: material._id, "regulatoryCompliance._id": regulationId },
                 update: { $set: { "regulatoryCompliance.$.status": status } }
             }
         };
 
         const addRegulationOps = {
             updateOne: {
-                filter: { _id: material._id, "regulatoryCompliance.regulationId": { $ne: regulationId } },
+                filter: { _id: material._id, "regulatoryCompliance._id": { $ne: regulationId } },
                 update: {
                     $addToSet: {
                         regulatoryCompliance: {
-                            regulationId: regulationId,
+                            _id: regulationId,
                             title: regulationTitle,
                             description: regulationDescription,
                             status: status || "pending",
@@ -111,22 +112,33 @@ if ((supplierId && !applyToAllSupplierMaterials) || (applyToAllSupplierMaterials
 
     // После обновления в базе данных заново получаем материалы
 const updatedMaterials = await Material.find({ _id: { $in: materialIds } }).lean();
-console.log(`Updated materials: ${JSON.stringify(updatedMaterials, null, 2)}`);
 
     // После этого обновляем родительские материалы
-    const parentMaterialIds = materials.filter(m => m.parentID).map(m => m.parentID);
+    const parentMaterialIds = new Set();
+  materials.forEach(material => {
+    if (Array.isArray(material.parentID)) {
+      material.parentID.forEach(parentId => {
+        parentMaterialIds.add(parentId.toString());
+      });
+    }
+  });
 
-    if (parentMaterialIds.length > 0) {
-        const parentMaterials = await Material.find({ _id: { $in: parentMaterialIds } });
+  if (parentMaterialIds.size > 0) {
+        const parentMaterials = await Material.find({ _id: { $in: Array.from(parentMaterialIds) } });
         for (const parentMaterial of parentMaterials) {
-            console.log('Parent material before update:', parentMaterial);
+
+  // Отфильтровываем дочерние компоненты для текущего родительского материала из updatedMaterials
+  const childMaterials = updatedMaterials.filter(
+    material => Array.isArray(material.parentID) && material.parentID.some(pid => pid.toString() === parentMaterial._id.toString())
+);
 
             const updatedRegulatoryCompliance = await updateParentRegulatoryCompliance(parentMaterial, {
-                regulationId,
+                _id: regulationId,
                 title: regulationTitle,
                 description: regulationDescription,
                 status
-            });
+            }, childMaterials );
+
             // Обновляем regulatoryCompliance у родителя
             parentMaterial.regulatoryCompliance = updatedRegulatoryCompliance;
 
@@ -136,7 +148,6 @@ console.log(`Updated materials: ${JSON.stringify(updatedMaterials, null, 2)}`);
               if (matchingMaterial && matchingMaterial.regulatoryCompliance && matchingMaterial.regulatoryCompliance.length > 0) {
                   // Обновляем regulatoryCompliance для компонента
                   component.regulatoryCompliance = matchingMaterial.regulatoryCompliance;
-                  console.log(`Обновляем компонент: ${component.partNumber} с новыми данными: ${JSON.stringify(matchingMaterial.regulatoryCompliance, null, 2)}`);
               } else {
                   console.log(`Нет данных regulatoryCompliance для компонента ${component.partNumber}`);
               }
@@ -190,7 +201,12 @@ console.log(`Updated materials: ${JSON.stringify(updatedMaterials, null, 2)}`);
     materialIds: materialsForDocument,
     supplierId: supplierId || null,
     applyToAllSupplierMaterials: !!applyToAllSupplierMaterials,
-    uploadedBy: userId,
+    uploadedBy: 
+    {
+      _id: currentUser._id,
+      name: currentUser.name,
+      role: currentUser.role,
+    },
     type: type || "other",
     version: version || 1,
     regulationId: regulationId || null,
