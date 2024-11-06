@@ -20,7 +20,8 @@
    - [Добавление нового регулирующего акта](#3-добавление-нового-регулирующего-акта)
    - [Изменение регулирующего акта](#4-обновление-существующего-регулирующего-акта)
    - [Удаление регулирующего акта](#5-удаление-регулирующего-акта)
-   - [Поиск регулирующих актов по частичному совпадению их названия ](#6-поиск-регулирующих-актов-по-частичному-совпадению-их-названия)
+   - [Поиск регулирующих актов по частичному совпадению их названия](#6-поиск-регулирующих-актов-по-частичному-совпадению-их-названия)
+   - [Добавление нового регуляторного акта с документом и обновление материалов](#7-добавление-нового-регуляторного-акта-с-документом-и-обновление-материалов)
 
 
 4. [API Endpoints для управления поставщиками](#our-api-endpoints-for-managing-suppliers)
@@ -792,6 +793,7 @@ _________________________________________
 | `POST`             | `/api/regulatories`                      | Create a new regulation.                 |
 | `PUT`              | `/api/regulatories/:id`                  | Update regulation by id.                 |
 | `DELETE`           | `/api/regulatories/:id`                  | Delete regulation by id.                 |
+| `POST`             | `/api/regulatories/add-with-document`    | Create a new regulatory act with the document and update the relevant materials. |
 
 _________________________________________  
 
@@ -1018,6 +1020,101 @@ _________________________________________
   - 401 Unauthorized — ошибка аутентификации.
   - 500 Internal Server Error — ошибка сервера.  
 _________________________________________  
+
+#### 7. Добавление нового регуляторного акта с документом и обновление материалов
+
+- **Метод:** POST  
+- **URL:** `/api/regulatories/add-with-document`  
+- **Описание:** Создает новый регуляторный акт вместе с документом, связывает его с указанным материалом или всеми материалами поставщика, и обновляет информацию о регуляторном соответствии материалов.  
+- **Требования:** Аутентификация пользователя, корректное тело запроса  
+- **Поля запроса:**  
+Обязательные:
+regulationTitle (string): Название нового регуляторного акта.  
+regulationDescription (string): Описание нового регуляторного акта.  
+documentTitle (string): Название документа, связанного с регуляторным актом.  
+status (string): Статус соответствия для материала по этому регуляторному акту. Возможные значения: comply, does_not_comply, pending, na, comply_with_exceptions.  
+file (file): Файл документа, который нужно загрузить (отправляется как часть multipart/form-data).  
+
+Обязательные в зависимости от ситуации:  
+
+materialId (string): ID материала, к которому применяется регуляторный акт (если не используется applyToAllSupplierMaterials).  
+applyToAllSupplierMaterials (boolean): Установить в true, чтобы применить регуляторный акт ко всем материалам поставщика (если не используется materialId).  
+supplierId (string): ID поставщика (требуется, если applyToAllSupplierMaterials установлено в true).  
+
+Опциональные:  
+
+type (string): Тип документа (например, certificate, contract, instruction, other).  
+version (number): Версия документа.  
+attachments (array): Массив дополнительных файлов или ссылок.  
+effectiveDate (date): Дата вступления документа в силу.  
+expiryDate (date): Дата истечения срока действия документа.  
+documentNumber (string): Номер документа.  
+category (string): Категория документа.  
+notes (string): Дополнительные заметки.  
+
+- **Пример запроса:**    
+
+POST /api/regulatories/add-with-document  
+Content-Type: multipart/form-data  
+Authorization: Bearer <token>  
+
+- **Пример ответа:**
+ ```json
+{
+    "status": "success",
+    "code": 201,
+    "data": {
+        "regulation": {
+            "title": "EU POP",
+            "description": "The POPs Regulation bans or restricts the use of persistent organic pollutants in both chemical Products and articles",
+            "regulationType": "other",
+            "status": "active",
+            "jurisdiction": [],
+            "_id": "672b9eec1df4f8cec354215d",
+            "createdAt": "2024-11-06T16:53:00.530Z",
+            "updatedAt": "2024-11-06T16:53:00.530Z"
+        },
+        "document": {
+            "title": "statement_example",
+            "fileUrl": "uploads\\test-1730911980490-617956087.docx",
+            "attachments": [],
+            "materialIds": [
+                "672935fbc627e49202beeccf"
+            ],
+            "supplierId": null,
+            "regulationId": "672b9eec1df4f8cec354215d",
+            "applyToAllSupplierMaterials": false,
+            "type": "other",
+            "status": "comply",
+            "effectiveDate": null,
+            "expiryDate": null,
+            "documentNumber": "",
+            "description": "The POPs Regulation bans or restricts the use of persistent organic pollutants in both chemical Products and articles",
+            "category": "other",
+            "notes": "",
+            "version": 1,
+            "uploadedBy": {
+                "_id": "66d34e63cf1f9c8fea704737",
+                "name": "Max",
+                "role": "admin"
+            },
+            "_id": "672b9eec1df4f8cec3542162",
+            "createdAt": "2024-11-06T16:53:00.640Z",
+            "updatedAt": "2024-11-06T16:53:00.640Z"
+        }
+    }
+}
+ ```
+- **Статусы ответов:**
+  - 201 OK — успешный запрос.
+  - 400 Bad Request — Отсутствуют обязательные поля или неверный формат данных.
+  - 401 Unauthorized — ошибка аутентификации.
+  - 404 Not Found — Материал или поставщик не найдены.
+  - 409 Conflict — Регуляторный акт с таким названием уже существует.
+  - 500 Internal Server Error — ошибка сервера.  
+
+
+_________________________________________ 
 
 
 
