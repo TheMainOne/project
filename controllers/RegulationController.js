@@ -92,6 +92,11 @@ const addNewRegulationWithDocument = async (req, res) => {
 
   const user = req.user;
 
+  // Проверка на наличие переданного файла
+  if (!req.file) {
+    throw HttpError(400, "File upload required. Please attach a document file in the 'document' field of the form data to complete this operation.");
+  }  
+
   // Проверка на обязательные поля
   if (!regulationTitle || !regulationDescription) {
     throw HttpError(400, "Request body is missing required fields. Please add regulationTitle and regulationDescription");
@@ -113,6 +118,7 @@ const addNewRegulationWithDocument = async (req, res) => {
 
   // Получение пути к файлу из req.file
   let fileUrl = null;
+
   if (req.file) {
     fileUrl = req.file.path;
   }

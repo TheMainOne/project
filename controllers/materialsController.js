@@ -58,14 +58,7 @@ const createMaterial = async (req, res) => {
   const existingMaterial = await Material.findOne({ partNumber });
 
   if (existingMaterial) {
-    return res.status(409).json({
-      status: "error",
-      code: 409,
-      message: "Material with this part number already exists",
-      data: {
-        material: existingMaterial,
-      },
-    });
+    throw HttpError(409, "Material with this part number already exists");
   }
 
   // Проверяем, что регуляторные акты существуют в коллекции regulations и если существуют присваиваем им правильный _id
@@ -73,11 +66,7 @@ const createMaterial = async (req, res) => {
     for (const compliance of regulatoryCompliance) {
       const regulation = await Regulation.findById(compliance._id);
       if (!regulation) {
-        return res.status(404).json({
-          status: "error",
-          code: 404,
-          message: `Regulation with ID ${compliance._id} not found. Please create a new regulation first.`,
-        });
+        throw HttpError(404, `Regulation with ID ${compliance._id} not found. Please create a new regulation first.`);
       }
     }
   }
@@ -105,11 +94,7 @@ const createMaterial = async (req, res) => {
           // Получаем информацию о регуляторном акте
           const regulation = await Regulation.findById(doc.regulationId);
           if (!regulation) {
-            return res.status(404).json({
-              status: "error",
-              code: 404,
-              message: `Regulation with ID ${doc.regulationId} not found.`,
-            });
+            throw HttpError(404, `Regulation with ID ${doc.regulationId} not found.`);
           }
 
           // Проверяем, есть ли уже этот регуляторный акт в regulatoryCompliance
@@ -169,43 +154,27 @@ const updateByID = async (req, res) => {
   const { relatedParentId, regulatoryCompliance, ...fields } = req.body; // Извлекаем relatedParentId и другие поля
 
   if (!id) {
-    return res.status(400).json({
-      status: "error",
-      code: 400,
-      message: "The Material ID is required to perform the update operation",
-    });
+    throw HttpError(400, "The Material ID is required to perform the update operation");
   }
 
   // Проверяем, есть ли поля для обновления или relatedParentId
   if (!fields || Object.keys(fields).length === 0) {
     if (!relatedParentId) {
-      return res.status(400).json({
-        status: "error",
-        code: 400,
-        message: "No fields were provided for the update.",
-      });
+      throw HttpError(400, "No fields were provided for the update.");
     }
   }
 
   let material = await Material.findById(id); // Ищем материал по ID
 
   if (!material) {
-    return res.status(404).json({
-      status: "error",
-      code: 404,
-      message: "Material not found",
-    });
+    throw HttpError(404, "Material not found");
   }
 
   // Если в запросе передан relatedParentId
   if (relatedParentId) {
     const newParentMaterial = await Material.findById(relatedParentId);
     if (!newParentMaterial) {
-      return res.status(404).json({
-        status: "error",
-        code: 404,
-        message: "Parent Material not found",
-      });
+      throw HttpError(404, "Parent Material not found");
     }
 
     // Проверяем, существует ли уже этот материал как компонент у родителя, чтобы избежать дублирования
@@ -217,11 +186,7 @@ const updateByID = async (req, res) => {
     );
 
     if (isComponentAlreadyExists) {
-      return res.status(400).json({
-        status: "fail",
-        code: 400,
-        message: "This material is already a component of the parent material.",
-      });
+      throw HttpError(400, "This material is already a component of the parent material.");
     }
 
 
@@ -313,11 +278,7 @@ await newParentMaterial.save();
   );
 
   if (!result) {
-    return res.status(404).json({
-      status: "error",
-      code: 404,
-      message: "Material not found",
-    });
+    throw HttpError(404, "Material not found");
   }
 
   return res.status(200).json({
