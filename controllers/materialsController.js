@@ -66,7 +66,10 @@ const createMaterial = async (req, res) => {
     for (const compliance of regulatoryCompliance) {
       const regulation = await Regulation.findById(compliance._id);
       if (!regulation) {
-        throw HttpError(404, `Regulation with ID ${compliance._id} not found. Please create a new regulation first.`);
+        throw HttpError(
+          404,
+          `Regulation with ID ${compliance._id} not found. Please create a new regulation first.`
+        );
       }
     }
   }
@@ -89,39 +92,45 @@ const createMaterial = async (req, res) => {
     supplierId: supplierId,
   });
 
-      if (supplierDocuments.length > 0) {
-        for (const doc of supplierDocuments) {
-          // Получаем информацию о регуляторном акте
-          const regulation = await Regulation.findById(doc.regulationId);
-          if (!regulation) {
-            throw HttpError(404, `Regulation with ID ${doc.regulationId} not found.`);
-          }
+  if (supplierDocuments.length > 0) {
+    for (const doc of supplierDocuments) {
+      if (!Array.isArray(doc.regulationIds) || doc.regulationIds.length === 0) {
+        continue; // Пропускаем документ, если нет regulationIds
+      }
 
-          // Проверяем, есть ли уже этот регуляторный акт в regulatoryCompliance
-          const existingComplianceIndex = updatedRegulatoryCompliance.findIndex(
-            (comp) => comp._id.toString() === doc.regulationId.toString()
-          );
+      for (const regulationId of doc.regulationIds) {
+        // Получаем информацию о регуляторном акте
+        const regulation = await Regulation.findById(regulationId);
+        if (!regulation) {
+          throw HttpError(404, `Regulation with ID ${regulationId} not found.`);
+        }
 
-          if (existingComplianceIndex > -1) {
-            // Обновляем статус на основе статуса из документа
-            updatedRegulatoryCompliance[existingComplianceIndex].status = doc.status;
-          } else {
-            // Добавляем новый регуляторный акт
-            updatedRegulatoryCompliance.push({
-              _id: doc.regulationId,
-              title: regulation.title,
-              description: regulation.description,
-              status: doc.status || "pending",
-            });
-          }
+        // Проверяем, есть ли уже этот регуляторный акт в regulatoryCompliance
+        const existingComplianceIndex = updatedRegulatoryCompliance.findIndex(
+          (comp) => comp._id.toString() === regulationId.toString()
+        );
+
+        if (existingComplianceIndex > -1) {
+          // Обновляем статус на основе статуса из документа
+          updatedRegulatoryCompliance[existingComplianceIndex].status = doc.status;
+        } else {
+          // Добавляем новый регуляторный акт
+          updatedRegulatoryCompliance.push({
+            _id: regulationId,
+            title: regulation.title,
+            description: regulation.description,
+            status: doc.status || "pending",
+          });
         }
       }
-    } else {
-      // Если поставщик не найден в базе данных
-      console.warn(`Supplier with name "${supplier}" not found.`);
-      throw HttpError(404, "Supplier was not found in the database");
     }
   }
+} else {
+  // Если поставщик не найден в базе данных
+  console.warn(`Supplier with name "${supplier}" not found.`);
+  throw HttpError(404, "Supplier was not found in the database");
+}
+}
 
     // Создаем новый материал с обновленным regulatoryCompliance
   const newMaterial = await Material.create({

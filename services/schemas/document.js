@@ -24,11 +24,11 @@ const DocumentSchema = new mongoose.Schema({
     ref: "Supplier",
     required: false,
   }, // Связь с поставщиком
-  regulationId: {
+  regulationIds: [{
     type: mongoose.Schema.Types.ObjectId,
     ref: 'Regulation',
     required: false,
-  }, // Связь с регулирующим актом
+  }], // Связь с регулирующими актами
   applyToAllSupplierMaterials: { type: Boolean, default: false }, // Применение ко всем материалам поставщика
   type: {
     type: String,
