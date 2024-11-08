@@ -1701,7 +1701,7 @@ _________________________________________
             "attachments": [],
             "materialIds": ["66fe9a2b4a190e6bc19092c6"],
             "supplierId": null,
-            "regulationId": "66eaf1bf90623cac72482436",
+            "regulationIds": ["66eaf1bf90623cac72482436"],
             "applyToAllSupplierMaterials": false,
             "type": "other",
             "status": "does_not_comply",
@@ -1760,7 +1760,7 @@ localhost:3000/api/documents?regulationId=670fed898818777806d4dee5&materialId=66
                     "66eaf31890623cac72482441"
                 ],
                 "supplierId": "66eaf850a6c5520535b3a0e6",
-                "regulationId": "670fed898818777806d4dee5",
+                "regulationIds": ["670fed898818777806d4dee5"],
                 "applyToAllSupplierMaterials": true,
                 "type": "other",
                 "status": "comply",
