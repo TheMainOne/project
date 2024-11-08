@@ -263,7 +263,7 @@ const getDocumentsForMaterialAndRegulation = async (req, res) => {
     // Поиск документов по materialId и regulationId
     const documents = await Document.find({
       materialIds: materialId,
-      regulationId: regulationId,
+      regulationIds: regulationId,
     }).lean();
 
     // Проверка наличия документов
