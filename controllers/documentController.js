@@ -37,6 +37,8 @@ const createDocument = async (req, res) => {
 
   const currentUser = req.user;
 
+  
+
   // Проверка на существование документа с таким же fileUrl
   const existingDocument = await Document.findOne({ fileUrl });
   if (existingDocument) {
@@ -209,7 +211,7 @@ const updatedMaterials = await Material.find({ _id: { $in: materialIds } }).lean
     },
     type: type || "other",
     version: version || 1,
-    regulationId: regulationId || null,
+    regulationIds: [regulationId] || null,
     status: status || "pending",
     attachments: attachments || [],
     effectiveDate: effectiveDate || null,

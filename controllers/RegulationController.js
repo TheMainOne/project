@@ -116,12 +116,9 @@ const addNewRegulationWithDocument = async (req, res) => {
   // Создание нового регуляторного акта
   regulation = await Regulation.create({ title: regulationTitle, description: regulationDescription });
 
-  // Получение пути к файлу из req.file
-  let fileUrl = null;
 
-  if (req.file) {
-    fileUrl = req.file.path;
-  }
+  // Получение пути к файлу из req.file
+  let fileUrl = req.file ? req.file.path : null;
 
   // Определение массива идентификаторов материалов
   let materialsForDocument = [];
@@ -265,7 +262,7 @@ const addNewRegulationWithDocument = async (req, res) => {
     },
     type: type || "other",
     version: version || 1,
-    regulationId: regulation._id,
+    regulationIds: [regulation._id],
     status: status || "pending",
     attachments: attachments || [],
     effectiveDate: effectiveDate || null,
