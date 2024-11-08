@@ -1082,7 +1082,7 @@ Authorization: Bearer <token>
                 "672935fbc627e49202beeccf"
             ],
             "supplierId": null,
-            "regulationId": "672b9eec1df4f8cec354215d",
+            "regulationIds": ["672b9eec1df4f8cec354215d"],
             "applyToAllSupplierMaterials": false,
             "type": "other",
             "status": "comply",
