@@ -107,10 +107,12 @@ const validateRegulationWithDocumentSchema = Joi.object({
   }),
 });
 
+
+
 export const regulationSchema = {
   validateRegulationSchema,
   updateRegulationSchema,
-  validateRegulationWithDocumentSchema
+  validateRegulationWithDocumentSchema,
 };
 
 const Regulation = mongoose.model('Regulation', RegulationSchema);

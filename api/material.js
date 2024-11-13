@@ -3,6 +3,7 @@ import controllers from "../controllers/materialsController.js";
 import isValidId from "../middlewares/isValidId.js";
 import validateBody from "../middlewares/validateBody.js";
 import authenticate from "../middlewares/authenticate.js";
+import upload from "../middlewares/multer.js";
 import { materialSchema } from "../services/schemas/material.js";
 
 // creating a new router
@@ -17,6 +18,13 @@ router.post(
   authenticate,
   validateBody(materialSchema.validateMaterialSchema),
   controllers.createMaterial
+);
+router.put(
+  "/api/materials/compliance",
+  authenticate,
+  upload.single("document"), // Middleware для загрузки документа
+  // validateBody(materialSchema.validateUpdateComplianceStatusWithDocumentSchema),
+  controllers.updateComplianceStatusWithDocument
 );
 router.put(
   "/api/materials/:id",

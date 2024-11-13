@@ -139,11 +139,135 @@
     BOMcomponent: Joi.string().allow("").optional(),
     storagePath: Joi.string().allow("").optional(),
   });
+
+  const validateUpdateComplianceStatusWithDocumentSchema = Joi.object({
+    regulations: Joi.array()
+    .items(
+      Joi.object({
+        regulationId: Joi.string() 
+          .required()
+          .pattern(/^[0-9a-fA-F]{24}$/)
+          .messages({
+            'string.pattern.base': 'Regulation ID must be a valid MongoDB ObjectId.',
+            'any.required': 'Regulation ID is required.',
+          }),
+        status: Joi.string()
+          .valid('comply', 'does_not_comply', 'pending', 'na', 'comply_with_exceptions')
+          .required()
+          .messages({
+            'any.only':
+              'Status must be one of [comply, does_not_comply, pending, na, comply_with_exceptions].',
+            'any.required': 'Status is required.',
+          }),
+      })
+    )
+    .required()
+    .messages({
+      'array.base': 'Regulations must be an array.',
+      'any.required': 'Regulations are required.',
+    }),
+  
+    materialIds: Joi.array()
+      .items(
+        Joi.string()
+          .pattern(/^[0-9a-fA-F]{24}$/)
+          .messages({
+            "string.pattern.base": "Material ID must be a valid MongoDB ObjectId.",
+          })
+      )
+      .messages({
+        "array.base": "Material IDs must be an array.",
+      }),
+  
+    applyToAllSupplierMaterials: Joi.boolean().messages({
+      "boolean.base": "Apply to all supplier materials must be a boolean value.",
+    }),
+  
+    supplierId: Joi.string()
+      .pattern(/^[0-9a-fA-F]{24}$/)
+      .messages({
+        "string.pattern.base": "Supplier ID must be a valid MongoDB ObjectId.",
+      }),
+  
+    documentTitle: Joi.string().optional().messages({
+      "string.base": "Document title must be a string.",
+    }),
+  
+    type: Joi.string()
+      .valid(
+        "certificate",
+        "contract",
+        "instruction",
+        "other",
+        "statement",
+        "safety_data_sheet",
+        "technical_data_sheet",
+        "manual",
+        "report",
+        "specification",
+        "license",
+        "declaration"
+      )
+      .default("other")
+      .messages({
+        "any.only": "Type must be one of the allowed values.",
+      }),
+  
+    version: Joi.number().optional().default(1).min(1).messages({
+      "number.base": "Version must be a number.",
+      "number.min": "Version must be at least 1.",
+    }),
+  
+    attachments: Joi.array().items(Joi.string()).optional().messages({
+      "array.base": "Attachments must be an array of strings.",
+    }),
+  
+    effectiveDate: Joi.date().optional().messages({
+      "date.base": "Effective date must be a valid date.",
+    }),
+  
+    expiryDate: Joi.date().optional().messages({
+      "date.base": "Expiry date must be a valid date.",
+    }),
+  
+    documentNumber: Joi.string().optional().messages({
+      "string.base": "Document number must be a string.",
+    }),
+  
+    category: Joi.string()
+      .valid("legal", "technical", "environmental", "other")
+      .default("other")
+      .messages({
+        "any.only": "Category must be one of [legal, technical, environmental, other].",
+      }),
+  
+    notes: Joi.string().optional().messages({
+      "string.base": "Notes must be a string.",
+    }),
+  })
+    .custom((value, helpers) => {
+      // Кастомная валидация: либо materialIds должны быть предоставлены и не пусты,
+      // либо applyToAllSupplierMaterials и supplierId должны быть предоставлены вместе
+      if (
+        !(Array.isArray(value.materialIds) && value.materialIds.length > 0) &&
+        !(value.applyToAllSupplierMaterials === true && value.supplierId)
+      ) {
+        return helpers.error("any.custom", {
+          message:
+            "Either materialIds or applyToAllSupplierMaterials with a valid supplierId must be provided.",
+        });
+      }
+      return value;
+    })
+    .messages({
+      "any.custom": "{{#message}}",
+    });
   
 
   export const materialSchema = {
     validateMaterialSchema,
     updateMaterialSchema,
+    validateUpdateComplianceStatusWithDocumentSchema
   };
 
   const Material = mongoose.model("Material", MaterialSchema, "materials");

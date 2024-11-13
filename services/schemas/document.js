@@ -24,22 +24,23 @@ const DocumentSchema = new mongoose.Schema({
     ref: "Supplier",
     required: false,
   }, // Связь с поставщиком
-  regulationIds: [{
-    type: mongoose.Schema.Types.ObjectId,
-    ref: 'Regulation',
-    required: false,
-  }], // Связь с регулирующими актами
+  regulations: [
+    {
+      _id: { type: mongoose.Schema.Types.ObjectId, ref: 'Regulation', required: true },
+      status: {
+        type: String,
+        enum: ['comply', 'does_not_comply', 'pending', 'na', 'comply_with_exceptions'],
+        required: true,
+      },
+    },
+    { _id: false } 
+  ],
   applyToAllSupplierMaterials: { type: Boolean, default: false }, // Применение ко всем материалам поставщика
   type: {
     type: String,
     enum: ['certificate', 'contract', 'instruction', 'other', 'statement', 'safety_data_sheet', 'technical_data_sheet', 'manual', 'report', 'specification', 'license', 'declaration'],
     default: "other",
   }, // Тип документа
-  status: {
-    type: String,
-    enum: ['comply', 'does_not_comply', 'pending', 'na', 'comply_with_exceptions'],
-    required: true,
-  }, // Статус соответствия
   effectiveDate: { type: Date, required: false },
   expiryDate: { type: Date, required: false },
   documentNumber: { type: String, required: false },
@@ -59,47 +60,42 @@ const Document = mongoose.model("Document", DocumentSchema);
 
 
 const documentValidationSchema = Joi.object({
-  title: Joi.string().required().messages({
-    'string.empty': 'Title is required.',
-  }),
-  
-  fileUrl: Joi.string().uri().required().messages({
-    'string.empty': 'File URL is required.',
-    'string.uri': 'File URL must be a valid URI.',
-  }),
-  
-  attachments: Joi.array().items(Joi.string().uri().messages({
-    'string.uri': 'Attachment must be a valid URI.',
-  })).optional().messages({
-    'array.base': 'Attachments must be an array of valid URIs.',
-  }),
-
-  materialIds: Joi.array().items(
-    Joi.string().pattern(/^[0-9a-fA-F]{24}$/).messages({
-      'string.pattern.base': 'Material ID must be a valid MongoDB ObjectId.',
-    })
-  ).optional().messages({
-    'array.base': 'Material IDs must be an array of valid MongoDB ObjectIds.',
-  }),
-  
-  supplierId: Joi.string().optional().allow(null).pattern(/^[0-9a-fA-F]{24}$/).messages({
-    'string.pattern.base': 'Supplier ID must be a valid MongoDB ObjectId.',
-  }),
-
-  regulationId: Joi.string().required().pattern(/^[0-9a-fA-F]{24}$/).messages({
-    'string.pattern.base': 'Regulation ID is required.',
-  }),
-
+  title: Joi.string().required(),
+  fileUrl: Joi.string().uri().required(),
+  materialIds: Joi.array().items(Joi.string().pattern(/^[0-9a-fA-F]{24}$/)).optional(),
+  supplierId: Joi.string().pattern(/^[0-9a-fA-F]{24}$/).optional(),
+  applyToAllSupplierMaterials: Joi.boolean().optional(),
+  regulations: Joi.array()
+    .items(
+      Joi.object({
+        _id: Joi.string()
+          .required()
+          .pattern(/^[0-9a-fA-F]{24}$/)
+          .messages({
+            'string.pattern.base': 'Regulation ID must be a valid MongoDB ObjectId.',
+            'any.required': 'Regulation ID is required.',
+          }),
+        status: Joi.string()
+          .valid('comply', 'does_not_comply', 'pending', 'na', 'comply_with_exceptions')
+          .required()
+          .messages({
+            'any.only':
+              'Status must be one of [comply, does_not_comply, pending, na, comply_with_exceptions].',
+            'any.required': 'Status is required.',
+          }),
+      })
+    )
+    .required()
+    .messages({
+      'array.base': 'Regulations must be an array.',
+      'any.required': 'Regulations are required.',
+    }),
   applyToAllSupplierMaterials: Joi.boolean().default(false).messages({
     'boolean.base': 'Apply to all supplier materials must be a boolean value.',
   }),
   
   type: Joi.string().valid('certificate', 'contract', 'instruction', 'other', 'statement', 'safety_data_sheet', 'technical_data_sheet', 'manual', 'report', 'specification', 'license', 'declaration').default('other').messages({
     'any.only': 'Type must be one of [certificate, contract, instruction, other, statement, safety data sheet, technical data sheet, manual, report, specification, license, declaration].',
-  }),
-
-  status: Joi.string().valid('comply', 'does_not_comply', 'pending', 'na', 'comply_with_exceptions').required().messages({
-    'any.only': 'Status is required and must be one of [comply, does_not_comply, pending, na, comply_with_exceptions].',
   }),
 
   effectiveDate: Joi.date().optional().messages({

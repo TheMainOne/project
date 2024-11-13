@@ -3,7 +3,13 @@ import ctrlWrapper from "../middlewares/ctrlWrapper.js";
 import HttpError from "../middlewares/HttpError.js";
 
 const getSuppliersList = async (req, res) => {
-  const { page = 1, limit = 10 } = req.query;
+  const page = parseInt(req.query.page, 10) || 1;
+  const limit = parseInt(req.query.limit, 10) || 10;
+
+  if (page <= 0 || limit <= 0) {
+    throw HttpError(400, "Page and limit must be positive integers.");
+  }
+
   const skip = (page - 1) * limit;
 
   const results = await Supplier.find({}).skip(skip).limit(limit).exec();
@@ -11,7 +17,7 @@ const getSuppliersList = async (req, res) => {
   const count = await Supplier.countDocuments();
 
   res.json({
-    status: "success",
+status: "success",
     code: 200,
     data: {
       suppliers: results,
