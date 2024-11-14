@@ -12,6 +12,7 @@
    - [Изменение существующего в базе данных материала](#4-изменение-существующего-в-базе-данных-материала)
    - [Удаление существующего в базе данных материала](#5-удаление-существующего-в-базе-данных-материала)
    - [Поиск материалов в базе данных по частичному совпадению их partNumber](#6-поиск-материалов-в-базе-данных-по-частичному-совпадению-их-partnumber)
+   - [Обновление статусов соответствия регуляторных актов для материалов](#7-обновление-статусов-соответствия-регуляторных-актов-для-материалов)
   
 
 3. [API Endpoints для управления регулирующими актами](#our-api-endpoints-for-managing-regulatory)
@@ -238,6 +239,7 @@ _________________________________________
 | `GET`              | `/api/materials/:id`                     | Retrieve material by id.                 |
 | `POST`             | `/api/materials`                         | Create a new material.                   |
 | `PUT`              | `/api/materials/:id`                     | Update material by id.                   |
+| `PUT`              | `/api/materials/compliance`              | Update regulations status with or witout document |
 | `DELETE`           | `/api/materials/:id`                     | Delete material by id.                   |
 
 _________________________________________
@@ -780,6 +782,113 @@ Body: пустое
 - **500 Internal Server Error** — ошибка сервера
 - **401 Unauthorized** — Неавторизованный юзер
 - **400 Bad request** — переданный параметр пустой
+
+_________________________________________  
+
+
+
+#### 7. Обновление статусов соответствия регуляторных актов для материалов 
+
+    Метод: PUT
+
+URL: /api/materials/compliance
+
+Описание: Позволяет обновить статусы соответствия регуляторных актов для указанных материалов с возможностью загрузки документа, подтверждающего изменения. Статусы родительских материалов автоматически обновляются на основе статусов их дочерних материалов.
+
+
+Параметры запроса:  
+*Добавить Bearer Token в headers при запросе*  
+Загрузить документ в поле document (опционально, если статус требует документ)  
+Body: 
+regulations (required): массив обьектов с полями regulationId и status:  
+```json
+[
+  {
+    "regulationId": "66d74d37c32d0715a4ff7a7b",
+    "status": "comply"
+  },
+  {
+    "regulationId": "66eaf1bf90623cac72482436",
+    "status": "does_not_comply"
+  }
+]
+```
+
+materialIds — Идентификаторы материалов (в виде массива строк или JSON-строки), для которых обновляются статусы. Либо передать materialIds, либо использовать applyToAllSupplierMaterials и supplierId.
+applyToAllSupplierMaterials — Логическое значение, указывающее, нужно ли обновлять все материалы поставщика. 
+supplierId — Идентификатор поставщика, если установлено applyToAllSupplierMaterials.
+documentTitle — Название документа, связанного с обновлением.
+type — Тип документа (например, certificate, contract, instruction, other).
+version — Версия документа.
+effectiveDate — Дата вступления документа в силу.
+expiryDate — Дата окончания действия документа.
+documentNumber — Номер документа.
+category — Категория документа (например, legal, technical, environmental, other).
+notes — Примечания.
+
+Пример запроса:
+
+**PUT /api/materials/compliance
+
+*Bearer Token*  
+Body: 
+Attached document  
+```json
+{
+"materialIds": ["672934e9c627e49202beec97"],
+"regulations": [{"regulationId": "672e4cd31916016628ce5c5d", "status": "comply"}]
+}
+```
+
+Пример ответа:
+```json
+{
+    "status": "success",
+    "code": 200,
+    "data": {
+        "message": "Compliance statuses updated successfully.",
+        "document": {
+            "title": "Compliance Document",
+            "fileUrl": "uploads\\test-1731601708797-437305259.docx",
+            "attachments": [],
+            "materialIds": [
+                "672934e9c627e49202beec97"
+            ],
+            "supplierId": null,
+            "regulations": [
+                {
+                    "_id": "672e4cd31916016628ce5c5d",
+                    "status": "comply"
+                }
+            ],
+            "applyToAllSupplierMaterials": false,
+            "type": "other",
+            "effectiveDate": null,
+            "expiryDate": null,
+            "documentNumber": "",
+            "description": "",
+            "category": "other",
+            "notes": "",
+            "version": 1,
+            "uploadedBy": {
+                "_id": "66d34e63cf1f9c8fea704737",
+                "name": "Max",
+                "role": "admin"
+            },
+            "_id": "6736252d80be59750aa7a65a",
+            "createdAt": "2024-11-14T16:28:29.009Z",
+            "updatedAt": "2024-11-14T16:28:29.009Z"
+        }
+    }
+}
+```
+Статусы ответов:
+
+- **200 OK** — успешный запрос
+- **500 Internal Server Error** — ошибка сервера
+- **401 Unauthorized** — Неавторизованный юзер
+- **404 Not Found** — указанный поставщик или регуляторный акт не найден
+- **400 Bad request** — отсутствует обязательный параметр или неверный формат
 
 _________________________________________  
 
