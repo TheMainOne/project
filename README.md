@@ -239,7 +239,7 @@ _________________________________________
 | `GET`              | `/api/materials/:id`                     | Retrieve material by id.                 |
 | `POST`             | `/api/materials`                         | Create a new material.                   |
 | `PUT`              | `/api/materials/:id`                     | Update material by id.                   |
-| `PUT`              | `/api/materials/compliance`              | Update regulations status with or witout document |
+| `PUT`              | `/api/materials/compliance`              | Update regulations status with or without document |
 | `DELETE`           | `/api/materials/:id`                     | Delete material by id.                   |
 
 _________________________________________
@@ -814,17 +814,17 @@ regulations (required): массив обьектов с полями regulation
 ]
 ```
 
-materialIds — Идентификаторы материалов (в виде массива строк или JSON-строки), для которых обновляются статусы. Либо передать materialIds, либо использовать applyToAllSupplierMaterials и supplierId.
-applyToAllSupplierMaterials — Логическое значение, указывающее, нужно ли обновлять все материалы поставщика. 
-supplierId — Идентификатор поставщика, если установлено applyToAllSupplierMaterials.
-documentTitle — Название документа, связанного с обновлением.
-type — Тип документа (например, certificate, contract, instruction, other).
-version — Версия документа.
-effectiveDate — Дата вступления документа в силу.
-expiryDate — Дата окончания действия документа.
-documentNumber — Номер документа.
-category — Категория документа (например, legal, technical, environmental, other).
-notes — Примечания.
+materialIds — Идентификаторы материалов (в виде массива строк или JSON-строки), для которых обновляются статусы. Либо передать materialIds, либо использовать applyToAllSupplierMaterials и supplierId.  
+applyToAllSupplierMaterials — Логическое значение, указывающее, нужно ли обновлять все материалы поставщика.   
+supplierId — Идентификатор поставщика, если установлено applyToAllSupplierMaterials.  
+documentTitle — Название документа, связанного с обновлением.  
+type — Тип документа (например, certificate, contract, instruction, other).  
+version — Версия документа.  
+effectiveDate — Дата вступления документа в силу.  
+expiryDate — Дата окончания действия документа.  
+documentNumber — Номер документа.  
+category — Категория документа (например, legal, technical, environmental, other).  
+notes — Примечания.  
 
 Пример запроса:
 
