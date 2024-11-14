@@ -23,7 +23,7 @@ router.put(
   "/api/materials/compliance",
   authenticate,
   upload.single("document"), // Middleware для загрузки документа
-  // validateBody(materialSchema.validateUpdateComplianceStatusWithDocumentSchema),
+  validateBody(materialSchema.validateUpdateComplianceStatusWithDocumentSchema),
   controllers.updateComplianceStatusWithDocument
 );
 router.put(

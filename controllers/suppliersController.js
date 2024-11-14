@@ -1,4 +1,5 @@
 import Supplier from "../services/schemas/supplier.js";
+import Document from "../services/schemas/document.js"
 import ctrlWrapper from "../middlewares/ctrlWrapper.js";
 import HttpError from "../middlewares/HttpError.js";
 
@@ -78,6 +79,15 @@ const updateSupplierByID = async (req, res) => {
   if (!fields || Object.keys(fields).length === 0) {
     throw HttpError(400, "No fields were provided for the update.");
   }
+  
+    // Проверка уникальности имени
+    if (fields.name) {
+      const existingSupplier = await Supplier.findOne({ name: fields.name, _id: { $ne: id } });
+      if (existingSupplier) {
+        throw HttpError(409, "Another supplier with this name already exists");
+      }
+    }
+  
 
   const result = await Supplier.findByIdAndUpdate(id, fields, { new: true });
 
