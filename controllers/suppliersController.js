@@ -1,7 +1,7 @@
 import Supplier from "../services/schemas/supplier.js";
-import Document from "../services/schemas/document.js"
 import ctrlWrapper from "../middlewares/ctrlWrapper.js";
 import HttpError from "../middlewares/HttpError.js";
+import logAction from "../utils/logAction.js";
 
 const getSuppliersList = async (req, res) => {
   const page = parseInt(req.query.page, 10) || 1;
@@ -46,6 +46,7 @@ const getSupplierByID = async (req, res) => {
 
 const addNewSupplier = async (req, res) => {
   const { name } = req.body;
+  const userId = req.user._id;
 
   const existingSupplier = await Supplier.findOne({ name });
 
@@ -55,6 +56,15 @@ const addNewSupplier = async (req, res) => {
   }
 
   const newSupplier = await Supplier.create({ ...req.body });
+
+    // Логирование действия
+    await logAction({
+      userId,
+      action: 'create',
+      entityType: 'Supplier',
+      entityId: newSupplier._id,
+      newData: newSupplier.toObject(),
+    });
 
   res.status(201).json({
     status: "success",
@@ -68,6 +78,7 @@ const addNewSupplier = async (req, res) => {
 const updateSupplierByID = async (req, res) => {
   const { id } = req.params;
   const fields = req.body;
+  const userId = req.user._id;
 
   if (!id) {
     throw HttpError(
@@ -79,39 +90,61 @@ const updateSupplierByID = async (req, res) => {
   if (!fields || Object.keys(fields).length === 0) {
     throw HttpError(400, "No fields were provided for the update.");
   }
-  
-    // Проверка уникальности имени
-    if (fields.name) {
-      const existingSupplier = await Supplier.findOne({ name: fields.name, _id: { $ne: id } });
-      if (existingSupplier) {
-        throw HttpError(409, "Another supplier with this name already exists");
-      }
+
+    // Получаем старые данные поставщика
+    const oldSupplier = await Supplier.findById(id).lean();
+    if (!oldSupplier) {
+      throw HttpError(404, 'Supplier not found');
     }
   
-
-  const result = await Supplier.findByIdAndUpdate(id, fields, { new: true });
-
-  if (!result) {
-    throw HttpError(404, "Supplier not found");
+  // Проверка уникальности имени, если имя обновляется и изменилось
+  if (fields.name && fields.name !== oldSupplier.name) {
+    const existingSupplier = await Supplier.findOne({ name: fields.name, _id: { $ne: id } });
+    if (existingSupplier) {
+      throw HttpError(409, 'Another supplier with this name already exists');
+    }
   }
+  
+  const updatedSupplier = await Supplier.findByIdAndUpdate(id, fields, { new: true }).lean();
+
+    // Логирование действия
+    await logAction({
+      userId,
+      action: 'update',
+      entityType: 'Supplier',
+      entityId: updatedSupplier._id,
+      oldData: oldSupplier,
+      newData: updatedSupplier,
+    });
+
 
   return res.status(200).json({
     status: "success",
     code: 200,
     data: {
-      supplier: result,
+      supplier: updatedSupplier,
     },
   });
 };
 
 const deleteSupplier = async (req, res) => {
   const { id } = req.params;
+  const userId = req.user._id;
 
-  const deletedSupplier = await Supplier.findByIdAndDelete(id);
+  const deletedSupplier = await Supplier.findByIdAndDelete(id).lean();
 
   if (!deletedSupplier) {
     throw HttpError(404, "Supplier not found");
   }
+
+  // Логирование действия
+  await logAction({
+    userId,
+    action: 'delete',
+    entityType: 'Supplier',
+    entityId: deletedSupplier._id,
+    oldData: deletedSupplier,
+  });
 
   res.status(200).json({
     status: "success",

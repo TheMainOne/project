@@ -14,7 +14,7 @@ const RegulationSchema = new mongoose.Schema(
     }, // Тип акта
     status: {
       type: String,
-      enum: ['active', 'obsolete', 'pending'],
+      enum: ['active', 'obsolete', 'pending', 'inactive'],
       default: 'active',
     }, // Статус акта
     jurisdiction: [{ type: String, required: false }], // Географическая область применения
@@ -32,7 +32,7 @@ const validateRegulationSchema = Joi.object({
   effectiveDate: Joi.date().optional(),
   expiryDate: Joi.date().optional(),
   regulationType: Joi.string().valid('environmental', 'safety', 'technical', 'other').optional(),
-  status: Joi.string().valid('active', 'obsolete', 'pending').optional(),
+  status: Joi.string().valid('active', 'obsolete', 'pending', 'inactive').optional(),
   jurisdiction: Joi.array().items(Joi.string()).optional(), 
   documentUrl: Joi.string().uri().optional(),
 });
@@ -43,7 +43,7 @@ const updateRegulationSchema = Joi.object({
   effectiveDate: Joi.date().optional(),
   expiryDate: Joi.date().optional(),
   regulationType: Joi.string().valid('environmental', 'safety', 'technical', 'other').optional(),
-  status: Joi.string().valid('active', 'obsolete', 'pending').optional(),
+  status: Joi.string().valid('active', 'obsolete', 'pending', 'inactive').optional(),
   jurisdiction: Joi.array().items(Joi.string()).optional(), 
   documentUrl: Joi.string().uri().optional(),
 });

@@ -5,7 +5,8 @@ import Supplier from "../services/schemas/supplier.js"
 import Material from "../services/schemas/material.js"
 import ctrlWrapper from "../middlewares/ctrlWrapper.js";
 import HttpError from "../middlewares/HttpError.js";
-import {updateParentRegulatoryCompliance} from "../utils/materialHelpers.js"
+import logAction from '../utils/logAction.js';
+// import {updateParentRegulatoryCompliance} from "../utils/materialHelpers.js"
 import { isValidObjectId } from "mongoose";
 
 
@@ -34,6 +35,7 @@ const createDocument = async (req, res) => {
   } = req.body;
 
   const currentUser = req.user;
+  const userId = req.user._id;
 
   // Проверка на существование документа с таким же fileUrl
   const existingDocument = await Document.findOne({ fileUrl });
@@ -182,8 +184,29 @@ const createDocument = async (req, res) => {
 
         // Сохраняем родительский материал
         await parentMaterial.save();
+
+        // Логируем обновление родительского материала
+        await logAction({
+          userId,
+          action: 'update',
+          entityType: 'Material',
+          entityId: parentMaterial._id,
+          description: `Updated regulatoryCompliance for parent material ${parentMaterial._id}`,
+        });
       }
     }
+
+   // Логируем обновление материалов
+   for (const material of materials) {
+    await logAction({
+      userId,
+      action: 'update',
+      entityType: 'Material',
+      entityId: material._id,
+      description: `Updated regulatoryCompliance for material ${material._id}`,
+    });
+  }
+
   };
 
   // Функция для обновления regulatoryCompliance у родительского материала
@@ -285,6 +308,15 @@ const createDocument = async (req, res) => {
     category: category || 'other',
     notes: notes || '',
   });
+
+    // Логируем создание документа
+    await logAction({
+      userId,
+      action: 'create',
+      entityType: 'Document',
+      entityId: newDocument._id,
+      newData: newDocument.toObject(),
+    });
 
   res.status(201).json({
     status: 'success',
