@@ -5,6 +5,8 @@ import Regulation from "../services/schemas/regulation.js";
 import ctrlWrapper from "../middlewares/ctrlWrapper.js";
 import HttpError from "../middlewares/HttpError.js";
 import filterAndSort from "../middlewares/filterAndSort.js";
+import logAction from "../utils/logAction.js"
+import fs from 'fs';
 
 
 const getAllMaterials = async (req, res) => {
@@ -54,6 +56,7 @@ const getByID = async (req, res) => {
 
 const createMaterial = async (req, res) => {
   const { partNumber, supplier, regulatoryCompliance = [] } = req.body;
+  const userId = req.user._id;
 
   const existingMaterial = await Material.findOne({ partNumber });
 
@@ -141,6 +144,15 @@ const createMaterial = async (req, res) => {
     regulatoryCompliance: updatedRegulatoryCompliance,
   });
 
+  // Логируем действие
+  await logAction({
+    userId,
+    action: 'create',
+    entityType: 'Material',
+    entityId: newMaterial._id,
+    newData: newMaterial.toObject(),
+  });
+
   // После создания материала добавляем его _id в materialIds документов
   if (supplierId && supplierDocuments.length > 0) {
     for (const doc of supplierDocuments) {
@@ -151,6 +163,8 @@ const createMaterial = async (req, res) => {
       }
     }
   }
+
+
 
   res.status(201).json({
     status: "success",
@@ -164,6 +178,7 @@ const createMaterial = async (req, res) => {
 const updateByID = async (req, res) => {
   const { id } = req.params;
   const { relatedParentId, regulatoryCompliance, ...fields } = req.body; // Извлекаем relatedParentId и другие поля
+  const userId = req.user._id;
 
   if (!id) {
     throw HttpError(400, "The Material ID is required to perform the update operation");
@@ -181,6 +196,9 @@ const updateByID = async (req, res) => {
   if (!material) {
     throw HttpError(404, "Material not found");
   }
+
+  // сохраняем данные о материале, до его обновления
+  const oldMaterial = material.toObject();
 
   // Если в запросе передан relatedParentId
   if (relatedParentId) {
@@ -293,6 +311,17 @@ await newParentMaterial.save();
     throw HttpError(404, "Material not found");
   }
 
+    // Логируем действие
+    await logAction({
+      userId: req.user._id,
+      action: 'update',
+      entityType: 'Material',
+      entityId: id,
+      oldData: oldMaterial,
+      newData: result.toObject(),
+    });
+  
+
   return res.status(200).json({
     status: "success",
     code: 200,
@@ -302,22 +331,187 @@ await newParentMaterial.save();
   });
 };
 
+
 const deleteMaterial = async (req, res) => {
   const { id } = req.params;
 
-  const deletedMaterial = await Material.findByIdAndDelete(id);
-
-  if (!deletedMaterial) {
+  // Проверяем, существует ли материал
+  const materialToDelete = await Material.findById(id);
+  if (!materialToDelete) {
     throw HttpError(404, "Material not found");
   }
+
+  // 1. Обрабатываем связанные документы, исключая те, которые применимы ко всем материалам поставщика
+  const documents = await Document.find({ 
+    materialIds: id,
+    applyToAllSupplierMaterials: { $ne: true } // Исключаем документы с applyToAllSupplierMaterials: true
+  });
+
+  if (documents && documents.length > 0) {
+    for (const doc of documents) {
+      // Проверяем, документ связан только с удаляемым материалом или с другими тоже
+      if (doc.materialIds.length === 1 && doc.materialIds[0].toString() === id) {
+        // Документ связан только с удаляемым материалом, удаляем документ
+
+        // Логируем удаление документа перед его удалением
+        await logAction({
+          userId: req.user._id,
+          action: 'delete',
+          entityType: 'Document',
+          entityId: doc._id,
+          oldData: doc.toObject(),
+        });
+
+        // Удаляем документ из базы данных
+        await Document.findByIdAndDelete(doc._id);
+
+        // Если файлы хранятся на сервере, удаляем их физически
+        if (doc.fileUrl) {
+          await fs.promises.unlink(doc.fileUrl); // Удаляем файл
+        }
+      } else {
+        // Документ связан с несколькими материалами, удаляем ID из materialIds
+        const oldDoc = doc.toObject(); // Для логирования
+
+        doc.materialIds = doc.materialIds.filter((materialId) => materialId.toString() !== id);
+        await doc.save();
+
+        // Логируем обновление документа
+        await logAction({
+          userId: req.user._id,
+          action: 'update',
+          entityType: 'Document',
+          entityId: doc._id,
+          oldData: oldDoc,
+          newData: doc.toObject(),
+        });
+      }
+    }
+  }
+
+
+  // 2. Обновляем родительские материалы
+  if (materialToDelete.parentID && materialToDelete.parentID.length > 0) {
+    // Удаляем материал из components родительских материалов
+    await Material.updateMany(
+      { _id: { $in: materialToDelete.parentID } },
+      {
+        $pull: { components: { _id: materialToDelete._id } },
+      }
+    );
+
+    // Обновляем regulatoryCompliance у родительских материалов
+    for (const parentId of materialToDelete.parentID) {
+      const parentMaterial = await Material.findById(parentId);
+      if (parentMaterial) {
+        const oldParentData = parentMaterial.toObject(); // Для логирования
+
+        // Пересчитываем regulatoryCompliance на основе оставшихся компонентов
+        const complianceMap = new Map();
+
+        if (parentMaterial.components && Array.isArray(parentMaterial.components)) {
+          for (const component of parentMaterial.components) {
+            if (component.regulatoryCompliance && Array.isArray(component.regulatoryCompliance)) {
+              for (const compCompliance of component.regulatoryCompliance) {
+                const key = compCompliance.title;
+
+                if (!complianceMap.has(key)) {
+                  complianceMap.set(key, {
+                    _id: compCompliance._id,
+                    title: compCompliance.title,
+                    description: compCompliance.description,
+                    status: compCompliance.status,
+                  });
+                } else {
+                  // Обновляем статус на основе статусов всех компонентов
+                  const existingStatus = complianceMap.get(key).status;
+                  const newStatus = getCombinedStatus(existingStatus, compCompliance.status);
+                  complianceMap.set(key, {
+                    _id: compCompliance._id,
+                    title: compCompliance.title,
+                    description: compCompliance.description,
+                    status: newStatus,
+                  });
+                }
+              }
+            }
+          }
+        }
+
+        // Функция для определения комбинированного статуса
+        function getCombinedStatus(status1, status2) {
+          const statusPriority = {
+            'does_not_comply': 1,
+            'pending': 2,
+            'comply_with_exceptions': 3,
+            'comply': 4,
+            'na': 5,
+          };
+
+          if (statusPriority[status1] < statusPriority[status2]) {
+            return status1;
+          } else {
+            return status2;
+          }
+        }
+
+        parentMaterial.regulatoryCompliance = Array.from(complianceMap.values());
+        await parentMaterial.save();
+
+        // Логируем обновление родительского материала
+        await logAction({
+          userId: req.user._id,
+          action: 'update',
+          entityType: 'Material',
+          entityId: parentMaterial._id,
+          oldData: oldParentData,
+          newData: parentMaterial.toObject(),
+        });
+      }
+    }
+  }
+
+  // 4. Обновляем дочерние материалы
+  const childMaterials = await Material.find({ parentID: id });
+  if (childMaterials && childMaterials.length > 0) {
+    for (const child of childMaterials) {
+      const oldChildData = child.toObject(); // Для логирования
+
+      child.parentID = child.parentID.filter((parentId) => parentId.toString() !== id);
+      await child.save();
+
+      // Логируем обновление дочернего материала
+      await logAction({
+        userId: req.user._id,
+        action: 'update',
+        entityType: 'Material',
+        entityId: child._id,
+        oldData: oldChildData,
+        newData: child.toObject(),
+      });
+    }
+  }
+
+  // 5. Удаляем сам материал
+  await Material.findByIdAndDelete(id);
+
+  // Логируем действие удаления материала
+  await logAction({
+    userId: req.user._id,
+    action: 'delete',
+    entityType: 'Material',
+    entityId: id,
+    oldData: materialToDelete.toObject(),
+  });
 
   res.status(200).json({
     status: "success",
     code: 200,
-    message: "Material deleted successfully",
-    data: { deletedMaterial },
+    message: "Material and associated data deleted successfully",
+    data: { deletedMaterial: materialToDelete },
   });
 };
+
 
 const searchMaterialsByPartNumber = async (req, res) => {
   const { partNumber } = req.query;
@@ -636,6 +830,15 @@ const updateComplianceStatusWithDocument = async (req, res) => {
       description: notes || '',
       category: category || 'other',
       notes: notes || '',
+    });
+
+
+    await logAction({
+      userId: req.user._id,
+      action: 'create',
+      entityType: 'Document',
+      entityId: newDocument._id,
+      newData: newDocument.toObject(),
     });
   }
 
