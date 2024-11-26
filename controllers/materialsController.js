@@ -19,6 +19,7 @@ const getAllMaterials = async (req, res) => {
 
   // Выполняем запрос с фильтрацией и сортировкой
   const materials = await Material.find(filter)
+    .populate('supplierId', '_id') 
     .sort(sort)
     .skip(skip)
     .limit(limit)
@@ -41,7 +42,8 @@ const getAllMaterials = async (req, res) => {
 const getByID = async (req, res) => {
   const id = req.params.id;
 
-  const result = await Material.findById(id, "-createdAt -updatedAt");
+  const result = await Material.findById(id, "-createdAt -updatedAt")
+    .populate('supplierId', '_id name');
 
   if (!result) {
     throw HttpError(404, "Not found");
@@ -55,7 +57,7 @@ const getByID = async (req, res) => {
 };
 
 const createMaterial = async (req, res) => {
-  const { partNumber, supplier, regulatoryCompliance = [] } = req.body;
+  const { partNumber, supplier, supplierId: supplierIdFromBody, regulatoryCompliance = [] } = req.body;
   const userId = req.user._id;
 
   const existingMaterial = await Material.findOne({ partNumber });
@@ -84,8 +86,8 @@ const createMaterial = async (req, res) => {
   let supplierDocuments = [];
 
   // Если указан поставщик, выполняем дополнительную логику
-  if (supplier) {
-    const supplierRecord = await Supplier.findOne({ name: supplier });
+  if (!supplierId && supplier) {
+    const supplierRecord = await Supplier.findOne({ name: supplier.trim() });
     if (supplierRecord) {
       supplierId = supplierRecord._id;
 
@@ -141,6 +143,7 @@ const createMaterial = async (req, res) => {
   // Создаем новый материал с обновленным regulatoryCompliance
   const newMaterial = await Material.create({
     ...req.body,
+    supplierId: supplierId, // Добавляем supplierId
     regulatoryCompliance: updatedRegulatoryCompliance,
   });
 
@@ -163,7 +166,6 @@ const createMaterial = async (req, res) => {
       }
     }
   }
-
 
 
   res.status(201).json({
@@ -298,6 +300,26 @@ newParentMaterial.regulatoryCompliance = Array.from(complianceMap.values());
 
 
 await newParentMaterial.save();
+}
+
+// Если обновляется supplier
+if (fields.supplier) {
+  const supplierRecord = await Supplier.findOne({ name: fields.supplier.trim() });
+  if (supplierRecord) {
+    fields.supplierId = supplierRecord._id;
+  } else {
+    throw HttpError(404, "Supplier not found");
+  }
+}
+
+// Если обновляется supplierId
+if (fields.supplierId) {
+  const supplierRecord = await Supplier.findById(fields.supplierId);
+  if (supplierRecord) {
+    fields.supplier = supplierRecord.name;
+  } else {
+    throw HttpError(404, "Supplier not found");
+  }
 }
 
   // Обновляем материал с переданными полями
@@ -523,7 +545,8 @@ const searchMaterialsByPartNumber = async (req, res) => {
   // Используем регулярное выражение для поиска по частичному совпадению
   const materials = await Material.find({
     partNumber: { $regex: partNumber, $options: "i" }, // 'i' делает поиск нечувствительным к регистру
-  }).limit(10); // Ограничиваем количество результатов до 10
+  }).limit(10)
+  .populate('supplierId', '_id name'); 
 
   res.status(200).json({
     status: "success",

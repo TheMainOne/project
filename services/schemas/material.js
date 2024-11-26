@@ -20,6 +20,7 @@
       parentID: { type: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Material' }], default: [] },
       description: { type: String, required: true },
       supplier: { type: String, default: "" },
+      supplierId: { type: mongoose.Schema.Types.ObjectId, ref: 'Supplier', required: false, default: null },
       supplierItemNumber: { type: String, default: "" },
       components: { type: [this], default: [] }, // Рекурсивная вложенность
       countryOfOrigin: { type: String, default: "" },
@@ -36,6 +37,7 @@
       partNumber: { type: String, required: true, unique: true },
       description: { type: String, required: true },
       supplier: { type: String, default: "" },
+      supplierId: { type: mongoose.Schema.Types.ObjectId, ref: 'Supplier', required: false, default: null }, 
       supplierItemNumber: { type: String, default: "" },
       parentID: { type: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Material' }], default: [] },
       components: { type: [ComponentSchema], default: [] }, // Вложенные компоненты
@@ -64,6 +66,7 @@
     parentID: Joi.array().items(Joi.objectId()).default([]),
     description: Joi.string().required(),
     supplier: Joi.string().default(""),
+    supplierId: Joi.objectId().allow(null),
     supplierItemNumber: Joi.string().default(""),
     components: Joi.array().items(Joi.link('#ComponentSchema')).default([]), 
     countryOfOrigin: Joi.string().default(""),
@@ -78,6 +81,7 @@
     partNumber: Joi.string().required(),
     description: Joi.string().required(),
     supplier: Joi.string().default("").allow(""),
+    supplierId: Joi.objectId().allow(null), 
     supplierItemNumber: Joi.string().default("").allow(""),
     parentID: Joi.array().items(Joi.objectId()).default([]),
     components: Joi.array().items(ComponentSchemaJoi).default([]),
@@ -89,28 +93,13 @@
   });
 
   const ComponentSchemaJoiForUpdating = Joi.object({
-    partNumber: Joi.string().allow("").optional(), 
+    partNumber: Joi.string().allow("").optional(),
     parentID: Joi.array().items(Joi.objectId()).default([]).optional(),
-    description: Joi.string().allow("").optional(),  
-    supplier: Joi.string().allow("").optional(),  
-    supplierItemNumber: Joi.string().allow("").optional(),  
-    components: Joi.array().items(Joi.object({ 
-      partNumber: Joi.string().allow("").optional(),
-      parentID: Joi.array().items(Joi.objectId()).default([]).optional(),
-      description: Joi.string().allow("").optional(),
-      supplier: Joi.string().allow("").optional(),
-      supplierItemNumber: Joi.string().allow("").optional(),
-      components: Joi.array().items(Joi.object({})).default([]),  
-      countryOfOrigin: Joi.string().allow("").optional(),
-      status: Joi.string().allow("").optional(),
-      regulatoryCompliance: Joi.array().items(Joi.object({
-        title: Joi.string().allow("").optional(),
-        description: Joi.string().allow("").optional(),
-        status: Joi.string().allow("").optional(),
-      })).default([]), 
-      BOMcomponent: Joi.string().allow("").optional(),
-      storagePath: Joi.string().allow("").optional(),
-    })).default([]),  
+    description: Joi.string().allow("").optional(),
+    supplier: Joi.string().allow("").optional(),
+    supplierId: Joi.objectId().allow(null).optional(), 
+    supplierItemNumber: Joi.string().allow("").optional(),
+    components: Joi.array().items(Joi.object({ /* рекурсивная структура */ })).default([]).optional(),
     countryOfOrigin: Joi.string().allow("").optional(),
     status: Joi.string().allow("").optional(),
     regulatoryCompliance: Joi.array().items(Joi.object({
@@ -121,6 +110,41 @@
     BOMcomponent: Joi.string().allow("").optional(),
     storagePath: Joi.string().allow("").optional(),
   }).id('ComponentSchema');
+
+  // const ComponentSchemaJoiForUpdating = Joi.object({
+  //   partNumber: Joi.string().allow("").optional(), 
+  //   parentID: Joi.array().items(Joi.objectId()).default([]).optional(),
+  //   description: Joi.string().allow("").optional(),  
+  //   supplier: Joi.string().allow("").optional(),  
+  //   supplierId: Joi.objectId().allow(null).optional(), // Новое поле supplierId
+  //   supplierItemNumber: Joi.string().allow("").optional(),  
+  //   components: Joi.array().items(Joi.object({ 
+  //     partNumber: Joi.string().allow("").optional(),
+  //     parentID: Joi.array().items(Joi.objectId()).default([]).optional(),
+  //     description: Joi.string().allow("").optional(),
+  //     supplier: Joi.string().allow("").optional(),
+  //     supplierItemNumber: Joi.string().allow("").optional(),
+  //     components: Joi.array().items(Joi.object({})).default([]),  
+  //     countryOfOrigin: Joi.string().allow("").optional(),
+  //     status: Joi.string().allow("").optional(),
+  //     regulatoryCompliance: Joi.array().items(Joi.object({
+  //       title: Joi.string().allow("").optional(),
+  //       description: Joi.string().allow("").optional(),
+  //       status: Joi.string().allow("").optional(),
+  //     })).default([]), 
+  //     BOMcomponent: Joi.string().allow("").optional(),
+  //     storagePath: Joi.string().allow("").optional(),
+  //   })).default([]),  
+  //   countryOfOrigin: Joi.string().allow("").optional(),
+  //   status: Joi.string().allow("").optional(),
+  //   regulatoryCompliance: Joi.array().items(Joi.object({
+  //     title: Joi.string().allow("").optional(),
+  //     description: Joi.string().allow("").optional(),
+  //     status: Joi.string().allow("").optional(),
+  //   })).default([]),
+  //   BOMcomponent: Joi.string().allow("").optional(),
+  //   storagePath: Joi.string().allow("").optional(),
+  // }).id('ComponentSchema');
   
 
   const updateMaterialSchema = Joi.object({
@@ -130,6 +154,7 @@
     partNumber: Joi.string().allow("").optional(),
     description: Joi.string().allow("").optional(),
     supplier: Joi.string().allow("").optional(),
+    supplierId: Joi.objectId().allow(null).optional(), 
     supplierItemNumber: Joi.string().allow("").optional(),
     parentID: Joi.array().items(Joi.objectId()).default([]).optional(),
     components: Joi.array().items(ComponentSchemaJoiForUpdating).default([]).optional(),
