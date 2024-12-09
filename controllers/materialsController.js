@@ -10,7 +10,8 @@ import fs from 'fs';
 
 
 const getAllMaterials = async (req, res) => {
-  const { page = 1, limit = 10 } = req.query;
+  const page = parseInt(req.query.page, 10) || 1; // Преобразуем в число или задаем значение по умолчанию
+  const limit = parseInt(req.query.limit, 10) || 10; // Преобразуем в число или задаем значение по умолчанию
   const skip = (page - 1) * limit;
 
   // Используем фильтры и сортировку, переданные через middleware
