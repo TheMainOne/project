@@ -26,8 +26,8 @@ const getAllMaterials = async (req, res) => {
     .limit(limit)
     .exec();
 
-  // Считаем количество документов с учетом фильтрации
-  const count = await Material.countDocuments(filter);
+// Считаем количество документов с учетом фильтрации (пересчет выполняется при каждом запросе)
+const count = await Material.countDocuments(filter);
 
   res.json({
     status: "success",
