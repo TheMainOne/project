@@ -21,20 +21,23 @@ const storage = multer.diskStorage({
 });
 
 const fileFilter = (req, file, cb) => {
-  // Разрешаем только определенные типы файлов
-  if (
-    file.mimetype === "image/jpeg" ||
-    file.mimetype === "image/png" ||
-    file.mimetype === "application/pdf" ||
-    file.mimetype === "application/msword" || // word-файлы .doc
-    file.mimetype ===
-      "application/vnd.openxmlformats-officedocument.wordprocessingml.document" // word-файлы .docx
-  ) {
+  const allowedMimes = [
+    "image/jpeg",
+    "image/png",
+    "application/pdf",
+    "application/msword", // word-файлы .doc
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document", // word-файлы .docx
+    "text/csv", // CSV
+    "application/vnd.ms-excel", // иногда CSV файлов идет с таким типом
+    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", // XLSX
+  ];
+
+  if (allowedMimes.includes(file.mimetype)) {
     cb(null, true); // Разрешаем загрузку
   } else {
     cb(
       new Error(
-        "Неверный тип файла. Разрешены только файлы с таким типом: JPEG, PNG, PDF, DOC, DOCX"
+        "Неверный тип файла. Разрешены: JPEG, PNG, PDF, DOC, DOCX, CSV, XLSX"
       ),
       false
     ); // Отклоняем файл

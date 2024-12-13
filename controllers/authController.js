@@ -3,35 +3,88 @@ import dotenv from "dotenv";
 import User from "../services/schemas/user.js";
 import HttpError from "../middlewares/HttpError.js";
 import ctrlWrapper from "../middlewares/ctrlWrapper.js";
+import logAction from "../utils/logAction.js"
 
 dotenv.config();
 
-
 const registerUser = async (req, res) => {
-  const { name, email, password, role } = req.body;
+  const {
+    email,
+    password,
+    name,
+    surname,
+    role,
+    locale,
+    timezone,
+    profile,
+    preferences
+  } = req.body;
 
-  const existingUser = await User.findOne({ $or: [{ email }, { name }] });
+  const userId = req.user._id;
 
+  // Проверяем, не существует ли уже пользователь с таким email
+  const existingUser = await User.findOne({ email });
   if (existingUser) {
-    throw HttpError(409, "User with this email or username already exists");
+    throw HttpError(409, "User with this email already exists");
   }
 
-  const newUserData = { name, email, password };
-  if (role) {
-    newUserData.role = role;
-  }
+  // Формируем данные для нового пользователя
+  const newUserData = {
+    email,
+    password,
+    name,
+    surname,
+    // Инициализируем permissions (базовые права)
+    permissions: {
+      // Ключ - ресурс, значение - объект с actions
+      "materials": {
+        actions: {
+          read: true,
+          edit: false,
+          delete: false
+        }
+      }
+    }
+  };
+
+  // Устанавливаем опциональные поля, если они переданы
+  if (role) newUserData.role = role;
+  if (locale) newUserData.locale = locale;
+  if (timezone) newUserData.timezone = timezone;
+  if (profile) newUserData.profile = profile;
+  if (preferences) newUserData.preferences = preferences;
 
   const newUser = await User.create(newUserData);
 
+  // используем переменную userData чтобы с помощью функции toObject переобразовать permissions и actions (которые в схеме БД определены как MAP) в обычный объект.
+  const userData = newUser.toObject({ flattenMaps: true });
+
+   // Логируем создание нового пользователя
+   await logAction({
+    userId,
+    action: 'create',
+    entityType: 'User',
+    entityId: newUser._id.toString(),
+    oldData: null,
+    newData: newUser.toObject()
+  });
+
+  // Возвращаем данные о созданном пользователе
   res.status(201).json({
     status: "success",
     code: 201,
     data: {
       user: {
-        id: newUser._id,
-        name: newUser.name,
-        email: newUser.email,
-        role: newUser.role,
+        id: userData._id,
+        name: userData.name,
+        surname: userData.surname,
+        email: userData.email,
+        role: userData.role,
+        locale: userData.locale,
+        timezone: userData.timezone,
+        profile: userData.profile,
+        preferences: userData.preferences,
+        permissions: userData.permissions
       },
     },
   });
@@ -59,7 +112,8 @@ const loginUser = async (req, res) => {
     data: {
       user: {
         _id: user._id,
-        username: user.username,
+        name: user.name,
+        surname: user.surname,
         email: user.email,
         role: user.role,
       },
@@ -92,8 +146,6 @@ const checkToken = async (req, res) => {
     // Проверяем валидность токена
     const decoded = jwt.verify(token, process.env.SECRET_KEY);
 
-
-
     // Получаем данные пользователя из базы по ID из токена
     const user = await User.findById(decoded.id).select('-password -createdAt -updatedAt'); 
 
@@ -109,7 +161,9 @@ const checkToken = async (req, res) => {
       data: {
         user: {
           _id: user._id,
-          username: user.name,
+          name: user.name,
+          surname: user.surname,
+          email: user.email,
           role: user.role,
         }
       },

@@ -5,7 +5,7 @@ import controllers from "../controllers/uploadFiles.js";
 
 const uploadFileRouter = express.Router();
 
-
 uploadFileRouter.post('/upload', authenticate, upload.single('file'), controllers.uploadFile);
+uploadFileRouter.post('/uploadExcelFile', authenticate, upload.single('file'), controllers.uploadExcelFile);
 
 export default uploadFileRouter;
