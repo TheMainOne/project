@@ -110,41 +110,6 @@
     BOMcomponent: Joi.string().allow("").optional(),
     storagePath: Joi.string().allow("").optional(),
   }).id('ComponentSchema');
-
-  // const ComponentSchemaJoiForUpdating = Joi.object({
-  //   partNumber: Joi.string().allow("").optional(), 
-  //   parentID: Joi.array().items(Joi.objectId()).default([]).optional(),
-  //   description: Joi.string().allow("").optional(),  
-  //   supplier: Joi.string().allow("").optional(),  
-  //   supplierId: Joi.objectId().allow(null).optional(), // Новое поле supplierId
-  //   supplierItemNumber: Joi.string().allow("").optional(),  
-  //   components: Joi.array().items(Joi.object({ 
-  //     partNumber: Joi.string().allow("").optional(),
-  //     parentID: Joi.array().items(Joi.objectId()).default([]).optional(),
-  //     description: Joi.string().allow("").optional(),
-  //     supplier: Joi.string().allow("").optional(),
-  //     supplierItemNumber: Joi.string().allow("").optional(),
-  //     components: Joi.array().items(Joi.object({})).default([]),  
-  //     countryOfOrigin: Joi.string().allow("").optional(),
-  //     status: Joi.string().allow("").optional(),
-  //     regulatoryCompliance: Joi.array().items(Joi.object({
-  //       title: Joi.string().allow("").optional(),
-  //       description: Joi.string().allow("").optional(),
-  //       status: Joi.string().allow("").optional(),
-  //     })).default([]), 
-  //     BOMcomponent: Joi.string().allow("").optional(),
-  //     storagePath: Joi.string().allow("").optional(),
-  //   })).default([]),  
-  //   countryOfOrigin: Joi.string().allow("").optional(),
-  //   status: Joi.string().allow("").optional(),
-  //   regulatoryCompliance: Joi.array().items(Joi.object({
-  //     title: Joi.string().allow("").optional(),
-  //     description: Joi.string().allow("").optional(),
-  //     status: Joi.string().allow("").optional(),
-  //   })).default([]),
-  //   BOMcomponent: Joi.string().allow("").optional(),
-  //   storagePath: Joi.string().allow("").optional(),
-  // }).id('ComponentSchema');
   
 
   const updateMaterialSchema = Joi.object({
@@ -322,6 +287,8 @@
   };
 
   const Material = mongoose.model("Material", MaterialSchema, "materials");
+
+Material.validateMaterialSchema = validateMaterialSchema;
 
   export default Material;
 

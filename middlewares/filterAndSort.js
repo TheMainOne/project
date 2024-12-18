@@ -4,24 +4,46 @@ const filterAndSort = (req, res, next) => {
   const filter = {};
   const sort = {};
 
-  // Фильтрация по поставщику
-  if (supplier) {
-    filter.supplier = { $regex: supplier, $options: 'i' };
-  }
-
-  // Фильтрация по статусу
+    // Фильтрация по поставщику (один или несколько)
+    if (supplier) {
+      const suppliers = supplier.split(',').map(s => s.trim());
+      if (suppliers.length === 1) { 
+        // Один поставщик
+        filter.supplier = { $regex: suppliers[0], $options: 'i' };
+      } else {
+        // Несколько поставщиков - использую $or
+        filter.$or = suppliers.map(sup => ({ supplier: { $regex: sup, $options: 'i' } }));
+      }
+    }
+  
+  // Фильтрация по статусу (один или несколько)
   if (status) {
-    filter.status = { $regex: status, $options: 'i' };  // Фильтрация по статусу без учета регистра
+    const statuses = status.split(',').map(s => s.trim());
+    if (statuses.length === 1) {
+      filter.status = { $regex: statuses[0], $options: 'i' };
+    } else {
+      filter.$or = statuses.map(st => ({ status: { $regex: st, $options: 'i' } }));
+    }
   }
 
-  // Фильтрация по номеру материала
+  // Фильтрация по номеру материала (один или несколько)
   if (partNumber) {
-    filter.partNumber = { $regex: partNumber, $options: 'i' };
+    const parts = partNumber.split(',').map(p => p.trim());
+    if (parts.length === 1) {
+      filter.partNumber = { $regex: parts[0], $options: 'i' };
+    } else {
+      filter.$or = parts.map(pn => ({ partNumber: { $regex: pn, $options: 'i' } }));
+    }
   }
 
-  // Фильтрация по стране происхождения
+  // Фильтрация по стране происхождения (одна или несколько)
   if (countryOfOrigin) {
-    filter.countryOfOrigin = { $regex: countryOfOrigin, $options: 'i' };
+    const origins = countryOfOrigin.split(',').map(o => o.trim());
+    if (origins.length === 1) {
+      filter.countryOfOrigin = { $regex: origins[0], $options: 'i' };
+    } else {
+      filter.$or = origins.map(o => ({ countryOfOrigin: { $regex: o, $options: 'i' } }));
+    }
   }
 
     // Фильтрация по описанию

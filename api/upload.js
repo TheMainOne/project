@@ -7,5 +7,6 @@ const uploadFileRouter = express.Router();
 
 uploadFileRouter.post('/upload', authenticate, upload.single('file'), controllers.uploadFile);
 uploadFileRouter.post('/uploadExcelFile', authenticate, upload.single('file'), controllers.uploadExcelFile);
+uploadFileRouter.post('/importMaterials', authenticate, upload.single('file'), controllers.importBasicMaterials);
 
 export default uploadFileRouter;
