@@ -71,211 +71,254 @@ const upload = async (req, res) => {
 /**
  * Контроллер для импорта материалов из загруженного файла (CSV или XLSX).
  */
+
+// Функция для обновления regulatoryCompliance у родителя
+const updateParentRegulatoryCompliance = async (parentMaterial, components) => {
+  // 1. Собираем все уникальные _id регуляторных актов из всех компонентов
+  const allRegulationIds = new Set();
+  for (const component of components) {
+    for (const compliance of (component.regulatoryCompliance || [])) {
+      if (compliance._id) {
+        allRegulationIds.add(compliance._id.toString());
+      }
+    }
+  }
+
+  // 2. Создаём карту для результирующей сводки по каждому _id
+  const complianceMap = new Map();
+  for (const regId of allRegulationIds) {
+    complianceMap.set(regId, {
+      // Вы сами решаете, что сюда класть: title, description, statuses и т.д.
+      statuses: new Set(),
+      title: null,
+      description: null,
+    });
+  }
+
+  // 3. Заполняем complianceMap, учитывая, что у компонента может не быть нужного _id
+  for (const component of components) {
+    // Делаем “словарь” для component.regulatoryCompliance, чтобы быстро понять,
+    // есть ли в компоненте конкретный regId
+    const compRegMap = new Map();
+    for (const c of (component.regulatoryCompliance || [])) {
+      compRegMap.set(c._id?.toString(), c);
+    }
+
+    // Теперь пробегаемся по *всем* regId и проверяем, есть ли он у компонента
+    for (const regId of allRegulationIds) {
+      // Если регуляторного акта у компонента нет – статус “missing” (или pending)
+      if (!compRegMap.has(regId)) {
+        complianceMap.get(regId).statuses.add("missing");
+      } else {
+        // Если есть, берём из компонента title, description, status
+        const { status, title, description } = compRegMap.get(regId);
+        complianceMap.get(regId).statuses.add(status);
+        // При желании можно title/description “обновлять”, если в коде есть необходимость
+        // но аккуратнее с тем, что у двух компонентов может быть разное описание одного и того же регуляторного акта.
+        complianceMap.get(regId).title = title || complianceMap.get(regId).title;
+        complianceMap.get(regId).description = description || complianceMap.get(regId).description;
+      }
+    }
+  }
+
+  // 4. Теперь у нас в complianceMap для КАЖДОГО _id есть statuses,
+  //    в том числе "missing" там, где акт не встречался у компонента
+  //    Делаем итоговый массив updatedCompliance
+  const updatedCompliance = [];
+  for (const [regId, data] of complianceMap.entries()) {
+    const { statuses, title, description } = data;
+    let finalStatus;
+
+    // Логика та же, просто добавляем проверку на "missing"
+    if (statuses.has('does_not_comply')) {
+      finalStatus = 'does_not_comply';
+    } else if (
+      statuses.has('pending') ||
+      statuses.has(null) ||
+      statuses.has(undefined) ||
+      statuses.has('missing') // <-- вот это ключевой момент
+    ) {
+      finalStatus = 'comply_with_exceptions';
+    } else if (statuses.size === 1 && statuses.has('comply')) {
+      finalStatus = 'comply';
+    } else {
+      finalStatus = 'comply_with_exceptions';
+    }
+
+    updatedCompliance.push({
+      _id: regId,           // строка или ObjectId, по ситуации
+      title: title || 'Unknown',
+      description: description || 'Unknown',
+      status: finalStatus,
+    });
+  }
+
+  parentMaterial.regulatoryCompliance = updatedCompliance;
+  await parentMaterial.save();
+};
+
+// Вспомогательные функции остаются без изменений
+const processRegulatoryCompliance = async (complianceData) => {
+  const processed = [];
+  for (const item of complianceData) {
+    const regulation = await Regulation.findOne({ title: item.title });
+    processed.push({
+      _id: regulation ? regulation._id.toString() : null,
+      title: item.title,
+      description: item.description,
+      status: item.status || 'pending',
+    });
+  }
+  return processed;
+};
+
 const importBasicMaterials = async (req, res) => {
   if (!req.file) {
     throw HttpError(400, "File was not uploaded");
   }
 
   const filePath = req.file.path;
-  const originalName = req.file.originalname;
-  const extension = originalName.split('.').pop().toLowerCase();
+  const extension = req.file.originalname.split('.').pop().toLowerCase();
 
-  let jsonData = [];
-
-  if (extension === 'xlsx') {
-    const workbook = XLSX.readFile(filePath);
-    const sheetName = 'Materials';
-
-    if (!workbook.SheetNames.includes(sheetName)) {
-      fs.unlinkSync(filePath);
-      throw HttpError(400, `Sheet "${sheetName}" not found in the uploaded file.`);
-    }
-
-    const worksheet = workbook.Sheets[sheetName];
-    jsonData = XLSX.utils.sheet_to_json(worksheet, { defval: "" });
-
-  } else if (extension === 'csv') {
-    jsonData = await new Promise((resolve, reject) => {
-      const results = [];
-      fs.createReadStream(filePath)
-        .pipe(csv.parse({ headers: true }))
-        .on('error', error => reject(error))
-        .on('data', row => results.push(row))
-        .on('end', () => resolve(results));
-    });
-  } else {
+  if (extension !== 'xlsx') {
     fs.unlinkSync(filePath);
-    throw HttpError(400, 'Unsupported file type. Please upload an XLSX or CSV file.');
+    throw HttpError(400, 'Unsupported file type. Please upload an XLSX file.');
   }
 
-  // После успешного парсинга удаляем файл
+  const workbook = XLSX.readFile(filePath);
+
+  if (!workbook.SheetNames.includes('Materials')) {
+    fs.unlinkSync(filePath);
+    throw HttpError(400, 'Sheet "Materials" is required but not found.');
+  }
+
+  const materialsData = XLSX.utils.sheet_to_json(workbook.Sheets['Materials'], { defval: "" });
+  const regulatoryComplianceData = workbook.SheetNames.includes('RegulatoryCompliance')
+    ? XLSX.utils.sheet_to_json(workbook.Sheets['RegulatoryCompliance'], { defval: "" })
+    : [];
+  const componentsData = workbook.SheetNames.includes('Components')
+    ? XLSX.utils.sheet_to_json(workbook.Sheets['Components'], { defval: "" })
+    : [];
+
   fs.unlinkSync(filePath);
 
-  // Очистка пустых полей
-  const cleanedData = jsonData.map(row => {
-    const cleaned = {};
-    for (const key in row) {
-      if (row[key] !== "") {
-        cleaned[key] = row[key];
-      }
-    }
-    return cleaned;
-  });
-
-  // Обработка supplierId и regulatoryCompliance
-  for (const mat of cleanedData) {
-    if (mat.supplier && mat.supplier !== "") {
-      const supplierRecord = await Supplier.findOne({ name: mat.supplier });
-      if (supplierRecord) {
-        mat.supplierId = supplierRecord._id.toString();
-      }
-    }
-
-    if (mat.regulatoryCompliance && typeof mat.regulatoryCompliance === 'string') {
-      const complianceData = JSON.parse(mat.regulatoryCompliance);
-
-      for (const item of complianceData) {
-        if (item.title) {
-          const regulationRecord = await Regulation.findOne({ title: item.title });
-          if (regulationRecord) {
-            // Подставляем данные из БД
-            item._id = regulationRecord._id.toString();
-            item.title = regulationRecord.title;
-            item.description = regulationRecord.description;
-            // item.status оставляем из файла, не меняем
-          } else {
-            // Если нет такой регуляции в БД, пока бросаем ошибку (дальше логику надо усложнять) 
-            throw HttpError(400, `Regulation with title "${item.title}" not found`);
-          }
-        }
-      }
-
-      mat.regulatoryCompliance = complianceData;
-    }
-  }
-
-  // Валидация данных
   const validMaterials = [];
-  for (const mat of cleanedData) {
-    const { error, value } = Material.validateMaterialSchema.validate(mat);
-    if (error) {
-      throw HttpError(400, `Validation error: ${error.message}`);
+  const skippedMaterials = [];
+  const materialIdMap = new Map(); // Для хранения соответствий partNumber -> _id
+
+  // Этап 1: Вставка всех материалов
+  for (const material of materialsData) {
+    const newMaterial = {
+      partNumber: material.partNumber || '',
+      description: material.description || '',
+      supplier: material.supplier || '',
+      supplierItemNumber: String(material.supplierItemNumber || ''),
+      countryOfOrigin: material.countryOfOrigin || '',
+      status: material.status || 'Active',
+      components: [], // Пока пустой
+      regulatoryCompliance: [],
+      parentID: [],
+    };
+
+    if (newMaterial.supplier) {
+      const supplierRecord = await Supplier.findOne({ name: newMaterial.supplier });
+      newMaterial.supplierId = supplierRecord ? supplierRecord._id.toString() : null;
     }
-    validMaterials.push(value);
+
+    const complianceRecords = regulatoryComplianceData.filter(
+      (rc) => rc.partNumber === newMaterial.partNumber
+    );
+    if (complianceRecords.length > 0) {
+      newMaterial.regulatoryCompliance = await processRegulatoryCompliance(complianceRecords);
+    } else {
+      console.warn(`No regulatoryCompliance data found for material ${newMaterial.partNumber}`);
+      newMaterial.regulatoryCompliance = []; // Явно указываем пустое значение
+    }
+    
+    const { error, value } = Material.validateMaterialSchema.validate(newMaterial);
+    if (error) {
+      console.error(`Validation error for material ${newMaterial.partNumber}:`, error.message);
+      skippedMaterials.push(newMaterial);
+      continue;
+    }
+
+    const insertedOrUpdated = await Material.findOneAndUpdate(
+      { partNumber: value.partNumber },
+      { $set: value },
+      { upsert: true, new: true, runValidators: true }
+    );
+    console.log("UPSERT RESULT for", value.partNumber, insertedOrUpdated.regulatoryCompliance);
+
+    materialIdMap.set(insertedOrUpdated.partNumber, insertedOrUpdated._id);
+    validMaterials.push(insertedOrUpdated);
   }
 
+  // Этап 2: Обновление компонентов
+  for (const material of validMaterials) {
+    const componentRecords = componentsData.filter(
+      (comp) => comp.ParentPartNumber === material.partNumber
+    );
 
-  // Вставка в БД
-  const inserted = await Material.insertMany(validMaterials);
+    for (const comp of componentRecords) {
+      const childMaterialId = materialIdMap.get(comp.childPartNumber);
+    
+      if (!childMaterialId) {
+        console.warn(`Child material with partNumber ${comp.childPartNumber} not found.`);
+        continue;
+      }
+    
+      // Обновляем parentID у дочернего материала
+      await Material.updateOne(
+        { _id: childMaterialId },
+        { $addToSet: { parentID: material._id } }
+      );
+    
+      // Получаем дочерний материал с regulatoryCompliance
+      const childMaterial = await Material.findById(childMaterialId);
+    
+      if (!childMaterial) {
+        console.warn(`Child material ${comp.childPartNumber} not found in database.`);
+        continue;
+      }
+    
+      console.log(`Child material ${childMaterial.partNumber} has regulatoryCompliance:`, childMaterial.regulatoryCompliance);
+    
+      material.components.push({
+        partNumber: childMaterial.partNumber,
+        description: childMaterial.description,
+        supplier: childMaterial.supplier,
+        supplierItemNumber: childMaterial.supplierItemNumber,
+        countryOfOrigin: childMaterial.countryOfOrigin,
+        status: childMaterial.status,
+        parentID: material._id,
+        regulatoryCompliance: childMaterial.regulatoryCompliance || [],
+      });
+    }
+
+    await material.save(); // Сохраняем обновленный материал
+    console.log(`material.components: ${material.components}`)
+    // Обновляем regulatoryCompliance у родителя
+    await updateParentRegulatoryCompliance(material, material.components);
+  }
+
+  console.log("=== FINAL CHECK IN DB ===");
+for (const m of validMaterials) {
+  const docInDb = await Material.findOne({ partNumber: m.partNumber }).lean();
+  console.log(m.partNumber, "->", docInDb?.regulatoryCompliance);
+}
 
   res.status(201).json({
     status: 'success',
     code: 201,
-    data: inserted,
+    data: {
+      insertedMaterials: validMaterials,
+      skippedMaterials,
+    },
   });
-      // // Поддерживаем только XLSX
-      // if (extension !== 'xlsx') {
-      //   fs.unlinkSync(filePath);
-      //   throw HttpError(400, 'Unsupported file type. Please upload an XLSX file.');
-      // }
-
-      // try {
-      //   const workbook = XLSX.readFile(filePath);
-      //   const sheetName = 'Materials';
-
-      //   if (!workbook.SheetNames.includes(sheetName)) {
-      //     fs.unlinkSync(filePath);
-      //     throw HttpError(400, `Sheet "${sheetName}" not found in the uploaded file.`);
-      //   }
-
-      //   const worksheet = workbook.Sheets[sheetName];
-      //   // Преобразуем лист в массив объектов. defval: "" - пустые ячейки будут пустыми строками.
-      //   const jsonData = XLSX.utils.sheet_to_json(worksheet, { defval: "" });
-
-      //   fs.unlinkSync(filePath); // Удаляем файл после прочтения
-
-      //   // Теперь jsonData будет массивом, например:
-      //   // [
-      //   //   { partNumber: "PN001", description: "Desc1", supplier: "Sup1", supplierItemNumber: "S-001", countryOfOrigin: "USA", status: "active" },
-      //   //   { partNumber: "PN002", description: "Desc2", ... },
-      //   //   ...
-      //   // ]
-
-      //   // Очищаем пустые строки (если поле пустое, удаляем его, чтобы Joi правильно отработал валидацию)
-      //   const cleanedData = jsonData.map(row => {
-      //     const cleaned = {};
-      //     for (const key in row) {
-      //       if (row[key] !== "") {
-      //         cleaned[key] = row[key];
-      //       }
-      //     }
-      //     return cleaned;
-      //   });
-
-      //   // Для каждого материала, если указан supplier, находим его в базе
-      //   // и добавляем supplierId. Если не нашли - supplierId не ставим.
-      //   for (const mat of cleanedData) {
-      //     if (mat.supplier && mat.supplier !== "") {
-      //       const supplierRecord = await Supplier.findOne({ name: mat.supplier });
-      //       if (supplierRecord) {
-      //         mat.supplierId = supplierRecord._id.toString(); // Преобразуем ObjectId в строку чтобы пройти валидацию Joi
-      //       } else {
-      //         // Пока просто пропускаем, если поставщика нет
-      //       }
-      //     }
-      //   }
-
-      //     // Обработка regulatoryCompliance, если есть колонка regulatoryCompliance
-      //     // и она содержит JSON-строку
-      //     if (mat.regulatoryCompliance && typeof mat.regulatoryCompliance === 'string') {
-
-      //         const complianceData = JSON.parse(mat.regulatoryCompliance);
-      //         // complianceData ожидается как массив объектов { title, description, status, ... }
-              
-      //         // Обрабатываем каждый объект: ищем регуляцию по title
-      //         for (const item of complianceData) {
-      //           if (item.title) {
-      //             const regulationRecord = await Regulation.findOne({ title: item.title });
-      //             if (regulationRecord) {
-      //               item._id = regulationRecord._id; // Подставляем найденный _id
-      //             } else {
-      //               // Если не нашли акт, можно или пропустить или создать новый.
-      //               // Например, можно бросить ошибку:
-      //               // throw HttpError(400, `Regulation with title "${item.title}" not found`);
-      //               // Или оставить без _id, если это допустимо.
-      //             }
-      //           }
-      //         }
-      //         mat.regulatoryCompliance = complianceData;
-      //     }
-        
-      //   // Валидируем данные по Joi-схеме
-      //   const validMaterials = [];
-      //   for (const mat of cleanedData) {
-      //     const { error, value } = Material.validateMaterialSchema.validate(mat);
-      //     if (error) {
-      //       throw HttpError(400, `Validation error: ${error.message}`);
-      //     }
-      //     validMaterials.push(value);
-      //   }
-
-      //   // Вставляем в БД
-      //   const inserted = await Material.insertMany(validMaterials);
-
-      //   res.status(201).json({
-      //     status: 'success',
-      //     code: 201,
-      //     data: inserted,
-      //   });
-
-      // } catch (error) {
-      //   console.error(error);
-      //   if (fs.existsSync(filePath)) {
-      //     fs.unlinkSync(filePath);
-      //   }
-      //   throw HttpError(500, "Internal server error", { details: error.message });
-      // }
 };
+
+
+
 
   export default {
     uploadFile: ctrlWrapper(upload),

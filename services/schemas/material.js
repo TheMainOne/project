@@ -22,36 +22,48 @@
       supplier: { type: String, default: "" },
       supplierId: { type: mongoose.Schema.Types.ObjectId, ref: 'Supplier', required: false, default: null },
       supplierItemNumber: { type: String, default: "" },
-      components: { type: [this], default: [] }, // Рекурсивная вложенность
+      components: { type: [this], default: [] }, // Recursive nesting
       countryOfOrigin: { type: String, default: "" },
       status: { type: String, default: "active" },
       regulatoryCompliance: { type: [RegulatoryComplianceSchema], default: [] },
       BOMcomponent: { type: String, default: "" },
-      storagePath: {type: String, default: ""},
+      storagePath: { type: String, default: "" },
+      notes: { type: String, default: "" }, // Added notes field
+      category: { type: String, default: "other" }, // Added category field
+      unitOfMeasure: { type: String, default: "" }, // Added unit of measure
+      leadTime: { type: Number, default: 0 }, // Added lead time
+      customFields: { type: Map, of: String, default: {} }, // Added custom fields
     },
     { _id: true }
   );
+  
 
   const MaterialSchema = new mongoose.Schema(
     {
       partNumber: { type: String, required: true, unique: true },
       description: { type: String, required: true },
       supplier: { type: String, default: "" },
-      supplierId: { type: mongoose.Schema.Types.ObjectId, ref: 'Supplier', required: false, default: null }, 
+      supplierId: { type: mongoose.Schema.Types.ObjectId, ref: 'Supplier', required: false, default: null },
       supplierItemNumber: { type: String, default: "" },
       parentID: { type: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Material' }], default: [] },
-      components: { type: [ComponentSchema], default: [] }, // Вложенные компоненты
+      components: { type: [ComponentSchema], default: [] }, // Nested components
       countryOfOrigin: { type: String, default: "" },
       status: { type: String, default: "active" },
-      regulatoryCompliance: { type: [RegulatoryComplianceSchema], default: [] }, // Ссылка на регулирующие акты
+      regulatoryCompliance: { type: [RegulatoryComplianceSchema], default: [] }, // Reference to regulations
       BOMcomponent: { type: String, default: "" },
-      storagePath: {type: String, default: ""},
+      storagePath: { type: String, default: "" },
+      notes: { type: String, default: "" }, // Added notes field
+      category: { type: String, default: "other" }, // Added category field
+      unitOfMeasure: { type: String, default: "" }, // Added unit of measure
+      leadTime: { type: Number, default: 0 }, // Added lead time
+      customFields: { type: Map, of: String, default: {} }, // Added custom fields
     },
     {
       versionKey: false,
       timestamps: true,
     }
   );
+  
 
   const RegulatoryComplianceSchemaJoi = Joi.object({
     _id: Joi.objectId().required(),
@@ -74,6 +86,11 @@
     regulatoryCompliance: Joi.array().items(RegulatoryComplianceSchemaJoi).default([]),
     BOMcomponent: Joi.string().default("").allow(""), 
     storagePath: Joi.string().default("").allow(""), 
+    notes: Joi.string().default("").allow(""), // Added notes validation
+    category: Joi.string().valid("packaging", "raw_material", "component", "other").default("other"), // Category validation
+    unitOfMeasure: Joi.string().default("").allow(""), // Unit of measure validation
+    leadTime: Joi.number().integer().min(0).default(0), // Lead time validation
+    customFields: Joi.object().pattern(Joi.string(), Joi.string()).default({}), // Custom fields validation
   }).id('ComponentSchema');
 
 
@@ -85,11 +102,16 @@
     supplierItemNumber: Joi.string().default("").allow(""),
     parentID: Joi.array().items(Joi.objectId()).default([]),
     components: Joi.array().items(ComponentSchemaJoi).default([]),
-    countryOfOrigin: Joi.string().default(""),
+    countryOfOrigin: Joi.string().default("").allow(""),
     status: Joi.string().required(),
     regulatoryCompliance: Joi.array().items(RegulatoryComplianceSchemaJoi).default([]),
     BOMcomponent: Joi.string().default("").allow(""),
     storagePath: Joi.string().default("").allow(""),
+    notes: Joi.string().default("").allow(""),
+    category: Joi.string().valid("packaging", "raw_material", "component", "other").default("other"), // Category validation
+    unitOfMeasure: Joi.string().default("").allow(""), // Unit of measure validation
+    leadTime: Joi.number().integer().min(0).default(0), // Lead time validation
+    customFields: Joi.object().pattern(Joi.string(), Joi.string()).default({}), // Custom fields validation
   });
 
   const ComponentSchemaJoiForUpdating = Joi.object({
@@ -99,7 +121,7 @@
     supplier: Joi.string().allow("").optional(),
     supplierId: Joi.objectId().allow(null).optional(), 
     supplierItemNumber: Joi.string().allow("").optional(),
-    components: Joi.array().items(Joi.object({ /* рекурсивная структура */ })).default([]).optional(),
+    components: Joi.array().items(Joi.link('#ComponentSchema')).default([]).optional(), // Recursive link for components
     countryOfOrigin: Joi.string().allow("").optional(),
     status: Joi.string().allow("").optional(),
     regulatoryCompliance: Joi.array().items(Joi.object({
@@ -109,9 +131,13 @@
     })).default([]),
     BOMcomponent: Joi.string().allow("").optional(),
     storagePath: Joi.string().allow("").optional(),
+    notes: Joi.string().allow("").optional(), // Added notes validation
+    category: Joi.string().valid("packaging", "raw_material", "component", "other").default("other").optional(), // Category validation
+    unitOfMeasure: Joi.string().allow("").optional(), // Unit of measure validation
+    leadTime: Joi.number().integer().min(0).optional(), // Lead time validation
+    customFields: Joi.object().pattern(Joi.string(), Joi.string()).default({}).optional(), // Custom fields validation
   }).id('ComponentSchema');
   
-
   const updateMaterialSchema = Joi.object({
     relatedParentId: Joi.objectId().allow(null).optional().messages({
       'string.pattern.name': 'Invalid relatedParentId format. It must be a valid MongoDB ObjectId (24 characters).'
@@ -128,6 +154,11 @@
     regulatoryCompliance: Joi.array().items(RegulatoryComplianceSchemaJoi).default([]).optional(),
     BOMcomponent: Joi.string().allow("").optional(),
     storagePath: Joi.string().allow("").optional(),
+    notes: Joi.string().allow("").optional(), // Added notes validation
+    category: Joi.string().valid("packaging", "raw_material", "component", "other").default("other").optional(), // Category validation
+    unitOfMeasure: Joi.string().allow("").optional(), // Unit of measure validation
+    leadTime: Joi.number().integer().min(0).optional(), // Lead time validation
+    customFields: Joi.object().pattern(Joi.string(), Joi.string()).default({}).optional(), // Custom fields validation
   });
 
   const validateUpdateComplianceStatusWithDocumentSchema = Joi.object({
