@@ -84,6 +84,14 @@ const updateParentRegulatoryCompliance = async (parentMaterial, components) => {
     }
   }
 
+    // === Добавляем проверку на пустой Set ===
+    if (allRegulationIds.size === 0) {
+      console.log(`No child compliance found for parent ${parentMaterial.partNumber}, 
+                   keep parent's compliance as is.`);
+      // просто выходим из функции, не меняем parentMaterial
+      return;
+    }
+
   // 2. Создаём карту для результирующей сводки по каждому _id
   const complianceMap = new Map();
   for (const regId of allRegulationIds) {
@@ -152,8 +160,9 @@ const updateParentRegulatoryCompliance = async (parentMaterial, components) => {
       status: finalStatus,
     });
   }
-
+console.log(`parentMaterial before: ${parentMaterial}`)
   parentMaterial.regulatoryCompliance = updatedCompliance;
+  console.log(`parentMaterial after: ${parentMaterial}`)
   await parentMaterial.save();
 };
 
@@ -234,8 +243,17 @@ const importBasicMaterials = async (req, res) => {
       console.warn(`No regulatoryCompliance data found for material ${newMaterial.partNumber}`);
       newMaterial.regulatoryCompliance = []; // Явно указываем пустое значение
     }
+
+    console.log(`material before validation: ${JSON.stringify(newMaterial, null, 2)}`);
+
+    const { error, value } = Material.validateMaterialSchema.validate(newMaterial, {
+      abortEarly: false, // чтобы увидеть все ошибки разом
+      allowUnknown: true // чтобы Joi не удалял поля, не описанные в схеме
+    });
+    console.log("material after validation:", value);
+    console.log("validation error:", error);
+
     
-    const { error, value } = Material.validateMaterialSchema.validate(newMaterial);
     if (error) {
       console.error(`Validation error for material ${newMaterial.partNumber}:`, error.message);
       skippedMaterials.push(newMaterial);
@@ -249,14 +267,23 @@ const importBasicMaterials = async (req, res) => {
     );
     console.log("UPSERT RESULT for", value.partNumber, insertedOrUpdated.regulatoryCompliance);
 
+    // И НЕМЕДЛЕННО после этого делаем:
+const docCheck = await Material.findOne({ partNumber: value.partNumber }).lean();
+console.log("DB check after upsert =>", docCheck?.regulatoryCompliance);
+
+
     materialIdMap.set(insertedOrUpdated.partNumber, insertedOrUpdated._id);
     validMaterials.push(insertedOrUpdated);
   }
 
+
+  console.log(`validMaterials: ${validMaterials}`);
+
+
   // Этап 2: Обновление компонентов
   for (const material of validMaterials) {
     const componentRecords = componentsData.filter(
-      (comp) => comp.ParentPartNumber === material.partNumber
+      (comp) => comp.parentPartNumber === material.partNumber
     );
 
     for (const comp of componentRecords) {
@@ -275,6 +302,7 @@ const importBasicMaterials = async (req, res) => {
     
       // Получаем дочерний материал с regulatoryCompliance
       const childMaterial = await Material.findById(childMaterialId);
+      console.log(`childMaterial after update: ${childMaterial}`);
     
       if (!childMaterial) {
         console.warn(`Child material ${comp.childPartNumber} not found in database.`);
@@ -296,7 +324,7 @@ const importBasicMaterials = async (req, res) => {
     }
 
     await material.save(); // Сохраняем обновленный материал
-    console.log(`material.components: ${material.components}`)
+    console.log(`material.components: ${material}`)
     // Обновляем regulatoryCompliance у родителя
     await updateParentRegulatoryCompliance(material, material.components);
   }
