@@ -67,13 +67,31 @@ const filterAndSort = (req, res, next) => {
 
   // Фильтрация по регуляторным актам и статусу
   if (regulatoryCompliance && complianceStatus) {
-    filter['regulatoryCompliance'] = {
+    const complianceArr = regulatoryCompliance.split(',').map(item => item.trim());
+  
+    // Строим массив $elemMatch для каждого акта
+    const elemMatchArray = complianceArr.map(c => ({
       $elemMatch: {
-        title: { $regex: regulatoryCompliance, $options: 'i' },
-        status: complianceStatus
+        title: { $regex: c, $options: 'i' },
+        status: complianceStatus,
       }
+    }));
+  
+    filter['regulatoryCompliance'] = {
+      $all: elemMatchArray
     };
   }
+
+
+
+  // if (regulatoryCompliance && complianceStatus) {
+  //   filter['regulatoryCompliance'] = {
+  //     $elemMatch: {
+  //       title: { $regex: regulatoryCompliance, $options: 'i' },
+  //       status: complianceStatus
+  //     }
+  //   };
+  // }
 
   // Обработка сортировки
   if (sortBy) {
