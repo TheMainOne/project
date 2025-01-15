@@ -108,9 +108,9 @@
     BOMcomponent: Joi.string().default("").allow(""),
     storagePath: Joi.string().default("").allow(""),
     notes: Joi.string().default("").allow(""),
-    category: Joi.string().valid("packaging", "raw_material", "component", "other").default("other"), // Category validation
-    unitOfMeasure: Joi.string().default("").allow(""), // Unit of measure validation
-    leadTime: Joi.number().integer().min(0).default(0), // Lead time validation
+    category: Joi.string().valid("packaging", "raw_material", "component", "other").empty("").default("other").optional(), 
+    unitOfMeasure: Joi.string().default("").allow(""), 
+    leadTime: Joi.number().integer().min(0).empty("").default(0).optional(), 
     customFields: Joi.object().pattern(Joi.string(), Joi.string()).default({}), // Custom fields validation
   });
 
