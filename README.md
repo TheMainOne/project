@@ -37,6 +37,9 @@
    - [Создание нового документа](#1-создание-нового-документа)
    - [Получение документов по ID материала и ID регулирующего акта](#2-получение-документов-по-id-материала-и-id-регулирующего-акта)
 
+6. [API Endpoints для управления юзерами](#our-api-endpoints-for-managing-users)
+   - [Получение всех юзеров](#1-получение-всех-юзеров)
+   - [Получение юзера по ID](#2-получение-одного-юзера)
 
  _________________________________________
 
@@ -1925,3 +1928,256 @@ localhost:3000/api/documents?regulationId=670fed898818777806d4dee5&materialId=66
 401 Unauthorized — ошибка аутентификации.  
 404 Not Found — документы не найдены.  
 500 Internal Server Error — ошибка сервера.  
+
+
+
+
+_________________________________________    
+
+
+#### Our API Endpoints for managing users
+
+| Method             | URL                                      | Description                              |
+| ------------------ | ---------------------------------------- | ---------------------------------------- |
+| `GET`              | `/api/users`                             | Get all users list                       |
+| `GET`              | `/api/users/:id`                         | Get user by ID                           |
+
+
+
+_________________________________________
+
+#### 1. Получение всех юзеров
+
+- **Метод:** GET
+- **URL:** `/api/users`
+- **Описание:** Получение всех юзеров.
+- **Требования:** Аутентификация пользователя (ТОКЕН).
+- **Параметры запроса:**  
+  GET /api/users  
+  Authorization: Bearer <token>  
+
+- **Пример запроса:**  
+  ```
+  GET /api/users/
+  Authorization: Bearer <token>  
+  ```
+  
+- **Пример ответа:**  
+  ```{
+    "status": "success",
+    "code": 200,
+    "data": {
+        "users": [
+            {
+                "profile": {
+                    "avatarUrl": null
+                },
+                "locale": "en",
+                "timezone": "UTC",
+                "status": "active",
+                "emailVerified": false,
+                "lastLoginAt": null,
+                "permissions": {},
+                "_id": "66d34e63cf1f9c8fea704737",
+                "password": "$2b$12$JVfPjzn0vRIJJbs.35ccfeILtpBjthE61E1lMC3NqdE2BrqpJJYPW",
+                "email": "maksym@gmail.com",
+                "name": "Max",
+                "role": "admin",
+                "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6IjY2ZDM0ZTYzY2YxZjljOGZlYTcwNDczNyIsImlhdCI6MTczMjY0NDMwNSwiZXhwIjoxNzMyNjY1OTA1fQ.Jcb1Live4MkAz2YcAVxpQ5tsFWslxSA9EfKjPduD-fA",
+                "createdAt": "2024-08-31T17:09:55.521Z",
+                "updatedAt": "2024-11-26T18:05:05.040Z"
+            },
+            {
+                "profile": {
+                    "avatarUrl": null
+                },
+                "lastLoginAt": null,
+                "_id": "66dafb73650231bfa7339411",
+                "password": "$2b$12$h0LPsruU1denexV1Wj4MbuhXhnCwwcEt9H9WBHLuiNSOzT4ocKM0e",
+                "email": "test@gmail.com",
+                "name": "TestName",
+                "role": "employee",
+                "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6IjY2ZGFmYjczNjUwMjMxYmZhNzMzOTQxMSIsImlhdCI6MTczNzMwMTU4MywiZXhwIjoxNzM3MzA1MTgzfQ.6aMPQj1VkZlmkpxpG3ohbNLLwtX98dPe8oyo3dyabw0",
+                "createdAt": "2024-09-06T12:54:11.568Z",
+                "updatedAt": "2025-01-19T15:46:23.932Z",
+                "surname": "Test",
+                "emailVerified": false,
+                "locale": "en",
+                "permissions": {},
+                "status": "active",
+                "timezone": "UTC"
+            },
+            {
+                "profile": {
+                    "avatarUrl": null
+                },
+                "_id": "6759b6d425bdc0bdc4ac4115",
+                "password": "$2b$12$UmychJr3yZhkla0RHZCrG.xTzVVyxqI96gPGwSzFbdIPTPIrs7rNC",
+                "email": "maksym.lvov@gmail.com",
+                "name": "Maksym",
+                "surname": "Lvov",
+                "locale": "en",
+                "timezone": "UTC",
+                "status": "active",
+                "emailVerified": false,
+                "lastLoginAt": null,
+                "role": "employee",
+                "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6IjY3NTliNmQ0MjViZGMwYmRjNGFjNDExNSIsImlhdCI6MTczNzM0MTY3MiwiZXhwIjoxNzM3MzYzMjcyfQ.n5tKy44ftwJE5hdeNA2HNZO4KnFRv8N7NP-9BRCAGlc",
+                "permissions": {
+                    "materials": {
+                        "actions": {
+                            "read": true,
+                            "edit": false,
+                            "delete": false
+                        }
+                    }
+                },
+                "createdAt": "2024-12-11T15:59:16.542Z",
+                "updatedAt": "2025-01-20T02:54:32.178Z"
+            },
+            {
+                "profile": {
+                    "avatarUrl": null
+                },
+                "_id": "678a652e6d5999ee4ff3bef5",
+                "password": "$2b$12$XbvjxdBqZPhZn88Er7DfX.GObyWB1W87pCjb6jsPMHmqcEeP7NZVO",
+                "email": "maksym.gastello@gmail.com",
+                "name": "Maksym",
+                "surname": "Gastello",
+                "locale": "en",
+                "timezone": "UTC",
+                "status": "active",
+                "emailVerified": false,
+                "lastLoginAt": null,
+                "role": "employee",
+                "token": null,
+                "permissions": {
+                    "materials": {
+                        "actions": {
+                            "read": true,
+                            "edit": false,
+                            "delete": false
+                        }
+                    }
+                },
+                "createdAt": "2025-01-17T14:11:58.236Z",
+                "updatedAt": "2025-01-17T14:11:58.236Z"
+            },
+            {
+                "profile": {
+                    "avatarUrl": null
+                },
+                "_id": "678a6b856d5999ee4ff3befb",
+                "password": "$2b$12$RFCbT37GNwXUnSG9DsesMe8MvyPo54jUIZ1e9FHjiUK3dnRRJWV1W",
+                "email": "andriy.hardy@gmail.com",
+                "name": "Andriy",
+                "surname": "Hardy",
+                "locale": "en",
+                "timezone": "UTC",
+                "status": "active",
+                "emailVerified": false,
+                "lastLoginAt": null,
+                "role": "employee",
+                "token": null,
+                "permissions": {
+                    "materials": {
+                        "actions": {
+                            "read": true,
+                            "edit": false,
+                            "delete": false
+                        }
+                    }
+                },
+                "createdAt": "2025-01-17T14:39:01.508Z",
+                "updatedAt": "2025-01-17T14:39:01.508Z"
+            },
+            {
+                "profile": {
+                    "avatarUrl": null
+                },
+                "_id": "678c09375173f7d9f9bee931",
+                "password": "$2b$12$lYY1cdaeGGU9byDyCATQAOH9hmioeoE7Q2JED3BcHj1snv1T87qQK",
+                "email": "testemail@gmail.com",
+                "name": "test",
+                "surname": "test",
+                "locale": "en",
+                "timezone": "UTC",
+                "status": "active",
+                "emailVerified": false,
+                "lastLoginAt": null,
+                "role": "employee",
+                "token": null,
+                "permissions": {},
+                "createdAt": "2025-01-18T20:04:07.344Z",
+                "updatedAt": "2025-01-18T20:04:07.344Z"
+            }
+        ],
+        "totalPages": 1,
+        "currentPage": 1
+    }
+}
+  
+- **Статусы ответов:**
+  - 200 OK — Перадача всех юзеров.
+  - 400 Bad Request — неверный формат данных.
+  - 401 Unauthorized — ошибка аутентификации.
+  - 500 Internal Server Error — ошибка сервера.
+ 
+_________________________________________
+
+#### 2. Получение одного юзера
+
+- **Метод:** GET
+- **URL:** `/api/users/:id`
+- **Описание:** Получение одного юзера.
+- **Требования:** Аутентификация пользователя (ТОКЕН).
+- **Параметры запроса:**  
+  GET /api/users/:id
+  Authorization: Bearer <token>  
+
+- **Пример запроса:**  
+  ```
+  GET /api/users/678a6b856d5999ee4ff3befb
+  Authorization: Bearer <token>  
+  ```
+  
+- **Пример ответа:**  
+  ```{
+    "status": "success",
+    "code": 200,
+    "data": {
+        "user": {
+            "profile": {
+                "avatarUrl": null
+            },
+            "_id": "678a6b856d5999ee4ff3befb",
+            "password": "$2b$12$RFCbT37GNwXUnSG9DsesMe8MvyPo54jUIZ1e9FHjiUK3dnRRJWV1W",
+            "email": "andriy.hardy@gmail.com",
+            "name": "Andriy",
+            "surname": "Hardy",
+            "locale": "en",
+            "timezone": "UTC",
+            "status": "active",
+            "emailVerified": false,
+            "lastLoginAt": null,
+            "role": "employee",
+            "token": null,
+            "permissions": {
+                "materials": {
+                    "actions": {
+                        "read": true,
+                        "edit": false,
+                        "delete": false
+                    }
+                }
+            }
+        }
+    }
+}
+  
+- **Статусы ответов:**
+  - 200 OK — Перадача одного юзера.
+  - 400 Bad Request — неверный формат данных.
+  - 401 Unauthorized — ошибка аутентификации.
+  - 500 Internal Server Error — ошибка сервера.
+ 
