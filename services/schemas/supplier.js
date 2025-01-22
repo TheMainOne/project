@@ -51,6 +51,8 @@ const supplierSchema = new mongoose.Schema({
         uploadedBy: { type: String },
       },
     ],
+    countryOfOrigin: { type: String, default: "" }, // Новое поле
+    notes: { type: String, default: "" }, // Новое поле
   },
   {
     versionKey: false,
@@ -108,6 +110,8 @@ const supplierSchema = new mongoose.Schema({
         uploadedBy: Joi.string().optional(),
       })
     ).optional(),
+    countryOfOrigin: Joi.string().optional(), // Новое поле
+    notes: Joi.string().optional(), // Новое поле
   });
 
   const updateSupplierSchema = Joi.object({
@@ -160,6 +164,8 @@ const supplierSchema = new mongoose.Schema({
         uploadedBy: Joi.string().optional(),
       })
     ).optional(),
+    countryOfOrigin: Joi.string().optional(), // Новое поле
+    notes: Joi.string().optional(), // Новое поле
   }).min(1); // Обновление требует хотя бы одного поля
 
   export const supplierValidationSchema = {
