@@ -877,7 +877,7 @@ const updateComplianceStatusWithDocument = async (req, res) => {
 };
 
 export default {
-  getAll: [filterAndSort, ctrlWrapper(getAllMaterials)],
+  getAll: ctrlWrapper(getAllMaterials),
   getById: ctrlWrapper(getByID),
   updateByID: ctrlWrapper(updateByID),
   createMaterial: ctrlWrapper(createMaterial),

@@ -3,13 +3,14 @@ import authenticate from "../middlewares/authenticate.js";
 import isValidId from "../middlewares/isValidId.js";
 import validateBody from "../middlewares/validateBody.js";
 import controllers from "../controllers/suppliersController.js";
+import filterAndSort from "../middlewares/filterAndSort.js";
 import { supplierValidationSchema } from "../services/schemas/supplier.js";
 
 const supplierRouter = express.Router();
 
 supplierRouter.get(
     "/api/suppliers",
-    authenticate,
+    authenticate, filterAndSort,
     controllers.getAllSuppliers
   );
   supplierRouter.get(

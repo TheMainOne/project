@@ -6,16 +6,21 @@ import logAction from "../utils/logAction.js";
 const getSuppliersList = async (req, res) => {
   const page = parseInt(req.query.page, 10) || 1;
   const limit = parseInt(req.query.limit, 10) || 10;
-
-  if (page <= 0 || limit <= 0) {
-    throw HttpError(400, "Page and limit must be positive integers.");
-  }
-
   const skip = (page - 1) * limit;
 
-  const results = await Supplier.find({}).skip(skip).limit(limit).exec();
+    // Используем фильтры и сортировку, переданные через middleware
+    const filter = req.filter || {};
+    const sort = req.sort || { createdAt: -1 }; // Сортировка по умолчанию по дате создания
 
-  const count = await Supplier.countDocuments();
+  // Применяем фильтрацию и сортировку
+  const results = await Supplier.find(filter)
+    .sort(sort)
+    .skip(skip)
+    .limit(limit)
+    .exec();
+
+  // Считаем количество документов с учётом фильтра
+  const count = await Supplier.countDocuments(filter);
 
   res.json({
 status: "success",

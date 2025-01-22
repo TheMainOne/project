@@ -53,6 +53,11 @@ const supplierSchema = new mongoose.Schema({
     ],
     countryOfOrigin: { type: String, default: "" }, // Новое поле
     notes: { type: String, default: "" }, // Новое поле
+    status: { // Новое поле
+      type: String,
+      enum: ["active", "inactive", "pending", "suspended"], // Возможные статусы
+      default: "active",
+    },
   },
   {
     versionKey: false,
@@ -112,6 +117,8 @@ const supplierSchema = new mongoose.Schema({
     ).optional(),
     countryOfOrigin: Joi.string().optional(), // Новое поле
     notes: Joi.string().optional(), // Новое поле
+    status: Joi.string()
+    .valid("active", "inactive", "pending", "suspended").empty("").default("active"), 
   });
 
   const updateSupplierSchema = Joi.object({
@@ -166,6 +173,8 @@ const supplierSchema = new mongoose.Schema({
     ).optional(),
     countryOfOrigin: Joi.string().optional(), // Новое поле
     notes: Joi.string().optional(), // Новое поле
+    status: Joi.string()
+    .valid("active", "inactive", "pending", "suspended").empty("").optional(), // Добавлено
   }).min(1); // Обновление требует хотя бы одного поля
 
   export const supplierValidationSchema = {

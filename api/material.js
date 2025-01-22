@@ -4,13 +4,14 @@ import isValidId from "../middlewares/isValidId.js";
 import validateBody from "../middlewares/validateBody.js";
 import authenticate from "../middlewares/authenticate.js";
 import upload from "../middlewares/multer.js";
+import filterAndSort from "../middlewares/filterAndSort.js";
 import { materialSchema } from "../services/schemas/material.js";
 
 // creating a new router
 const router = express.Router();
 
 // Assigning new paths for the router
-router.get("/api/materials", authenticate, controllers.getAll);
+router.get("/api/materials", authenticate, filterAndSort, controllers.getAll);
 router.get("/api/materials/search", authenticate, controllers.searchMaterialsByPartNumber);
 router.get("/api/materials/:id", authenticate, isValidId, controllers.getById);
 router.post(
