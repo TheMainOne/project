@@ -87,7 +87,7 @@ const addNewUser = async (req, res) => {
   const emailSubject = "Welcome to Our Application!";
   const emailBody = `Hello ${name} ${surname},\n\nYour account has been created successfully. Here are your login details:\n\nEmail: ${email}\nTemporary Password: ${temporaryPassword}\n\nPlease log in and change your password as soon as possible.\n\nBest regards,\nYour Application team`;
 
-  await sendEmail({ to: email, subject: emailSubject, text: emailBody });
+  // await sendEmail({ to: email, subject: emailSubject, text: emailBody });
 
   // Логируем действие
   await logAction({
