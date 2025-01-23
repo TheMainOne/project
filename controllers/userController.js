@@ -1,8 +1,10 @@
 import bcrypt from "bcryptjs";
+import crypto from "crypto";
 import User from "../services/schemas/user.js";
 import HttpError from "../middlewares/HttpError.js";
 import ctrlWrapper from "../middlewares/ctrlWrapper.js";
 import logAction from "../utils/logAction.js";
+import sendEmail from "../utils/sendEmail.js";
 
 const getUserList = async (req, res) => {
   const page = parseInt(req.query.page, 10) || 1;
@@ -46,11 +48,11 @@ const getUserByID = async (req, res) => {
   };    
   
 const addNewUser = async (req, res) => {
-  const { email, password, name, surname, role, locale, timezone, profile, status } = req.body;
+  const { email, name, surname, role, locale, timezone, profile, status } = req.body;
 
   // Проверка на обязательные поля
-  if (!email || !password || !name || !surname) {
-    throw HttpError(400, "Email, password, name, and surname are required.");
+  if (!email || !name || !surname) {
+    throw HttpError(400, "Email, name, and surname are required.");
   }
 
   // Проверка на существующий email
@@ -59,8 +61,12 @@ const addNewUser = async (req, res) => {
     throw HttpError(409, "Email already exists.");
   }
 
-  // Хэшируем пароль перед сохранением
-  const hashedPassword = await bcrypt.hash(password, 10);
+  // Генерация случайного пароля
+  const temporaryPassword = crypto.randomBytes(8).toString("hex");
+
+  // Хеширование пароля
+  const hashedPassword = await bcrypt.hash(temporaryPassword, 10);
+
 
   // Создаем нового пользователя
   const newUser = new User({
@@ -69,13 +75,19 @@ const addNewUser = async (req, res) => {
     name,
     surname,
     role: role || "employee", // Роль по умолчанию
-    locale: locale || "en", // Локаль по умолчанию
+    locale: locale || "en", // Язык по умолчанию
     timezone: timezone || "UTC", // Часовой пояс по умолчанию
     profile: profile || { avatarUrl: null },
     status: status || "active", // Статус по умолчанию
   });
 
   await newUser.save();
+
+  // Отправка email с временным паролем 
+  const emailSubject = "Welcome to Our Application!";
+  const emailBody = `Hello ${name} ${surname},\n\nYour account has been created successfully. Here are your login details:\n\nEmail: ${email}\nTemporary Password: ${temporaryPassword}\n\nPlease log in and change your password as soon as possible.\n\nBest regards,\nYour Application team`;
+
+  await sendEmail({ to: email, subject: emailSubject, text: emailBody });
 
   // Логируем действие
   await logAction({
