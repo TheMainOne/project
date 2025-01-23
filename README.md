@@ -2191,5 +2191,60 @@ _________________________________________
   - 200 OK — Перадача одного юзера.
   - 400 Bad Request — неверный формат данных.
   - 401 Unauthorized — ошибка аутентификации.
-  - 500 Internal Server Error — ошибка сервера.
- 
+  - 500 Internal Server Error — ошибка сервера.  
+
+______________________________________________
+
+ #### 1. Добавление нового пользователя
+
+    Метод: POST
+
+URL: /api/users/
+
+Описание: Создает нового пользователя в системе.
+
+Параметры запроса (json-файл с полями):
+```json
+{
+  "email": "someemail@gmail.com", (required)
+  "name": "somename", (required)
+  "surname": "somesurname" (required)
+  "role": "somerole" (enum: ["employee", "admin", "manager"] (optional, default = "employee")
+  "locale": "somelanguage" (optional, default = "en")
+  "timezone": "sometimezone" (optional, default = "UTC"),
+  "profile": 
+}
+```
+
+Пример запроса:
+
+**POST /api/users/**
+Content-Type: application/json
+```json
+{
+  "email": "test@gmail.com",
+  "name": "test",
+  "surname": "TestName"
+}
+```
+Пример ответа:
+```json
+{
+  "status": "success",
+  "code": 201,
+  "data": {
+    "user": {
+      "id": "66dafb73560231bfa7339411",
+      "name": "test",
+      "surname": "TestName",
+      "email": "test@gmail.com",
+      "role": "employee"
+    }
+  }
+}
+```
+Статусы ответов:
+
+- **201 Created** — успешный запрос
+- **500 Internal Server Error** — ошибка сервера
+- **409 Conflict** — юзер с таким email или именем уже существует
