@@ -41,6 +41,7 @@
    - [Получение всех юзеров](#1-получение-всех-юзеров)
    - [Получение юзера по ID](#2-получение-одного-юзера)
    - [Добавление нового юзера](#3-добавление-нового-пользователя)
+   - [Обновление пользователя](#4-обновление-пользователя)  
 
  _________________________________________
 
@@ -2264,4 +2265,81 @@ Content-Type: application/json
 
 - **201 Created** — успешный запрос
 - **500 Internal Server Error** — ошибка сервера
-- **409 Conflict** — юзер с таким email или именем уже существует
+- **409 Conflict** — юзер с таким email или именем уже существует  
+
+______________________________________________
+
+ #### 4. Обновление пользователя
+
+    Метод: PUT
+
+URL: /api/users/:id
+
+Описание: Данный эндпоинт позволяет частично обновить данные пользователя по его id.  
+
+Можно менять любые поля, кроме тех, на которые действуют дополнительные ограничения безопасности (например, право менять роль пользователя или статус, доступное только администраторам).  
+Если передан новый пароль в поле password, он будет автоматически захеширован при сохранении.  
+Если передан новый email, система проверит, что он не занят другим пользователем.  
+
+Параметры запроса (json-файл с полями):
+```json
+{
+  "email": "someemail@gmail.com", (optional)
+  "password": "somepassword", (optional)
+  "name": "somename", (optional)
+  "surname": "somesurname" (optional)
+  "role": "somerole" (enum: ["employee", "admin", "manager"] (optional, default = "employee")
+  "locale": "somelanguage" (optional, default = "en")
+  "timezone": "sometimezone" (optional, default = "UTC"),
+  "status": "somestatus" (enum: ["active", "inactive", "suspended"] (optional, default = "active"),
+  "profile": {
+    "avatarUrl": null (String) (Optional, default= null)
+  }
+}
+```
+
+Пример запроса:
+
+**PUT /api/users/64a6b856d5999ee4ff3befb1**
+Content-Type: application/json
+```json
+{
+  "email": "john.new@example.com",
+  "name": "John Updated",
+  "profile": {
+    "avatarUrl": "https://example.com/avatar-new.png"
+  }
+}
+```
+Пример ответа:
+```json
+{
+  "status": "success",
+  "code": 200,
+  "data": {
+    "user": {
+      "_id": "64a6b856d5999ee4ff3befb1",
+      "email": "john.new@example.com",
+      "name": "John Updated",
+      "surname": "Doe",        
+      "role": "employee",
+      "locale": "en",
+      "timezone": "UTC",
+      "status": "active",
+      "emailVerified": false,
+      "profile": {
+        "avatarUrl": "https://example.com/avatar-new.png"
+      },
+      "lastLoginAt": null,
+      "permissions": {},
+    }
+  }
+}
+```
+Статусы ответов:
+
+- **200 OK** — успешный запрос
+- **500 Internal Server Error** — ошибка сервера
+- **409 Conflict** — Попытка обновить email на уже существующий
+- **400 Bad Request** — Некорректные данные (например, невалидный email)
+- **401 Unauthorized** — Ошибка аутентификации (неправильный или отсутствующий токен)
