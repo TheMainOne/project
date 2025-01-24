@@ -2202,18 +2202,23 @@ ______________________________________________
 
 URL: /api/users/
 
-Описание: Создает нового пользователя в системе.
+Описание: Данный эндпоинт позволяет администратору (или иному авторизованному пользователю с достаточными правами) создать нового пользователя в системе.
+Сервис генерирует для нового пользователя временный случайный пароль и отправляет его на указанный email.
+После получения письма пользователь сможет авторизоваться, а затем поменять пароль.
 
 Параметры запроса (json-файл с полями):
 ```json
 {
-  "email": "someemail@gmail.com", (required)
-  "name": "somename", (required)
-  "surname": "somesurname" (required)
-  "role": "somerole" (enum: ["employee", "admin", "manager"] (optional, default = "employee")
-  "locale": "somelanguage" (optional, default = "en")
-  "timezone": "sometimezone" (optional, default = "UTC"),
-  "profile": 
+  "email": "john.doe@example.com",
+  "name": "John",
+  "surname": "Doe",
+  "role": "manager",
+  "locale": "en",
+  "timezone": "UTC",
+  "profile": {
+    "avatarUrl": null
+  },
+  "status": "active"
 }
 ```
 
@@ -2235,11 +2240,15 @@ Content-Type: application/json
   "code": 201,
   "data": {
     "user": {
-      "id": "66dafb73560231bfa7339411",
-      "name": "test",
-      "surname": "TestName",
-      "email": "test@gmail.com",
-      "role": "employee"
+      "_id": "64a6b856d5999ee4ff3befb1",
+      "email": "john.doe@example.com",
+      "name": "John",
+      "surname": "Doe",
+      "role": "manager",
+      "locale": "en",
+      "timezone": "UTC",
+      "status": "active",
+      "emailVerified": false
     }
   }
 }
