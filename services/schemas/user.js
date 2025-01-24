@@ -137,9 +137,24 @@ const loginSchema = Joi.object({
   })
 });
 
+export const updateUserSchema = Joi.object({
+  email: Joi.string().email().optional(),
+  name: Joi.string().optional(),
+  surname: Joi.string().optional(),
+  password: Joi.string().min(6).optional(),
+  role: Joi.string().valid("employee", "admin", "manager").optional(),
+  locale: Joi.string().optional(),
+  timezone: Joi.string().optional(),
+  profile: Joi.object({
+    avatarUrl: Joi.string().uri().allow(null)
+  }).optional(),
+  status: Joi.string().valid("active", "inactive", "suspended").optional()
+}).min(1); // минимум 1 поле для обновления
+
 export const schemas = {
   registerSchema,
   loginSchema,
+  updateUserSchema
 };
 
 const User = mongoose.model("User", userSchema);

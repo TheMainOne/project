@@ -64,14 +64,10 @@ const addNewUser = async (req, res) => {
   // Генерация случайного пароля
   const temporaryPassword = crypto.randomBytes(8).toString("hex");
 
-  // Хеширование пароля
-  const hashedPassword = await bcrypt.hash(temporaryPassword, 10);
-
-
   // Создаем нового пользователя
   const newUser = new User({
     email,
-    password: hashedPassword,
+    password: temporaryPassword,
     name,
     surname,
     role: role || "employee", // Роль по умолчанию
@@ -103,7 +99,7 @@ const addNewUser = async (req, res) => {
     code: 201,
     data: {
       user: {
-        id: newUser._id,
+        _id: newUser._id,
         email: newUser.email,
         name: newUser.name,
         surname: newUser.surname,
@@ -117,9 +113,65 @@ const addNewUser = async (req, res) => {
   });
 };  
 
+const updateUserByID = async (req, res) => {
+  const { id } = req.params;
+  const updateData = req.body; // поля, которые хотим изменить
+
+  // 1. Ищем пользователя
+  const user = await User.findById(id);
+  if (!user) {
+    throw HttpError(404, "User not found");
+  }
+
+  // 2. Если в теле запроса пришёл новый email — проверяем, нет ли конфликта
+  if (updateData.email && updateData.email !== user.email) {
+    const existingUser = await User.findOne({ email: updateData.email });
+    if (existingUser && existingUser._id.toString() !== id) {
+      throw HttpError(409, "Email already in use");
+    }
+  }
+
+  // 3. Проверка роли 
+  //    только админ может менять role других пользователей
+  // if (!req.user || req.user.role !== "admin") {
+  //   // Если не админ, удаляем из updateData поле role
+  //   delete updateData.role;
+  // }
+
+  // 4. Обновляем поля пользователя
+  //    (Object.assign выполняет «частичное обновление»: не изменяем те поля, которых нет в updateData)
+  Object.assign(user, updateData);
+
+  // 5. Сохраняем. Это вызовет userSchema.pre('save'), если изменили пароль
+  await user.save();
+
+  // 6. Логируем действие
+  //    Например, пишем, что пользователь с id = req.user._id обновил пользователя user._id
+  await logAction({
+    userId: req.user._id,
+    action: "update",
+    entityType: "User",
+    entityId: user._id,
+    newData: user.toObject(),
+  });
+
+  // 7. Возвращаем ответ
+  //    Не включаем password, token, и прочие поля, которые не хотим показывать
+  const { password, token, ...safeUserData } = user.toObject();
+
+  res.json({
+    status: "success",
+    code: 200,
+    data: {
+      user: safeUserData, 
+    },
+  });
+};
+
 export default {
     getAllUsers: ctrlWrapper(getUserList),
     getUserById: ctrlWrapper(getUserByID),
     addNewUser: ctrlWrapper(addNewUser),
+    updateUserByID: ctrlWrapper(updateUserByID),
   };
   
