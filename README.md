@@ -2209,6 +2209,25 @@ URL: /api/users/
 Параметры запроса (json-файл с полями):
 ```json
 {
+  "email": "someemail@gmail.com", (required)
+  "name": "somename", (required)
+  "surname": "somesurname" (required)
+  "role": "somerole" (enum: ["employee", "admin", "manager"] (optional, default = "employee")
+  "locale": "somelanguage" (optional, default = "en")
+  "timezone": "sometimezone" (optional, default = "UTC"),
+  "status": "somestatus" (enum: ["active", "inactive", "suspended"] (optional, default = "active"),
+  "profile": {
+    "avatarUrl": null (String) (Optional, default= null)
+  }
+}
+```
+
+Пример запроса:
+
+**POST /api/users/**
+Content-Type: application/json
+```json
+{
   "email": "john.doe@example.com",
   "name": "John",
   "surname": "Doe",
@@ -2219,18 +2238,6 @@ URL: /api/users/
     "avatarUrl": null
   },
   "status": "active"
-}
-```
-
-Пример запроса:
-
-**POST /api/users/**
-Content-Type: application/json
-```json
-{
-  "email": "test@gmail.com",
-  "name": "test",
-  "surname": "TestName"
 }
 ```
 Пример ответа:
