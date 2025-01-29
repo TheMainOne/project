@@ -109,6 +109,7 @@ const filterAndSort = (req, res, next) => {
   // Определяем, какой маршрут ("api/materials" или "api/suppliers"):
   const isMaterialsRoute = req.originalUrl.includes("materials");
   const isSuppliersRoute = req.originalUrl.includes("suppliers");
+  const isUsersRoute = req.originalUrl.includes("users");
 
    // -----------------------------
   // 1. ЛОГИКА ДЛЯ МАТЕРИАЛОВ
@@ -262,8 +263,85 @@ const filterAndSort = (req, res, next) => {
   }
 
 
+
+  // -----------------------------
+  // 3. ЛОГИКА ДЛЯ ЮЗЕРОВ
+  // -----------------------------
+  if (isUsersRoute) {
+    const {
+      email,
+      name,
+      surname,
+      locale,
+      status,
+      role
+    } = req.query;
+
+    // Фильтрация по email
+    if (email) {
+      const emails = email.split(',').map(e => e.trim());
+      if (emails.length === 1) {
+        filter.email = { $regex: emails[0], $options: 'i' };
+      } else {
+        filter.email = { $in: emails.map(e => new RegExp(e, 'i')) };
+      }
+    }
+
+    // Фильтрация по имени
+    if (name) {
+      const names = name.split(',').map(n => n.trim());
+      if (names.length === 1) {
+        filter.name = { $regex: names[0], $options: 'i' };
+      } else {
+        filter.name = { $in: names.map(n => new RegExp(n, 'i')) };
+      }
+    }
+
+    // Фильтрация по фамилии
+    if (surname) {
+      const surnames = surname.split(',').map(s => s.trim());
+      if (surnames.length === 1) {
+        filter.surname = { $regex: surnames[0], $options: 'i' };
+      } else {
+        filter.surname = { $in: surnames.map(s => new RegExp(s, 'i')) };
+      }
+    }
+
+    // Фильтрация по локали
+    if (locale) {
+      const locales = locale.split(',').map(l => l.trim());
+      if (locales.length === 1) {
+        filter.locale = { $regex: locales[0], $options: 'i' };
+      } else {
+        filter.locale = { $in: locales.map(l => new RegExp(l, 'i')) };
+      }
+    }
+
+    // Фильтрация по статусу
+    if (status) {
+      const statuses = status.split(',').map(s => s.trim());
+      if (statuses.length === 1) {
+        filter.status = { $regex: statuses[0], $options: 'i' };
+      } else {
+        filter.status = { $in: statuses.map(s => new RegExp(s, 'i')) };
+      }
+    }
+
+    // Фильтрация по роли
+    if (role) {
+      const roles = role.split(',').map(r => r.trim());
+      if (roles.length === 1) {
+        filter.role = { $regex: roles[0], $options: 'i' };
+      } else {
+        filter.role = { $in: roles.map(r => new RegExp(r, 'i')) };
+      }
+    }
+  }
+
+  
+
   // ----------------------------------------
-  // 3. Сортировка (общая для всех маршрутов)
+  // 4. Сортировка (общая для всех маршрутов)
   // ----------------------------------------
   if (sortBy) {
     sort[sortBy] = sortOrder === 'desc' ? -1 : 1;

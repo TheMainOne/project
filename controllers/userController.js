@@ -16,9 +16,18 @@ const getUserList = async (req, res) => {
 
   const skip = (page - 1) * limit;
 
-  const results = await User.find({}).skip(skip).limit(limit).exec();
+      // Используем фильтры и сортировку, переданные через middleware
+      const filter = req.filter || {};
+      const sort = req.sort || { createdAt: -1 }; // Сортировка по умолчанию по дате создания
 
-  const count = await User.countDocuments();
+ // Применяем фильтрацию и сортировку
+ const results = await User.find(filter)
+ .sort(sort)
+ .skip(skip)
+ .limit(limit)
+ .exec();
+
+  const count = await User.countDocuments(filter);
 
   res.json({
     status: "success",
