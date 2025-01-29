@@ -89,7 +89,7 @@
     notes: Joi.string().default("").allow("").empty(), // Added notes validation
     category: Joi.string().valid("packaging", "raw_material", "component", "other").default("other").empty(), // Category validation
     unitOfMeasure: Joi.string().default("").allow(""), // Unit of measure validation
-    leadTime: Joi.string().default(null).allow("").empty(), // Поле leadTime теперь строка
+    leadTime: Joi.string().allow('').allow(null).default(null).optional(),// Поле leadTime теперь строка
     customFields: Joi.object().pattern(Joi.string(), Joi.string()).default({}), // Custom fields validation
   }).id('ComponentSchema');
 
@@ -110,7 +110,7 @@
     notes: Joi.string().default("").allow("").empty(),
     category: Joi.string().valid("packaging", "raw_material", "component", "other").empty("").default("other").optional(), 
     unitOfMeasure: Joi.string().default("").allow(""), 
-    leadTime: Joi.string().allow("").default(null).optional().empty(), // Поле leadTime теперь строка
+    leadTime: Joi.string().allow('').allow(null).default(null).optional(), // Поле leadTime теперь строка
     customFields: Joi.object().pattern(Joi.string(), Joi.string()).default({}), // Custom fields validation
   });
 
@@ -134,7 +134,7 @@
     notes: Joi.string().allow("").optional().empty(), // Added notes validation
     category: Joi.string().valid("packaging", "raw_material", "component", "other").default("other").optional().empty(), // Category validation
     unitOfMeasure: Joi.string().allow("").optional(), // Unit of measure validation
-    leadTime: Joi.string().allow(null).optional().empty(), // Поле leadTime теперь строка
+    leadTime: Joi.string().allow('').allow(null).optional(), // Поле leadTime теперь строка
     customFields: Joi.object().pattern(Joi.string(), Joi.string()).default({}).optional(), // Custom fields validation
   }).id('ComponentSchema');
   
@@ -157,7 +157,7 @@
     notes: Joi.string().allow("").optional(), // Added notes validation
     category: Joi.string().valid("packaging", "raw_material", "component", "other").default("other").optional(), // Category validation
     unitOfMeasure: Joi.string().allow("").optional(), // Unit of measure validation
-    leadTime: Joi.string().allow(null).optional().empty(), // Поле leadTime теперь строка
+    leadTime: Joi.string().allow('').allow(null).optional(), // Поле leadTime теперь строка
     customFields: Joi.object().pattern(Joi.string(), Joi.string()).default({}).optional(), // Custom fields validation
   });
 
