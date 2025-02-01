@@ -33,6 +33,19 @@ status: "success",
   });
 };
 
+const getAllSuppliersForDictionary = async (req, res) => {
+  const suppliers = await Supplier.find().exec();
+
+    res.json({
+      status: 'success',
+      code: 200,
+      data: {
+        suppliers,
+      },
+    });
+
+};
+
 const getSupplierByID = async (req, res) => {
   const { id } = req.params;
 
@@ -180,6 +193,7 @@ const searchSuppliersByName = async (req, res) => {
 
 export default {
   getAllSuppliers: ctrlWrapper(getSuppliersList),
+  getAllSuppliersForDictionary: ctrlWrapper(getAllSuppliersForDictionary),
   getSupplierByID: ctrlWrapper(getSupplierByID),
   createNewSupplier: ctrlWrapper(addNewSupplier),
   updateSupplierByID: ctrlWrapper(updateSupplierByID),

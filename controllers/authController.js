@@ -104,6 +104,7 @@ const loginUser = async (req, res) => {
   });
 
   user.token = token;
+  user.lastLoginAt = new Date();
   await user.save();
 
   res.status(200).json({

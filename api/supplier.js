@@ -14,6 +14,11 @@ supplierRouter.get(
     controllers.getAllSuppliers
   );
   supplierRouter.get(
+    "/api/suppliersForDictionary",
+    authenticate,
+    controllers.getAllSuppliersForDictionary
+  );
+  supplierRouter.get(
     "/api/suppliers/search",
     authenticate,
     controllers.searchSuppliersByName
