@@ -12,7 +12,7 @@ import supplierRouter from "./api/supplier.js";
 import uploadFileRouter from "./api/upload.js";
 import documentsRouter from "./api/document.js";
 import userRouter from "./api/user.js";
-
+import roleRouter from "./api/role.js";
 
 
 dotenv.config();
@@ -47,8 +47,7 @@ app.use("/", supplierRouter);
 app.use("/", uploadFileRouter);
 app.use("/", documentsRouter);
 app.use("/", userRouter);
-
-
+app.use("/", roleRouter);
 
 
 
