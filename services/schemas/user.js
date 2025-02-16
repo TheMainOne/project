@@ -62,18 +62,13 @@ const userSchema = new Schema(
       default: null
     },
     role: {
-      type: String,
-      enum: ["employee", "admin", "manager"],
-      default: "employee",
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Role",
+      required: false,
     },
     token: {
       type: String,
       default: null,
-    },
-    permissions: {
-      type: Map,
-      of: actionsSchema,
-      default: {}
     },
     preferences: {
       type: Object,
@@ -100,6 +95,8 @@ userSchema.methods.comparePassword = function (candidatePassword) {
   return bcrypt.compare(candidatePassword, this.password);
 };
 
+const objectIdPattern = /^[0-9a-fA-F]{24}$/;
+
 // Joi схемы для валидации ввода
 const registerSchema = Joi.object({
   email: Joi.string().pattern(emailValidation).required().messages({
@@ -116,7 +113,12 @@ const registerSchema = Joi.object({
   surname: Joi.string().required().messages({
     "string.empty": "Surname is required"
   }),
-  role: Joi.string().valid("employee", "admin", "manager").default("employee"),
+  role: Joi.string()
+    .pattern(objectIdPattern)
+    .optional()
+    .messages({
+      "string.pattern.base": "Role must be a valid ObjectId (24 hex characters)",
+    }),
   locale: Joi.string().default("en"),
   timezone: Joi.string().default("UTC"),
   profile: Joi.object({
@@ -142,7 +144,7 @@ export const updateUserSchema = Joi.object({
   name: Joi.string().optional(),
   surname: Joi.string().optional(),
   password: Joi.string().min(6).optional(),
-  role: Joi.string().valid("employee", "admin", "manager").optional(),
+  role: Joi.string().optional(),
   locale: Joi.string().optional(),
   timezone: Joi.string().optional(),
   profile: Joi.object({

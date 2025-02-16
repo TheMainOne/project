@@ -1,6 +1,8 @@
+import mongoose from "mongoose";
 import bcrypt from "bcryptjs";
 import crypto from "crypto";
 import User from "../services/schemas/user.js";
+import Role from "../services/schemas/role.js";
 import HttpError from "../middlewares/HttpError.js";
 import ctrlWrapper from "../middlewares/ctrlWrapper.js";
 import logAction from "../utils/logAction.js";
@@ -72,20 +74,27 @@ const addNewUser = async (req, res) => {
 
   // Генерация случайного пароля
   const temporaryPassword = crypto.randomBytes(8).toString("hex");
-
+console.log(temporaryPassword)
   // Создаем нового пользователя
-  const newUser = new User({
+  const newUserData = {
     email,
     password: temporaryPassword,
     name,
     surname,
-    role: role || "employee", // Роль по умолчанию
     locale: locale || "en", // Язык по умолчанию
     timezone: timezone || "UTC", // Часовой пояс по умолчанию
     profile: profile || { avatarUrl: null },
     status: status || "active", // Статус по умолчанию
-  });
+  };
 
+    // Если роль передана, устанавливаем её
+    if (role) {
+      newUserData.role = role;
+    }
+  
+
+  // Создаем нового пользователя
+  const newUser = new User(newUserData);
   await newUser.save();
 
   // Отправка email с временным паролем 
@@ -110,6 +119,7 @@ const addNewUser = async (req, res) => {
       user: {
         _id: newUser._id,
         email: newUser.email,
+        password: temporaryPassword,
         name: newUser.name,
         surname: newUser.surname,
         role: newUser.role,
@@ -140,21 +150,53 @@ const updateUserByID = async (req, res) => {
     }
   }
 
-  // 3. Проверка роли 
-  //    только админ может менять role других пользователей
-  // if (!req.user || req.user.role !== "admin") {
-  //   // Если не админ, удаляем из updateData поле role
-  //   delete updateData.role;
-  // }
+   // 3. Получаем роль текущего пользователя из базы для проверки глобальных разрешений
+   const currentUserRole = await Role.findById(req.user.role);
+   if (!currentUserRole) {
+     throw HttpError(403, "Current user's role not found");
+   }
+ 
 
-  // 4. Обновляем поля пользователя
+ // 4. Проверка прав обновления
+ if (req.user._id.toString() === id) {
+  // Если пользователь обновляет свою учётную запись:
+  // Проверяем, имеет ли он право редактировать свою учётную запись
+  if (
+    !currentUserRole.globalPermissions ||
+    !currentUserRole.globalPermissions.canEditOwnProfile
+  ) {
+    throw HttpError(403, "You are not allowed to edit your profile");
+  }
+  // Даже если в запросе передана роль, её игнорируем (изменять свою роль нельзя)
+  if (updateData.role) {
+    delete updateData.role;
+  }
+} else {
+  // Если обновляются данные другого пользователя:
+  if (
+    !currentUserRole.globalPermissions ||
+    !currentUserRole.globalPermissions.canChangeUserRoles
+  ) {
+    throw HttpError(403, "You are not allowed to update other users' data");
+  }
+  // Если передана роль, проверяем, что она существует и приводим к ObjectId
+  if (updateData.role) {
+    const newRole = await Role.findById(updateData.role);
+    if (!newRole) {
+      throw HttpError(404, "Role not found");
+    }
+    updateData.role = newRole._id;
+  }
+}
+
+  // 5. Обновляем поля пользователя
   //    (Object.assign выполняет «частичное обновление»: не изменяем те поля, которых нет в updateData)
-  Object.assign(user, updateData);
+   Object.assign(user, updateData);
 
-  // 5. Сохраняем. Это вызовет userSchema.pre('save'), если изменили пароль
+  // 6. Сохраняем. Это вызовет userSchema.pre('save'), если изменили пароль
   await user.save();
 
-  // 6. Логируем действие
+  // 7. Логируем действие
   //    Например, пишем, что пользователь с id = req.user._id обновил пользователя user._id
   await logAction({
     userId: req.user._id,
@@ -164,8 +206,8 @@ const updateUserByID = async (req, res) => {
     newData: user.toObject(),
   });
 
-  // 7. Возвращаем ответ
-  //    Не включаем password, token, и прочие поля, которые не хотим показывать
+  // 8. Возвращаем ответ
+ //  Формируем безопасный ответ (без пароля, токена и прочих конфиденциальных данных)
   const { password, token, ...safeUserData } = user.toObject();
 
   res.json({
