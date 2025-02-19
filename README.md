@@ -46,7 +46,12 @@
    - [Обновление пользователя](#4-обновление-пользователя)
      
 7. [API Endpoints для управления ролями](#our-api-endpoints-for-managing-roles)
-   
+   - [Получение списка ролей](#1-получение-списка-ролей)   
+   - [Получение роли по ID](#2-получение-роли-по-id)   
+   - [Создание новой роли](#3-создание-новой-роли)   
+   - [Обновление роли](#4-обновление-роли)  
+   - [Удаление роли](#5-удаление-роли)  
+
 
  _________________________________________
 
@@ -2563,4 +2568,236 @@ Authorization: Bearer <token>
 
 _________________________________________
 
+
+#### 2. Получение роли по ID
+
+- **Метод:** GET
+- **URL:** `/api/roles/:id`
+- **Описание:** Получение роли по её идентификатору.
+- **Требования:**  
+Аутентификация пользователя  
+Валидный :id  
+- **Пример запроса:**
+  ```
+GET /api/roles/67ae1dac33ae5a8aa06d33d1
+Authorization: Bearer <token>  
+  ```
+  
+- **Пример ответа:**
+```json
+{
+  "status": "success",
+  "code": 200,
+  "data": {
+    "role": {
+      "_id": "67ae1dac33ae5a8aa06d33d1",
+      "name": "employee",
+      "description": "Regular employee role",
+      "permissions": {},
+      "globalPermissions": {},
+      "createdAt": "2025-02-13T16:19:33.148Z",
+      "updatedAt": "2025-02-13T16:19:33.148Z"
+    }
+  }
+}
+```
+- **Статусы ответов:**
+  - 200 OK — успешный запрос.
+  - 404 Not Found — Роль не найдена.
+  - 401 Unauthorized — ошибка аутентификации.
+  - 500 Internal Server Error — ошибка сервера.  
+
+_________________________________________
+
+#### 3. Создание новой роли
+
+- **Метод:** POST
+- **URL:** `/api/roles/`
+- **Описание:** Создание новой роли с указанными разрешениями.
+- **Требования:**  
+Аутентификация пользователя    
+Поле name обязательно.
+- **Тело запроса может включать:**
+**name** (строка, обязательное поле).  
+**description** (строка, необязательное).  
+**permissions** (объект типа Map, где ключ — название модуля, значение — объект вида { view, create, update, delete }).  
+**globalPermissions** (объект с полями canChangeUserRoles, canViewReports, canExport, canEditOwnProfile и т.д.).  
+- **Особенности:**  
+Если name равен "admin", автоматически задаются полные права в permissions и globalPermissions.  
+Проверяется, что name не дублирует уже существующую роль.  
+
+- **Пример запроса:**
+POST /api/roles  
+Authorization: Bearer <token>  
+Content-Type: application/json  
+
+- **Пример запроса**
+```json
+{
+  "name": "manager",
+  "description": "Manager role",
+  "permissions": {
+    "Supplier": {
+      "view": true,
+      "create": true,
+      "update": true,
+      "delete": false
+    }
+  },
+  "globalPermissions": {
+    "canChangeUserRoles": true,
+    "canViewReports": true
+  }
+}
+```
+- **Пример ответа:**
+```json
+{
+  "status": "success",
+  "code": 201,
+  "data": {
+    "role": {
+      "_id": "67ae1dac33ae5a8aa06d33d1",
+      "name": "manager",
+      "description": "Manager role",
+      "permissions": {
+        "Supplier": {
+          "view": true,
+          "create": true,
+          "update": true,
+          "delete": false
+        }
+      },
+      "globalPermissions": {
+        "canChangeUserRoles": true,
+        "canViewReports": true,
+        "canExport": false,
+        "canEditOwnProfile": false
+      },
+      "createdAt": "2025-02-20T10:15:33.148Z",
+      "updatedAt": "2025-02-20T10:15:33.148Z"
+    }
+  }
+}
+```
+- **Статусы ответов:**
+  - 201 Created — Роль успешно создана.
+  - 400 Bad Request — Ошибка валидации полей (например, нет name, или permissions не является объектом).
+  - 401 Unauthorized — ошибка аутентификации.
+  - 409 Conflict — Роль с таким именем уже существует.
+  - 500 Internal Server Error — ошибка сервера.
+
+_________________________________________
+
+#### 4. Обновление роли
+
+- **Метод:** PUT
+- **URL:** `/api/roles/:id`
+- **Описание:** Обновление полей существующей роли.
+- **Требования:**  
+Аутентификация пользователя  
+Валидный :id  
+- **Тело запроса:**
+Можно передать любые поля из: name, description, permissions, globalPermissions.  
+Если передаётся новое имя, проверяется, что оно не дублирует другую роль.  
+Поля permissions и globalPermissions должны быть объектами.  
+
+- **Пример запроса:**
+PUT /api/roles/67ae1dac33ae5a8aa06d33d1
+Authorization: Bearer <token>  
+Content-Type: application/json  
+
+- **Пример запроса**
+```json
+{
+  "description": "Updated manager role",
+  "permissions": {
+    "Supplier": {
+      "view": true,
+      "create": true,
+      "update": false,
+      "delete": false
+    }
+  }
+}
+```
+- **Пример ответа:**
+```json
+{
+  "status": "success",
+  "code": 200,
+  "data": {
+    "role": {
+      "_id": "67ae1dac33ae5a8aa06d33d1",
+      "name": "manager",
+      "description": "Updated manager role",
+      "permissions": {
+        "Supplier": {
+          "view": true,
+          "create": true,
+          "update": false,
+          "delete": false
+        }
+      },
+      "globalPermissions": {
+        "canChangeUserRoles": true,
+        "canViewReports": true,
+        "canExport": false,
+        "canEditOwnProfile": false
+      },
+      "createdAt": "2025-02-20T10:15:33.148Z",
+      "updatedAt": "2025-02-20T11:30:11.532Z"
+    }
+  }
+}
+```
+- **Статусы ответов:**
+  - 200 OK — Роль успешно обновлена.
+  - 400 Bad Request — Ошибка валидации (переданы некорректные данные).
+  - 401 Unauthorized — ошибка аутентификации.
+  - 404 Not Found — Роль с указанным id не найдена.
+  - 409 Conflict — Дублирование имени роли.
+  - 500 Internal Server Error — ошибка сервера.
+
+_________________________________________
+
+
+#### 5. Удаление роли
+
+- **Метод:** DELETE
+- **URL:** `/api/roles/:id`
+- **Описание:** Удаление роли по её идентификатору.
+- **Требования:**  
+Аутентификация пользователя.  
+Валидный :id  
+Роль не должна использоваться никаким пользователем.  
+
+- **Пример запроса:**
+DELETE /api/roles/67ae1dac33ae5a8aa06d33d1
+Authorization: Bearer <token>  
+
+- **Пример ответа:**
+```json
+{
+  "status": "success",
+  "code": 200,
+  "data": {
+    "role": {
+      "_id": "67ae1dac33ae5a8aa06d33d1",
+      "name": "manager",
+      "description": "Updated manager role",
+      "permissions": { ... },
+      "globalPermissions": { ... }
+    }
+  }
+}
+```
+- **Статусы ответов:**
+  - 200 OK — Роль успешно удалена.
+  - 401 Unauthorized — ошибка аутентификации.
+  - 404 Not Found — Роль с указанным id не найдена.
+  - 409 Conflict — Роль используется пользователями, удаление невозможно.
+  - 500 Internal Server Error — ошибка сервера.
+
+_________________________________________
 
