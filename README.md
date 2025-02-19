@@ -2487,7 +2487,7 @@ Content-Type: application/json
 | `DELETE`           | `/api/roles/:id`                         | Delete role                              |
 
 **Структура Role:**
-
+```json
 {
   name: String,          // Уникальное имя роли (admin, manager, employee и т.д.)
   description: String,   // Описание роли
@@ -2501,9 +2501,9 @@ Content-Type: application/json
   createdAt: Date,
   updatedAt: Date
 }
-
-permissions: Для каждого ключа-модуля (например, "Dashboard", "Supplier", "partManagement") хранится объект { view, create, update, delete } с булевыми значениями.  
-globalPermissions: Набор булевых флагов, которые не привязаны к конкретному модулю, а дают общие возможности. Например, canChangeUserRoles — возможность изменять роль у других пользователей.  
+```
+**permissions:** Для каждого ключа-модуля (например, "Dashboard", "Supplier", "partManagement") хранится объект { view, create, update, delete } с булевыми значениями.  
+**globalPermissions:** Набор булевых флагов, которые не привязаны к конкретному модулю, а дают общие возможности. Например, canChangeUserRoles — возможность изменять роль у других пользователей.  
 
 _________________________________________  
 
