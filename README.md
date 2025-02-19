@@ -43,7 +43,10 @@
    - [Получение всех юзеров](#1-получение-всех-юзеров)
    - [Получение юзера по ID](#2-получение-одного-юзера)
    - [Добавление нового юзера](#3-добавление-нового-пользователя)
-   - [Обновление пользователя](#4-обновление-пользователя)  
+   - [Обновление пользователя](#4-обновление-пользователя)
+     
+7. [API Endpoints для управления ролями](#our-api-endpoints-for-managing-roles)
+   
 
  _________________________________________
 
@@ -2471,4 +2474,93 @@ Content-Type: application/json
 - **500 Internal Server Error** — ошибка сервера
 - **409 Conflict** — Попытка обновить email на уже существующий
 - **400 Bad Request** — Некорректные данные (например, невалидный email)
-- **401 Unauthorized** — Ошибка аутентификации (неправильный или отсутствующий токен)
+- **401 Unauthorized** — Ошибка аутентификации (неправильный или отсутствующий токен)  
+
+#### Our API Endpoints for managing roles
+
+| Method             | URL                                      | Description                              |
+| ------------------ | ---------------------------------------- | ---------------------------------------- |
+| `GET`              | `/api/roles`                             | Get all roles                            |
+| `GET`              | `/api/roles/:id`                         | Get role by ID                           |
+| `POST`             | `/api/roles/`                            | Create new role                          |
+| `PUT`              | `/api/roles/:id`                         | Update role                              |
+| `DELETE`           | `/api/roles/:id`                         | Delete role                              |
+
+**Структура Role:**
+
+{
+  name: String,          // Уникальное имя роли (admin, manager, employee и т.д.)
+  description: String,   // Описание роли
+  permissions: Map,      // Мапа разрешений на уровне модулей
+  globalPermissions: {   // Глобальные флаги разрешений
+    canChangeUserRoles: Boolean,
+    canViewReports: Boolean,
+    canExport: Boolean,
+    canEditOwnProfile: Boolean
+  },
+  createdAt: Date,
+  updatedAt: Date
+}
+
+permissions: Для каждого ключа-модуля (например, "Dashboard", "Supplier", "partManagement") хранится объект { view, create, update, delete } с булевыми значениями.  
+globalPermissions: Набор булевых флагов, которые не привязаны к конкретному модулю, а дают общие возможности. Например, canChangeUserRoles — возможность изменять роль у других пользователей.  
+
+_________________________________________  
+
+#### 1. Получение списка ролей
+
+- **Метод:** GET
+- **URL:** `/api/roles`
+- **Описание:** Получение списка всех ролей с пагинацией.
+- **Требования:** Аутентификация пользователя.
+- **Параметры запроса:**
+page — номер страницы (по умолчанию 1).  
+limit — количество ролей на странице (по умолчанию 10).  
+- **Пример запроса:**
+  ```
+GET /api/roles?page=2&limit=5  
+Authorization: Bearer <token>  
+  ```
+  
+- **Пример ответа:**
+```json
+{
+  "status": "success",
+  "code": 200,
+  "data": {
+    "roles": [
+      {
+        "_id": "67ae1dac33ae5a8aa06d33d1",
+        "name": "employee",
+        "description": "Regular employee role",
+        "permissions": {
+          "Supplier": {
+            "view": true,
+            "create": false,
+            "update": false,
+            "delete": false
+          }
+        },
+        "globalPermissions": {
+          "canChangeUserRoles": false,
+          "canViewReports": false,
+          "canExport": false,
+          "canEditOwnProfile": false
+        }
+      },
+      ...
+    ],
+    "totalPages": 3,
+    "currentPage": 2
+  }
+}
+```
+- **Статусы ответов:**
+  - 200 OK — успешный запрос.
+  - 400 Bad Request — Неверные параметры пагинации.
+  - 401 Unauthorized — ошибка аутентификации.
+  - 500 Internal Server Error — ошибка сервера.  
+
+_________________________________________
+
+
