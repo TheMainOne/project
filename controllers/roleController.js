@@ -1,4 +1,5 @@
 import Role from "../services/schemas/role.js";
+import User from "../services/schemas/user.js";
 import HttpError from "../middlewares/HttpError.js";
 import ctrlWrapper from "../middlewares/ctrlWrapper.js";
 
