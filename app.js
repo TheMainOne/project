@@ -13,6 +13,7 @@ import uploadFileRouter from "./api/upload.js";
 import documentsRouter from "./api/document.js";
 import userRouter from "./api/user.js";
 import roleRouter from "./api/role.js";
+import dashboardRouter from "./api/dashboardRouter.js";
 
 
 dotenv.config();
@@ -48,6 +49,7 @@ app.use("/", uploadFileRouter);
 app.use("/", documentsRouter);
 app.use("/", userRouter);
 app.use("/", roleRouter);
+app.use("/", dashboardRouter);
 
 
 
