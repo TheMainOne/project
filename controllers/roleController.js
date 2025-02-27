@@ -34,6 +34,16 @@ const getRoles = async (req, res) => {
     });
   };
 
+const getAllRolesForDictionary = async (req, res) => {
+    const roles = await Role.find({}).select('name').lean().exec();
+    
+    res.json({
+      status: "success",
+      code: 200,
+      data: { roles }
+    });
+  };
+
 const getRoleByID = async (req, res) => {
     const { id } = req.params;
   
@@ -171,6 +181,7 @@ const createRole = async (req, res) => {
 
 export default {
     getRoles: ctrlWrapper(getRoles),
+    getAllRolesForDictionary: ctrlWrapper(getAllRolesForDictionary),
     getRoleByID: ctrlWrapper(getRoleByID),
     createRole: ctrlWrapper(createRole),
     updateRole: ctrlWrapper(updateRole),

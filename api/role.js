@@ -8,6 +8,7 @@ import filterAndSort from "../middlewares/filterAndSort.js";
 const roleRouter = express.Router();
 
 roleRouter.get("/api/roles", authenticate, filterAndSort, controllers.getRoles);
+roleRouter.get("/api/rolesForDictionary", authenticate, controllers.getAllRolesForDictionary);
 roleRouter.get("/api/roles/:id", authenticate, isValidId, controllers.getRoleByID);
 roleRouter.post(
     "/api/roles",

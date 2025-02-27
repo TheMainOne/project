@@ -33,7 +33,7 @@ status: "success",
   });
 };
 
-const getAllSuppliersForDictionary = async (req, res) => {
+const   getAllSuppliersForDictionary = async (req, res) => {
   const suppliers = await Supplier.find().exec();
 
     res.json({
