@@ -13,11 +13,13 @@ const getRoles = async (req, res) => {
   
     const skip = (page - 1) * limit;
 
-   const results = await Role.find({})
-   .skip(skip)
-   .limit(limit)
-   .lean() 
-   .exec();
+    const results = await Role.find({})
+    .sort(req.sort) 
+    .collation({ locale: 'en', strength: 2 }) // регистронезависимая сортировка
+    .skip(skip)
+    .limit(limit)
+    .lean()
+    .exec();
   
     const count = await Role.countDocuments({});
   
@@ -32,7 +34,7 @@ const getRoles = async (req, res) => {
     });
   };
 
-  const getRoleByID = async (req, res) => {
+const getRoleByID = async (req, res) => {
     const { id } = req.params;
   
     const result = await Role.findById(id, "-createdAt -updatedAt");

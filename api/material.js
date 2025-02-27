@@ -15,30 +15,30 @@ const router = express.Router();
 router.get(
   "/api/materials",
   authenticate,
-  requirePermission("partManagement", "view"), // Проверяем разрешение на просмотр
+  requirePermission("PartManagement", "view"), // Проверяем разрешение на просмотр
   filterAndSort,
   controllers.getAll
 );
 router.get(
   "/api/materials/search",
   authenticate,
-  requirePermission("partManagement", "view"), // Проверяем разрешение на просмотр
+  requirePermission("PartManagement", "view"), // Проверяем разрешение на просмотр
   controllers.searchMaterialsByPartNumber
 );
 router.get("/api/materials/:id", authenticate, 
-  requirePermission("partManagement", "view"), // Проверяем разрешение на просмотр
+  requirePermission("PartManagement", "view"), // Проверяем разрешение на просмотр
   isValidId, controllers.getById);
 router.post(
   "/api/materials",
   authenticate,
-  requirePermission("partManagement", "create"), // Проверяем разрешение на создание
+  requirePermission("PartManagement", "create"), // Проверяем разрешение на создание
   validateBody(materialSchema.validateMaterialSchema),
   controllers.createMaterial
 );
 router.put(
   "/api/materials/compliance",
   authenticate,
-  requirePermission("partManagement", "update"), // Проверяем разрешение на обновление
+  requirePermission("PartManagement", "update"), // Проверяем разрешение на обновление
   upload.single("document"), // Middleware для загрузки документа
   validateBody(materialSchema.validateUpdateComplianceStatusWithDocumentSchema),
   controllers.updateComplianceStatusWithDocument
@@ -47,7 +47,7 @@ router.put(
   "/api/materials/:id",
   authenticate,
   isValidId,
-  requirePermission("partManagement", "update"), // Проверяем разрешение на обновление
+  requirePermission("PartManagement", "update"), // Проверяем разрешение на обновление
   validateBody(materialSchema.updateMaterialSchema),
   controllers.updateByID
 );
@@ -55,7 +55,7 @@ router.delete(
   "/api/materials/:id",
   authenticate,
   isValidId,
-  requirePermission("partManagement", "delete"), // Проверяем разрешение на удаление
+  requirePermission("PartManagement", "delete"), // Проверяем разрешение на удаление
   controllers.deleteMaterial
 );
 

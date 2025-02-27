@@ -3,10 +3,11 @@ import controllers from "../controllers/roleController.js";
 import isValidId from "../middlewares/isValidId.js";
 import validateBody from "../middlewares/validateBody.js";
 import authenticate from "../middlewares/authenticate.js";
+import filterAndSort from "../middlewares/filterAndSort.js";
 
 const roleRouter = express.Router();
 
-roleRouter.get("/api/roles", authenticate, controllers.getRoles);
+roleRouter.get("/api/roles", authenticate, filterAndSort, controllers.getRoles);
 roleRouter.get("/api/roles/:id", authenticate, isValidId, controllers.getRoleByID);
 roleRouter.post(
     "/api/roles",
