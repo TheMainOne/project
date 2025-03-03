@@ -3,205 +3,171 @@ import Supplier from "../services/schemas/supplier.js";
 import HttpError from "../middlewares/HttpError.js";
 import ctrlWrapper from "../middlewares/ctrlWrapper.js";
 
-const getSupplierComplianceBreakdown = async (req, res) => {
-    const { supplierName } = req.query;
-    if (!supplierName) {
-      throw HttpError(400, "supplierName query parameter is required");
-    }
-  
-    // 1. Ищем поставщика по имени
-    const supplierDoc = await Supplier.findOne({ name: supplierName });
-    if (!supplierDoc) {
-      throw HttpError(404, `Supplier with name '${supplierName}' not found`);
-    }
-  
-  // 2. Собираем расширенную аналитику по материалам:
-  //    - вычисляем единый статус материала
-  //    - считаем, сколько всего материалов
-  //    - считаем, сколько материалов в каждом статусе
-  //    - суммируем общее число записей в regulatoryCompliance
+
+const getSupplierExtendedAnalytics = async (req, res) => {
+  const { supplierName } = req.query;
+  if (!supplierName) {
+    throw HttpError(400, "supplierName query parameter is required");
+  }
+
+  // Находим поставщика по имени
+  const supplierDoc = await Supplier.findOne({ name: supplierName });
+  if (!supplierDoc) {
+    throw HttpError(404, `Supplier with name '${supplierName}' not found`);
+  }
+
   const pipeline = [
-    {
-      $match: { supplierId: supplierDoc._id },
-    },
-    // Добавляем служебные поля для логики
+    { $match: { supplierId: supplierDoc._id } },
     {
       $addFields: {
-        numberOfRecords: {
-          $size: { $ifNull: ["$regulatoryCompliance", []] },
-        },
-        // Проверяем, есть ли запись со статусом "does_not_comply"
+        numberOfRecords: { $size: { $ifNull: ["$regulatoryCompliance", []] } },
         hasDoesNotComply: {
-          $anyElementTrue: {
-            $map: {
-              input: { $ifNull: ["$regulatoryCompliance", []] },
-              as: "rc",
-              in: { $eq: ["$$rc.status", "does_not_comply"] },
-            },
-          },
+          $gt: [
+            { $size: {
+                $filter: {
+                  input: { $ifNull: ["$regulatoryCompliance", []] },
+                  as: "rc",
+                  cond: { $eq: ["$$rc.status", "does_not_comply"] }
+                }
+            } },
+            0
+          ]
         },
-        // Проверяем, есть ли запись со статусом "comply_with_exceptions"
-        hasComplyWithExceptions: {
-          $anyElementTrue: {
-            $map: {
-              input: { $ifNull: ["$regulatoryCompliance", []] },
-              as: "rc",
-              in: { $eq: ["$$rc.status", "comply_with_exceptions"] },
-            },
-          },
-        },
-        // Проверяем, есть ли запись со статусом "pending"
         hasPending: {
-          $anyElementTrue: {
-            $map: {
-              input: { $ifNull: ["$regulatoryCompliance", []] },
-              as: "rc",
-              in: { $eq: ["$$rc.status", "pending"] },
-            },
-          },
+          $gt: [
+            { $size: {
+                $filter: {
+                  input: { $ifNull: ["$regulatoryCompliance", []] },
+                  as: "rc",
+                  cond: { $eq: ["$$rc.status", "pending"] }
+                }
+            } },
+            0
+          ]
         },
-        // Проверяем, все ли записи "comply"
-        // $allElementsTrue вернёт true, если каждый элемент массива удовлетворяет условию
+        hasExceptions: {
+          $gt: [
+            { $size: {
+                $filter: {
+                  input: { $ifNull: ["$regulatoryCompliance", []] },
+                  as: "rc",
+                  cond: { $eq: ["$$rc.status", "comply_with_exceptions"] }
+                }
+            } },
+            0
+          ]
+        },
         hasAllComply: {
-          $allElementsTrue: {
-            $map: {
-              input: { $ifNull: ["$regulatoryCompliance", []] },
-              as: "rc",
-              in: { $eq: ["$$rc.status", "comply"] },
+          $cond: {
+            if: { $gt: [ { $size: { $ifNull: ["$regulatoryCompliance", []] } }, 0 ] },
+            then: {
+              $eq: [
+                { $size: {
+                    $filter: {
+                      input: "$regulatoryCompliance",
+                      as: "rc",
+                      cond: { $eq: ["$$rc.status", "comply"] }
+                    }
+                } },
+                { $size: { $ifNull: ["$regulatoryCompliance", []] } }
+              ]
             },
-          },
-        },
-      },
+            else: false
+          }
+        }
+      }
     },
-    // Определяем поле materialStatus на основе логики
     {
       $addFields: {
         materialStatus: {
           $switch: {
             branches: [
-              {
-                case: { $eq: ["$numberOfRecords", 0] },
-                then: "no_data",
-              },
-              {
-                case: { $eq: [true, "$hasDoesNotComply"] },
-                then: "does_not_comply",
-              },
-              {
-                case: { $eq: [true, "$hasComplyWithExceptions"] },
-                then: "comply_with_exceptions",
-              },
-              {
-                case: { $eq: [true, "$hasPending"] },
-                then: "pending",
-              },
-              {
-                case: { $eq: [true, "$hasAllComply"] },
-                then: "comply",
-              },
+              { case: { $eq: ["$numberOfRecords", 0] }, then: "no_data" },
+              { case: { $eq: [true, "$hasDoesNotComply"] }, then: "non_compliant" },
+              { case: { $eq: [true, "$hasPending"] }, then: "pending" },
+              { case: { $eq: [true, "$hasExceptions"] }, then: "exceptions" },
+              { case: { $eq: [true, "$hasAllComply"] }, then: "fully_compliant" }
             ],
-            // На всякий случай, если что-то не попало в логику
-            default: "mixed",
-          },
-        },
-      },
+            default: "mixed"
+          }
+        }
+      }
     },
-    // Теперь группируем все документы (материалы) в одну «корзину» (_id: null),
-    // считая общее количество, суммарное число записей и собирая статусы в массив
+    // Группировка для вычисления общих показателей и сбор статусов материалов
     {
       $group: {
         _id: null,
         totalMaterials: { $sum: 1 },
         sumOfRecords: { $sum: "$numberOfRecords" },
-        statuses: { $push: "$materialStatus" },
-      },
+        statuses: { $push: "$materialStatus" }
+      }
     },
-    // Разворачиваем массив статусов, чтобы посчитать количество по каждому статусу
-    {
-      $unwind: "$statuses",
-    },
+    { $unwind: "$statuses" },
     {
       $group: {
-        _id: {
-          root: "$_id", // всегда null
-          status: "$statuses",
-        },
+        _id: { root: "$_id", status: "$statuses" },
         count: { $sum: 1 },
         totalMaterials: { $first: "$totalMaterials" },
-        sumOfRecords: { $first: "$sumOfRecords" },
-      },
+        sumOfRecords: { $first: "$sumOfRecords" }
+      }
     },
     {
       $group: {
-        _id: "$_id.root", // снова null
-        statuses: {
-          $push: {
-            statusName: "$_id.status",
-            count: "$count",
-          },
-        },
+        _id: "$_id.root",
+        statuses: { $push: { statusName: "$_id.status", count: "$count" } },
         totalMaterials: { $first: "$totalMaterials" },
-        sumOfRecords: { $first: "$sumOfRecords" },
-      },
+        sumOfRecords: { $first: "$sumOfRecords" }
+      }
     },
-    // Финальное преобразование (не вычисляем complianceRate прямо в агрегации, сделаем это в коде)
+    // Фильтруем массив statuses, оставляя только записи с statusName равным "no_data"
     {
       $project: {
         _id: 0,
         totalMaterials: 1,
         sumOfRecords: 1,
-        statuses: 1,
-      },
-    },
-  ];
-  
-  const [result] = await Material.aggregate(pipeline);
-
-    // Если у поставщика нет материалов, result может быть undefined
-    const finalResult = result || {
-      totalMaterials: 0,
-      sumOfRecords: 0,
-      statuses: [],
-    };
-
-      // Считаем complianceRate = доля материалов, чей statusName === "comply"
-  let complyCount = 0;
-  for (const st of finalResult.statuses) {
-    if (st.statusName === "comply") {
-      complyCount = st.count;
-      break;
+        statuses: {
+          $filter: {
+            input: "$statuses",
+            as: "status",
+            cond: { $eq: ["$$status.statusName", "no_data"] }
+          }
+        }
+      }
     }
-  }
+  ];
 
-  const complianceRate =
-  finalResult.totalMaterials === 0
-    ? 0
-    : complyCount / finalResult.totalMaterials;
-
-      // Считаем averageRecords = среднее число записей regulatoryCompliance
-  const averageRecords =
-  finalResult.totalMaterials === 0
-    ? 0
-    : finalResult.sumOfRecords / finalResult.totalMaterials;
-  
-    res.json({
-      status: "success",
-      code: 200,
-      data: {
-        supplier: {
-          _id: supplierDoc._id,
-          name: supplierDoc.name,
-        },
-        totalMaterials: finalResult.totalMaterials,
-        averageRecords,
-        complianceRate,
-        // statuses: массив [{ statusName, count }]
-        statuses: finalResult.statuses,
-      },
-    });
+  const [result] = await Material.aggregate(pipeline);
+  const finalResult = result || {
+    totalMaterials: 0,
+    sumOfRecords: 0,
+    statuses: []
   };
 
+  // Вычисляем дополнительные метрики
+  const totalMaterials = finalResult.totalMaterials;
+  const averageRecords = totalMaterials > 0 ? finalResult.sumOfRecords / totalMaterials : 0;
+  // complianceRate здесь не используется, так как мы оставили только "no_data"
+  const noDataEntry = finalResult.statuses.find(entry => entry.statusName === "no_data");
+  const noDataCount = noDataEntry ? noDataEntry.count : 0;
+  const noDataRate = totalMaterials > 0 ? noDataCount / totalMaterials : 0;
+
+  res.json({
+    status: "success",
+    code: 200,
+    data: {
+      supplier: {
+        _id: supplierDoc._id,
+        name: supplierDoc.name,
+      },
+      totalMaterials,
+      averageRecords,
+      noDataRate,
+      statuses: finalResult.statuses // будет содержать только статус "no_data"
+    }
+  });
+};
+
   export default {
-    getSupplierComplianceBreakdown: ctrlWrapper(getSupplierComplianceBreakdown),
+    getSupplierExtendedAnalytics: ctrlWrapper(getSupplierExtendedAnalytics),
   };
   

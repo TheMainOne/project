@@ -15,7 +15,7 @@ dashboardRouter.get(
   "/api/dashboard/supplier-compliance",
   authenticate,
   requirePermission("Dashboard", "view"),
-  dashboardController.getSupplierComplianceBreakdown
+  dashboardController.getSupplierExtendedAnalytics
 );
 
 export default dashboardRouter;
