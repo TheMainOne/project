@@ -167,7 +167,161 @@ const getSupplierExtendedAnalytics = async (req, res) => {
   });
 };
 
+const getSupplierRegulationBreakdown = async (req, res) => {
+  const { supplierName, regulation } = req.query;
+  if (!supplierName) {
+    throw HttpError(400, "supplierName query parameter is required");
+  }
+  if (!regulation) {
+    throw HttpError(400, "regulation query parameter is required");
+  }
+
+  // Находим поставщика по имени
+  const supplierDoc = await Supplier.findOne({ name: supplierName });
+  if (!supplierDoc) {
+    throw HttpError(404, `Supplier with name '${supplierName}' not found`);
+  }
+
+  const pipeline = [
+    // Отбираем материалы для данного поставщика
+    { $match: { supplierId: supplierDoc._id } },
+    // Фильтруем записи compliance, оставляя только те, где поле 'regulation' соответствует query-параметру
+    {
+      $addFields: {
+        filteredCompliance: {
+          $filter: {
+            input: { $ifNull: ["$regulatoryCompliance", []] },
+            as: "rc",
+            cond: {
+              $regexMatch: {
+                input: "$$rc.title",
+                regex: regulation,
+                options: "i"
+              }
+            }
+          }
+        }
+      }
+    },
+    // Вычисляем количество отфильтрованных записей и булевы флаги по статусам (с использованием $toLower для регистронезависимости)
+    {
+      $addFields: {
+        filteredCount: { $size: "$filteredCompliance" },
+        hasDoesNotComply: {
+          $gt: [
+            {
+              $size: {
+                $filter: {
+                  input: "$filteredCompliance",
+                  as: "rc",
+                  cond: { $eq: [ { $trim: { input: { $toLower: "$$rc.status" } } }, "comply" ] }
+                }
+              }
+            },
+            0
+          ]
+        },
+        hasPending: {
+          $gt: [
+            {
+              $size: {
+                $filter: {
+                  input: "$filteredCompliance",
+                  as: "rc",
+                  cond: { $eq: [ { $toLower: "$$rc.status" }, "pending" ] }
+                }
+              }
+            },
+            0
+          ]
+        },
+        hasExceptions: {
+          $gt: [
+            {
+              $size: {
+                $filter: {
+                  input: "$filteredCompliance",
+                  as: "rc",
+                  cond: { $eq: [ { $toLower: "$$rc.status" }, "comply_with_exceptions" ] }
+                }
+              }
+            },
+            0
+          ]
+        },
+        hasAllComply: {
+          $cond: {
+            if: { $gt: ["$filteredCount", 0] },
+            then: {
+              $eq: [
+                {
+                  $size: {
+                    $filter: {
+                      input: "$filteredCompliance",
+                      as: "rc",
+                      cond: { $eq: [ { $toLower: "$$rc.status" }, "comply" ] }
+                    }
+                  }
+                },
+                "$filteredCount"
+              ]
+            },
+            else: false
+          }
+        }
+      }
+    },
+    // Определяем итоговый статус материала для данного регулятора
+    {
+      $addFields: {
+        materialRegStatus: {
+          $switch: {
+            branches: [
+              { case: { $eq: ["$filteredCount", 0] }, then: "na" },
+              { case: { $eq: [true, "$hasDoesNotComply"] }, then: "does_not_comply" },
+              { case: { $eq: [true, "$hasPending"] }, then: "pending" },
+              { case: { $eq: [true, "$hasExceptions"] }, then: "comply_with_exceptions" },
+              { case: { $eq: [true, "$hasAllComply"] }, then: "comply" }
+            ],
+            default: "na"
+          }
+        }
+      }
+    },
+    // Группируем материалы по итоговому статусу
+    {
+      $group: {
+        _id: "$materialRegStatus",
+        count: { $sum: 1 }
+      }
+    },
+    {
+      $project: {
+        _id: 0,
+        status: "$_id",
+        count: 1
+      }
+    }
+  ];
+
+  const breakdown = await Material.aggregate(pipeline);
+
+  res.json({
+    status: "success",
+    code: 200,
+    data: {
+      supplier: {
+        _id: supplierDoc._id,
+        name: supplierDoc.name
+      },
+      regulation,
+      breakdown
+    }
+  });
+};
+
   export default {
     getSupplierExtendedAnalytics: ctrlWrapper(getSupplierExtendedAnalytics),
+    getSupplierRegulationBreakdown: ctrlWrapper(getSupplierRegulationBreakdown)
   };
   

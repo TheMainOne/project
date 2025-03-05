@@ -5,17 +5,18 @@ import dashboardController from "../controllers/dashboardController.js";
 
 const dashboardRouter = express.Router();
 
-/**
- * GET /api/dashboard/supplier-compliance
- * Параметры запроса:
- *   - supplierName (string, обязательный): имя поставщика
- * Пример: GET /api/dashboard/supplier-compliance?supplierName=testSupplier3
- */
+
 dashboardRouter.get(
   "/api/dashboard/supplier-compliance",
   authenticate,
   requirePermission("Dashboard", "view"),
   dashboardController.getSupplierExtendedAnalytics
+);
+dashboardRouter.get(
+  "/api/dashboard/supplier-regulation-breakdown",
+  authenticate,
+  requirePermission("Dashboard", "view"),
+  dashboardController.getSupplierRegulationBreakdown
 );
 
 export default dashboardRouter;

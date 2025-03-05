@@ -24,10 +24,19 @@ const getUserList = async (req, res) => {
 
  // Применяем фильтрацию и сортировку
  const results = await User.find(filter)
+ .populate("role", "name")
  .sort(sort)
  .skip(skip)
  .limit(limit)
+ .lean()
  .exec();
+
+   // Добавляем новое поле roleName, если роль подгружена
+   const usersWithRoleName = results.map(user => ({
+    ...user,
+    roleName: user.role ? user.role.name : null
+  }));
+
 
   const count = await User.countDocuments(filter);
 
@@ -35,7 +44,7 @@ const getUserList = async (req, res) => {
     status: "success",
     code: 200,
     data: {
-      users: results,
+      users: usersWithRoleName,
       totalPages: Math.ceil(count / limit),
       currentPage: page,
     },
@@ -59,7 +68,8 @@ const getUserByID = async (req, res) => {
   };    
   
 const addNewUser = async (req, res) => {
-  const { email, name, surname, role, locale, timezone, profile, status } = req.body;
+  const { email, name, surname, locale, timezone, profile, status } = req.body;
+  let { role } = req.body;
 
   // Проверка на обязательные поля
   if (!email || !name || !surname) {
@@ -76,22 +86,29 @@ const addNewUser = async (req, res) => {
   const temporaryPassword = crypto.randomBytes(8).toString("hex");
 console.log(temporaryPassword)
   // Создаем нового пользователя
+
+  // Если поле role передано (как строка), ищем роль по имени (регистронезависимо)
+  if (role) {
+    const roleDoc = await Role.findOne({
+      name: { $regex: `^${role}$`, $options: "i" }
+    });
+    if (!roleDoc) {
+      throw HttpError(404, `Role with name '${role}' not found`);
+    }
+    role = roleDoc._id;
+  } 
+
   const newUserData = {
     email,
     password: temporaryPassword,
     name,
     surname,
-    locale: locale || "en", // Язык по умолчанию
-    timezone: timezone || "UTC", // Часовой пояс по умолчанию
+    role,
+    locale: locale || "en",
+    timezone: timezone || "UTC",
     profile: profile || { avatarUrl: null },
-    status: status || "active", // Статус по умолчанию
+    status: status || "active",
   };
-
-    // Если роль передана, устанавливаем её
-    if (role) {
-      newUserData.role = role;
-    }
-  
 
   // Создаем нового пользователя
   const newUser = new User(newUserData);
@@ -119,7 +136,7 @@ console.log(temporaryPassword)
       user: {
         _id: newUser._id,
         email: newUser.email,
-        password: temporaryPassword,
+        password: temporaryPassword, // для отладки; в продакшене пароль не возвращают
         name: newUser.name,
         surname: newUser.surname,
         role: newUser.role,
