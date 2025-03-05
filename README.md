@@ -2111,116 +2111,86 @@ limit: Количество пользователей на странице. П
 GET /api/users?status=active&role=admin&sortBy=name&sortOrder=asc&page=2&limit=5
 
 - **Пример запроса:**  
-  ```
   GET /api/users/
   Authorization: Bearer <token>  
-  ```
   
 - **Пример ответа:**  
-  ```{
+  ```json
+{
     "status": "success",
     "code": 200,
     "data": {
         "users": [
             {
-                "profile": {
-                    "avatarUrl": null
-                },
+                "_id": "67c78e14777f029c990e91e5",
+                "password": "$2b$12$EuVcegzbFC4lghXZOn.X2O3nYKQxIlnLGKyzya0fTzxm9Z1MkjGOW",
+                "email": "gasdasd@gmail.com",
+                "name": "67c78de9777f029c990e91d0",
+                "surname": "67c78de9777f029c990e91d0",
                 "locale": "en",
                 "timezone": "UTC",
-                "status": "active",
-                "emailVerified": false,
-                "lastLoginAt": null,
-                "permissions": {},
-                "_id": "66d34e63cf1f9c8fea704737",
-                "password": "$2b$12$JVfPjzn0vRIJJbs.35ccfeILtpBjthE61E1lMC3NqdE2BrqpJJYPW",
-                "email": "maksym@gmail.com",
-                "name": "Max",
-                "role": "admin",
-                "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6IjY2ZDM0ZTYzY2YxZjljOGZlYTcwNDczNyIsImlhdCI6MTczMjY0NDMwNSwiZXhwIjoxNzMyNjY1OTA1fQ.Jcb1Live4MkAz2YcAVxpQ5tsFWslxSA9EfKjPduD-fA",
-                "createdAt": "2024-08-31T17:09:55.521Z",
-                "updatedAt": "2024-11-26T18:05:05.040Z"
-            },
-            {
                 "profile": {
                     "avatarUrl": null
                 },
-                "lastLoginAt": null,
-                "_id": "66dafb73650231bfa7339411",
-                "password": "$2b$12$h0LPsruU1denexV1Wj4MbuhXhnCwwcEt9H9WBHLuiNSOzT4ocKM0e",
-                "email": "test@gmail.com",
-                "name": "TestName",
-                "role": "employee",
-                "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6IjY2ZGFmYjczNjUwMjMxYmZhNzMzOTQxMSIsImlhdCI6MTczNzMwMTU4MywiZXhwIjoxNzM3MzA1MTgzfQ.6aMPQj1VkZlmkpxpG3ohbNLLwtX98dPe8oyo3dyabw0",
-                "createdAt": "2024-09-06T12:54:11.568Z",
-                "updatedAt": "2025-01-19T15:46:23.932Z",
-                "surname": "Test",
+                "status": "active",
                 "emailVerified": false,
+                "lastLoginAt": null,
+                "role": {
+                    "_id": "67c78de9777f029c990e91d0",
+                    "name": "67c78de9777f029c990e91d0"
+                },
+                "token": null,
+                "createdAt": "2025-03-04T23:34:44.081Z",
+                "updatedAt": "2025-03-04T23:34:44.081Z",
+                "roleName": "67c78de9777f029c990e91d0"
+            },
+            {
+                "_id": "67af65eb10dd470b80927454",
+                "password": "$2b$12$G1Q0AIyP6HNLU.yA3aS88OzdomDs8pT8xAO6iKtLH/gzLWsUpsf6W",
+                "email": "testemail@test.com",
+                "name": "test",
+                "surname": "testsurname",
                 "locale": "en",
-                "permissions": {},
-                "status": "active",
-                "timezone": "UTC"
-            },
-            {
+                "timezone": "UTC",
                 "profile": {
                     "avatarUrl": null
                 },
-                "_id": "6759b6d425bdc0bdc4ac4115",
-                "password": "$2b$12$UmychJr3yZhkla0RHZCrG.xTzVVyxqI96gPGwSzFbdIPTPIrs7rNC",
+                "status": "active",
+                "emailVerified": false,
+                "lastLoginAt": "2025-02-14T15:49:53.157Z",
+                "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6IjY3YWY2NWViMTBkZDQ3MGI4MDkyNzQ1NCIsImlhdCI6MTczOTU0ODE5MywiZXhwIjoxNzM5NTY5NzkzfQ.4ykkb0YDqDuyfLokJuK9hRrE2HbYJwaGOAyVw-IreKo",
+                "createdAt": "2025-02-14T15:48:59.938Z",
+                "updatedAt": "2025-02-14T15:52:50.350Z",
+                "role": {
+                    "_id": "67af641ef561934b2c7ea19d",
+                    "name": "Employee"
+                },
+                "roleName": "Employee"
+            },
+            {
+                "_id": "67af59c3f6d2021134f2d749",
+                "password": "$2b$12$mkftGnBl3HGrC4xmiuZ1e.Bo7g7mwJU3Kyj.eG7WY4oC905D/g7/O",
                 "email": "maksym.lvov@gmail.com",
                 "name": "Maksym",
                 "surname": "Lvov",
                 "locale": "en",
                 "timezone": "UTC",
-                "status": "active",
-                "emailVerified": false,
-                "lastLoginAt": null,
-                "role": "employee",
-                "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6IjY3NTliNmQ0MjViZGMwYmRjNGFjNDExNSIsImlhdCI6MTczNzM0MTY3MiwiZXhwIjoxNzM3MzYzMjcyfQ.n5tKy44ftwJE5hdeNA2HNZO4KnFRv8N7NP-9BRCAGlc",
-                "permissions": {
-                    "materials": {
-                        "actions": {
-                            "read": true,
-                            "edit": false,
-                            "delete": false
-                        }
-                    }
-                },
-                "createdAt": "2024-12-11T15:59:16.542Z",
-                "updatedAt": "2025-01-20T02:54:32.178Z"
-            },
-            {
                 "profile": {
                     "avatarUrl": null
                 },
-                "_id": "678a652e6d5999ee4ff3bef5",
-                "password": "$2b$12$XbvjxdBqZPhZn88Er7DfX.GObyWB1W87pCjb6jsPMHmqcEeP7NZVO",
-                "email": "maksym.gastello@gmail.com",
-                "name": "Maksym",
-                "surname": "Gastello",
-                "locale": "en",
-                "timezone": "UTC",
                 "status": "active",
                 "emailVerified": false,
-                "lastLoginAt": null,
-                "role": "employee",
-                "token": null,
-                "permissions": {
-                    "materials": {
-                        "actions": {
-                            "read": true,
-                            "edit": false,
-                            "delete": false
-                        }
-                    }
+                "lastLoginAt": "2025-03-05T14:29:56.422Z",
+                "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6IjY3YWY1OWMzZjZkMjAyMTEzNGYyZDc0OSIsImlhdCI6MTc0MTE4NDk5NiwiZXhwIjoxNzQxMjA2NTk2fQ.I71JwFDh3o9TrSPkDj9-3h64ykluWsKNalp2oJb4bRs",
+                "createdAt": "2025-02-14T14:57:07.551Z",
+                "updatedAt": "2025-03-05T14:29:56.425Z",
+                "role": {
+                    "_id": "67af5d4f38b3e40c324e58b9",
+                    "name": "Administrator"
                 },
-                "createdAt": "2025-01-17T14:11:58.236Z",
-                "updatedAt": "2025-01-17T14:11:58.236Z"
+                "roleName": "Administrator"
             },
             {
-                "profile": {
-                    "avatarUrl": null
-                },
                 "_id": "678a6b856d5999ee4ff3befb",
                 "password": "$2b$12$RFCbT37GNwXUnSG9DsesMe8MvyPo54jUIZ1e9FHjiUK3dnRRJWV1W",
                 "email": "andriy.hardy@gmail.com",
@@ -2228,11 +2198,17 @@ GET /api/users?status=active&role=admin&sortBy=name&sortOrder=asc&page=2&limit=5
                 "surname": "Hardy",
                 "locale": "en",
                 "timezone": "UTC",
+                "profile": {
+                    "avatarUrl": null
+                },
                 "status": "active",
                 "emailVerified": false,
-                "lastLoginAt": null,
-                "role": "employee",
-                "token": null,
+                "lastLoginAt": "2025-03-04T22:45:45.712Z",
+                "role": {
+                    "_id": "67af5d4f38b3e40c324e58b9",
+                    "name": "Administrator"
+                },
+                "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6IjY3OGE2Yjg1NmQ1OTk5ZWU0ZmYzYmVmYiIsImlhdCI6MTc0MTEyODM0NSwiZXhwIjoxNzQxMTMxOTQ1fQ.FGEwrP8wTiwVko4j9qxu7Dk7WornkPKgXelf5iRRAWw",
                 "permissions": {
                     "materials": {
                         "actions": {
@@ -2243,33 +2219,48 @@ GET /api/users?status=active&role=admin&sortBy=name&sortOrder=asc&page=2&limit=5
                     }
                 },
                 "createdAt": "2025-01-17T14:39:01.508Z",
-                "updatedAt": "2025-01-17T14:39:01.508Z"
+                "updatedAt": "2025-03-04T22:45:45.718Z",
+                "roleName": "Administrator"
             },
             {
+                "_id": "678a652e6d5999ee4ff3bef5",
+                "password": "$2b$12$XbvjxdBqZPhZn88Er7DfX.GObyWB1W87pCjb6jsPMHmqcEeP7NZVO",
+                "email": "maksym.gastello@gmail.com",
+                "name": "Maksym",
+                "surname": "Gastello",
+                "locale": "de",
+                "timezone": "UTC",
                 "profile": {
                     "avatarUrl": null
                 },
-                "_id": "678c09375173f7d9f9bee931",
-                "password": "$2b$12$lYY1cdaeGGU9byDyCATQAOH9hmioeoE7Q2JED3BcHj1snv1T87qQK",
-                "email": "testemail@gmail.com",
-                "name": "test",
-                "surname": "test",
-                "locale": "en",
-                "timezone": "UTC",
                 "status": "active",
                 "emailVerified": false,
-                "lastLoginAt": null,
-                "role": "employee",
-                "token": null,
-                "permissions": {},
-                "createdAt": "2025-01-18T20:04:07.344Z",
-                "updatedAt": "2025-01-18T20:04:07.344Z"
+                "lastLoginAt": "2025-03-04T18:06:41.123Z",
+                "role": {
+                    "_id": "67af5d4f38b3e40c324e58b9",
+                    "name": "Administrator"
+                },
+                "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6IjY3OGE2NTJlNmQ1OTk5ZWU0ZmYzYmVmNSIsImlhdCI6MTc0MTExMTYwMSwiZXhwIjoxNzQxMTE1MjAxfQ.6X6v3c5KINxtlPg_-orvMsxBYhsXFzvN-jyp100v4Gg",
+                "permissions": {
+                    "materials": {
+                        "actions": {
+                            "read": true,
+                            "edit": false,
+                            "delete": false
+                        }
+                    }
+                },
+                "createdAt": "2025-01-17T14:11:58.236Z",
+                "updatedAt": "2025-03-04T18:06:41.124Z",
+                "roleName": "Administrator"
             }
         ],
         "totalPages": 1,
         "currentPage": 1
     }
 }
+  ```
+  
   
 - **Статусы ответов:**
   - 200 OK — Перадача всех юзеров.
@@ -2353,7 +2344,7 @@ URL: /api/users/
   "email": "someemail@gmail.com", (required)
   "name": "somename", (required)
   "surname": "somesurname" (required)
-  "role": "somerole" (enum: ["employee", "admin", "manager"] (optional, default = "employee")
+  "role": "somerole" (enum: ["employee", "admin", "manager"] (optional, default = "employee") **String**
   "locale": "somelanguage" (optional, default = "en")
   "timezone": "sometimezone" (optional, default = "UTC"),
   "status": "somestatus" (enum: ["active", "inactive", "suspended"] (optional, default = "active"),
