@@ -31,11 +31,11 @@ const getUserList = async (req, res) => {
  .lean()
  .exec();
 
-   // Добавляем новое поле roleName, если роль подгружена
-   const usersWithRoleName = results.map(user => ({
-    ...user,
-    roleName: user.role ? user.role.name : null
-  }));
+  //  // Добавляем новое поле roleName, если роль подгружена
+  //  const usersWithRoleName = results.map(user => ({
+  //   ...user,
+  //   roleName: user.role ? user.role.name : null
+  // }));
 
 
   const count = await User.countDocuments(filter);
@@ -44,7 +44,7 @@ const getUserList = async (req, res) => {
     status: "success",
     code: 200,
     data: {
-      users: usersWithRoleName,
+      users: results,
       totalPages: Math.ceil(count / limit),
       currentPage: page,
     },
