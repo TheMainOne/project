@@ -100,8 +100,9 @@
 
 //   next();
 // };
+import Role from "../services/schemas/role.js";
 
-const filterAndSort = (req, res, next) => {
+const filterAndSort = async (req, res, next) => {
   const { sortBy, sortOrder = 'asc' } = req.query;
   const filter = {};
   const sort = {};
@@ -329,11 +330,17 @@ const filterAndSort = (req, res, next) => {
 
     // Фильтрация по роли
     if (role) {
-      const roles = role.split(',').map(r => r.trim());
-      if (roles.length === 1) {
-        filter.role = { $regex: roles[0], $options: 'i' };
+      const roleNames = role.split(',').map(r => r.trim());
+    
+      // Ищем роли по именам в БД
+      const foundRoles = await Role.find({ $or: roleNames.map(name => ({ name: { $regex: name, $options: 'i' } })) });
+    
+      if (foundRoles.length === 0) {
+        // Если не найдено ни одной роли
+        filter.role = { $in: [] }; // ничего не найдет
       } else {
-        filter.role = { $in: roles.map(r => new RegExp(r, 'i')) };
+        const roleIds = foundRoles.map(r => r._id);
+        filter.role = { $in: roleIds };
       }
     }
   }

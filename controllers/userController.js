@@ -149,9 +149,96 @@ console.log(temporaryPassword)
   });
 };  
 
+// const updateUserByID = async (req, res) => {
+//   const { id } = req.params;
+//   const updateData = req.body; // поля, которые хотим изменить
+
+//   // 1. Ищем пользователя
+//   const user = await User.findById(id);
+//   if (!user) {
+//     throw HttpError(404, "User not found");
+//   }
+
+//   // 2. Если в теле запроса пришёл новый email — проверяем, нет ли конфликта
+//   if (updateData.email && updateData.email !== user.email) {
+//     const existingUser = await User.findOne({ email: updateData.email });
+//     if (existingUser && existingUser._id.toString() !== id) {
+//       throw HttpError(409, "Email already in use");
+//     }
+//   }
+
+//    // 3. Получаем роль текущего пользователя из базы для проверки глобальных разрешений
+//    const currentUserRole = await Role.findById(req.user.role);
+//    if (!currentUserRole) {
+//      throw HttpError(403, "Current user's role not found");
+//    }
+ 
+
+//  // 4. Проверка прав обновления
+//  if (req.user._id.toString() === id) {
+//   // Если пользователь обновляет свою учётную запись:
+//   // Проверяем, имеет ли он право редактировать свою учётную запись
+//   if (
+//     !currentUserRole.globalPermissions ||
+//     !currentUserRole.globalPermissions.canEditOwnProfile
+//   ) {
+//     throw HttpError(403, "You are not allowed to edit your profile");
+//   }
+//   // Даже если в запросе передана роль, её игнорируем (изменять свою роль нельзя)
+//   if (updateData.role) {
+//     delete updateData.role;
+//   }
+// } else {
+//   // Если обновляются данные другого пользователя:
+//   if (
+//     !currentUserRole.globalPermissions ||
+//     !currentUserRole.globalPermissions.canChangeUserRoles
+//   ) {
+//     throw HttpError(403, "You are not allowed to update other users' data");
+//   }
+//   // Если передана роль, проверяем, что она существует и приводим к ObjectId
+//   if (updateData.role) {
+//     const newRole = await Role.findById(updateData.role);
+//     if (!newRole) {
+//       throw HttpError(404, "Role not found");
+//     }
+//     updateData.role = newRole._id;
+//   }
+// }
+
+//   // 5. Обновляем поля пользователя
+//   //    (Object.assign выполняет «частичное обновление»: не изменяем те поля, которых нет в updateData)
+//    Object.assign(user, updateData);
+
+//   // 6. Сохраняем. Это вызовет userSchema.pre('save'), если изменили пароль
+//   await user.save();
+
+//   // 7. Логируем действие
+//   //    Например, пишем, что пользователь с id = req.user._id обновил пользователя user._id
+  // await logAction({
+  //   userId: req.user._id,
+  //   action: "update",
+  //   entityType: "User",
+  //   entityId: user._id,
+  //   newData: user.toObject(),
+  // });
+
+//   // 8. Возвращаем ответ
+//  //  Формируем безопасный ответ (без пароля, токена и прочих конфиденциальных данных)
+//   const { password, token, ...safeUserData } = user.toObject();
+
+//   res.json({
+//     status: "success",
+//     code: 200,
+//     data: {
+//       user: safeUserData, 
+//     },
+//   });
+// };
+
 const updateUserByID = async (req, res) => {
   const { id } = req.params;
-  const updateData = req.body; // поля, которые хотим изменить
+  const updateData = { ...req.body };
 
   // 1. Ищем пользователя
   const user = await User.findById(id);
@@ -159,62 +246,55 @@ const updateUserByID = async (req, res) => {
     throw HttpError(404, "User not found");
   }
 
-  // 2. Если в теле запроса пришёл новый email — проверяем, нет ли конфликта
-  if (updateData.email && updateData.email !== user.email) {
+  // 2. Проверка на уникальность email
+  if (updateData.email) {
     const existingUser = await User.findOne({ email: updateData.email });
     if (existingUser && existingUser._id.toString() !== id) {
       throw HttpError(409, "Email already in use");
     }
   }
 
-   // 3. Получаем роль текущего пользователя из базы для проверки глобальных разрешений
-   const currentUserRole = await Role.findById(req.user.role);
-   if (!currentUserRole) {
-     throw HttpError(403, "Current user's role not found");
-   }
- 
+  // 3. Получаем роль текущего пользователя (тот, кто отправил запрос)
+  const currentUserRole = await Role.findById(req.user.role);
+  if (!currentUserRole) {
+    throw HttpError(403, "Your role does not exist");
+  }
 
- // 4. Проверка прав обновления
- if (req.user._id.toString() === id) {
-  // Если пользователь обновляет свою учётную запись:
-  // Проверяем, имеет ли он право редактировать свою учётную запись
-  if (
-    !currentUserRole.globalPermissions ||
-    !currentUserRole.globalPermissions.canEditOwnProfile
-  ) {
-    throw HttpError(403, "You are not allowed to edit your profile");
-  }
-  // Даже если в запросе передана роль, её игнорируем (изменять свою роль нельзя)
-  if (updateData.role) {
-    delete updateData.role;
-  }
-} else {
-  // Если обновляются данные другого пользователя:
-  if (
-    !currentUserRole.globalPermissions ||
-    !currentUserRole.globalPermissions.canChangeUserRoles
-  ) {
-    throw HttpError(403, "You are not allowed to update other users' data");
-  }
-  // Если передана роль, проверяем, что она существует и приводим к ObjectId
-  if (updateData.role) {
-    const newRole = await Role.findById(updateData.role);
-    if (!newRole) {
-      throw HttpError(404, "Role not found");
+  // 3. Проверка разрешений текущего пользователя
+  if (req.user._id.toString() === id) {
+    // Пользователь редактирует сам себя
+    if (
+      !currentUserRole.globalPermissions ||
+      !currentUserRole.globalPermissions.canEditOwnProfile
+    ) {
+      throw HttpError(403, "You are not allowed to edit your profile");
     }
-    updateData.role = newRole._id;
+  } else {
+    // Если обновляется другой пользователь
+    if (
+      !currentUserRole.globalPermissions ||
+      !currentUserRole.globalPermissions.canChangeUserRoles
+    ) {
+      throw HttpError(403, "You are not allowed to update other users' data");
+    }
   }
-}
 
-  // 5. Обновляем поля пользователя
-  //    (Object.assign выполняет «частичное обновление»: не изменяем те поля, которых нет в updateData)
-   Object.assign(user, updateData);
+  // 4. Проверяем и конвертируем роль, если передано имя роли
+  if (updateData.role && typeof updateData.role === "string") {
+    const roleFromDB = await Role.findOne({ name: updateData.role });
+    if (!roleFromDB) {
+      throw HttpError(400, `Role '${updateData.role}' does not exist`);
+    }
+    updateData.role = roleFromDB._id; // Меняем название на ObjectId
+  }
 
-  // 6. Сохраняем. Это вызовет userSchema.pre('save'), если изменили пароль
+  // 5. Частичное обновление данных пользователя
+  Object.assign(user, updateData);
+
+  // 6. Сохраняем обновлённого пользователя
   await user.save();
 
   // 7. Логируем действие
-  //    Например, пишем, что пользователь с id = req.user._id обновил пользователя user._id
   await logAction({
     userId: req.user._id,
     action: "update",
@@ -223,16 +303,12 @@ const updateUserByID = async (req, res) => {
     newData: user.toObject(),
   });
 
-  // 8. Возвращаем ответ
- //  Формируем безопасный ответ (без пароля, токена и прочих конфиденциальных данных)
+  // 7. Безопасный ответ
   const { password, token, ...safeUserData } = user.toObject();
 
   res.json({
     status: "success",
-    code: 200,
-    data: {
-      user: safeUserData, 
-    },
+    data: safeUserData,
   });
 };
 
