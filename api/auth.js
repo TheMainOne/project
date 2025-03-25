@@ -13,3 +13,5 @@ authRouter.post("/logout", authenticate, controllers.logout);
 authRouter.post("/token", controllers.tokenValidation);
 
 export default authRouter;
+
+
