@@ -1,7 +1,7 @@
 import axios from 'axios';
 import dotenv from "dotenv";    
 
-dotenv.config();
+dotenv.config({ path: '/home/ec2-user/project/.env' });
 
 const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
 const CHAT_ID = process.env.TELEGRAM_CHAT_ID;
