@@ -14,6 +14,7 @@ import documentsRouter from "./api/document.js";
 import userRouter from "./api/user.js";
 import roleRouter from "./api/role.js";
 import dashboardRouter from "./api/dashboardRouter.js";
+import sendTelegramMessage from "./services/telegramNotify.js";
 
 
 dotenv.config();
@@ -63,4 +64,16 @@ app.use((_, res, __) => {
     message: "Use api on routes: /api/materials",
     data: "Not found",
   });
+});
+
+// global error handlers
+process.on('uncaughtException', (err) => {
+  console.error('Uncaught Exception:', err);
+  sendTelegramMessage(`❗️ Uncaught Exception: ${err.message}`);
+  process.exit(1);  // reboots the app 
+});
+
+process.on('unhandledRejection', (reason, promise) => {
+  console.error('Unhandled Rejection at:', promise, 'reason:', reason);
+  sendTelegramMessage(`⚠️ Unhandled Rejection: ${reason}`);
 });
