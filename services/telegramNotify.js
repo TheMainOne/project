@@ -22,5 +22,3 @@ async function sendTelegramMessage(message) {
 }
 
 export default sendTelegramMessage;
-
-
