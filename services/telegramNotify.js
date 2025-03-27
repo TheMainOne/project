@@ -1,5 +1,5 @@
 import axios from 'axios';
-import dotenv from "dotenv";    
+import dotenv from "dotenv";
 
 dotenv.config({ path: '/home/ec2-user/project/.env' });
 
