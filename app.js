@@ -1,9 +1,9 @@
+import "dotenv/config";
 import express from "express";
-import passport from 'passport';
+import passport from "passport";
 import morgan from "morgan";
 import cors from "cors";
 import mongoose from "mongoose";
-import dotenv from "dotenv";    
 import errorHandler from "./middlewares/errorHandler.js";
 import router from "./api/material.js";
 import authRouter from "./api/auth.js";
@@ -16,21 +16,23 @@ import roleRouter from "./api/role.js";
 import dashboardRouter from "./api/dashboardRouter.js";
 import sendTelegramMessage from "./services/telegramNotify.js";
 
-
-dotenv.config();
-
 const PORT = process.env.PORT || 3000;
 const uriDB = process.env.DATABASE_URL;
-const connection = mongoose.connect(uriDB, {
-  dbName: 'materials_reader'
-}).then(() => {
-  app.listen(PORT, function () {
-    console.log(`Database connection successful. Use our API on port: ${PORT}`);
+const connection = mongoose
+  .connect(uriDB, {
+    dbName: "materials_reader",
+  })
+  .then(() => {
+    app.listen(PORT, function () {
+      console.log(
+        `Database connection successful. Use our API on port: ${PORT}`
+      );
+    });
+  })
+  .catch((err) => {
+    console.log(`Server not running. Error message: ${err.message}`);
+    process.exit(1);
   });
-}).catch((err) => {
-  console.log(`Server not running. Error message: ${err.message}`);
-  process.exit(1);
-});
 
 const app = express();
 
@@ -39,7 +41,7 @@ app.use(cors());
 app.use(express.json());
 
 // Настройка папки для статической раздачи файлов
-app.use('/uploads', express.static('uploads'));
+app.use("/uploads", express.static("uploads"));
 
 // connecting api routes
 app.use("/", router);
@@ -51,8 +53,6 @@ app.use("/", documentsRouter);
 app.use("/", userRouter);
 app.use("/", roleRouter);
 app.use("/", dashboardRouter);
-
-
 
 // error handlers
 app.use(errorHandler);
@@ -67,13 +67,13 @@ app.use((_, res, __) => {
 });
 
 // global error handlers
-process.on('uncaughtException', (err) => {
-  console.error('Uncaught Exception:', err);
+process.on("uncaughtException", (err) => {
+  console.error("Uncaught Exception:", err);
   sendTelegramMessage(`❗️ Uncaught Exception: ${err.message}`);
-  process.exit(1);  // reboots the app 
+  process.exit(1); // reboots the app
 });
 
-process.on('unhandledRejection', (reason, promise) => {
-  console.error('Unhandled Rejection at:', promise, 'reason:', reason);
+process.on("unhandledRejection", (reason, promise) => {
+  console.error("Unhandled Rejection at:", promise, "reason:", reason);
   sendTelegramMessage(`⚠️ Unhandled Rejection: ${reason}`);
 });

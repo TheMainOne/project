@@ -1,13 +1,12 @@
 import Material from "../services/schemas/material.js";
-import Supplier from "../services/schemas/supplier.js"
+import Supplier from "../services/schemas/supplier.js";
 import Document from "../services/schemas/document.js";
 import Regulation from "../services/schemas/regulation.js";
 import ctrlWrapper from "../middlewares/ctrlWrapper.js";
 import HttpError from "../middlewares/HttpError.js";
 import filterAndSort from "../middlewares/filterAndSort.js";
-import logAction from "../utils/logAction.js"
-import fs from 'fs';
-
+import logAction from "../utils/logAction.js";
+import fs from "fs";
 
 const getAllMaterials = async (req, res) => {
   const page = parseInt(req.query.page, 10) || 1; // Преобразуем в число или задаем значение по умолчанию
@@ -20,14 +19,14 @@ const getAllMaterials = async (req, res) => {
 
   // Выполняем запрос с фильтрацией и сортировкой
   const materials = await Material.find(filter)
-    .populate('supplierId', '_id') 
+    .populate("supplierId", "_id")
     .sort(sort)
     .skip(skip)
     .limit(limit)
     .exec();
 
-// Считаем количество документов с учетом фильтрации (пересчет выполняется при каждом запросе)
-const count = await Material.countDocuments(filter);
+  // Считаем количество документов с учетом фильтрации (пересчет выполняется при каждом запросе)
+  const count = await Material.countDocuments(filter);
 
   res.json({
     status: "success",
@@ -43,8 +42,10 @@ const count = await Material.countDocuments(filter);
 const getByID = async (req, res) => {
   const id = req.params.id;
 
-  const result = await Material.findById(id, "-createdAt -updatedAt")
-    .populate('supplierId', '_id name');
+  const result = await Material.findById(id, "-createdAt -updatedAt").populate(
+    "supplierId",
+    "_id name"
+  );
 
   if (!result) {
     throw HttpError(404, "Not found");
@@ -58,7 +59,12 @@ const getByID = async (req, res) => {
 };
 
 const createMaterial = async (req, res) => {
-  const { partNumber, supplier, supplierId: supplierIdFromBody, regulatoryCompliance = [] } = req.body;
+  const {
+    partNumber,
+    supplier,
+    supplierId: supplierIdFromBody,
+    regulatoryCompliance = [],
+  } = req.body;
   const userId = req.user._id;
 
   const existingMaterial = await Material.findOne({ partNumber });
@@ -111,17 +117,22 @@ const createMaterial = async (req, res) => {
             // Получаем информацию о регуляторном акте
             const regulation = await Regulation.findById(regulationId);
             if (!regulation) {
-              throw HttpError(404, `Regulation with ID ${regulationId} not found.`);
+              throw HttpError(
+                404,
+                `Regulation with ID ${regulationId} not found.`
+              );
             }
 
             // Проверяем, есть ли уже этот регуляторный акт в regulatoryCompliance
-            const existingComplianceIndex = updatedRegulatoryCompliance.findIndex(
-              (comp) => comp._id.toString() === regulationId.toString()
-            );
+            const existingComplianceIndex =
+              updatedRegulatoryCompliance.findIndex(
+                (comp) => comp._id.toString() === regulationId.toString()
+              );
 
             if (existingComplianceIndex > -1) {
               // Обновляем статус на основе статуса из документа
-              updatedRegulatoryCompliance[existingComplianceIndex].status = statusFromDoc;
+              updatedRegulatoryCompliance[existingComplianceIndex].status =
+                statusFromDoc;
             } else {
               // Добавляем новый регуляторный акт
               updatedRegulatoryCompliance.push({
@@ -151,8 +162,8 @@ const createMaterial = async (req, res) => {
   // Логируем действие
   await logAction({
     userId,
-    action: 'create',
-    entityType: 'Material',
+    action: "create",
+    entityType: "Material",
     entityId: newMaterial._id,
     newData: newMaterial.toObject(),
   });
@@ -167,7 +178,6 @@ const createMaterial = async (req, res) => {
       }
     }
   }
-
 
   res.status(201).json({
     status: "success",
@@ -184,7 +194,10 @@ const updateByID = async (req, res) => {
   const userId = req.user._id;
 
   if (!id) {
-    throw HttpError(400, "The Material ID is required to perform the update operation");
+    throw HttpError(
+      400,
+      "The Material ID is required to perform the update operation"
+    );
   }
 
   // Проверяем, есть ли поля для обновления или relatedParentId
@@ -212,120 +225,127 @@ const updateByID = async (req, res) => {
 
     // Проверяем, существует ли уже этот материал как компонент у родителя, чтобы избежать дублирования
     const isComponentAlreadyExists = newParentMaterial.components.some(
-      (comp) => comp &&
-        comp._id &&
-        comp._id.equals(material._id)
-
+      (comp) => comp && comp._id && comp._id.equals(material._id)
     );
 
     if (isComponentAlreadyExists) {
-      throw HttpError(400, "This material is already a component of the parent material.");
+      throw HttpError(
+        400,
+        "This material is already a component of the parent material."
+      );
     }
-
 
     // Обновляем поле parentID у текущего материала перед добавлением в нового родителя
     if (!material.parentID.includes(relatedParentId)) {
       material.parentID.push(relatedParentId);
       await material.save();
     }
-    
 
- // Добавляем материал в components нового родителя
- newParentMaterial.components.push({
-  _id: material._id,
-  partNumber: material.partNumber,
-  description: material.description,
-  supplier: material.supplier,
-  supplierItemNumber: material.supplierItemNumber,
-  components: material.components,
-  parentID: material.parentID,
-  countryOfOrigin: material.countryOfOrigin,
-  status: material.status,
-  regulatoryCompliance: material.regulatoryCompliance,
-  BOMcomponent: material.BOMcomponent,
-  storagePath: material.storagePath,
-});
+    // Добавляем материал в components нового родителя
+    newParentMaterial.components.push({
+      _id: material._id,
+      partNumber: material.partNumber,
+      description: material.description,
+      supplier: material.supplier,
+      supplierItemNumber: material.supplierItemNumber,
+      components: material.components,
+      parentID: material.parentID,
+      countryOfOrigin: material.countryOfOrigin,
+      status: material.status,
+      regulatoryCompliance: material.regulatoryCompliance,
+      BOMcomponent: material.BOMcomponent,
+      storagePath: material.storagePath,
+    });
 
-// Собираем все уникальные regulatoryCompliance из компонентов
-const complianceMap = new Map();
+    // Собираем все уникальные regulatoryCompliance из компонентов
+    const complianceMap = new Map();
 
+    if (
+      newParentMaterial.components &&
+      Array.isArray(newParentMaterial.components)
+    ) {
+      for (const component of newParentMaterial.components) {
+        if (
+          component.regulatoryCompliance &&
+          Array.isArray(component.regulatoryCompliance)
+        ) {
+          for (const compCompliance of component.regulatoryCompliance) {
+            const key = compCompliance.title; // Предполагаем наличие уникального идентификатора регуляторного акта
 
-if (newParentMaterial.components && Array.isArray(newParentMaterial.components)) {
-  for (const component of newParentMaterial.components) {
-    if (component.regulatoryCompliance && Array.isArray(component.regulatoryCompliance)) {
-      for (const compCompliance of component.regulatoryCompliance) {
-        const key = compCompliance.title; // Предполагаем наличие уникального идентификатора регуляторного акта
-
-        if (!complianceMap.has(key)) {
-          complianceMap.set(key, {
-            _id: compCompliance._id,
-            title: compCompliance.title,
-            description: compCompliance.description,
-            status: compCompliance.status
-          });
-        } else {
-          // Обновляем статус на основе статусов всех компонентов
-          const existingStatus = complianceMap.get(key).status;
-          const newStatus = getCombinedStatus(existingStatus, compCompliance.status);
-          complianceMap.set(key, {
-            _id: compCompliance._id,
-            title: compCompliance.title,
-            description: compCompliance.description,
-            status: newStatus
-          });
+            if (!complianceMap.has(key)) {
+              complianceMap.set(key, {
+                _id: compCompliance._id,
+                title: compCompliance.title,
+                description: compCompliance.description,
+                status: compCompliance.status,
+              });
+            } else {
+              // Обновляем статус на основе статусов всех компонентов
+              const existingStatus = complianceMap.get(key).status;
+              const newStatus = getCombinedStatus(
+                existingStatus,
+                compCompliance.status
+              );
+              complianceMap.set(key, {
+                _id: compCompliance._id,
+                title: compCompliance.title,
+                description: compCompliance.description,
+                status: newStatus,
+              });
+            }
+          }
         }
       }
     }
+
+    // Функция для определения комбинированного статуса
+    function getCombinedStatus(status1, status2) {
+      const statusPriority = {
+        does_not_comply: 1,
+        pending: 2,
+        comply_with_exceptions: 3,
+        comply: 4,
+        na: 5,
+      };
+
+      if (statusPriority[status1] < statusPriority[status2]) {
+        return status1;
+      } else {
+        return status2;
+      }
+    }
+
+    // Обновляем regulatoryCompliance родителя на основе данных компонентов
+    newParentMaterial.regulatoryCompliance = Array.from(complianceMap.values());
+
+    await newParentMaterial.save();
   }
-}
 
-// Функция для определения комбинированного статуса
-function getCombinedStatus(status1, status2) {
-  const statusPriority = {
-    'does_not_comply': 1,
-    'pending': 2,
-    'comply_with_exceptions': 3,
-    'comply': 4,
-    'na': 5
-  };
-
-  if (statusPriority[status1] < statusPriority[status2]) {
-    return status1;
-  } else {
-    return status2;
+  // Если обновляется supplier
+  if (fields.supplier) {
+    const supplierRecord = await Supplier.findOne({
+      name: fields.supplier.trim(),
+    });
+    if (supplierRecord) {
+      fields.supplierId = supplierRecord._id;
+    } else {
+      throw HttpError(404, "Supplier not found");
+    }
   }
-}
 
-// Обновляем regulatoryCompliance родителя на основе данных компонентов
-newParentMaterial.regulatoryCompliance = Array.from(complianceMap.values());
-
-
-await newParentMaterial.save();
-}
-
-// Если обновляется supplier
-if (fields.supplier) {
-  const supplierRecord = await Supplier.findOne({ name: fields.supplier.trim() });
-  if (supplierRecord) {
-    fields.supplierId = supplierRecord._id;
-  } else {
-    throw HttpError(404, "Supplier not found");
+  // Если обновляется supplierId
+  if (fields.supplierId) {
+    const supplierRecord = await Supplier.findById(fields.supplierId);
+    if (supplierRecord) {
+      fields.supplier = supplierRecord.name;
+    } else {
+      throw HttpError(404, "Supplier not found");
+    }
   }
-}
-
-// Если обновляется supplierId
-if (fields.supplierId) {
-  const supplierRecord = await Supplier.findById(fields.supplierId);
-  if (supplierRecord) {
-    fields.supplier = supplierRecord.name;
-  } else {
-    throw HttpError(404, "Supplier not found");
-  }
-}
 
   // Обновляем материал с переданными полями
   const result = await Material.findByIdAndUpdate(
-    id, 
+    id,
     { $set: fields },
     { new: true }
   );
@@ -334,16 +354,15 @@ if (fields.supplierId) {
     throw HttpError(404, "Material not found");
   }
 
-    // Логируем действие
-    await logAction({
-      userId: req.user._id,
-      action: 'update',
-      entityType: 'Material',
-      entityId: id,
-      oldData: oldMaterial,
-      newData: result.toObject(),
-    });
-  
+  // Логируем действие
+  await logAction({
+    userId: req.user._id,
+    action: "update",
+    entityType: "Material",
+    entityId: id,
+    oldData: oldMaterial,
+    newData: result.toObject(),
+  });
 
   return res.status(200).json({
     status: "success",
@@ -353,7 +372,6 @@ if (fields.supplierId) {
     },
   });
 };
-
 
 const deleteMaterial = async (req, res) => {
   const { id } = req.params;
@@ -365,22 +383,25 @@ const deleteMaterial = async (req, res) => {
   }
 
   // 1. Обрабатываем связанные документы, исключая те, которые применимы ко всем материалам поставщика
-  const documents = await Document.find({ 
+  const documents = await Document.find({
     materialIds: id,
-    applyToAllSupplierMaterials: { $ne: true } // Исключаем документы с applyToAllSupplierMaterials: true
+    applyToAllSupplierMaterials: { $ne: true }, // Исключаем документы с applyToAllSupplierMaterials: true
   });
 
   if (documents && documents.length > 0) {
     for (const doc of documents) {
       // Проверяем, документ связан только с удаляемым материалом или с другими тоже
-      if (doc.materialIds.length === 1 && doc.materialIds[0].toString() === id) {
+      if (
+        doc.materialIds.length === 1 &&
+        doc.materialIds[0].toString() === id
+      ) {
         // Документ связан только с удаляемым материалом, удаляем документ
 
         // Логируем удаление документа перед его удалением
         await logAction({
           userId: req.user._id,
-          action: 'delete',
-          entityType: 'Document',
+          action: "delete",
+          entityType: "Document",
           entityId: doc._id,
           oldData: doc.toObject(),
         });
@@ -396,14 +417,16 @@ const deleteMaterial = async (req, res) => {
         // Документ связан с несколькими материалами, удаляем ID из materialIds
         const oldDoc = doc.toObject(); // Для логирования
 
-        doc.materialIds = doc.materialIds.filter((materialId) => materialId.toString() !== id);
+        doc.materialIds = doc.materialIds.filter(
+          (materialId) => materialId.toString() !== id
+        );
         await doc.save();
 
         // Логируем обновление документа
         await logAction({
           userId: req.user._id,
-          action: 'update',
-          entityType: 'Document',
+          action: "update",
+          entityType: "Document",
           entityId: doc._id,
           oldData: oldDoc,
           newData: doc.toObject(),
@@ -411,7 +434,6 @@ const deleteMaterial = async (req, res) => {
       }
     }
   }
-
 
   // 2. Обновляем родительские материалы
   if (materialToDelete.parentID && materialToDelete.parentID.length > 0) {
@@ -432,9 +454,15 @@ const deleteMaterial = async (req, res) => {
         // Пересчитываем regulatoryCompliance на основе оставшихся компонентов
         const complianceMap = new Map();
 
-        if (parentMaterial.components && Array.isArray(parentMaterial.components)) {
+        if (
+          parentMaterial.components &&
+          Array.isArray(parentMaterial.components)
+        ) {
           for (const component of parentMaterial.components) {
-            if (component.regulatoryCompliance && Array.isArray(component.regulatoryCompliance)) {
+            if (
+              component.regulatoryCompliance &&
+              Array.isArray(component.regulatoryCompliance)
+            ) {
               for (const compCompliance of component.regulatoryCompliance) {
                 const key = compCompliance.title;
 
@@ -448,7 +476,10 @@ const deleteMaterial = async (req, res) => {
                 } else {
                   // Обновляем статус на основе статусов всех компонентов
                   const existingStatus = complianceMap.get(key).status;
-                  const newStatus = getCombinedStatus(existingStatus, compCompliance.status);
+                  const newStatus = getCombinedStatus(
+                    existingStatus,
+                    compCompliance.status
+                  );
                   complianceMap.set(key, {
                     _id: compCompliance._id,
                     title: compCompliance.title,
@@ -464,11 +495,11 @@ const deleteMaterial = async (req, res) => {
         // Функция для определения комбинированного статуса
         function getCombinedStatus(status1, status2) {
           const statusPriority = {
-            'does_not_comply': 1,
-            'pending': 2,
-            'comply_with_exceptions': 3,
-            'comply': 4,
-            'na': 5,
+            does_not_comply: 1,
+            pending: 2,
+            comply_with_exceptions: 3,
+            comply: 4,
+            na: 5,
           };
 
           if (statusPriority[status1] < statusPriority[status2]) {
@@ -478,14 +509,16 @@ const deleteMaterial = async (req, res) => {
           }
         }
 
-        parentMaterial.regulatoryCompliance = Array.from(complianceMap.values());
+        parentMaterial.regulatoryCompliance = Array.from(
+          complianceMap.values()
+        );
         await parentMaterial.save();
 
         // Логируем обновление родительского материала
         await logAction({
           userId: req.user._id,
-          action: 'update',
-          entityType: 'Material',
+          action: "update",
+          entityType: "Material",
           entityId: parentMaterial._id,
           oldData: oldParentData,
           newData: parentMaterial.toObject(),
@@ -500,14 +533,16 @@ const deleteMaterial = async (req, res) => {
     for (const child of childMaterials) {
       const oldChildData = child.toObject(); // Для логирования
 
-      child.parentID = child.parentID.filter((parentId) => parentId.toString() !== id);
+      child.parentID = child.parentID.filter(
+        (parentId) => parentId.toString() !== id
+      );
       await child.save();
 
       // Логируем обновление дочернего материала
       await logAction({
         userId: req.user._id,
-        action: 'update',
-        entityType: 'Material',
+        action: "update",
+        entityType: "Material",
         entityId: child._id,
         oldData: oldChildData,
         newData: child.toObject(),
@@ -521,8 +556,8 @@ const deleteMaterial = async (req, res) => {
   // Логируем действие удаления материала
   await logAction({
     userId: req.user._id,
-    action: 'delete',
-    entityType: 'Material',
+    action: "delete",
+    entityType: "Material",
     entityId: id,
     oldData: materialToDelete.toObject(),
   });
@@ -535,7 +570,6 @@ const deleteMaterial = async (req, res) => {
   });
 };
 
-
 const searchMaterialsByPartNumber = async (req, res) => {
   const { partNumber } = req.query;
 
@@ -546,8 +580,9 @@ const searchMaterialsByPartNumber = async (req, res) => {
   // Используем регулярное выражение для поиска по частичному совпадению
   const materials = await Material.find({
     partNumber: { $regex: partNumber, $options: "i" }, // 'i' делает поиск нечувствительным к регистру
-  }).limit(10)
-  .populate('supplierId', '_id name'); 
+  })
+    .limit(10)
+    .populate("supplierId", "_id name");
 
   res.status(200).json({
     status: "success",
@@ -581,28 +616,34 @@ const updateComplianceStatusWithDocument = async (req, res) => {
   // Парсинг regulations
   if (Array.isArray(rawRegulations)) {
     regulations = rawRegulations;
-  } else if (typeof rawRegulations === 'string') {
+  } else if (typeof rawRegulations === "string") {
     try {
       regulations = JSON.parse(rawRegulations);
     } catch (e) {
-      throw HttpError(400, 'Invalid format for regulations. Must be a valid JSON string or array.');
+      throw HttpError(
+        400,
+        "Invalid format for regulations. Must be a valid JSON string or array."
+      );
     }
   } else {
-    throw HttpError(400, 'Regulations must be an array or a JSON string representing an array.');
+    throw HttpError(
+      400,
+      "Regulations must be an array or a JSON string representing an array."
+    );
   }
 
   if (!Array.isArray(regulations) || regulations.length === 0) {
-    throw HttpError(400, 'Regulations must be a non-empty array of objects.');
+    throw HttpError(400, "Regulations must be a non-empty array of objects.");
   }
 
   // Парсинг materialIds
   if (Array.isArray(rawMaterialIds)) {
     materialIds = rawMaterialIds;
-  } else if (typeof rawMaterialIds === 'string') {
+  } else if (typeof rawMaterialIds === "string") {
     try {
       materialIds = JSON.parse(rawMaterialIds);
     } catch (e) {
-      materialIds = rawMaterialIds.split(',').map((id) => id.trim());
+      materialIds = rawMaterialIds.split(",").map((id) => id.trim());
     }
   } else if (rawMaterialIds !== undefined) {
     materialIds = [rawMaterialIds.toString()];
@@ -610,14 +651,16 @@ const updateComplianceStatusWithDocument = async (req, res) => {
     materialIds = [];
   }
 
-  console.log('Received materialIds:', materialIds);
-  console.log('Received regulations:', regulations);
+  console.log("Received materialIds:", materialIds);
+  console.log("Received regulations:", regulations);
 
   // Проверка на наличие либо materialIds, либо applyToAllSupplierMaterials и supplierId
-  if (!(materialIds.length > 0 || (applyToAllSupplierMaterials && supplierId))) {
+  if (
+    !(materialIds.length > 0 || (applyToAllSupplierMaterials && supplierId))
+  ) {
     throw HttpError(
       400,
-      'Either materialIds or applyToAllSupplierMaterials with a valid supplierId must be provided.'
+      "Either materialIds or applyToAllSupplierMaterials with a valid supplierId must be provided."
     );
   }
 
@@ -631,14 +674,16 @@ const updateComplianceStatusWithDocument = async (req, res) => {
     }
 
     const supplierMaterials = await Material.find({
-      supplier: { $regex: new RegExp(`^${supplier.name}$`, 'i') },
+      supplier: { $regex: new RegExp(`^${supplier.name}$`, "i") },
     });
 
     if (!supplierMaterials || supplierMaterials.length === 0) {
       throw HttpError(404, `No materials found for supplier ${supplier.name}`);
     }
 
-    materialsToUpdate = supplierMaterials.map((material) => material._id.toString());
+    materialsToUpdate = supplierMaterials.map((material) =>
+      material._id.toString()
+    );
   } else if (materialIds.length > 0) {
     materialsToUpdate = materialIds;
   }
@@ -690,45 +735,49 @@ const updateComplianceStatusWithDocument = async (req, res) => {
 
   //   return parentMaterial.regulatoryCompliance;
   // };
-  const updateParentRegulatoryCompliance = async (parentMaterial, regulation, childMaterials) => {
+  const updateParentRegulatoryCompliance = async (
+    parentMaterial,
+    regulation,
+    childMaterials
+  ) => {
     // Собираем статусы для данного регулятора у всех дочерних материалов.
     // Если информация отсутствует, считаем её как 'pending'
     const statuses = childMaterials.map((material) => {
       const compliance = material.regulatoryCompliance.find(
         (comp) => comp._id && comp._id.toString() === regulation._id.toString()
       );
-      return compliance ? compliance.status : 'pending';
+      return compliance ? compliance.status : "pending";
     });
-  
+
     let parentStatus;
     if (statuses.length === 0) {
       // Если у родителя вообще нет дочерних материалов – статус pending (либо можно задать другую логику)
-      parentStatus = 'pending';
+      parentStatus = "pending";
     } else {
       // Если все дочерние материалы имеют статус 'comply', то и родитель получает 'comply'
-      if (statuses.every((status) => status === 'comply')) {
-        parentStatus = 'comply';
+      if (statuses.every((status) => status === "comply")) {
+        parentStatus = "comply";
       }
       // Если среди дочерних есть хотя бы один, явно не соответствующий, и ни один не 'comply'
-      else if (statuses.every((status) => status === 'does_not_comply')) {
-        parentStatus = 'does_not_comply';
+      else if (statuses.every((status) => status === "does_not_comply")) {
+        parentStatus = "does_not_comply";
       }
       // Если есть смешанные статусы, в частности если хотя бы один 'comply' встречается вместе с другим статусом,
       // или если имеются статусы 'pending' – считаем, что родитель соответствует, но с исключением.
       else {
-        parentStatus = 'comply_with_exceptions';
+        parentStatus = "comply_with_exceptions";
       }
     }
-  
+
     // Обновляем или добавляем запись в regulatoryCompliance родителя
     if (!Array.isArray(parentMaterial.regulatoryCompliance)) {
       parentMaterial.regulatoryCompliance = [];
     }
-  
+
     const existingIndex = parentMaterial.regulatoryCompliance.findIndex(
       (comp) => comp._id && comp._id.toString() === regulation._id.toString()
     );
-  
+
     if (existingIndex > -1) {
       parentMaterial.regulatoryCompliance[existingIndex].status = parentStatus;
     } else {
@@ -739,16 +788,19 @@ const updateComplianceStatusWithDocument = async (req, res) => {
         status: parentStatus,
       });
     }
-  
+
     return parentMaterial.regulatoryCompliance;
   };
 
   // Функция для обновления regulatoryCompliance для материалов
-  const updateRegulatoryComplianceForMaterials = async (materialIds, regulations) => {
+  const updateRegulatoryComplianceForMaterials = async (
+    materialIds,
+    regulations
+  ) => {
     const materials = await Material.find({ _id: { $in: materialIds } }).lean();
 
     if (!materials || materials.length === 0) {
-      console.log('No materials found for given materialIds.');
+      console.log("No materials found for given materialIds.");
       return;
     }
 
@@ -757,7 +809,10 @@ const updateComplianceStatusWithDocument = async (req, res) => {
     for (const reg of regulations) {
       const regulation = await Regulation.findById(reg.regulationId);
       if (!regulation) {
-        throw HttpError(404, `Regulation with ID ${reg.regulationId} not found.`);
+        throw HttpError(
+          404,
+          `Regulation with ID ${reg.regulationId} not found.`
+        );
       }
       regulationMap[reg.regulationId] = {
         _id: reg.regulationId, // Используем _id вместо regulationId
@@ -779,8 +834,11 @@ const updateComplianceStatusWithDocument = async (req, res) => {
         // Обновление существующего compliance
         bulkOperations.push({
           updateOne: {
-            filter: { _id: material._id, 'regulatoryCompliance._id': regulationId },
-            update: { $set: { 'regulatoryCompliance.$.status': status } },
+            filter: {
+              _id: material._id,
+              "regulatoryCompliance._id": regulationId,
+            },
+            update: { $set: { "regulatoryCompliance.$.status": status } },
           },
         });
 
@@ -789,7 +847,7 @@ const updateComplianceStatusWithDocument = async (req, res) => {
           updateOne: {
             filter: {
               _id: material._id,
-              'regulatoryCompliance._id': { $ne: regulationId },
+              "regulatoryCompliance._id": { $ne: regulationId },
             },
             update: {
               $addToSet: {
@@ -797,7 +855,7 @@ const updateComplianceStatusWithDocument = async (req, res) => {
                   _id: regulationId,
                   title: regulationData.title,
                   description: regulationData.description,
-                  status: status || 'pending',
+                  status: status || "pending",
                 },
               },
             },
@@ -811,7 +869,9 @@ const updateComplianceStatusWithDocument = async (req, res) => {
     }
 
     // После обновления заново получаем материалы
-    const updatedMaterials = await Material.find({ _id: { $in: materialIds } }).lean();
+    const updatedMaterials = await Material.find({
+      _id: { $in: materialIds },
+    }).lean();
 
     // Обновляем родительские материалы
     const parentMaterialIds = new Set();
@@ -824,34 +884,45 @@ const updateComplianceStatusWithDocument = async (req, res) => {
     });
 
     if (parentMaterialIds.size > 0) {
-      const parentMaterials = await Material.find({ _id: { $in: Array.from(parentMaterialIds) } });
+      const parentMaterials = await Material.find({
+        _id: { $in: Array.from(parentMaterialIds) },
+      });
       for (const parentMaterial of parentMaterials) {
         // Получаем **все** дочерние материалы для данного родителя
         const childMaterials = await Material.find({
           parentID: parentMaterial._id,
         }).lean();
-    
+
         // Обновляем regulatoryCompliance у родителя для каждого регуляторного акта
         for (const reg of regulations) {
           const regulationId = reg.regulationId;
           const regulationData = regulationMap[regulationId];
-    
-          await updateParentRegulatoryCompliance(parentMaterial, regulationData, childMaterials);
-        }
-    
-        // При необходимости обновляем компоненты родителя
-        parentMaterial.components = parentMaterial.components.map((component) => {
-          const matchingMaterial = childMaterials.find(
-            (m) => m.partNumber === component.partNumber
+
+          await updateParentRegulatoryCompliance(
+            parentMaterial,
+            regulationData,
+            childMaterials
           );
-          if (matchingMaterial && matchingMaterial.regulatoryCompliance) {
-            component.regulatoryCompliance = matchingMaterial.regulatoryCompliance;
-          } else {
-            console.log(`Нет данных regulatoryCompliance для компонента ${component.partNumber}`);
+        }
+
+        // При необходимости обновляем компоненты родителя
+        parentMaterial.components = parentMaterial.components.map(
+          (component) => {
+            const matchingMaterial = childMaterials.find(
+              (m) => m.partNumber === component.partNumber
+            );
+            if (matchingMaterial && matchingMaterial.regulatoryCompliance) {
+              component.regulatoryCompliance =
+                matchingMaterial.regulatoryCompliance;
+            } else {
+              console.log(
+                `Нет данных regulatoryCompliance для компонента ${component.partNumber}`
+              );
+            }
+            return component;
           }
-          return component;
-        });
-    
+        );
+
         await parentMaterial.save();
       }
     }
@@ -895,17 +966,21 @@ const updateComplianceStatusWithDocument = async (req, res) => {
   // Проверка, требуется ли загрузка документа для выбранных статусов
   let fileUrl = null;
   if (req.file) {
-    fileUrl = req.file.path;
+    fileUrl = req.file.location;
   }
 
-  const statusesThatRequireDocument = ['comply', 'does_not_comply', 'comply_with_exceptions'];
+  const statusesThatRequireDocument = [
+    "comply",
+    "does_not_comply",
+    "comply_with_exceptions",
+  ];
 
   const requiresDocument = regulations.some((reg) =>
     statusesThatRequireDocument.includes(reg.status)
   );
 
   if (requiresDocument && !fileUrl) {
-    throw HttpError(400, 'Document is required for the selected statuses.');
+    throw HttpError(400, "Document is required for the selected statuses.");
   }
 
   // Обновление regulatoryCompliance для материалов
@@ -915,7 +990,7 @@ const updateComplianceStatusWithDocument = async (req, res) => {
   let newDocument = null;
   if (fileUrl) {
     newDocument = await Document.create({
-      title: documentTitle || 'Compliance Document',
+      title: documentTitle || "Compliance Document",
       fileUrl,
       materialIds: materialsToUpdate,
       supplierId: supplierId || null,
@@ -925,36 +1000,35 @@ const updateComplianceStatusWithDocument = async (req, res) => {
         name: user.name,
         role: user.role,
       },
-      type: type || 'other',
+      type: type || "other",
       version: version || 1,
       regulations: regulations.map((reg) => ({
-        _id: reg.regulationId, 
+        _id: reg.regulationId,
         status: reg.status,
       })),
       attachments: attachments || [],
       effectiveDate: effectiveDate || null,
       expiryDate: expiryDate || null,
-      documentNumber: documentNumber || '',
-      description: notes || '',
-      category: category || 'other',
-      notes: notes || '',
+      documentNumber: documentNumber || "",
+      description: notes || "",
+      category: category || "other",
+      notes: notes || "",
     });
-
 
     await logAction({
       userId: req.user._id,
-      action: 'create',
-      entityType: 'Document',
+      action: "create",
+      entityType: "Document",
       entityId: newDocument._id,
       newData: newDocument.toObject(),
     });
   }
 
   res.status(200).json({
-    status: 'success',
+    status: "success",
     code: 200,
     data: {
-      message: 'Compliance statuses updated successfully.',
+      message: "Compliance statuses updated successfully.",
       document: newDocument,
     },
   });
@@ -967,5 +1041,7 @@ export default {
   createMaterial: ctrlWrapper(createMaterial),
   deleteMaterial: ctrlWrapper(deleteMaterial),
   searchMaterialsByPartNumber: ctrlWrapper(searchMaterialsByPartNumber),
-  updateComplianceStatusWithDocument: ctrlWrapper(updateComplianceStatusWithDocument)
+  updateComplianceStatusWithDocument: ctrlWrapper(
+    updateComplianceStatusWithDocument
+  ),
 };

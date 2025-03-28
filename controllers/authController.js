@@ -1,11 +1,8 @@
-import jwt from 'jsonwebtoken';
-import dotenv from "dotenv";    
+import jwt from "jsonwebtoken";
 import User from "../services/schemas/user.js";
 import HttpError from "../middlewares/HttpError.js";
 import ctrlWrapper from "../middlewares/ctrlWrapper.js";
-import logAction from "../utils/logAction.js"
-
-dotenv.config();
+import logAction from "../utils/logAction.js";
 
 const registerUser = async (req, res) => {
   const {
@@ -17,7 +14,7 @@ const registerUser = async (req, res) => {
     locale,
     timezone,
     profile,
-    preferences
+    preferences,
   } = req.body;
 
   const userId = req.user._id;
@@ -37,14 +34,14 @@ const registerUser = async (req, res) => {
     // Инициализируем permissions (базовые права)
     permissions: {
       // Ключ - ресурс, значение - объект с actions
-      "materials": {
+      materials: {
         actions: {
           read: true,
           edit: false,
-          delete: false
-        }
-      }
-    }
+          delete: false,
+        },
+      },
+    },
   };
 
   // Устанавливаем опциональные поля, если они переданы
@@ -59,14 +56,14 @@ const registerUser = async (req, res) => {
   // используем переменную userData чтобы с помощью функции toObject переобразовать permissions и actions (которые в схеме БД определены как MAP) в обычный объект.
   const userData = newUser.toObject({ flattenMaps: true });
 
-   // Логируем создание нового пользователя
-   await logAction({
+  // Логируем создание нового пользователя
+  await logAction({
     userId,
-    action: 'create',
-    entityType: 'User',
+    action: "create",
+    entityType: "User",
     entityId: newUser._id.toString(),
     oldData: null,
-    newData: newUser.toObject()
+    newData: newUser.toObject(),
   });
 
   // Возвращаем данные о созданном пользователе
@@ -84,7 +81,7 @@ const registerUser = async (req, res) => {
         timezone: userData.timezone,
         profile: userData.profile,
         preferences: userData.preferences,
-        permissions: userData.permissions
+        permissions: userData.permissions,
       },
     },
   });
@@ -96,7 +93,7 @@ const loginUser = async (req, res) => {
   const user = await User.findOne({ email });
 
   if (!user || !(await user.comparePassword(password))) {
-    throw HttpError(401, 'Incorrect email or password');
+    throw HttpError(401, "Incorrect email or password");
   }
 
   const token = jwt.sign({ id: user._id }, process.env.SECRET_KEY, {
@@ -108,7 +105,7 @@ const loginUser = async (req, res) => {
   await user.save();
 
   res.status(200).json({
-    status: 'success',
+    status: "success",
     code: 200,
     data: {
       user: {
@@ -129,46 +126,45 @@ const logoutUser = async (req, res) => {
   await User.findByIdAndUpdate(id, { token: null });
 
   res.status(200).json({
-    status: 'success',
+    status: "success",
     code: 200,
-    message: 'Successfully logged out',
+    message: "Successfully logged out",
   });
 };
 
-
 const checkToken = async (req, res) => {
-    // Получаем токен из заголовка Authorization
-    const token = req.headers.authorization?.split(' ')[1]; // Bearer <token>
+  // Получаем токен из заголовка Authorization
+  const token = req.headers.authorization?.split(" ")[1]; // Bearer <token>
 
-    if (!token) {
-      throw HttpError(401, "Please provide token in the headers of your request");
-    }
+  if (!token) {
+    throw HttpError(401, "Please provide token in the headers of your request");
+  }
 
-    // Проверяем валидность токена
-    const decoded = jwt.verify(token, process.env.SECRET_KEY);
+  // Проверяем валидность токена
+  const decoded = jwt.verify(token, process.env.SECRET_KEY);
 
-    // Получаем данные пользователя из базы по ID из токена
-    const user = await User.findById(decoded.id).select('-password -createdAt -updatedAt'); 
+  // Получаем данные пользователя из базы по ID из токена
+  const user = await User.findById(decoded.id).select(
+    "-password -createdAt -updatedAt"
+  );
 
-    if (!user) {
-      throw HttpError(404, "The user with the provided token has not been found");
-    }
+  if (!user) {
+    throw HttpError(404, "The user with the provided token has not been found");
+  }
 
-
-
-    res.status(200).json({
-      status: 'success',
-      code: 200,
-      data: {
-        user: {
-          _id: user._id,
-          name: user.name,
-          surname: user.surname,
-          email: user.email,
-          role: user.role,
-        }
+  res.status(200).json({
+    status: "success",
+    code: 200,
+    data: {
+      user: {
+        _id: user._id,
+        name: user.name,
+        surname: user.surname,
+        email: user.email,
+        role: user.role,
       },
-    });
+    },
+  });
 };
 
 export default {

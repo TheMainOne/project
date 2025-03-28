@@ -1,8 +1,6 @@
-import dotenv from 'dotenv';
-import passport from 'passport';
-import { Strategy as JwtStrategy, ExtractJwt } from 'passport-jwt';
-import User from '../schemas/user.js';
-dotenv.config();
+import passport from "passport";
+import { Strategy as JwtStrategy, ExtractJwt } from "passport-jwt";
+import User from "../schemas/user.js";
 
 const SECRET_KEY = process.env.SECRET_KEY;
 
@@ -39,6 +37,5 @@ passport.use(
     }
   )
 );
-
 
 export default passport;

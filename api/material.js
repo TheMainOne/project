@@ -3,7 +3,7 @@ import controllers from "../controllers/materialsController.js";
 import isValidId from "../middlewares/isValidId.js";
 import validateBody from "../middlewares/validateBody.js";
 import authenticate from "../middlewares/authenticate.js";
-import upload from "../middlewares/multer.js";
+import upload from "../middlewares/s3Upload.js";
 import filterAndSort from "../middlewares/filterAndSort.js";
 import requirePermission from "../middlewares/requirePermission.js";
 import { materialSchema } from "../services/schemas/material.js";
@@ -25,9 +25,13 @@ router.get(
   requirePermission("PartManagement", "view"), // Проверяем разрешение на просмотр
   controllers.searchMaterialsByPartNumber
 );
-router.get("/api/materials/:id", authenticate, 
+router.get(
+  "/api/materials/:id",
+  authenticate,
   requirePermission("PartManagement", "view"), // Проверяем разрешение на просмотр
-  isValidId, controllers.getById);
+  isValidId,
+  controllers.getById
+);
 router.post(
   "/api/materials",
   authenticate,
@@ -39,7 +43,7 @@ router.put(
   "/api/materials/compliance",
   authenticate,
   requirePermission("PartManagement", "update"), // Проверяем разрешение на обновление
-  upload.single("document"), // Middleware для загрузки документа
+  upload.single("document"), // Middleware для загрузки документа в Amazon S3
   validateBody(materialSchema.validateUpdateComplianceStatusWithDocumentSchema),
   controllers.updateComplianceStatusWithDocument
 );
