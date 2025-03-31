@@ -38,6 +38,7 @@
 5. [API Endpoints для управления документами](#our-api-endpoints-for-managing-documents)
    - [Создание нового документа](#1-создание-нового-документа)
    - [Получение документов по ID материала и ID регулирующего акта](#2-получение-документов-по-id-материала-и-id-регулирующего-акта)
+   - [Генерация pre-signed URL для скачивания документа](#3-генерация-pre-signed-url-для-скачивания-документа)
 
 6. [API Endpoints для управления юзерами](#our-api-endpoints-for-managing-users)
    - [Получение всех юзеров](#1-получение-всех-юзеров)
@@ -2047,6 +2048,54 @@ localhost:3000/api/documents?regulationId=670fed898818777806d4dee5&materialId=66
 
 
 _________________________________________    
+
+
+
+
+#### 3. Генерация pre-signed URL для скачивания документа
+
+- **Метод:** GET
+- **URL:** `/api/documents/download?docId=<documentId>`
+- **Описание:**  
+Эндпоинт генерирует pre-signed URL для скачивания файла документа из Amazon S3. При обращении к этому эндпоинту по идентификатору документа (docId) происходит следующее:  
+- Выполняется поиск документа в базе данных по переданному docId.  
+- Если документ найден, извлекается поле fileUrl для получения ключа файла в бакете S3.  
+- С помощью AWS SDK генерируется URL для скачивания файла с заданным временем действия (1 час).  
+- Возвращается JSON-объект с pre-signed URL и заголовком документа.
+  
+- **Требования:** Аутентификация пользователя, передача корректного идентификатора документа через query-параметр (docId).
+- **Параметры запроса:**  
+  GET /api/documents/download?docId=<documentId>
+  Authorization: Bearer <token>  
+
+- **Пример запроса:**  
+https://cloudcompliance.duckdns.org/api/documents/download?docId=67e6e4494325f0f5f7fcfa77
+
+- **Пример ответа:**  
+  ```json
+{
+    "status": "success",
+    "code": 200,
+    "data": {
+        "downloadUrl": "https://cloudcompliance-uploads.s3.us-east-1.amazonaws.com/uploads/Technical%20Bulletin%20-%20Storage%20Life%20of%20Glass%20Containers%20%282%29-1743184969388-687939292.docx?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Content-Sha256=UNSIGNED-PAYLOAD&X-Amz-Credential=AKIA2ASMIZ57WW6UVAFR%2F20250331%2Fus-east-1%2Fs3%2Faws4_request&X-Amz-Date=20250331T194833Z&X-Amz-Expires=3600&X-Amz-Signature=1fa1011ddb10ab0c53afb993b26cea9851a6e06c204a068e5d06b979d4d9317c&X-Amz-SignedHeaders=host&x-amz-checksum-mode=ENABLED&x-id=GetObject",
+        "title": "Maksym Lvov"
+    }
+}
+    ```
+
+- **Статусы ответов:**  
+
+200 OK — успешный запрос.  
+400 Bad Request — если отсутствует параметр docId или переданы неверные данные. 
+401 Unauthorized — ошибка аутентификации.  
+404 Not Found — документ не найден.  
+500 Internal Server Error — ошибка сервера.  
+
+
+
+
+_________________________________________    
+
 
 
 #### Our API Endpoints for managing users
