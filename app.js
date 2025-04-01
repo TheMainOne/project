@@ -14,6 +14,7 @@ import documentsRouter from "./api/document.js";
 import userRouter from "./api/user.js";
 import roleRouter from "./api/role.js";
 import dashboardRouter from "./api/dashboardRouter.js";
+import logsRouter from "./api/logs.js";
 import sendTelegramMessage from "./services/telegramNotify.js";
 
 const PORT = process.env.PORT || 3000;
@@ -53,6 +54,7 @@ app.use("/", documentsRouter);
 app.use("/", userRouter);
 app.use("/", roleRouter);
 app.use("/", dashboardRouter);
+app.use("/", logsRouter);
 
 // error handlers
 app.use(errorHandler);
