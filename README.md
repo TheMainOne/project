@@ -55,7 +55,14 @@
    - [Получение всех ролей для dictionary](#6-получение-всех-ролей-для-dictionary)  
 
 8. [API Endpoints для управления дашбордом](#our-api-endpoints-for-dashboard)
-   - [Получение общих аналитических данных о поставщике](#1-получение-общих-аналитических-данных-о-поставщике)   
+   - [Получение общих аналитических данных о поставщике](#1-получение-общих-аналитических-данных-о-поставщике)
+  
+9. [API Endpoints для управления логами](#our-api-endpoints-for-managing-logs)
+   - [Получение всех логов с поддержкой фильтрации, сортировки и пагинации](#1-получение-всех-логов-с-поддержкой-фильтрации-сортировки-и-пагинации)
+   - [Получение лога по Id](#2-получение-лога-по-id)
+   - [Получение логов по типу и ID сущности](#3-получение-логов-по-типу-и-id-сущности)
+   - [Удаление старых логов](#4-удаление-старых-логов)
+
 
  _________________________________________
 
@@ -2953,4 +2960,804 @@ Authorization: Bearer <token>
 401 Unauthorized — ошибка аутентификации.
 404 Bad request — поставщика не существует в БД.
 500 Internal Server Error — ошибка сервера.  
+
+_________________________________________________
+
+#### Our API endpoints for managing logs
+| Method             | URL                                      | Description                              |
+| ------------------ | ---------------------------------------- | ---------------------------------------- |
+| `GET`              | `/api/logs`                              | Retrieve all logs                        |
+| `GET`              | `/api/logs/:id`                          | Retrieve a specific log entry by its ID  |
+| `GET`              | `/api/logs/entity/:entityType/:entityId` | Retrieve logs related to a specific entity |
+| `DELETE`           | `api/logs/cleanup`                       | Delete logs older than a specified number of days |
+
+
+#### 1. Получение всех логов с поддержкой фильтрации сортировки и пагинации.
+
+Метод: GET  
+
+URL: /api/logs
+
+Описание: Получение всех логов с поддержкой фильтрации, сортировки и пагинации.
+
+Требования: Аутентификация пользователя.  
+
+**Параметры запроса:**  
+Query-параметры:  
+page — номер страницы (по умолчанию 1)  
+limit — количество логов на страницу (по умолчанию 20)  
+sortBy, sortOrder — поля для сортировки  
+фильтрация по доступным полям (например, entityType, action, userId, entityId) - можно комбинировать!  
+
+**Пример запроса:**  
+GET /api/logs?userId=678a6b856d5999ee4ff3befb&action=update&entityType=Material
+**Пример ответа:**  
+
+```json
+{
+    "status": "success",
+    "code": 200,
+    "data": {
+        "logs": [
+            {
+                "_id": "67cdf5b34c27d038a5a31c9d",
+                "userId": {
+                    "_id": "678a6b856d5999ee4ff3befb",
+                    "email": "andriy.hardy@gmail.com",
+                    "name": "Andriy",
+                    "role": "67af5d4f38b3e40c324e58b9"
+                },
+                "action": "update",
+                "entityType": "Material",
+                "entityId": "67cdf5944c27d038a5a31c92",
+                "changes": {
+                    "before": {
+                        "_id": "67cdf5944c27d038a5a31c92",
+                        "partNumber": "00000123",
+                        "description": "на входе",
+                        "supplier": "",
+                        "supplierId": null,
+                        "supplierItemNumber": "",
+                        "parentID": [],
+                        "countryOfOrigin": "",
+                        "status": "pending approval",
+                        "regulatoryCompliance": [],
+                        "BOMcomponent": "",
+                        "storagePath": "",
+                        "notes": "",
+                        "category": "other",
+                        "unitOfMeasure": "",
+                        "leadTime": "qwe",
+                        "customFields": {},
+                        "components": []
+                    },
+                    "after": {
+                        "_id": "67cdf5944c27d038a5a31c92",
+                        "partNumber": "00000123",
+                        "description": "Огнетушитель на входе",
+                        "supplier": "",
+                        "supplierId": null,
+                        "supplierItemNumber": "",
+                        "parentID": [],
+                        "countryOfOrigin": "",
+                        "status": "pending approval",
+                        "regulatoryCompliance": [],
+                        "BOMcomponent": "",
+                        "storagePath": "",
+                        "notes": "",
+                        "category": "other",
+                        "unitOfMeasure": "",
+                        "leadTime": "qwe",
+                        "customFields": {},
+                        "components": []
+                    },
+                    "diff": {
+                        "description": {
+                            "before": "на входе",
+                            "after": "Огнетушитель на входе"
+                        }
+                    }
+                },
+                "timestamp": "2025-03-09T20:10:27.094Z",
+                "createdAt": "2025-03-09T20:10:27.094Z",
+                "updatedAt": "2025-03-09T20:10:27.094Z"
+            },
+            {
+                "_id": "679bb8faf8f9cb1164e8cb4f",
+                "userId": {
+                    "_id": "678a6b856d5999ee4ff3befb",
+                    "email": "andriy.hardy@gmail.com",
+                    "name": "Andriy",
+                    "role": "67af5d4f38b3e40c324e58b9"
+                },
+                "action": "update",
+                "entityType": "Material",
+                "entityId": "6798fd0df16e00582adece12",
+                "changes": {
+                    "before": {
+                        "_id": "6798fd0df16e00582adece12",
+                        "partNumber": "testPartNumber3",
+                        "description": "vial amber 8oz",
+                        "supplier": "testSupplier4",
+                        "supplierId": "6798fa0bf16e00582adecd6e",
+                        "supplierItemNumber": "",
+                        "parentID": [],
+                        "countryOfOrigin": "Mexico",
+                        "status": "pending approval",
+                        "regulatoryCompliance": [
+                            {
+                                "_id": "66eaf23890623cac7248243a",
+                                "title": "California Proposition 65",
+                                "description": "Thee Safe Drinking Water and Toxic Enforcement Act of 1986",
+                                "status": "does_not_comply"
+                            },
+                            {
+                                "_id": "670fed898818777806d4dee5",
+                                "title": "PFAS",
+                                "description": "Per- and polyfluoroalkyl substances (PFAS) are a group of synthetic chemicals that are resistant to heat, grease, water, and oil. They are also known as forever chemicals because they do not break down in the environment.",
+                                "status": "comply"
+                            },
+                            {
+                                "_id": "6798fb6cf16e00582adecdc5",
+                                "title": "PBT TSCA",
+                                "description": "Statement from the supplier ",
+                                "status": "comply"
+                            },
+                            {
+                                "_id": "6798fcd7f16e00582adecdf5",
+                                "title": "EU POP",
+                                "description": "Statement from the supplier ",
+                                "status": "comply"
+                            }
+                        ],
+                        "BOMcomponent": "",
+                        "storagePath": "",
+                        "notes": "",
+                        "category": "",
+                        "unitOfMeasure": "",
+                        "leadTime": "",
+                        "customFields": {},
+                        "components": []
+                    },
+                    "after": {
+                        "_id": "6798fd0df16e00582adece12",
+                        "partNumber": "testPartNumber3",
+                        "description": "vial amber 8088",
+                        "supplier": "testSupplier4",
+                        "supplierId": "6798fa0bf16e00582adecd6e",
+                        "supplierItemNumber": "",
+                        "parentID": [],
+                        "countryOfOrigin": "Mexico",
+                        "status": "pending approval",
+                        "regulatoryCompliance": [
+                            {
+                                "_id": "66eaf23890623cac7248243a",
+                                "title": "California Proposition 65",
+                                "description": "Thee Safe Drinking Water and Toxic Enforcement Act of 1986",
+                                "status": "does_not_comply"
+                            },
+                            {
+                                "_id": "670fed898818777806d4dee5",
+                                "title": "PFAS",
+                                "description": "Per- and polyfluoroalkyl substances (PFAS) are a group of synthetic chemicals that are resistant to heat, grease, water, and oil. They are also known as forever chemicals because they do not break down in the environment.",
+                                "status": "comply"
+                            },
+                            {
+                                "_id": "6798fb6cf16e00582adecdc5",
+                                "title": "PBT TSCA",
+                                "description": "Statement from the supplier ",
+                                "status": "comply"
+                            },
+                            {
+                                "_id": "6798fcd7f16e00582adecdf5",
+                                "title": "EU POP",
+                                "description": "Statement from the supplier ",
+                                "status": "comply"
+                            }
+                        ],
+                        "BOMcomponent": "",
+                        "storagePath": "",
+                        "notes": "",
+                        "category": "other",
+                        "unitOfMeasure": "",
+                        "leadTime": "",
+                        "customFields": {},
+                        "components": []
+                    },
+                    "diff": {
+                        "description": {
+                            "before": "vial amber 8oz",
+                            "after": "vial amber 8088"
+                        },
+                        "category": {
+                            "before": "",
+                            "after": "other"
+                        }
+                    }
+                },
+                "timestamp": "2025-01-30T17:38:02.605Z",
+                "createdAt": "2025-01-30T17:38:02.606Z",
+                "updatedAt": "2025-01-30T17:38:02.606Z"
+            },
+            {
+                "_id": "679bb8eef8f9cb1164e8cb36",
+                "userId": {
+                    "_id": "678a6b856d5999ee4ff3befb",
+                    "email": "andriy.hardy@gmail.com",
+                    "name": "Andriy",
+                    "role": "67af5d4f38b3e40c324e58b9"
+                },
+                "action": "update",
+                "entityType": "Material",
+                "entityId": "6798fe95f16e00582adece5b",
+                "changes": {
+                    "before": {
+                        "_id": "6798fe95f16e00582adece5b",
+                        "partNumber": "testPartNumber5",
+                        "description": "vial 16oz amber",
+                        "supplier": "testSupplier3",
+                        "supplierId": "6798f9e2f16e00582adecd68",
+                        "supplierItemNumber": "",
+                        "parentID": [
+                            "6798fecbf16e00582adece64"
+                        ],
+                        "countryOfOrigin": "China",
+                        "status": "active",
+                        "regulatoryCompliance": [
+                            {
+                                "_id": "66d74d37c32d0715a4ff7a7b",
+                                "title": "EU REACH",
+                                "description": "Regulation concerning the Registration, Evaluation, Authorisation and Restriction of Chemicals",
+                                "status": "comply"
+                            },
+                            {
+                                "_id": "66eaf1bf90623cac72482436",
+                                "title": "EU RoHS",
+                                "description": "Restriction of Hazardous Substances in Electrical and Electronic Equipment (RoHS)",
+                                "status": "comply"
+                            }
+                        ],
+                        "BOMcomponent": "",
+                        "storagePath": "",
+                        "notes": "",
+                        "category": "component",
+                        "unitOfMeasure": "",
+                        "leadTime": "7",
+                        "customFields": {},
+                        "components": []
+                    },
+                    "after": {
+                        "_id": "6798fe95f16e00582adece5b",
+                        "partNumber": "testPartNumber5",
+                        "description": "vial 16oz ambererrr",
+                        "supplier": "testSupplier3",
+                        "supplierId": "6798f9e2f16e00582adecd68",
+                        "supplierItemNumber": "",
+                        "parentID": [
+                            "6798fecbf16e00582adece64"
+                        ],
+                        "countryOfOrigin": "China",
+                        "status": "active",
+                        "regulatoryCompliance": [
+                            {
+                                "_id": "66d74d37c32d0715a4ff7a7b",
+                                "title": "EU REACH",
+                                "description": "Regulation concerning the Registration, Evaluation, Authorisation and Restriction of Chemicals",
+                                "status": "comply"
+                            },
+                            {
+                                "_id": "66eaf1bf90623cac72482436",
+                                "title": "EU RoHS",
+                                "description": "Restriction of Hazardous Substances in Electrical and Electronic Equipment (RoHS)",
+                                "status": "comply"
+                            }
+                        ],
+                        "BOMcomponent": "",
+                        "storagePath": "",
+                        "notes": "",
+                        "category": "other",
+                        "unitOfMeasure": "",
+                        "leadTime": "7",
+                        "customFields": {},
+                        "components": []
+                    },
+                    "diff": {
+                        "description": {
+                            "before": "vial 16oz amber",
+                            "after": "vial 16oz ambererrr"
+                        },
+                        "category": {
+                            "before": "component",
+                            "after": "other"
+                        }
+                    }
+                },
+                "timestamp": "2025-01-30T17:37:50.589Z",
+                "createdAt": "2025-01-30T17:37:50.590Z",
+                "updatedAt": "2025-01-30T17:37:50.590Z"
+            },
+            {
+                "_id": "679bb8e4f8f9cb1164e8cb1d",
+                "userId": {
+                    "_id": "678a6b856d5999ee4ff3befb",
+                    "email": "andriy.hardy@gmail.com",
+                    "name": "Andriy",
+                    "role": "67af5d4f38b3e40c324e58b9"
+                },
+                "action": "update",
+                "entityType": "Material",
+                "entityId": "679a6bb95546099bec62fc22",
+                "changes": {
+                    "before": {
+                        "_id": "679a6bb95546099bec62fc22",
+                        "partNumber": "testPartNumber111",
+                        "description": "Bottle 12 oz",
+                        "supplier": "",
+                        "supplierId": null,
+                        "supplierItemNumber": "JW21121as",
+                        "parentID": [],
+                        "countryOfOrigin": "Mexico",
+                        "status": "pending approval",
+                        "regulatoryCompliance": [],
+                        "BOMcomponent": "",
+                        "storagePath": "",
+                        "notes": "asasasasas",
+                        "category": "other",
+                        "unitOfMeasure": "",
+                        "leadTime": "",
+                        "customFields": {},
+                        "components": []
+                    },
+                    "after": {
+                        "_id": "679a6bb95546099bec62fc22",
+                        "partNumber": "testPartNumber111",
+                        "description": "Bottle 12 oz3",
+                        "supplier": "",
+                        "supplierId": null,
+                        "supplierItemNumber": "JW21121as",
+                        "parentID": [],
+                        "countryOfOrigin": "Mexico",
+                        "status": "pending approval",
+                        "regulatoryCompliance": [],
+                        "BOMcomponent": "",
+                        "storagePath": "",
+                        "notes": "asasasasas",
+                        "category": "other",
+                        "unitOfMeasure": "",
+                        "leadTime": "",
+                        "customFields": {},
+                        "components": []
+                    },
+                    "diff": {
+                        "description": {
+                            "before": "Bottle 12 oz",
+                            "after": "Bottle 12 oz3"
+                        }
+                    }
+                },
+                "timestamp": "2025-01-30T17:37:40.334Z",
+                "createdAt": "2025-01-30T17:37:40.334Z",
+                "updatedAt": "2025-01-30T17:37:40.334Z"
+            },
+            {
+                "_id": "679bb8d5f8f9cb1164e8cb06",
+                "userId": {
+                    "_id": "678a6b856d5999ee4ff3befb",
+                    "email": "andriy.hardy@gmail.com",
+                    "name": "Andriy",
+                    "role": "67af5d4f38b3e40c324e58b9"
+                },
+                "action": "update",
+                "entityType": "Material",
+                "entityId": "6798fa6af16e00582adecd8b",
+                "changes": {
+                    "before": {
+                        "_id": "6798fa6af16e00582adecd8b",
+                        "partNumber": "testPartNumber1",
+                        "description": "cap blue 111",
+                        "supplier": "testSupplier2",
+                        "supplierId": "6798f9b0f16e00582adecd62",
+                        "supplierItemNumber": "HJ9921",
+                        "parentID": [
+                            "67990b36cd8be0cb8882bd60"
+                        ],
+                        "countryOfOrigin": "Great Britain",
+                        "status": "active",
+                        "regulatoryCompliance": [
+                            {
+                                "_id": "6798fb6cf16e00582adecdc5",
+                                "title": "PBT TSCA",
+                                "description": "Statement from the supplier ",
+                                "status": "comply"
+                            }
+                        ],
+                        "BOMcomponent": "",
+                        "storagePath": "",
+                        "notes": "New material. Do not sell ",
+                        "category": "other",
+                        "unitOfMeasure": "",
+                        "leadTime": "3",
+                        "customFields": {},
+                        "components": []
+                    },
+                    "after": {
+                        "_id": "6798fa6af16e00582adecd8b",
+                        "partNumber": "testPartNumber1",
+                        "description": "cap blue 1100",
+                        "supplier": "testSupplier2",
+                        "supplierId": "6798f9b0f16e00582adecd62",
+                        "supplierItemNumber": "HJ9921",
+                        "parentID": [
+                            "67990b36cd8be0cb8882bd60"
+                        ],
+                        "countryOfOrigin": "Great Britain",
+                        "status": "active",
+                        "regulatoryCompliance": [
+                            {
+                                "_id": "6798fb6cf16e00582adecdc5",
+                                "title": "PBT TSCA",
+                                "description": "Statement from the supplier ",
+                                "status": "comply"
+                            }
+                        ],
+                        "BOMcomponent": "",
+                        "storagePath": "",
+                        "notes": "New material. Do not sell ",
+                        "category": "other",
+                        "unitOfMeasure": "",
+                        "leadTime": "3",
+                        "customFields": {},
+                        "components": []
+                    },
+                    "diff": {
+                        "description": {
+                            "before": "cap blue 111",
+                            "after": "cap blue 1100"
+                        }
+                    }
+                },
+                "timestamp": "2025-01-30T17:37:25.450Z",
+                "createdAt": "2025-01-30T17:37:25.451Z",
+                "updatedAt": "2025-01-30T17:37:25.451Z"
+            },
+            {
+                "_id": "679bb887f8f9cb1164e8cade",
+                "userId": {
+                    "_id": "678a6b856d5999ee4ff3befb",
+                    "email": "andriy.hardy@gmail.com",
+                    "name": "Andriy",
+                    "role": "67af5d4f38b3e40c324e58b9"
+                },
+                "action": "update",
+                "entityType": "Material",
+                "entityId": "6798fa6af16e00582adecd8b",
+                "changes": {
+                    "before": {
+                        "_id": "6798fa6af16e00582adecd8b",
+                        "partNumber": "testPartNumber1",
+                        "description": "cap blue ",
+                        "supplier": "testSupplier2",
+                        "supplierId": "6798f9b0f16e00582adecd62",
+                        "supplierItemNumber": "HJ9921",
+                        "parentID": [
+                            "67990b36cd8be0cb8882bd60"
+                        ],
+                        "countryOfOrigin": "Great Britain",
+                        "status": "active",
+                        "regulatoryCompliance": [
+                            {
+                                "_id": "6798fb6cf16e00582adecdc5",
+                                "title": "PBT TSCA",
+                                "description": "Statement from the supplier ",
+                                "status": "comply"
+                            }
+                        ],
+                        "BOMcomponent": "",
+                        "storagePath": "",
+                        "notes": "New material. Do not sell ",
+                        "category": "other",
+                        "unitOfMeasure": "",
+                        "leadTime": "3",
+                        "customFields": {},
+                        "components": []
+                    },
+                    "after": {
+                        "_id": "6798fa6af16e00582adecd8b",
+                        "partNumber": "testPartNumber1",
+                        "description": "cap blue 111",
+                        "supplier": "testSupplier2",
+                        "supplierId": "6798f9b0f16e00582adecd62",
+                        "supplierItemNumber": "HJ9921",
+                        "parentID": [
+                            "67990b36cd8be0cb8882bd60"
+                        ],
+                        "countryOfOrigin": "Great Britain",
+                        "status": "active",
+                        "regulatoryCompliance": [
+                            {
+                                "_id": "6798fb6cf16e00582adecdc5",
+                                "title": "PBT TSCA",
+                                "description": "Statement from the supplier ",
+                                "status": "comply"
+                            }
+                        ],
+                        "BOMcomponent": "",
+                        "storagePath": "",
+                        "notes": "New material. Do not sell ",
+                        "category": "other",
+                        "unitOfMeasure": "",
+                        "leadTime": "3",
+                        "customFields": {},
+                        "components": []
+                    },
+                    "diff": {
+                        "description": {
+                            "before": "cap blue ",
+                            "after": "cap blue 111"
+                        }
+                    }
+                },
+                "timestamp": "2025-01-30T17:36:07.227Z",
+                "createdAt": "2025-01-30T17:36:07.228Z",
+                "updatedAt": "2025-01-30T17:36:07.228Z"
+            },
+            {
+                "_id": "679bb64af8f9cb1164e8ca9c",
+                "userId": {
+                    "_id": "678a6b856d5999ee4ff3befb",
+                    "email": "andriy.hardy@gmail.com",
+                    "name": "Andriy",
+                    "role": "67af5d4f38b3e40c324e58b9"
+                },
+                "action": "update",
+                "entityType": "Material",
+                "entityId": "6798fe43f16e00582adece47",
+                "changes": {
+                    "before": {
+                        "_id": "6798fe43f16e00582adece47",
+                        "partNumber": "testPartNumber4",
+                        "description": "stopper red PTFE",
+                        "supplier": "testSupplier",
+                        "supplierId": "679120ca1ddc757a32ba8362",
+                        "supplierItemNumber": "",
+                        "parentID": [
+                            "6798fecbf16e00582adece64"
+                        ],
+                        "countryOfOrigin": "",
+                        "status": "active",
+                        "regulatoryCompliance": [
+                            {
+                                "_id": "66d74d37c32d0715a4ff7a7b",
+                                "title": "EU REACH",
+                                "description": "Regulation concerning the Registration, Evaluation, Authorisation and Restriction of Chemicals",
+                                "status": "comply"
+                            },
+                            {
+                                "_id": "66eaf1bf90623cac72482436",
+                                "title": "EU RoHS",
+                                "description": "Restriction of Hazardous Substances in Electrical and Electronic Equipment (RoHS)",
+                                "status": "comply"
+                            }
+                        ],
+                        "BOMcomponent": "",
+                        "storagePath": "",
+                        "notes": "We sell exclusively in bulk quantities, starting from a minimum order of 100,000 units.",
+                        "category": "component",
+                        "unitOfMeasure": "",
+                        "leadTime": "10",
+                        "customFields": {},
+                        "components": []
+                    },
+                    "after": {
+                        "_id": "6798fe43f16e00582adece47",
+                        "partNumber": "testPartNumber404",
+                        "description": "stopper red PTFE",
+                        "supplier": "testSupplier",
+                        "supplierId": "679120ca1ddc757a32ba8362",
+                        "supplierItemNumber": "",
+                        "parentID": [
+                            "6798fecbf16e00582adece64"
+                        ],
+                        "countryOfOrigin": "",
+                        "status": "active",
+                        "regulatoryCompliance": [
+                            {
+                                "_id": "66d74d37c32d0715a4ff7a7b",
+                                "title": "EU REACH",
+                                "description": "Regulation concerning the Registration, Evaluation, Authorisation and Restriction of Chemicals",
+                                "status": "comply"
+                            },
+                            {
+                                "_id": "66eaf1bf90623cac72482436",
+                                "title": "EU RoHS",
+                                "description": "Restriction of Hazardous Substances in Electrical and Electronic Equipment (RoHS)",
+                                "status": "comply"
+                            }
+                        ],
+                        "BOMcomponent": "",
+                        "storagePath": "",
+                        "notes": "We sell exclusively in bulk quantities, starting from a minimum order of 100,000 units.",
+                        "category": "other",
+                        "unitOfMeasure": "",
+                        "leadTime": "10",
+                        "customFields": {},
+                        "components": []
+                    },
+                    "diff": {
+                        "partNumber": {
+                            "before": "testPartNumber4",
+                            "after": "testPartNumber404"
+                        },
+                        "category": {
+                            "before": "component",
+                            "after": "other"
+                        }
+                    }
+                },
+                "timestamp": "2025-01-30T17:26:34.655Z",
+                "createdAt": "2025-01-30T17:26:34.656Z",
+                "updatedAt": "2025-01-30T17:26:34.656Z"
+            }
+        ],
+        "meta": {
+            "total": 7,
+            "page": 1,
+            "pages": 1
+        }
+    }
+}
+```
+ 
+Статусы ответов:  
+200 OK — успешный запрос.  
+401 Unauthorized — ошибка аутентификации.  
+500 Internal Server Error — ошибка сервера.  
+
+_________________________________________________
+
+
+#### 2. Получение лога по Id
+
+Метод: GET  
+
+URL: /api/logs/:id
+
+Описание: Получение одного лога по его уникальному ID.
+
+Требования: Аутентификация пользователя.  
+  
+**Пример запроса:**  
+GET /api/logs/65f3e12df4b3c1c5a5d324fc  
+
+**Пример ответа:**  
+
+```json
+{
+  "status": "success",
+  "code": 200,
+  "data": {
+    "log": {
+      "_id": "65f3e12df4b3c1c5a5d324fc",
+      "action": "DELETE",
+      "entityType": "Supplier",
+      "entityId": "66d0764dd8bdd28e5e126fd6",
+      "timestamp": "2025-03-25T14:20:00.000Z",
+      "userId": {
+        "_id": "64fbd6...",
+        "name": "Jane Smith",
+        "email": "jane@example.com",
+        "role": "moderator"
+      }
+    }
+  }
+}
+
+```
+ 
+Статусы ответов:  
+200 OK — успешный запрос.  
+401 Unauthorized — ошибка аутентификации.  
+404 Not found - лог не найден  
+500 Internal Server Error — ошибка сервера.  
+
+_________________________________________________
+
+
+
+
+#### 3. Получение логов по типу и ID сущности
+
+Метод: GET  
+
+URL: /api/logs/entity/:entityType/:entityId
+
+Описание: Получение логов, относящихся к конкретной сущности. Поиск чувствителен к entityId, но entityType сравнивается без учёта регистра (material, Material, MATERIAL — всё подойдёт).  Показывает все логи, относящиеся к конкретной сущности (к примеру, все логи связанные с конкретным поставщиком)
+
+Требования: Аутентификация пользователя.  
+  
+**Пример запроса:**  
+GET /api/logs/entity/material/66d0764dd8bdd28e5e126fd6
+
+
+**Пример ответа:**  
+
+```json
+{
+  "status": "success",
+  "code": 200,
+  "data": {
+    "logs": [
+      {
+        "_id": "65f3e1...",
+        "action": "UPDATE",
+        "timestamp": "2025-03-30T10:12:01.123Z",
+        "userId": {
+          "_id": "64fbd6...",
+          "name": "Admin User",
+          "email": "admin@example.com"
+        }
+      }
+    ]
+  }
+}
+
+```
+ 
+Статусы ответов:  
+200 OK — успешный запрос.  
+401 Unauthorized — ошибка аутентификации.  
+400 Bad request - не переданы необходимые параметры поиска  
+500 Internal Server Error — ошибка сервера.  
+
+_________________________________________________
+
+
+#### 4. Удаление старых логов  
+
+Метод: DELETE  
+
+URL: /api/logs/cleanup  
+
+Описание: Описание: Удаление логов, старше указанного количества дней. Также поддерживается режим "dry-run", при котором ничего не удаляется, но возвращается, сколько записей могло бы быть удалено.
+
+Требования: Аутентификация пользователя.  
+
+**Параметры запроса:** 
+Query-параметры:  
+olderThanDays — количество дней (по умолчанию 90)  
+dryRun — если true, то ничего не удаляется, только возвращается количество совпадений, которые были бы удалены. По умолчанию - false.
+
+  
+**Пример запроса:**  
+DELETE /api/logs/cleanup?olderThanDays=60&dryRun=true  
+
+
+**Пример ответа:**  
+
+Пример ответа (dry-run):  
+```json
+{
+  "status": "dry-run",
+  "code": 200,
+  "message": "Dry run: 23 log(s) would be deleted if executed."
+}
+
+```
+Пример ответа (настоящее удаление):  
+```json
+{
+  "status": "success",
+  "code": 200,
+  "message": "Deleted 23 log(s) older than 60 days"
+}
+
+```
+ 
+Статусы ответов:  
+200 OK — успешный запрос.  
+401 Unauthorized — ошибка аутентификации.  
+400 Bad request - неверно передано количество дней (отрицательное количество)  
+500 Internal Server Error — ошибка сервера.  
+
+_________________________________________________
 
