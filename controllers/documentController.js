@@ -453,6 +453,10 @@ const downloadDocument = async (req, res) => {
   const command = new GetObjectCommand({
     Bucket: process.env.AWS_BUCKET_NAME,
     Key: fileKey,
+    ResponseContentDisposition: `attachment; filename="${encodeURIComponent(
+      doc.originalName
+    )}"`,
+    ResponseContentType: doc.contentType,
   });
 
   const downloadUrl = await getSignedUrl(s3, command, { expiresIn: 3600 });

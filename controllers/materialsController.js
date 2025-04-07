@@ -609,7 +609,6 @@ const updateComplianceStatusWithDocument = async (req, res) => {
   } = req.body;
 
   const user = req.user;
-
   let regulations;
   let materialIds;
 
@@ -650,9 +649,6 @@ const updateComplianceStatusWithDocument = async (req, res) => {
   } else {
     materialIds = [];
   }
-
-  console.log("Received materialIds:", materialIds);
-  console.log("Received regulations:", regulations);
 
   // Проверка на наличие либо materialIds, либо applyToAllSupplierMaterials и supplierId
   if (
@@ -985,13 +981,15 @@ const updateComplianceStatusWithDocument = async (req, res) => {
 
   // Обновление regulatoryCompliance для материалов
   await updateRegulatoryComplianceForMaterials(materialsToUpdate, regulations);
-
   // Если загружен документ, сохраняем его в базе данных
+
   let newDocument = null;
   if (fileUrl) {
     newDocument = await Document.create({
       title: documentTitle || "Compliance Document",
       fileUrl,
+      originalName: req.file.uploadedOriginalName,
+      contentType: req.file.uploadedMimeType,
       materialIds: materialsToUpdate,
       supplierId: supplierId || null,
       applyToAllSupplierMaterials: !!applyToAllSupplierMaterials,

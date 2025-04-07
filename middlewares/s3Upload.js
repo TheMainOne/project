@@ -12,11 +12,21 @@ const upload = multer({
     bucket: bucketName,
     contentType: multerS3.AUTO_CONTENT_TYPE,
     metadata: (req, file, cb) => {
-      cb(null, { fieldName: file.fieldname });
+      cb(null, {
+        fieldName: file.fieldname,
+        originalname: file.originalname,
+        mimetype: file.mimetype,
+      });
     },
     key: (req, file, cb) => {
       const fileExtension = file.originalname.split(".").pop();
-      cb(null, `documents/${uuidv4()}.${fileExtension}`);
+      const filename = `documents/${uuidv4()}.${fileExtension}`;
+
+      // сохраняем originalname и mimetype в объект file явно:
+      file.uploadedOriginalName = file.originalname;
+      file.uploadedMimeType = file.mimetype;
+
+      cb(null, filename);
     },
   }),
 });
