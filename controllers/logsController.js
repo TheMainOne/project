@@ -21,11 +21,8 @@ const getLogs = async (req, res) => {
     code: 200,
     data: {
       logs,
-      meta: {
-        total,
-        page: Number(page),
-        pages: Math.ceil(total / limit),
-      },
+      totalPages: Math.ceil(total / limit),
+      currentPage: parseInt(page),
     },
   });
 };
