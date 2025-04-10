@@ -11,8 +11,30 @@ const getLogs = async (req, res) => {
     .sort(req.sort)
     .skip(skip)
     .limit(parseInt(limit))
-    .populate("userId", "name email role") // Добавляем информацию о пользователе
+    .populate({
+      path: "userId",
+      select: "name email role",
+      populate: {
+        path: "role",
+        select: "name",
+      },
+    })
     .lean();
+
+  // Преобразуем userId в user и вытаскиваем название роли
+  const transformedLogs = logs.map((log) => {
+    if (log.userId) {
+      log.user = {
+        ...log.userId,
+        role:
+          typeof log.userId.role === "object"
+            ? log.userId.role.name
+            : log.userId.role,
+      };
+      delete log.userId;
+    }
+    return log;
+  });
 
   const total = await ActionLog.countDocuments(req.filter);
 
@@ -20,7 +42,7 @@ const getLogs = async (req, res) => {
     status: "success",
     code: 200,
     data: {
-      logs,
+      logs: transformedLogs,
       totalPages: Math.ceil(total / limit),
       currentPage: parseInt(page),
     },
@@ -35,11 +57,29 @@ const getLogById = async (req, res) => {
   }
 
   const log = await ActionLog.findById(id)
-    .populate("userId", "name email role")
+    .populate({
+      path: "userId",
+      select: "name email role",
+      populate: {
+        path: "role",
+        select: "name",
+      },
+    })
     .lean();
 
   if (!log) {
     throw HttpError(404, "Log not found");
+  }
+
+  if (log.userId) {
+    log.user = {
+      ...log.userId,
+      role:
+        typeof log.userId.role === "object"
+          ? log.userId.role.name
+          : log.userId.role,
+    };
+    delete log.userId;
   }
 
   res.status(200).json({
@@ -93,19 +133,43 @@ const getLogsForEntity = async (req, res) => {
   }
 
   const logs = await ActionLog.find({
-    entityType: new RegExp(`^${entityType}$`, "i"), // insensitive match
+    entityType: new RegExp(`^${entityType}$`, "i"), // нечувствительный к регистру поиск
     entityId: mongoose.Types.ObjectId.isValid(entityId)
       ? new mongoose.Types.ObjectId(entityId)
       : entityId,
   })
     .sort({ timestamp: -1 })
-    .populate("userId", "name email")
+    .populate({
+      path: "userId",
+      select: "name email role",
+      populate: {
+        path: "role",
+        select: "name",
+      },
+    })
     .lean();
+
+  // Преобразуем userId → user и role → role.name
+  const transformedLogs = logs.map((log) => {
+    if (log.userId) {
+      log.user = {
+        ...log.userId,
+        role:
+          typeof log.userId.role === "object"
+            ? log.userId.role.name
+            : log.userId.role,
+      };
+      delete log.userId;
+    }
+    return log;
+  });
 
   res.status(200).json({
     status: "success",
     code: 200,
-    data: { logs },
+    data: {
+      logs: transformedLogs,
+    },
   });
 };
 
