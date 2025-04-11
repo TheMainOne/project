@@ -684,53 +684,6 @@ const updateComplianceStatusWithDocument = async (req, res) => {
     materialsToUpdate = materialIds;
   }
 
-  // Функция для обновления regulatoryCompliance у родительских материалов
-  // const updateParentRegulatoryCompliance = async (parentMaterial, regulation, childMaterials) => {
-  //   const statuses = childMaterials
-  //     .map((material) => {
-  //       const compliance = material.regulatoryCompliance.find(
-  //         (comp) => comp._id && comp._id.toString() === regulation._id.toString()
-  //       );
-  //       return compliance ? compliance.status : null;
-  //     })
-  //     .filter((status) => status !== null);
-
-  //   // Определяем статус для родителя на основе статусов дочерних материалов
-  //   let parentStatus;
-  //   if (statuses.every((status) => status === 'comply')) {
-  //     parentStatus = 'comply';
-  //   } else if (statuses.some((status) => status === 'does_not_comply')) {
-  //     parentStatus = 'does_not_comply';
-  //   } else if (statuses.some((status) => status === 'comply_with_exceptions')) {
-  //     parentStatus = 'comply_with_exceptions';
-  //   } else if (statuses.every((status) => status === 'pending')) {
-  //     parentStatus = 'pending';
-  //   } else {
-  //     parentStatus = 'pending';
-  //   }
-
-  //   // Обновляем или добавляем запись в regulatoryCompliance родителя
-  //   if (!Array.isArray(parentMaterial.regulatoryCompliance)) {
-  //     parentMaterial.regulatoryCompliance = [];
-  //   }
-
-  //   const existingIndex = parentMaterial.regulatoryCompliance.findIndex(
-  //     (comp) => comp._id && comp._id.toString() === regulation._id.toString()
-  //   );
-
-  //   if (existingIndex > -1) {
-  //     parentMaterial.regulatoryCompliance[existingIndex].status = parentStatus;
-  //   } else {
-  //     parentMaterial.regulatoryCompliance.push({
-  //       _id: regulation._id,
-  //       title: regulation.title,
-  //       description: regulation.description,
-  //       status: parentStatus,
-  //     });
-  //   }
-
-  //   return parentMaterial.regulatoryCompliance;
-  // };
   const updateParentRegulatoryCompliance = async (
     parentMaterial,
     regulation,
@@ -791,7 +744,8 @@ const updateComplianceStatusWithDocument = async (req, res) => {
   // Функция для обновления regulatoryCompliance для материалов
   const updateRegulatoryComplianceForMaterials = async (
     materialIds,
-    regulations
+    regulations,
+    user
   ) => {
     const materials = await Material.find({ _id: { $in: materialIds } }).lean();
 
@@ -864,11 +818,30 @@ const updateComplianceStatusWithDocument = async (req, res) => {
       await Material.bulkWrite(bulkOperations);
     }
 
-    // После обновления заново получаем материалы
+    // === Логирование: получаем старые значения до обновления ===
+    const oldMaterials = materials; // просто для читаемости (опционально)
+
+    // === Логирование: получаем новые значения после обновления ===
     const updatedMaterials = await Material.find({
       _id: { $in: materialIds },
     }).lean();
 
+    // === Логирование изменений в дочерних материалах ===
+    for (const newMaterial of updatedMaterials) {
+      const oldMaterial = oldMaterials.find(
+        (m) => m._id.toString() === newMaterial._id.toString()
+      );
+      if (!oldMaterial) continue;
+
+      await logAction({
+        userId: user._id,
+        action: "update",
+        entityType: "Material",
+        entityId: newMaterial._id,
+        oldData: oldMaterial,
+        newData: newMaterial,
+      });
+    }
     // Обновляем родительские материалы
     const parentMaterialIds = new Set();
     materials.forEach((material) => {
@@ -885,6 +858,8 @@ const updateComplianceStatusWithDocument = async (req, res) => {
       });
       for (const parentMaterial of parentMaterials) {
         // Получаем **все** дочерние материалы для данного родителя
+        const oldParentMaterial = parentMaterial.toObject();
+
         const childMaterials = await Material.find({
           parentID: parentMaterial._id,
         }).lean();
@@ -920,43 +895,17 @@ const updateComplianceStatusWithDocument = async (req, res) => {
         );
 
         await parentMaterial.save();
+
+        await logAction({
+          userId: user._id,
+          action: "update",
+          entityType: "Material",
+          entityId: parentMaterial._id,
+          oldData: oldParentMaterial,
+          newData: parentMaterial.toObject(),
+        });
       }
     }
-    // if (parentMaterialIds.size > 0) {
-    //   const parentMaterials = await Material.find({ _id: { $in: Array.from(parentMaterialIds) } });
-    //   for (const parentMaterial of parentMaterials) {
-    //     // Отфильтровываем дочерние материалы для текущего родителя
-    //     const childMaterials = updatedMaterials.filter(
-    //       (material) =>
-    //         Array.isArray(material.parentID) &&
-    //         material.parentID.some((pid) => pid.toString() === parentMaterial._id.toString())
-    //     );
-
-    //     // Обновляем regulatoryCompliance у родителя для каждого регуляторного акта
-    //     for (const reg of regulations) {
-    //       const regulationId = reg.regulationId;
-    //       const regulationData = regulationMap[regulationId];
-
-    //       await updateParentRegulatoryCompliance(parentMaterial, regulationData, childMaterials);
-    //     }
-
-    //     // Обновляем компоненты родителя
-    //     parentMaterial.components = parentMaterial.components.map((component) => {
-    //       const matchingMaterial = updatedMaterials.find(
-    //         (m) => m.partNumber === component.partNumber
-    //       );
-    //       if (matchingMaterial && matchingMaterial.regulatoryCompliance) {
-    //         component.regulatoryCompliance = matchingMaterial.regulatoryCompliance;
-    //       } else {
-    //         console.log(`Нет данных regulatoryCompliance для компонента ${component.partNumber}`);
-    //       }
-    //       return component;
-    //     });
-
-    //     // Сохраняем родительский материал
-    //     await parentMaterial.save();
-    //   }
-    // }
   };
 
   // Проверка, требуется ли загрузка документа для выбранных статусов
@@ -980,7 +929,11 @@ const updateComplianceStatusWithDocument = async (req, res) => {
   }
 
   // Обновление regulatoryCompliance для материалов
-  await updateRegulatoryComplianceForMaterials(materialsToUpdate, regulations);
+  await updateRegulatoryComplianceForMaterials(
+    materialsToUpdate,
+    regulations,
+    user
+  );
   // Если загружен документ, сохраняем его в базе данных
 
   let newDocument = null;
