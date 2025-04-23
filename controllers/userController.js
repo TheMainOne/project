@@ -18,25 +18,24 @@ const getUserList = async (req, res) => {
 
   const skip = (page - 1) * limit;
 
-      // Используем фильтры и сортировку, переданные через middleware
-      const filter = req.filter || {};
-      const sort = req.sort || { createdAt: -1 }; // Сортировка по умолчанию по дате создания
+  // Используем фильтры и сортировку, переданные через middleware
+  const filter = req.filter || {};
+  const sort = req.sort || { createdAt: -1 }; // Сортировка по умолчанию по дате создания
 
- // Применяем фильтрацию и сортировку
- const results = await User.find(filter)
- .populate("role", "name")
- .sort(sort)
- .skip(skip)
- .limit(limit)
- .lean()
- .exec();
+  // Применяем фильтрацию и сортировку
+  const results = await User.find(filter)
+    .populate("role", "name")
+    .sort(sort)
+    .skip(skip)
+    .limit(limit)
+    .lean()
+    .exec();
 
   //  // Добавляем новое поле roleName, если роль подгружена
   //  const usersWithRoleName = results.map(user => ({
   //   ...user,
   //   roleName: user.role ? user.role.name : null
   // }));
-
 
   const count = await User.countDocuments(filter);
 
@@ -52,21 +51,21 @@ const getUserList = async (req, res) => {
 };
 
 const getUserByID = async (req, res) => {
-    const { id } = req.params;
-  
-    const result = await User.findById(id, "-createdAt -updatedAt");
-  
-    if (!result) {
-      throw HttpError(404, "Not found");
-    }
-  
-    res.json({
-      status: "success",
-      code: 200,
-      data: { user: result },
-    });
-  };    
-  
+  const { id } = req.params;
+
+  const result = await User.findById(id, "-createdAt -updatedAt");
+
+  if (!result) {
+    throw HttpError(404, "Not found");
+  }
+
+  res.json({
+    status: "success",
+    code: 200,
+    data: { user: result },
+  });
+};
+
 const addNewUser = async (req, res) => {
   const { email, name, surname, locale, timezone, profile, status } = req.body;
   let { role } = req.body;
@@ -84,19 +83,19 @@ const addNewUser = async (req, res) => {
 
   // Генерация случайного пароля
   const temporaryPassword = crypto.randomBytes(8).toString("hex");
-console.log(temporaryPassword)
+  console.log(temporaryPassword);
   // Создаем нового пользователя
 
   // Если поле role передано (как строка), ищем роль по имени (регистронезависимо)
   if (role) {
     const roleDoc = await Role.findOne({
-      name: { $regex: `^${role}$`, $options: "i" }
+      name: { $regex: `^${role}$`, $options: "i" },
     });
     if (!roleDoc) {
       throw HttpError(404, `Role with name '${role}' not found`);
     }
     role = roleDoc._id;
-  } 
+  }
 
   const newUserData = {
     email,
@@ -114,7 +113,7 @@ console.log(temporaryPassword)
   const newUser = new User(newUserData);
   await newUser.save();
 
-  // Отправка email с временным паролем 
+  // Отправка email с временным паролем
   const emailSubject = "Welcome to Our Application!";
   const emailBody = `Hello ${name} ${surname},\n\nYour account has been created successfully. Here are your login details:\n\nEmail: ${email}\nTemporary Password: ${temporaryPassword}\n\nPlease log in and change your password as soon as possible.\n\nBest regards,\nYour Application team`;
 
@@ -147,7 +146,7 @@ console.log(temporaryPassword)
       },
     },
   });
-};  
+};
 
 // const updateUserByID = async (req, res) => {
 //   const { id } = req.params;
@@ -172,7 +171,6 @@ console.log(temporaryPassword)
 //    if (!currentUserRole) {
 //      throw HttpError(403, "Current user's role not found");
 //    }
- 
 
 //  // 4. Проверка прав обновления
 //  if (req.user._id.toString() === id) {
@@ -215,13 +213,13 @@ console.log(temporaryPassword)
 
 //   // 7. Логируем действие
 //   //    Например, пишем, что пользователь с id = req.user._id обновил пользователя user._id
-  // await logAction({
-  //   userId: req.user._id,
-  //   action: "update",
-  //   entityType: "User",
-  //   entityId: user._id,
-  //   newData: user.toObject(),
-  // });
+// await logAction({
+//   userId: req.user._id,
+//   action: "update",
+//   entityType: "User",
+//   entityId: user._id,
+//   newData: user.toObject(),
+// });
 
 //   // 8. Возвращаем ответ
 //  //  Формируем безопасный ответ (без пароля, токена и прочих конфиденциальных данных)
@@ -231,7 +229,7 @@ console.log(temporaryPassword)
 //     status: "success",
 //     code: 200,
 //     data: {
-//       user: safeUserData, 
+//       user: safeUserData,
 //     },
 //   });
 // };
@@ -248,7 +246,9 @@ const updateUserByID = async (req, res) => {
 
   // 2. Проверка на уникальность email
   if (updateData.email) {
-    const existingUser = await User.findOne({ email: updateData.email });
+    const existingUser = await User.findOne({ email: updateData.email }).select(
+      "_id"
+    );
     if (existingUser && existingUser._id.toString() !== id) {
       throw HttpError(409, "Email already in use");
     }
@@ -288,22 +288,26 @@ const updateUserByID = async (req, res) => {
     updateData.role = roleFromDB._id; // Меняем название на ObjectId
   }
 
-  // 5. Частичное обновление данных пользователя
+  // 5. Сохраняем старые данные для лога
+  const oldUserData = user.toObject();
+
+  // 6. Частичное обновление данных пользователя
   Object.assign(user, updateData);
 
-  // 6. Сохраняем обновлённого пользователя
+  // 7. Сохраняем обновлённого пользователя
   await user.save();
 
-  // 7. Логируем действие
+  // 8. Логируем действие
   await logAction({
     userId: req.user._id,
     action: "update",
     entityType: "User",
     entityId: user._id,
+    oldData: oldUserData,
     newData: user.toObject(),
   });
 
-  // 7. Безопасный ответ
+  // 9. Безопасный ответ
   const { password, token, ...safeUserData } = user.toObject();
 
   res.json({
@@ -313,9 +317,8 @@ const updateUserByID = async (req, res) => {
 };
 
 export default {
-    getAllUsers: ctrlWrapper(getUserList),
-    getUserById: ctrlWrapper(getUserByID),
-    addNewUser: ctrlWrapper(addNewUser),
-    updateUserByID: ctrlWrapper(updateUserByID),
-  };
-  
+  getAllUsers: ctrlWrapper(getUserList),
+  getUserById: ctrlWrapper(getUserByID),
+  addNewUser: ctrlWrapper(addNewUser),
+  updateUserByID: ctrlWrapper(updateUserByID),
+};

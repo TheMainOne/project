@@ -75,6 +75,65 @@ const DocumentSchema = new mongoose.Schema(
     }, // Тип документа
     effectiveDate: { type: Date, required: false },
     expiryDate: { type: Date, required: false },
+    notificationPreferences: {
+      type: [
+        {
+          daysBefore: { type: Number }, // За сколько дней до события
+          onExactDate: { type: Date }, // Альтернатива daysBefore — точная дата
+
+          repeat: {
+            type: String,
+            enum: ["none", "daily", "weekly", "monthly"],
+            default: "none",
+          },
+
+          cancelAfterDate: { type: Date }, // После этой даты уведомления не отправляются
+          cancelIfStatusChanged: { type: String }, // Если статус документа изменился — прекратить
+
+          lastTriggeredAt: { type: Date }, // Когда последний раз сработало уведомление
+          disabled: { type: Boolean, default: false }, // Чтобы больше не проверять (если всё уже отправлено)
+
+          methods: {
+            type: [String],
+            enum: ["email", "telegram", "in_app"],
+            default: ["in_app"],
+          },
+
+          recipients: [
+            {
+              userId: {
+                type: mongoose.Schema.Types.ObjectId,
+                ref: "User",
+                required: true,
+              },
+              name: String,
+              role: String,
+            },
+          ],
+
+          eventType: {
+            type: String,
+            enum: [
+              "expiry",
+              "check_due",
+              "license_renewal",
+              "procedure_update",
+              "document_update",
+              "compliance_deadline",
+              "custom",
+            ],
+            default: "expiry",
+          },
+
+          priority: {
+            type: String,
+            enum: ["low", "normal", "high"],
+            default: "low",
+          },
+        },
+      ],
+      default: [],
+    },
     documentNumber: { type: String, required: false },
     description: { type: String, required: false },
     category: {
@@ -193,6 +252,100 @@ const documentValidationSchema = Joi.object({
     "number.base": "Version must be a number.",
     "number.min": "Version must be at least 1.",
   }),
+  notificationPreferences: Joi.array()
+    .items(
+      Joi.object({
+        daysBefore: Joi.number().integer().min(0).max(365).messages({
+          "number.base": "`daysBefore` must be a number.",
+          "number.min": "`daysBefore` cannot be negative.",
+          "number.max": "`daysBefore` cannot exceed 365.",
+        }),
+
+        onExactDate: Joi.date().messages({
+          "date.base": "`onExactDate` must be a valid date.",
+        }),
+
+        repeat: Joi.string()
+          .valid("none", "daily", "weekly", "monthly")
+          .default("none")
+          .messages({
+            "any.only":
+              "`repeat` must be one of [none, daily, weekly, monthly].",
+          }),
+
+        cancelAfterDate: Joi.date().messages({
+          "date.base": "`cancelAfterDate` must be a valid date.",
+        }),
+
+        cancelIfStatusChanged: Joi.string().messages({
+          "string.base": "`cancelIfStatusChanged` must be a string.",
+        }),
+
+        lastTriggeredAt: Joi.date().optional().messages({
+          "date.base": "`lastTriggeredAt` must be a valid date.",
+        }),
+
+        disabled: Joi.boolean().optional().messages({
+          "boolean.base": "`disabled` must be a boolean.",
+        }),
+
+        methods: Joi.array()
+          .items(Joi.string().valid("email", "telegram", "in_app"))
+          .default(["in_app"])
+          .messages({
+            "array.base": "`methods` must be an array.",
+            "any.only":
+              "`methods` must include only: email, telegram, or in_app.",
+          }),
+
+        recipients: Joi.array()
+          .items(
+            Joi.object({
+              userId: Joi.string()
+                .pattern(/^[0-9a-fA-F]{24}$/)
+                .messages({
+                  "string.pattern.base":
+                    "`userId` must be a valid MongoDB ObjectId.",
+                }),
+              name: Joi.string().messages({
+                "string.base": "`name` must be a string.",
+              }),
+              role: Joi.string().messages({
+                "string.base": "`role` must be a string.",
+              }),
+            })
+          )
+          .messages({
+            "array.base": "`recipients` must be an array.",
+          }),
+
+        eventType: Joi.string()
+          .valid(
+            "expiry",
+            "check_due",
+            "license_renewal",
+            "procedure_update",
+            "document_update",
+            "compliance_deadline",
+            "custom"
+          )
+          .default("expiry")
+          .messages({
+            "any.only": "`eventType` must be one of the predefined types.",
+          }),
+
+        priority: Joi.string()
+          .valid("low", "normal", "high")
+          .default("low")
+          .messages({
+            "any.only": "`priority` must be one of [low, normal, high].",
+          }),
+      })
+    )
+    .optional()
+    .messages({
+      "array.base": "`notificationPreferences` must be an array of objects.",
+    }),
 });
 
 export const documentValidation = {

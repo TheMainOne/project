@@ -606,6 +606,7 @@ const updateComplianceStatusWithDocument = async (req, res) => {
     documentNumber,
     category,
     notes,
+    notificationPreferences = [],
   } = req.body;
 
   const user = req.user;
@@ -964,6 +965,7 @@ const updateComplianceStatusWithDocument = async (req, res) => {
       description: notes || "",
       category: category || "other",
       notes: notes || "",
+      notificationPreferences,
     });
 
     await logAction({
@@ -972,6 +974,16 @@ const updateComplianceStatusWithDocument = async (req, res) => {
       entityType: "Document",
       entityId: newDocument._id,
       newData: newDocument.toObject(),
+    });
+  }
+
+  if (notificationPreferences.length > 0) {
+    await logAction({
+      userId: req.user._id,
+      action: "add_reminders",
+      entityType: "Document",
+      entityId: newDocument._id,
+      newData: { notificationPreferences },
     });
   }
 
