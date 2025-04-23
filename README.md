@@ -815,11 +815,14 @@ _________________________________________
 
 #### 7. Обновление статусов соответствия регуляторных актов для материалов 
 
-    Метод: PUT
+    Метод: PUT  
+    URL: /api/materials/compliance  
 
-URL: /api/materials/compliance
-
-Описание: Позволяет обновить статусы соответствия регуляторных актов для указанных материалов с возможностью загрузки документа, подтверждающего изменения. Статусы родительских материалов автоматически обновляются на основе статусов их дочерних материалов.
+Позволяет:  
+- обновить статусы соответствия регуляторным актам для выбранных материалов,  
+- загрузить подтверждающий документ (опционально, если статус требует),  
+- добавить уведомления (notificationPreferences) к загружаемому документу, которые будут использоваться для автоматической отправки напоминаний перед истечением срока действия документа. Уведомления будут автоматически создаваться и отправляться согласно заданным параметрам (daysBefore, onExactDate, repeat и т.д.) на основе встроенного cron-механизма.  
+- статусы родительских материалов автоматически обновляются на основе статусов их дочерних материалов.  
 
 
 Параметры запроса:  
@@ -852,6 +855,80 @@ documentNumber — Номер документа.
 category — Категория документа (например, legal, technical, environmental, other).  
 notes — Примечания.  
 
+🔔 Возможность добавления напоминаний (уведомлений) через notificationPreferences:  
+В рамках обновления статуса соответствия и загрузки документа, можно одновременно задать напоминания о сроках действия документа (например, когда истекает срок действия сертификата, требуется повторная проверка и т.д.).  
+
+🧩 Поддерживаемые поля:  
+
+Поле | Тип | Описание
+daysBefore | Number | Количество дней до события для отправки уведомления. Взаимоисключается с onExactDate.
+onExactDate | Date (в формате ISO 8601) | Конкретная дата отправки уведомления. Взаимоисключается с daysBefore.
+repeat | "none", "daily", "weekly", "monthly" | Частота повторения уведомления, если требуется регулярная отправка.
+eventType | String | Тип события: expiry, check_due, license_renewal, document_update, custom и другие.
+priority | "low", "normal", "high" | Приоритет (важность) уведомления.
+recipients | Array<Object> | Список получателей (каждый объект включает userId, name, role).
+methods | Array<String> | Каналы доставки уведомления: email, telegram, in_app.
+
+
+```json
+[
+  {
+    "daysBefore": 7,
+    "repeat": "none", - the options are the following  ["none", "daily", "weekly", "monthly"], default="none"
+    "recipients": [
+      { "userId": "66d34e63cf1f9c8fea704737", "name": "Max", "role": "admin" }
+    ],
+    "methods": ["telegram"] - the options are the following ["email", "telegram", "in_app"],
+  },
+  {
+    "onExactDate": "2025-06-01T00:00:00.000Z",
+    "repeat": "daily", - the options are the following  ["none", "daily", "weekly", "monthly"], default="none"
+    "cancelAfterDate": "2025-06-05T00:00:00.000Z", 
+    "recipients": [
+      { "userId": "66d34e63cf1f9c8fea704737", "name": "Max", "role": "admin" }
+    ],
+    "methods": ["email"] - the options are the following ["email", "telegram", "in_app"],
+  }
+]
+```
+
+
+💡 Примеры использования notificationPreferences:  
+
+ 1. Однократное напоминание за 3 дня до истечения:  
+```json
+{
+  "daysBefore": 3,
+  "repeat": "none"
+}
+```
+
+ 2. Повторяющееся напоминание ежедневно, начиная с 5 дней до события:  
+```json
+{
+  "daysBefore": 5,
+  "repeat": "daily"
+}
+
+```
+3. Напоминание в строго заданную дату:
+```json
+{
+  "onExactDate": "2025-07-15T00:00:00.000Z"
+}
+```
+4. Повторяющееся еженедельное напоминание, пока не наступит указанная в cancelAfterDate дата:
+```json
+{
+  "daysBefore": 10,
+  "repeat": "weekly",
+  "cancelAfterDate": "2025-08-01T00:00:00.000Z"
+}
+```
+    
+
+
+
 Пример запроса:
 
 **PUT /api/materials/compliance
@@ -861,9 +938,23 @@ Body:
 Attached document  
 ```json
 {
-"materialIds": ["672934e9c627e49202beec97"],
-"regulations": [{"regulationId": "672e4cd31916016628ce5c5d", "status": "comply"}]
+  "materialIds": ["672934e9c627e49202beec97"],
+  "regulations": [
+    { "regulationId": "672e4cd31916016628ce5c5d", "status": "comply" }
+  ],
+  "documentTitle": "Compliance Certificate",
+  "notificationPreferences": [
+    {
+      "daysBefore": 7,
+      "repeat": "none",
+      "recipients": [
+        { "userId": "66d34e63cf1f9c8fea704737", "name": "Max", "role": "admin" }
+      ],
+      "methods": ["telegram"]
+    }
+  ]
 }
+
 ```
 
 Пример ответа:
@@ -896,6 +987,7 @@ Attached document
             "category": "other",
             "notes": "",
             "version": 1,
+            "notificationPreferences": [...],
             "uploadedBy": {
                 "_id": "66d34e63cf1f9c8fea704737",
                 "name": "Max",
