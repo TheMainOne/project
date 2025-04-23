@@ -12,7 +12,6 @@ export const sendCronReport = async ({
   const message =
     `*🛠️ Cron Task Report*\n\n` +
     `*📌 Task:* ${taskName}\n` +
-    `*📅 Date:* ${timeStr}\n` +
     `*✅ Created notifications:* ${created}\n` +
     `*📤 Sent:* ${sent}\n` +
     `*⚠️ Failed:* ${failed}\n` +
