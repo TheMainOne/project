@@ -42,7 +42,7 @@ export const processPendingNotifications = async () => {
   }
 
   console.log(
-    "✅ Обработка уведомлений завершена. Все необходимые уведомления отправлены"
+    "✅ Notification processing is complete. All necessary notifications have been successfully sent."
   );
   return sentCount;
 };

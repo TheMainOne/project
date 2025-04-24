@@ -16,7 +16,7 @@ export const checkDocumentNotifications = async () => {
     notificationPreferences: { $exists: true, $not: { $size: 0 } },
   });
 
-  console.log("📄 Найдено документов:", documents.length);
+  console.log("📄 Documents found:", documents.length);
 
   for (const doc of documents) {
     documentsProcessed += 1;
@@ -103,7 +103,7 @@ export const checkDocumentNotifications = async () => {
 
           if (exists) continue;
 
-          console.log("🚀 Создаём новое уведомление...");
+          console.log("🚀 Creating a new notification...");
 
           try {
             await Notification.create({
@@ -168,6 +168,6 @@ ${
     await doc.save();
   }
 
-  console.log("🔁 Уведомления по документам обработаны");
+  console.log("🔁 Notifications on documents have been processed");
   return { created: createdNotifications, documents: documentsProcessed };
 };

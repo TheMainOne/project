@@ -18,6 +18,9 @@ const run = async () => {
   let createdNotifications = 0;
   let sentMessages = 0;
   let totalDocuments = 0;
+  console.log(
+    `[${new Date().toISOString()}] Run task runNotificationWorkflow.js`
+  );
 
   try {
     await mongoose.connect(process.env.DATABASE_URL);
@@ -38,9 +41,9 @@ const run = async () => {
     // await checkDocumentNotifications();
     // await processPendingNotifications();
 
-    console.log("🚀 Уведомления обработаны успешно");
+    console.log("🚀 Notifications processed successfully");
   } catch (err) {
-    console.error("❌ Ошибка:", err);
+    console.error("❌ Error:", err);
   } finally {
     await mongoose.disconnect();
     console.log("🔌 Disconnected from MongoDB");
