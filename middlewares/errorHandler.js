@@ -37,7 +37,22 @@ const errorHandler = (err, req, res, next) => {
     });
   }
 
-  // 3. Кастомная ошибка (например, HttpError)
+  // 3. Ошибка дублирования (MongoDB E11000)
+  if (err.code === 11000) {
+    // err.keyValue: { field1: value1, field2: value2, ... }
+    const entries = Object.entries(err.keyValue);
+    const fields = entries.map(([k, v]) => `${k}="${v}"`).join(", ");
+    return res.status(409).json({
+      status: "fail",
+      code: 409,
+      // универсальное сообщение о том, какие поля конфликтуют
+      message: `Сannot create duplicate records in the database. There is already a record with: ${fields}`,
+      // возвращаем raw keyValue, фронт сможет отобразить детали
+      data: err.keyValue,
+    });
+  }
+
+  // 4. Кастомная ошибка (например, HttpError)
   if (err.status) {
     return res.status(status).json({
       status: "fail",
@@ -47,7 +62,7 @@ const errorHandler = (err, req, res, next) => {
     });
   }
 
-  // 4. Неизвестная ошибка
+  // 5. Неизвестная ошибка
   res.status(500).json({
     status: "fail",
     code: 500,
