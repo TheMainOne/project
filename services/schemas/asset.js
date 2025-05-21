@@ -8,7 +8,7 @@ const AssetSchema = new Schema(
 
     entityType: {
       type: String,
-      enum: ["equipment", "document", "event", "contract"],
+      enum: ["equipment", "document", "event", "contract", "location"],
       required: true,
     },
 
