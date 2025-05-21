@@ -63,6 +63,14 @@
    - [Получение логов по типу и ID сущности](#3-получение-логов-по-типу-и-id-сущности)
    - [Удаление старых логов](#4-удаление-старых-логов)
 
+10. [API Endpoints для управления assets](#our-api-endpoints-for-managing-assets)
+   - [Получение списка всех активов](#1-получение-списка-всех-активов)
+   - [Получение asset по Id](#2-получение-asset-по-id)
+   - [Создание нового asset](#3-создание-нового-asset)
+   - [Обновление существующего asset](#4-Обновление-существующего-asset)
+   - [Удаление asset](#5-удаление-asset)
+
+
 
  _________________________________________
 
@@ -3854,4 +3862,427 @@ DELETE /api/logs/cleanup?olderThanDays=60&dryRun=true
 500 Internal Server Error — ошибка сервера.  
 
 _________________________________________________
+
+#### Our API endpoints for managing assets
+| Method             | URL                                      | Description                              |
+| ------------------ | ---------------------------------------- | ---------------------------------------- |
+| `GET`              | `/api/assets`                            | Retrieve all assets                      |
+| `GET`              | `/api/assets/:id`                        | Retrieve a specific asset entry by its ID|
+| `POST`             | `/api/assets`                            | Create new asset                         |
+| `PUT`              | `/api/assets/:id`                        | Update one asset by its ID               |
+| `DELETE`           | `api/assets/:id`                         | Delete asset by its ID                   |
+
+
+
+#### 1. Получение списка всех активов 
+
+Метод: GET  
+
+URL: /api/assets
+
+Описание: Получение всех активов с возможностью пагинации, фильтрации и сортировки.  
+
+Требования: Аутентификация пользователя.  
+
+**Параметры запроса:** 
+page — номер страницы (по умолчанию 1).  
+limit — количество записей на странице (по умолчанию 10).  
+includeDeleted — если true, будут включены удалённые активы.  
+sortBy — поле для сортировки. По умолчанию createdAt.  
+sortOrder — asc (по возрастанию) или desc (по убыванию), по умолчанию desc.  
+  
+**Пример запроса:**  
+GET /api/assets?page=1&limit=5&includeDeleted=false  
+
+
+**Пример ответа:**  
+
+Пример ответа:  
+```json
+{
+  "status": "success",
+  "code": 200,
+  "data": {
+    "assets": [
+      {
+        "_id": "662fc2ec8a2c71f4579abf00",
+        "name": "Fire Extinguisher #1",
+        "entityType": "equipment",
+        "priority": "medium",
+        "lifecycleStatus": "active",
+        ...
+      }
+    ],
+    "totalItems": 47,
+    "totalPages": 5,
+    "currentPage": 1
+  }
+}
+```
+ 
+Статусы ответов:  
+200 OK — успешный запрос.  
+401 Unauthorized — ошибка аутентификации.  
+500 Internal Server Error — ошибка сервера.  
+
+_________________________________________________
+
+#### 2. Получение Asset по ID
+
+Метод: GET  
+
+URL: /api/assets/:id
+
+Описание: Получение одного Asset по его ID.
+
+Требования: Аутентификация пользователя.  Валидный :id  
+  
+**Пример запроса:**  
+GET GET /api/assets/662c4b7d9c92b9cfb3faabc1?includeDeleted=true  
+
+
+**Пример ответа:**  
+
+Пример ответа:  
+```json
+{
+  "status": "success",
+  "code": 200,
+  "data": {
+    "asset": {
+      "_id": "662c4b7d9c92b9cfb3faabc1",
+      "name": "Main Entrance Fire Extinguisher",
+      "entityType": "equipment",
+      ...
+    }
+  }
+}
+
+```
+ 
+Статусы ответов:  
+200 OK — успешный запрос.  
+401 Unauthorized — ошибка аутентификации.  
+404 Not Found — Asset не найден.  
+500 Internal Server Error — ошибка сервера.  
+
+_________________________________________________
+
+#### 3. Создание нового Asset
+
+Метод: POST  
+
+URL: /api/assets
+
+Описание: Создание нового объекта (Asset) с любым типом (equipment, document, event, contract) и произвольным набором данных (локация, ответственный, привязанные документы и т.д.).  
+
+Требования: Аутентификация пользователя.  
+
+**Обязательные поля:**  
+name (string) — название объекта.  
+entityType (string) — один из вариантов: "equipment", "document", "event", "contract".  
+
+**Схема:**  
+```json
+{
+  "name": "string", (required)
+  "entityType": "string (equipment | document | event | contract)", (required)
+  "assetCategory": "string",
+  "description": "string",
+  "notes": "string",
+  "priority": "string (low | medium | high | critical)",
+  "parentEntity": "string (ObjectId)",
+
+  "location": {
+    "site": "string",
+    "building": "string",
+    "floor": "string",
+    "room": "string",
+    "zone": "string",
+    "address": {
+      "street": "string",
+      "city": "string",
+      "state": "string",
+      "country": "string",
+      "postalCode": "string"
+    },
+    "gps": {
+      "lat": "number",
+      "lng": "number"
+    }
+  },
+
+  "lifecycleStatus": "string (draft | pending | under_review | active | under_maintenance | suspended | expired | decommissioned | archived | cancelled)",
+
+  "contractDetails": {
+    "contractNumber": "string",
+    "contractType": "string",
+    "coverageScope": "string",
+    "serviceLevel": "string",
+    "contractValue": "number",
+    "currency": "string",
+    "billingCycle": "string",
+    "issuedDate": "date",
+    "effectiveDate": "date",
+    "expiryDate": "date",
+    "provider": {
+      "name": "string",
+      "taxId": "string",
+      "contactEmail": "string",
+      "contactPhone": "string",
+      "contactPerson": {
+        "name": "string",
+        "email": "string",
+        "phone": "string",
+        "position": "string"
+      },
+      "address": {
+        "street": "string",
+        "city": "string",
+        "state": "string",
+        "country": "string",
+        "postalCode": "string"
+      },
+      "website": "string",
+      "notes": "string"
+    }
+  },
+
+  "conditionStatus": "string (operational | faulty | under_maintenance | normal)",
+
+  "lastInspectionDate": "date",
+  "nextInspectionDueDate": "date",
+  "riskLevel": "string (low | medium | high)",
+
+  "effectiveDate": "date",
+  "expiryDate": "date",
+
+  "responsiblePerson": {
+    "userId": "string (ObjectId)",
+    "name": "string",
+    "email": "string",
+    "phone": "string",
+    "department": "string",
+    "position": "string",
+    "external": "boolean",
+    "notes": "string"
+  },
+
+  "fileDetails": {
+    "fileUrl": "string",
+    "fileType": "string",
+    "uploadedBy": "string",
+    "documentNumber": "string",
+    "documentType": "string",
+    "issuingAuthority": "string",
+    "issuedDate": "date",
+    "revisionNumber": "string",
+    "uploadedAt": "date"
+  },
+
+  "eventDetails": {
+    "scheduledDate": "date",
+    "completedDate": "date",
+    "eventType": "string",
+    "participants": [
+      {
+        "name": "string",
+        "role": "string",
+        "userId": "string (ObjectId)"
+      }
+    ],
+    "performedBy": "string",
+    "result": "string (passed | failed | postponed | pending)",
+    "eventOutcomeNotes": "string"
+  },
+
+  "manufacturer": "string",
+  "model": "string",
+  "assetTag": "string",
+  "serialNumber": "string",
+  "installationDate": "date",
+  "warrantyExpiryDate": "date",
+
+  "linkedAssets": ["string (ObjectId)"],
+
+  "notificationPreferences": [
+    {
+      "type": "string (expiryReminder | maintenanceSchedule | inspectionReminder | contractRenewal | warrantyExpiry | licenseRenewal | custom)",
+      "daysBefore": "number",
+      "onExactDate": "date",
+      "repeat": "string (none | daily | weekly | monthly | yearly)",
+      "cancelIfLifecycleStatusIn": ["string"]
+    }
+  ],
+
+  "customFields": "object (ключ-значение, произвольные поля)"
+}
+```
+
+
+**Параметры запроса:** 
+Обязательные поля: name, entityType  
+
+**Особенности:**    
+Если указан parentEntity, он должен существовать и быть не удалённым.  
+Проверяется уникальность по name и entityType среди не удалённых записей.  
+  
+**Пример запроса:**  
+POST /api/assets
+
+```json
+{
+  "name": "New License",
+  "entityType": "contract",
+  "priority": "high",
+  "location": {
+    "site": "Main Office",
+    "building": "A",
+    "floor": "2"
+  },
+  "contractDetails": {
+    "contractNumber": "LIC-2024-01",
+    "issuedDate": "2024-05-01",
+    "expiryDate": "2026-05-01"
+  }
+}
+```
+
+**Пример ответа:**  
+
+Пример ответа:  
+```json
+{
+  "status": "success",
+  "code": 201,
+  "data": {
+    "asset": {
+      "_id": "663fd1578c9dbb2b80123abc",
+      "name": "New License",
+      "entityType": "contract",
+      ...
+    }
+  }
+}
+
+```
+ 
+Статусы ответов:  
+201 Created — успешно создано.  
+400 Bad Request — ошибка валидации или родитель не найден.  
+401 Unauthorized — ошибка аутентификации.  
+409 Conflict — запись с таким name и entityType уже существует.  
+500 Internal Server Error — ошибка сервера.  
+
+_________________________________________________
+
+
+#### 4. Обновление существующего Asset  
+
+Метод: PUT  
+
+URL: /api/assets/:id
+
+Описание: Обновление полей существующего актива.
+
+Требования: Аутентификация пользователя.  
+Валидный : id  
+Тело запроса должно содержать хотя бы одно поле для обновления.  
+
+**Параметры запроса:** 
+Обязательные поля: name, entityType  
+
+**Особенности:**  
+
+При изменении parentEntity, пересчитываются ancestors.  
+Проверяется отсутствие конфликта по name + entityType среди других записей.  
+  
+**Пример запроса:**  
+PUT /api/assets/:id
+
+```json
+{
+  "name": "Updated Fire Extinguisher",
+  "priority": "critical",
+  "location": {
+    "floor": "1",
+    "room": "101"
+  }
+}
+
+```
+
+**Пример ответа:**  
+
+Пример ответа:  
+```json
+{
+  "status": "success",
+  "code": 200,
+  "data": {
+    "asset": {
+      "_id": "662c4b7d9c92b9cfb3faabc1",
+      "name": "Updated Fire Extinguisher",
+      ...
+    }
+  }
+}
+```
+ 
+Статусы ответов:  
+200 OK — успешно обновлено.  
+400 Bad Request — отсутствуют поля для обновления или родитель не найден.  
+401 Unauthorized — ошибка аутентификации.  
+404 Not Found — Asset не найден.  
+409 Conflict — конфликт по уникальности name + entityType.  
+500 Internal Server Error — ошибка сервера.  
+
+_________________________________________________
+
+#### 5. Удаление Asset  
+
+Метод: DELETE  
+
+URL: /api/assets/:id
+
+Описание: Пометка актива как удалённого (isDeleted: true), физически не удаляется.
+
+Требования: Аутентификация пользователя.  
+Валидный : id  
+
+**Параметры запроса:** 
+Обязательные поля: name, entityType  
+  
+**Пример запроса:**  
+DELETE /api/assets/662c4b7d9c92b9cfb3faabc1  
+
+
+**Пример ответа:**  
+
+Пример ответа:  
+```json
+{
+  "status": "success",
+  "code": 200,
+  "message": "Asset deleted successfully",
+  "data": {
+    "asset": {
+      "_id": "662c4b7d9c92b9cfb3faabc1",
+      "isDeleted": true,
+      ...
+    }
+  }
+}
+
+```
+ 
+Статусы ответов:  
+200 OK — успешно удалено.
+401 Unauthorized — ошибка аутентификации.  
+404 Not Found — Asset не найден или уже удалён.  
+500 Internal Server Error — ошибка сервера.  
+
+_________________________________________________
+
+
 
