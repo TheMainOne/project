@@ -6,7 +6,7 @@ Joi.objectId = joiObjectId(Joi);
 export const validateAssetSchema = Joi.object({
   name: Joi.string().required(),
   entityType: Joi.string()
-    .valid("equipment", "document", "event", "contract")
+    .valid("equipment", "document", "event", "contract", "location")
     .required(),
   assetCategory: Joi.string(),
 
@@ -173,7 +173,13 @@ export const validateAssetSchema = Joi.object({
 
 export const validateAssetUpdateSchema = Joi.object({
   name: Joi.string(),
-  entityType: Joi.string().valid("equipment", "document", "event", "contract"),
+  entityType: Joi.string().valid(
+    "equipment",
+    "document",
+    "event",
+    "contract",
+    "location"
+  ),
   assetCategory: Joi.string(),
 
   description: Joi.string().allow(""),
