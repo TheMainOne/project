@@ -2277,148 +2277,50 @@ GET /api/users?status=active&role=admin&sortBy=name&sortOrder=asc&page=2&limit=5
 - **Пример ответа:**  
   ```json
 {
-    "status": "success",
-    "code": 200,
-    "data": {
-        "users": [
-            {
-                "_id": "67c78e14777f029c990e91e5",
-                "password": "$2b$12$EuVcegzbFC4lghXZOn.X2O3nYKQxIlnLGKyzya0fTzxm9Z1MkjGOW",
-                "email": "gasdasd@gmail.com",
-                "name": "67c78de9777f029c990e91d0",
-                "surname": "67c78de9777f029c990e91d0",
-                "locale": "en",
-                "timezone": "UTC",
-                "profile": {
-                    "avatarUrl": null
-                },
-                "status": "active",
-                "emailVerified": false,
-                "lastLoginAt": null,
-                "role": {
-                    "_id": "67c78de9777f029c990e91d0",
-                    "name": "67c78de9777f029c990e91d0"
-                },
-                "token": null,
-                "createdAt": "2025-03-04T23:34:44.081Z",
-                "updatedAt": "2025-03-04T23:34:44.081Z",
-                "roleName": "67c78de9777f029c990e91d0"
-            },
-            {
-                "_id": "67af65eb10dd470b80927454",
-                "password": "$2b$12$G1Q0AIyP6HNLU.yA3aS88OzdomDs8pT8xAO6iKtLH/gzLWsUpsf6W",
-                "email": "testemail@test.com",
-                "name": "test",
-                "surname": "testsurname",
-                "locale": "en",
-                "timezone": "UTC",
-                "profile": {
-                    "avatarUrl": null
-                },
-                "status": "active",
-                "emailVerified": false,
-                "lastLoginAt": "2025-02-14T15:49:53.157Z",
-                "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6IjY3YWY2NWViMTBkZDQ3MGI4MDkyNzQ1NCIsImlhdCI6MTczOTU0ODE5MywiZXhwIjoxNzM5NTY5NzkzfQ.4ykkb0YDqDuyfLokJuK9hRrE2HbYJwaGOAyVw-IreKo",
-                "createdAt": "2025-02-14T15:48:59.938Z",
-                "updatedAt": "2025-02-14T15:52:50.350Z",
-                "role": {
-                    "_id": "67af641ef561934b2c7ea19d",
-                    "name": "Employee"
-                },
-                "roleName": "Employee"
-            },
-            {
-                "_id": "67af59c3f6d2021134f2d749",
-                "password": "$2b$12$mkftGnBl3HGrC4xmiuZ1e.Bo7g7mwJU3Kyj.eG7WY4oC905D/g7/O",
-                "email": "maksym.lvov@gmail.com",
-                "name": "Maksym",
-                "surname": "Lvov",
-                "locale": "en",
-                "timezone": "UTC",
-                "profile": {
-                    "avatarUrl": null
-                },
-                "status": "active",
-                "emailVerified": false,
-                "lastLoginAt": "2025-03-05T14:29:56.422Z",
-                "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6IjY3YWY1OWMzZjZkMjAyMTEzNGYyZDc0OSIsImlhdCI6MTc0MTE4NDk5NiwiZXhwIjoxNzQxMjA2NTk2fQ.I71JwFDh3o9TrSPkDj9-3h64ykluWsKNalp2oJb4bRs",
-                "createdAt": "2025-02-14T14:57:07.551Z",
-                "updatedAt": "2025-03-05T14:29:56.425Z",
-                "role": {
-                    "_id": "67af5d4f38b3e40c324e58b9",
-                    "name": "Administrator"
-                },
-                "roleName": "Administrator"
-            },
-            {
-                "_id": "678a6b856d5999ee4ff3befb",
-                "password": "$2b$12$RFCbT37GNwXUnSG9DsesMe8MvyPo54jUIZ1e9FHjiUK3dnRRJWV1W",
-                "email": "andriy.hardy@gmail.com",
-                "name": "Andriy",
-                "surname": "Hardy",
-                "locale": "en",
-                "timezone": "UTC",
-                "profile": {
-                    "avatarUrl": null
-                },
-                "status": "active",
-                "emailVerified": false,
-                "lastLoginAt": "2025-03-04T22:45:45.712Z",
-                "role": {
-                    "_id": "67af5d4f38b3e40c324e58b9",
-                    "name": "Administrator"
-                },
-                "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6IjY3OGE2Yjg1NmQ1OTk5ZWU0ZmYzYmVmYiIsImlhdCI6MTc0MTEyODM0NSwiZXhwIjoxNzQxMTMxOTQ1fQ.FGEwrP8wTiwVko4j9qxu7Dk7WornkPKgXelf5iRRAWw",
-                "permissions": {
-                    "materials": {
-                        "actions": {
-                            "read": true,
-                            "edit": false,
-                            "delete": false
-                        }
-                    }
-                },
-                "createdAt": "2025-01-17T14:39:01.508Z",
-                "updatedAt": "2025-03-04T22:45:45.718Z",
-                "roleName": "Administrator"
-            },
-            {
-                "_id": "678a652e6d5999ee4ff3bef5",
-                "password": "$2b$12$XbvjxdBqZPhZn88Er7DfX.GObyWB1W87pCjb6jsPMHmqcEeP7NZVO",
-                "email": "maksym.gastello@gmail.com",
-                "name": "Maksym",
-                "surname": "Gastello",
-                "locale": "de",
-                "timezone": "UTC",
-                "profile": {
-                    "avatarUrl": null
-                },
-                "status": "active",
-                "emailVerified": false,
-                "lastLoginAt": "2025-03-04T18:06:41.123Z",
-                "role": {
-                    "_id": "67af5d4f38b3e40c324e58b9",
-                    "name": "Administrator"
-                },
-                "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6IjY3OGE2NTJlNmQ1OTk5ZWU0ZmYzYmVmNSIsImlhdCI6MTc0MTExMTYwMSwiZXhwIjoxNzQxMTE1MjAxfQ.6X6v3c5KINxtlPg_-orvMsxBYhsXFzvN-jyp100v4Gg",
-                "permissions": {
-                    "materials": {
-                        "actions": {
-                            "read": true,
-                            "edit": false,
-                            "delete": false
-                        }
-                    }
-                },
-                "createdAt": "2025-01-17T14:11:58.236Z",
-                "updatedAt": "2025-03-04T18:06:41.124Z",
-                "roleName": "Administrator"
-            }
-        ],
-        "totalPages": 1,
-        "currentPage": 1
-    }
+  "status": "success",
+  "code": 200,
+  "data": {
+    "users": [
+      {
+        "_id": "67c78e14777f029c990e91e5",
+        "email": "gasdasd@gmail.com",
+        "name": "Alex",
+        "surname": "Smith",
+        "phone": "+1-555-123-45-67",
+        "position": "QA Manager",
+        "department": "Quality Assurance",
+        "address": {
+          "street": "123 Main St",
+          "city": "New York",
+          "state": "NY",
+          "country": "USA",
+          "postalCode": "10001"
+        },
+        "notes": "Top performer",
+        "birthday": "1990-02-15T00:00:00.000Z",
+        "lastPasswordChangeAt": "2025-04-01T12:34:56.789Z",
+        "locale": "en",
+        "timezone": "UTC",
+        "profile": { "avatarUrl": null },
+        "status": "active",
+        "emailVerified": false,
+        "lastLoginAt": null,
+        "role": {
+          "_id": "67c78de9777f029c990e91d0",
+          "name": "Administrator"
+        },
+        "token": null,
+        "createdAt": "2025-03-04T23:34:44.081Z",
+        "updatedAt": "2025-03-04T23:34:44.081Z",
+        "roleName": "Administrator"
+      }
+      // ...
+    ],
+    "totalPages": 1,
+    "currentPage": 1
+  }
 }
+
   ```
   
   
@@ -2498,19 +2400,35 @@ URL: /api/users/
 Сервис генерирует для нового пользователя временный случайный пароль и отправляет его на указанный email.
 После получения письма пользователь сможет авторизоваться, а затем поменять пароль.
 
-Параметры запроса (json-файл с полями):
+Параметры запроса (json-файл с полями):  
 ```json
 {
-  "email": "someemail@gmail.com", (required)
-  "name": "somename", (required)
-  "surname": "somesurname" (required)
-  "role": "somerole" (enum: ["employee", "admin", "manager"] (optional, default = "employee") **String**
-  "locale": "somelanguage" (optional, default = "en")
-  "timezone": "sometimezone" (optional, default = "UTC"),
-  "status": "somestatus" (enum: ["active", "inactive", "suspended"] (optional, default = "active"),
+  "email": "user@example.com", // (required)
+  "password": "plaintextpassword", // (required)
+  "name": "John", // (required)
+  "surname": "Doe", // (required)
+  "role": "ObjectId или имя роли", // (optional)
+  "locale": "en", // (optional)
+  "timezone": "UTC", // (optional)
+  "phone": "+1-555-777-88-99", // (optional)
+  "position": "IT Specialist", // (optional)
+  "department": "IT", // (optional)
+  "address": {
+    "street": "Main Ave 7",
+    "city": "Berlin",
+    "state": "Berlin",
+    "country": "Germany",
+    "postalCode": "10115"
+  }, // (optional)
+  "notes": "Can be deleted after probation period", // (optional)
+  "birthday": "1992-03-28", // (optional)
+  "lastPasswordChangeAt": "2025-04-01T12:34:56.789Z", // (optional)
+  "status": "active", // (optional)
   "profile": {
-    "avatarUrl": null (String) (Optional, default= null)
-  }
+    "avatarUrl": null
+  }, // (optional)
+  "preferences": {}, // (optional)
+  "token": null // (optional)
 }
 ```
 
@@ -2520,15 +2438,26 @@ URL: /api/users/
 Content-Type: application/json
 ```json
 {
-  "email": "john.doe@example.com",
-  "name": "John",
+  "email": "jane.doe@example.com",
+  "name": "Jane",
   "surname": "Doe",
   "role": "manager",
   "locale": "en",
   "timezone": "UTC",
-  "profile": {
-    "avatarUrl": null
+  "phone": "+49-123-456-7890",
+  "position": "Manager",
+  "department": "Sales",
+  "address": {
+    "street": "Baker Str 5",
+    "city": "London",
+    "state": "London",
+    "country": "UK",
+    "postalCode": "NW1 6XE"
   },
+  "notes": "Transferred from another branch",
+  "birthday": "1989-07-11",
+  "lastPasswordChangeAt": "2025-05-10T10:00:00.000Z",
+  "profile": { "avatarUrl": null },
   "status": "active"
 }
 ```
@@ -2540,12 +2469,26 @@ Content-Type: application/json
   "data": {
     "user": {
       "_id": "64a6b856d5999ee4ff3befb1",
-      "email": "john.doe@example.com",
-      "name": "John",
+      "email": "jane.doe@example.com",
+      "name": "Jane",
       "surname": "Doe",
       "role": "manager",
       "locale": "en",
       "timezone": "UTC",
+      "phone": "+49-123-456-7890",
+      "position": "Manager",
+      "department": "Sales",
+      "address": {
+        "street": "Baker Str 5",
+        "city": "London",
+        "state": "London",
+        "country": "UK",
+        "postalCode": "NW1 6XE"
+      },
+      "notes": "Transferred from another branch",
+      "birthday": "1989-07-11T00:00:00.000Z",
+      "lastPasswordChangeAt": "2025-05-10T10:00:00.000Z",
+      "profile": { "avatarUrl": null },
       "status": "active",
       "emailVerified": false
     }
