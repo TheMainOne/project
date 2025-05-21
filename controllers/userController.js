@@ -1,5 +1,4 @@
 import mongoose from "mongoose";
-import bcrypt from "bcryptjs";
 import crypto from "crypto";
 import User from "../services/schemas/user.js";
 import Role from "../services/schemas/role.js";
@@ -316,9 +315,32 @@ const updateUserByID = async (req, res) => {
   });
 };
 
+const getCurrentUser = async (req, res) => {
+  // req.user заполняется в auth middleware после проверки токена
+  const userId = req.user._id;
+  // Обычно сразу подгружают роль (populate)
+  const user = await User.findById(userId)
+    .select("-password -token") // никогда не возвращаем пароль
+    .populate("role", "name description permissions globalPermissions")
+    .lean();
+
+  if (!user) {
+    throw HttpError(404, "User not found");
+  }
+
+  res.json({
+    status: "success",
+    code: 200,
+    data: {
+      user,
+    },
+  });
+};
+
 export default {
   getAllUsers: ctrlWrapper(getUserList),
   getUserById: ctrlWrapper(getUserByID),
   addNewUser: ctrlWrapper(addNewUser),
   updateUserByID: ctrlWrapper(updateUserByID),
+  getCurrentUser: ctrlWrapper(getCurrentUser),
 };
