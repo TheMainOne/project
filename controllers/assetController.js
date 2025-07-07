@@ -9,8 +9,10 @@ const createAsset = async (req, res) => {
 
   // 1. Проверка родительской сущности и её состояния
   let ancestors = [];
+  let parent = null;
+
   if (parentEntity) {
-    const parent = await Asset.findById(parentEntity).lean();
+    parent = await Asset.findById(parentEntity);
 
     if (!parent || parent.isDeleted) {
       throw HttpError(400, "Parent entity not found");
@@ -27,6 +29,7 @@ const createAsset = async (req, res) => {
     );
   }
 
+  // 3. Создаём новый ассет
   const newAsset = new Asset({
     name,
     entityType,
@@ -36,8 +39,22 @@ const createAsset = async (req, res) => {
   });
 
   await newAsset.save();
+  console.log("Parent before found:", parent);
+  // 4. Если есть родитель — добавляем новый ассет в его linkedAssets
+  if (parent) {
+    console.log("Parent found:", parent);
+    // Извлекаем массив, если нет — делаем пустой
+    parent.linkedAssets = Array.isArray(parent.linkedAssets)
+      ? parent.linkedAssets
+      : [];
+    // Проверяем, чтобы не было дубля (на всякий случай)
+    if (!parent.linkedAssets.some((id) => id.equals(newAsset._id))) {
+      parent.linkedAssets.push(newAsset._id);
+      await parent.save();
+    }
+  }
 
-  // Логируем действие
+  // 5. Логируем действие
   await logAction({
     userId: req.user._id, // ID текущего пользователя
     action: "create",
@@ -145,29 +162,146 @@ const updateAsset = async (req, res) => {
     if (conflict) {
       throw HttpError(
         409,
-        `Нельзя создавать дубли. Уже есть запись с name="${newName}", entityType="${newType}".`
+        `You can't create duplicates. There is already a recording with name="${newName}", entityType="${newType}".`
       );
     }
   }
 
   // 4) пересчёт parentEntity и ancestors
-  if (
-    updates.parentEntity &&
-    String(updates.parentEntity) !== String(asset.parentEntity)
-  ) {
-    const parent = await Asset.findById(updates.parentEntity).lean();
-    if (!parent || parent.isDeleted) {
-      throw HttpError(400, "Parent entity not found");
-    }
-    asset.parentEntity = parent._id;
-    asset.ancestors = [...(parent.ancestors || []), parent._id];
+  // if (
+  //   updates.parentEntity &&
+  //   String(updates.parentEntity) !== String(asset.parentEntity)
+  // ) {
+  //   const parent = await Asset.findById(updates.parentEntity).lean();
+  //   if (!parent || parent.isDeleted) {
+  //     throw HttpError(400, "Parent entity not found");
+  //   }
+  //   asset.parentEntity = parent._id;
+  //   asset.ancestors = [...(parent.ancestors || []), parent._id];
+  // }
+
+  // helpers --------------------------------------------
+  function hasCycle(currentId, potentialParent) {
+    if (!potentialParent) return false; // parentEntity = null
+    if (potentialParent._id.equals(currentId)) return true; // A → A
+    return (
+      Array.isArray(potentialParent.ancestors) &&
+      potentialParent.ancestors.some((aId) => aId.equals(currentId))
+    ); // A в цепочке B
   }
 
-  // 5) применяем остальные апдейты и сохраняем
-  Object.assign(asset, updates);
+  function uniqIds(arr = []) {
+    const seen = new Set();
+    return arr.filter((id) => {
+      const key = id.toString(); // работаем и с ObjectId, и со строками
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+  }
+
+  // собрать путь «ancestors + parent»
+  function buildAncestors(parent) {
+    return uniqIds([...(parent.ancestors || []), parent._id]);
+  }
+
+  // 4) обработка смены родителя (parentEntity)
+  if (
+    Object.prototype.hasOwnProperty.call(updates, "parentEntity") &&
+    String(updates.parentEntity ?? "") !== String(asset.parentEntity ?? "")
+  ) {
+    const newParentId = updates.parentEntity;
+    const oldParentId = asset.parentEntity;
+
+    // 4.1 Проверка нового родителя
+    let newParent = null;
+    if (newParentId) {
+      newParent = await Asset.findById(newParentId);
+      if (!newParent || newParent.isDeleted) {
+        throw HttpError(400, "New parent entity not found");
+      }
+
+      // если новый родитель сейчас ребёнок того же ассета – убираем петлю
+      if (newParent.parentEntity?.toString() === asset._id.toString()) {
+        newParent.parentEntity = null;
+        newParent.ancestors = []; // он станет «корневым»
+        await newParent.save(); // сохраняем сразу
+      }
+
+      if (hasCycle(asset._id, newParent)) {
+        throw HttpError(
+          400,
+          "Circular parent relationship detected — изменение приведёт к зацикливанию."
+        );
+      }
+    }
+    // 4.2 Удаляем из linkedAssets старого родителя (если был)
+    if (oldParentId) {
+      const oldParent = await Asset.findById(oldParentId);
+      if (oldParent) {
+        oldParent.linkedAssets = (oldParent.linkedAssets || []).filter(
+          (aId) => String(aId) !== String(asset._id)
+        );
+        await oldParent.save();
+      }
+    }
+
+    // 4.3 Добавляем в linkedAssets нового родителя (если есть)
+    if (newParent) {
+      newParent.linkedAssets = Array.isArray(newParent.linkedAssets)
+        ? newParent.linkedAssets
+        : [];
+      if (
+        !newParent.linkedAssets.some(
+          (id) => id.toString() === asset._id.toString()
+        )
+      ) {
+        newParent.linkedAssets.push(asset._id);
+        await newParent.save();
+      }
+      asset.ancestors = buildAncestors(newParent).filter(
+        (id) => id.toString() !== asset._id.toString()
+      );
+      asset.parentEntity = newParent._id;
+    } else {
+      // Если parentEntity = null — ассет верхнего уровня
+      asset.ancestors = [];
+      asset.parentEntity = null;
+    }
+  }
+
+  // 5) применяем остальные апдейты (кроме parentEntity и ancestors — их обработали выше)
+  const skipFields = ["parentEntity", "ancestors"];
+  Object.entries(updates).forEach(([key, value]) => {
+    if (!skipFields.includes(key)) {
+      asset[key] = value;
+    }
+  });
+
+  asset.ancestors = uniqIds(asset.ancestors || []);
+
+  // 6) сохраняем ассет
   const updatedAsset = await asset.save();
 
-  // 6) логируем
+  // 7) рекурсивно обновить ancestors у всех потомков
+  // (опционально, если у ассета могут быть вложенные ассеты)
+  async function updateChildrenAncestors(parent, visited = new Set()) {
+    const parentIdStr = String(parent._id);
+    if (visited.has(parentIdStr)) return;
+    visited.add(parentIdStr);
+
+    const children = await Asset.find({ parentEntity: parent._id });
+    for (const child of children) {
+      child.ancestors = buildAncestors(parent).filter(
+        (id) => id.toString() !== child._id.toString()
+      );
+      await child.save();
+      await updateChildrenAncestors(child, visited); // передаём visited
+    }
+  }
+  await updateChildrenAncestors(asset);
+
+  // 8) логируем
   await logAction({
     userId,
     action: "update",

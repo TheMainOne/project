@@ -24,10 +24,12 @@ export const sendTelegramAlert = async (chatId, message) => {
     );
   }
 
+  const safeText = message.replace(/</g, "&lt;").replace(/>/g, "&gt;");
+
   try {
     const res = await axios.post(API_URL, {
       chat_id: chatId,
-      text: message,
+      text: safeText,
       parse_mode: "HTML", // поддержка <b>, <i> и пр.
     });
 
