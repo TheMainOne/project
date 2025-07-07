@@ -15,6 +15,7 @@ import { fileURLToPath } from "url"; // ← добавить
 // /* ── Проверяем, где файл действительно существует ── */
 // const envPath = fs.existsSync(prodEnv) ? prodEnv : localEnv;
 // dotenv.config({ path: envPath });
+// changes to test if the server send message to telegram
 
 dotenv.config({ path: "/home/ec2-user/project/.env" });
 
