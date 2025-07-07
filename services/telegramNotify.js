@@ -4,19 +4,19 @@ import fs from "fs";
 import path from "path"; // ← добавить
 import { fileURLToPath } from "url"; // ← добавить
 
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
+// const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
-/* ── 1. путь для прод-сервера ── */
-const prodEnv = "/home/ec2-user/project/.env";
+// /* ── 1. путь для прод-сервера ── */
+// const prodEnv = "/home/ec2-user/project/.env";
 
-/* ── 2. fallback – .env на уровень выше от текущего файла ── */
-const localEnv = path.join(__dirname, "../.env");
+// /* ── 2. fallback – .env на уровень выше от текущего файла ── */
+// const localEnv = path.join(__dirname, "../.env");
 
-/* ── Проверяем, где файл действительно существует ── */
-const envPath = fs.existsSync(prodEnv) ? prodEnv : localEnv;
-dotenv.config({ path: envPath });
+// /* ── Проверяем, где файл действительно существует ── */
+// const envPath = fs.existsSync(prodEnv) ? prodEnv : localEnv;
+// dotenv.config({ path: envPath });
 
-// dotenv.config({ path: '/home/ec2-user/project/.env' });
+dotenv.config({ path: "/home/ec2-user/project/.env" });
 
 const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
 const CHAT_ID = process.env.TELEGRAM_CHAT_ID;
