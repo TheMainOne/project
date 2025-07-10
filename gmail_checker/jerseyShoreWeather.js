@@ -228,7 +228,7 @@ async function wrap(name, fn) {
         e.response?.data?.message ?? e.message
       }`
     );
-    throw e; // пробрасываем выше, чтобы дайджест не ушёл пустым
+    throw e; // пробрасываем выше, чтобы дайджест не ушёл "пустым"
   }
 }
 
