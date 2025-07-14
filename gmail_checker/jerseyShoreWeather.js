@@ -226,7 +226,7 @@ async function getWave() {
           : "крупная";
 
       return md(
-        `🏄 Волна (${b.name}): *${H} м* • *${T} с между гребнями* → ${comment}`
+        `🏄 Волна (Ocean City): *${H} м* • *${T} с между гребнями* → ${comment}`
       );
     } catch (e) {
       console.warn(`[wave] ${b.name} – ${e}`);
