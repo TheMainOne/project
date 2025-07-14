@@ -174,43 +174,68 @@ async function getWind() {
 
 /* ─── 4. Волны ───────────────────────────────────────────────────────── */
 async function getWave() {
-  // основной буй возле Atlantic City + запасной в проливе Делавэр
+  // основной буй + запасной
   const buoys = [
-    { id: "44091", name: "Atlantic City" }, // 8 км от берега, часто даёт волну
-    { id: "44009", name: "Delaware Bay" }, // fallback, если 44091 молчит
+    { id: "44091", name: "AC" }, // Atlantic City
+    { id: "44009", name: "DB" }, // Delaware Bay
   ];
 
   for (const b of buoys) {
     try {
-      const url = `https://www.ndbc.noaa.gov/data/latest_obs/${b.id}.json`;
-      const { data } = await axios.get(url, { timeout: 4000 });
+      const url = `https://www.ndbc.noaa.gov/data/realtime2/${b.id}.txt`;
+      const { data: txt } = await axios.get(url, { timeout: 4000 });
 
-      if (!data || !data.WVHT || +data.WVHT < 0) throw "пустой ответ";
+      const lines = txt
+        .trim()
+        .split("\n")
+        .filter((l) => l.trim() !== "");
 
-      // высота волны (метры) и доминирующий период (сек)
-      const H = (+data.WVHT).toFixed(1);
-      const T = (+data.DPD || +data.WH).toFixed(0); // иногда DPD == M<something>
-      const dir = data.MWD ? `, ${data.MWD}°` : ""; // сред. направление
+      const headerRaw = lines.find((l) => l.startsWith("#"));
+      const dataLine = lines.find((l) => !l.startsWith("#"));
 
-      // классификация волны
+      if (!headerRaw || !dataLine) throw "файл без данных";
+
+      const header = headerRaw.replace(/^#/, "").trim().split(/\s+/);
+      const values = dataLine.trim().split(/\s+/);
+
+      const byKey = (key) => values[header.indexOf(key)];
+
+      let wvht = byKey("WVHT"); // высота, м
+      const dpd = byKey("DPD"); // период, c
+
+      // резерв: иногда высота только в футах (WWH или SwH)
+      if ((!wvht || wvht === "MM") && (byKey("WWH") || byKey("SwH"))) {
+        const seaFt = byKey("WWH") !== "MM" ? byKey("WWH") : byKey("SwH");
+        if (seaFt && seaFt !== "MM") wvht = (+seaFt * 0.3048).toFixed(2);
+      }
+
+      // если высота невалидна — пробуем следующий буй
+      if (!wvht || wvht === "MM" || +wvht <= 0) throw "нет высоты";
+
+      const H = (+wvht).toFixed(1);
+      const T = dpd !== "MM" ? (+dpd).toFixed(0) : "–";
+
+      // короткая классификация
       const comment =
         H < 0.5
           ? "почти штиль"
           : H < 1
-          ? "невысокая волна"
+          ? "невысокая"
           : H < 2
-          ? "для бодиборда/сёрфа"
-          : "крупная волна";
+          ? "для сёрфа"
+          : "крупная";
 
-      const line = `🌊 Волна (${b.name}): *${H} м* @ *${T} с*${dir} — ${comment}`;
-
-      return md(line);
+      // готовая лаконичная строка
+      return md(
+        `🏄 Волна (Ocean City): *${H} м* • *${T} с между гребнями* → ${comment}`
+      );
     } catch (e) {
-      console.error(`[wave] ${b.name} – ${e.message || e}`);
-      // пробуем следующий буй
+      console.warn(`[wave] ${b.name} – ${e}`);
     }
   }
-  throw new Error("нет свежих данных о волне");
+
+  // если оба буя молчат — не падаем, а возвращаем заглушку
+  return md("🏄 *Данных о волне нет*");
 }
 
 /* ─── вспомогательная обёртка для диагностики ─────────────────────────── */
@@ -230,15 +255,22 @@ async function wrap(name, fn) {
 /* ─── 4. Сборка и отправка дайджеста ──────────────────────────────────── */
 (async () => {
   try {
-    const [weather, water, wind] = await Promise.all([
+    const [weather, water, wind, wave] = await Promise.all([
       wrap("weather", getWeather),
       wrap("water", getWaterTemp),
       wrap("wind", getWind),
-      //   wrap("wave", getWave),
+      wrap("wave", getWave), // ← уже был, остаётся
     ]);
 
     const msg =
-      "🌅 *Доброе утро\\.*\n\n" + weather + "\n\n" + wind + "\n" + water;
+      "🌅 *Доброе утро*\n\n" +
+      weather +
+      "\n\n" +
+      wind +
+      "\n" +
+      wave +
+      "\n" +
+      water;
 
     console.log(">>> telegram payload <<<\n", msg);
     await sendTelegramMessage(msg); // sendTelegramMessage уже использует MarkdownV2
