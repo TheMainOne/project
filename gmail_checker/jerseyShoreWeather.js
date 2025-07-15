@@ -249,6 +249,41 @@ async function getWave() {
   return { text: md("🏄 Данных о волне нет"), height: Infinity };
 }
 
+/* ─── UV index ─────────────────────────── */
+async function getUV() {
+  const { OCEANCITY_LAT, OCEANCITY_LON } = process.env;
+  const url = "https://api.open-meteo.com/v1/forecast";
+  try {
+    const { data } = await axios.get(url, {
+      params: {
+        latitude: OCEANCITY_LAT,
+        longitude: OCEANCITY_LON,
+        daily: "uv_index_max",
+        forecast_days: 1, // только сегодня
+        timezone: "America/New_York",
+      },
+      timeout: 4000,
+    });
+
+    const uviMax = data.daily?.uv_index_max?.[0] ?? -1;
+
+    let level = "низкий 🟢";
+    if (uviMax >= 11)
+      level = "экстремальный ☠️ | Избегай солнца; SPF 50+, тень";
+    else if (uviMax >= 8) level = "очень высокий 🔴 | SPF 50, шляпа, тень";
+    else if (uviMax >= 6) level = "высокий 🟠 | SPF 30‑50, очки, кепка";
+    else if (uviMax >= 3) level = "умеренный 🟡 | SPF 30, очки";
+
+    const text = md(
+      `🔆 UV‑индекс (пик днём): *${uviMax.toFixed(1)}* — ${level}`
+    );
+    return { text, uvi: uviMax };
+  } catch (e) {
+    console.warn("[uv] –", e.response?.status ?? e.code);
+    return { text: "🔆 *Нет данных UV*", uvi: -1 };
+  }
+}
+
 /* ─── вспомогательная обёртка для диагностики ─────────────────────────── */
 async function wrap(name, fn) {
   try {
@@ -266,15 +301,20 @@ async function wrap(name, fn) {
 /* ─── 4. Сборка и отправка дайджеста ──────────────────────────────────── */
 (async () => {
   try {
-    const [weather, water, wind, wave] = await Promise.all([
+    const [weather, water, wind, wave, uv] = await Promise.all([
       wrap("weather", getWeather),
       wrap("water", getWaterTemp),
       wrap("wind", getWind),
       wrap("wave", getWave),
+      wrap("uv", getUV),
     ]);
 
     const beachOK =
-      water.temp >= 21 && weather.isDry && wind.speed < 7 && wave.height < 1.5;
+      water.temp >= 21 &&
+      weather.isDry &&
+      wind.speed < 7 &&
+      wave.height < 1.5 &&
+      uv.uvi < 8;
 
     const msg =
       "🌅 *Доброе утро*\n\n" +
@@ -285,6 +325,8 @@ async function wrap(name, fn) {
       wave.text +
       "\n" +
       water.text +
+      "\n" +
+      uv.text +
       (beachOK ? `\n\n${md("☀️ Хороший день, чтобы поехать на пляж")}` : "");
 
     console.log(">>> telegram payload <<<\n", msg);
