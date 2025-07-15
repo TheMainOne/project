@@ -43,6 +43,7 @@ async function getWeather() {
   ];
 
   const out = [];
+  let dryFlag = false; // флаг для Ocean City
 
   for (const c of cities) {
     const cur = await axios.get(
@@ -71,16 +72,29 @@ async function getWeather() {
         },
       }
     );
-
+    const next12h = fc.data.list.slice(0, 4); // 4×3 ч = 12 ч
+    const willStorm = next12h.some(
+      (p) => p.weather[0].id >= 200 && p.weather[0].id < 300
+    );
+    const willRain = next12h.some(
+      (p) =>
+        ["Rain", "Thunderstorm", "Drizzle", "Snow"].includes(
+          p.weather[0].main
+        ) || p.pop >= 0.3
+    );
     const temps = fc.data.list.map((p) => p.main.temp);
     const tMin = Math.round(Math.min(...temps));
     const tMax = Math.round(Math.max(...temps));
     const desc = md(cur.data.weather[0].description);
+    const isDry = !(willRain || willStorm);
 
     out.push(`*${c.name}:* ${tMin}°→${tMax}°C, ${desc}`);
+    if (c.name === "Ocean City") {
+      dryFlag = isDry;
+    }
   }
 
-  return out.join("\n");
+  return { text: out.join("\n"), isDry: dryFlag };
 }
 
 /* 2. Температура воды (NOAA CO-OPS, станции AC → CM) */
@@ -109,12 +123,8 @@ async function getWaterTemp() {
 
       if (data?.data?.length) {
         const tempC = Math.round(+data.data[0].v); // ← tempC
-        const good = tempC >= 21; // ≥ 21 °C ≈ 70 °F
         let text = md(`🌊 Температура воды (Ocean City): *${tempC}°C*`); // ← tempC и s.name
-        if (good) {
-          text += `\n${md("☀️ Хороший день, чтобы поехать на пляж")}`; //  ← без «!»
-        }
-        return text;
+        return { text, temp: tempC };
       }
       console.log(`[water] ${s.name} – нет свежих данных`);
     } catch (err) {
@@ -122,7 +132,7 @@ async function getWaterTemp() {
     }
   }
 
-  throw new Error("Нет свежих данных о температуре воды");
+  return { text: md("🌡️ Нет данных о температуре воды"), temp: -Infinity };
 }
 
 /* ─── 3. Ветер ───────────────────────────────────────────────────────── */
@@ -165,7 +175,7 @@ async function getWind() {
           (gust > spd + 2 ? ` (порывы до ${fmt(gust)} м/с)` : "") +
           ` — ${md(remark)}`;
 
-        return md(line);
+        return { text: md(line), speed: spd };
       }
       console.warn(`[wind] ${s.name} – пустой ответ`);
     } catch (e) {
@@ -174,7 +184,7 @@ async function getWind() {
   }
 
   // если до сюда дошли — нет ни одной свежей записи
-  return "💨 *Данных о ветре нет*";
+  return { text: "💨 Данных о ветре нет", speed: Infinity };
 }
 
 /* ─── 4. Волны ───────────────────────────────────────────────────────── */
@@ -225,15 +235,18 @@ async function getWave() {
           ? "для сёрфа"
           : "крупная";
 
-      return md(
-        `🏄 Волна (Ocean City): *${H} м* • *${T} с между гребнями* → ${comment}`
-      );
+      return {
+        text: md(
+          `🏄 Волна (Ocean City): *${H} м* • *${T} с между гребнями* → ${comment}`
+        ),
+        height: +H,
+      };
     } catch (e) {
       console.warn(`[wave] ${b.name} – ${e}`);
     }
   }
 
-  return md("🏄 *Данных о волне нет*");
+  return { text: md("🏄 Данных о волне нет"), height: Infinity };
 }
 
 /* ─── вспомогательная обёртка для диагностики ─────────────────────────── */
@@ -260,15 +273,19 @@ async function wrap(name, fn) {
       wrap("wave", getWave),
     ]);
 
+    const beachOK =
+      water.temp >= 21 && weather.isDry && wind.speed < 7 && wave.height < 1.5;
+
     const msg =
       "🌅 *Доброе утро*\n\n" +
-      weather +
+      weather.text +
       "\n\n" +
-      wind +
+      wind.text +
       "\n" +
-      wave +
+      wave.text +
       "\n" +
-      water;
+      water.text +
+      (beachOK ? `\n\n${md("☀️ Хороший день, чтобы поехать на пляж")}` : "");
 
     console.log(">>> telegram payload <<<\n", msg);
     await sendTelegramMessage(msg, TELEGRAM_BOT_TOKEN, CHAT_ID);
