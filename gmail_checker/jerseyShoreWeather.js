@@ -89,11 +89,11 @@ async function getWeather() {
     const tMaxC = Math.round(Math.max(...temps));
     const tMinF = toF(tMinC);
     const tMaxF = toF(tMaxC);
-    const desc = md(cur.data.weather[0].description);
+    const descRaw = cur.data.weather[0].description;
     const isDry = !(willRain || willStorm);
 
     out.push(
-      `*${c.name}:* ${tMinC}°→${tMaxC}°C (${tMinF}°→${tMaxF}°F), ${desc}`
+      md(`*${c.name}:* ${tMinC}°→${tMaxC}°C (${tMinF}°→${tMaxF}°F), ${descRaw}`)
     );
     if (c.name === "Ocean City") {
       dryFlag = isDry;
