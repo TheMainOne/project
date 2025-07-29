@@ -27,6 +27,8 @@ const safeUrl = (u = "") =>
     .replace(/\./g, "\\.") //
     .replace(/-/g, "\\-"); //
 
+const toF = (c) => Math.round((c * 9) / 5 + 32);
+
 /* ─── 1. Погода ───────────────────────────────────────────────────────── */
 async function getWeather() {
   const {
@@ -83,12 +85,16 @@ async function getWeather() {
         ) || p.pop >= 0.3
     );
     const temps = fc.data.list.map((p) => p.main.temp);
-    const tMin = Math.round(Math.min(...temps));
-    const tMax = Math.round(Math.max(...temps));
+    const tMinC = Math.round(Math.min(...temps));
+    const tMaxC = Math.round(Math.max(...temps));
+    const tMinF = toF(tMinC);
+    const tMaxF = toF(tMaxC);
     const desc = md(cur.data.weather[0].description);
     const isDry = !(willRain || willStorm);
 
-    out.push(`*${c.name}:* ${tMin}°→${tMax}°C, ${desc}`);
+    out.push(
+      `*${c.name}:* ${tMinC}°→${tMaxC}°C (${tMinF}°→${tMaxF}°F), ${desc}`
+    );
     if (c.name === "Ocean City") {
       dryFlag = isDry;
     }
@@ -122,8 +128,11 @@ async function getWaterTemp() {
       );
 
       if (data?.data?.length) {
-        const tempC = Math.round(+data.data[0].v); // ← tempC
-        let text = md(`🌊 Температура воды (Ocean City): *${tempC}°C*`); // ← tempC и s.name
+        const tempC = Math.round(+data.data[0].v);
+        const tempF = toF(tempC);
+        let text = md(
+          `🌊 Температура воды (Ocean City): *${tempC}°C (${tempF}°F)*`
+        );
         return { text, temp: tempC };
       }
       console.log(`[water] ${s.name} – нет свежих данных`);
@@ -310,7 +319,7 @@ async function wrap(name, fn) {
     ]);
 
     const beachOK =
-      water.temp >= 21 &&
+      water.temp >= 22 &&
       weather.isDry &&
       wind.speed < 7 &&
       wave.height < 1.5 &&

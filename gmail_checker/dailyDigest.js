@@ -15,6 +15,8 @@ const md = (s = "") =>
     // 2) убираем угловые скобки (Telegram их не любит)
     .replace(/[<>]/g, "");
 
+const toF = (c) => Math.round((c * 9) / 5 + 32);
+
 /* безопасный URL для Markdown-V2 */
 const safeUrl = (u = "") =>
   encodeURI(u) // пробелы, Unicode и т.п.
@@ -42,6 +44,7 @@ async function getWeather() {
   const out = [];
 
   for (const c of cities) {
+    /* текущая погода */
     const cur = await axios.get(
       "https://api.openweathermap.org/data/2.5/weather",
       {
@@ -54,6 +57,7 @@ async function getWeather() {
       }
     );
 
+    /* прогноз на ближайшие 24 ч (8×3 ч) */
     const fc = await axios.get(
       "https://api.openweathermap.org/data/2.5/forecast",
       {
@@ -67,12 +71,18 @@ async function getWeather() {
       }
     );
 
-    const temps = fc.data.list.map((p) => p.main.temp);
-    const tMin = Math.round(Math.min(...temps));
-    const tMax = Math.round(Math.max(...temps));
+    /* —–– расчёт мин/макс температур —–– */
+    const temps = fc.data.list.map((p) => p.main.temp); // ← переменная обязательно нужна
+    const tMinC = Math.round(Math.min(...temps));
+    const tMaxC = Math.round(Math.max(...temps));
+    const tMinF = toF(tMinC);
+    const tMaxF = toF(tMaxC);
+
     const desc = md(cur.data.weather[0].description);
 
-    out.push(`*${c.name}:* ${tMin}°→${tMax}°C, ${desc}`);
+    out.push(
+      `*${c.name}:* ${tMinC}°→${tMaxC}°C (${tMinF}°→${tMaxF}°F), ${desc}`
+    );
   }
 
   return out.join("\n");
@@ -105,7 +115,10 @@ async function getWaterTemp() {
       if (data?.data?.length) {
         const tempC = Math.round(+data.data[0].v); // ← tempC
         const good = tempC >= 21; // ≥ 21 °C ≈ 70 °F
-        let text = md(`🌊 Температура воды (Ocean City): *${tempC}°C*`); // ← tempC и s.name
+        const tempF = toF(tempC);
+        let text = md(
+          `🌊 Температура воды (Ocean City): *${tempC}°C (${tempF}°F)*`
+        );
         if (good) {
           text += `\n${md("☀️ Хороший день, чтобы поехать на пляж")}`; //  ← без «!»
         }
