@@ -78,10 +78,10 @@ async function getWeather() {
     const tMinF = toF(tMinC);
     const tMaxF = toF(tMaxC);
 
-    const desc = md(cur.data.weather[0].description);
+    const descRaw = cur.data.weather[0].description;
 
     out.push(
-      `*${c.name}:* ${tMinC}°→${tMaxC}°C (${tMinF}°→${tMaxF}°F), ${desc}`
+      md(`*${c.name}:* ${tMinC}°→${tMaxC}°C (${tMinF}°→${tMaxF}°F), ${descRaw}`)
     );
   }
 
