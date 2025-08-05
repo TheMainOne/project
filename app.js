@@ -1,21 +1,10 @@
 import "dotenv/config";
 import express from "express";
-import passport from "passport";
 import morgan from "morgan";
 import cors from "cors";
 import mongoose from "mongoose";
 import errorHandler from "./middlewares/errorHandler.js";
-import router from "./api/material.js";
 import authRouter from "./api/auth.js";
-import regulationRouter from "./api/regulation.js";
-import supplierRouter from "./api/supplier.js";
-import uploadFileRouter from "./api/upload.js";
-import documentsRouter from "./api/document.js";
-import userRouter from "./api/user.js";
-import roleRouter from "./api/role.js";
-import dashboardRouter from "./api/dashboardRouter.js";
-import logsRouter from "./api/logs.js";
-import assetRouter from "./api/asset.js";
 import sendTelegramMessage from "./services/telegramNotify.js";
 
 const PORT = process.env.PORT || 3000;
@@ -46,17 +35,8 @@ app.use(express.json());
 app.use("/uploads", express.static("uploads"));
 
 // connecting api routes
-app.use("/", router);
+
 app.use("/", authRouter);
-app.use("/", regulationRouter);
-app.use("/", supplierRouter);
-app.use("/", uploadFileRouter);
-app.use("/", documentsRouter);
-app.use("/", userRouter);
-app.use("/", roleRouter);
-app.use("/", dashboardRouter);
-app.use("/", logsRouter);
-app.use("/", assetRouter);
 
 // error handlers
 app.use(errorHandler);
