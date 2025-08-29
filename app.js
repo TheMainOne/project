@@ -141,9 +141,10 @@ mongoose
         if (PUBLIC_IP) options.ip_address = PUBLIC_IP; // помогает при DNS/IPv6 странностях
 
         await bot.api.setWebhook(
-          `${BASE_URL}/webhook/${WEBHOOK_SECRET}`,
+          `${BASE_URL}/bot-webhook/${WEBHOOK_SECRET}`,
           options
         );
+
         console.log(
           "Telegram webhook set:",
           `${BASE_URL}/webhook/${WEBHOOK_SECRET}`
