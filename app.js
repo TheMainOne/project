@@ -65,6 +65,7 @@ mongoose
   .then(async () => {
     // создаём бота только ПОСЛЕ подключения к Mongo
 
+    const bot = createBot(BOT_TOKEN);
     // 🔎 ВРЕМЕННЫЙ диагностический эндпоинт
     app.post("/diag-webhook/:secret", (req, res) => {
       const expected = (WEBHOOK_SECRET ?? "").toString().trim();
@@ -73,20 +74,26 @@ mongoose
         .toString()
         .trim();
 
-      return res.status(200).json({
-        expected_first6: expected.slice(0, 6),
-        pathTok_first6: pathTok.slice(0, 6),
-        headTok_first6: headTok.slice(0, 6),
-        len: {
-          expected: expected.length,
-          pathTok: pathTok.length,
-          headTok: headTok.length,
-        },
-        eq: {
-          path_eq_env: pathTok === expected,
-          head_eq_env: headTok === expected,
-        },
-      });
+      if (pathTok !== expected)
+        return res.status(401).send("path secret mismatch");
+      if (headTok && headTok !== expected)
+        return res.status(401).send("header secret mismatch");
+
+      return webhookCallback(bot, "express")(req, res, next);
+      // return res.status(200).json({
+      //   expected_first6: expected.slice(0, 6),
+      //   pathTok_first6: pathTok.slice(0, 6),
+      //   headTok_first6: headTok.slice(0, 6),
+      //   len: {
+      //     expected: expected.length,
+      //     pathTok: pathTok.length,
+      //     headTok: headTok.length,
+      //   },
+      //   eq: {
+      //     path_eq_env: pathTok === expected,
+      //     head_eq_env: headTok === expected,
+      //   },
+      // });
     });
 
     app.post(`/bot-webhook/:secret`, (req, res, next) => {
@@ -100,8 +107,6 @@ mongoose
       }
       return webhookCallback(bot, "express")(req, res, next);
     });
-
-    const bot = createBot(BOT_TOKEN);
 
     // error handlers
     app.use(errorHandler);
