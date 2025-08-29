@@ -35,17 +35,6 @@ app.use("/uploads", express.static("uploads"));
 // твои API роуты
 app.use("/", authRouter);
 
-// error handlers
-app.use(errorHandler);
-app.use((_, res, __) => {
-  res.status(404).json({
-    status: "error",
-    code: 404,
-    message: "Use api on routes: /api/materials",
-    data: "Not found",
-  });
-});
-
 // глобальные error handlers
 process.on("uncaughtException", (err) => {
   console.error("Uncaught Exception:", err);
@@ -72,6 +61,17 @@ mongoose
       const token = req.get("X-Telegram-Bot-Api-Secret-Token");
       if (token && token !== WEBHOOK_SECRET) return res.sendStatus(401);
       return webhookCallback(bot, "express")(req, res, next);
+    });
+
+    // error handlers
+    app.use(errorHandler);
+    app.use((_, res, __) => {
+      res.status(404).json({
+        status: "error",
+        code: 404,
+        message: "Use api on routes: /api/materials",
+        data: "Not found",
+      });
     });
 
     // запускаем HTTP-сервер
