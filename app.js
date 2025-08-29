@@ -91,7 +91,7 @@ mongoose
 
     const bot = createBot(BOT_TOKEN);
 
-    app.post(`/bot-webhook/${WEBHOOK_SECRET}`, (req, res, next) => {
+    app.post(`/bot-webhook/:secret`, (req, res, next) => {
       const expected = (WEBHOOK_SECRET ?? "").toString().trim();
       const headTok = (req.headers["x-telegram-bot-api-secret-token"] ?? "")
         .toString()
