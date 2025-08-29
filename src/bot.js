@@ -39,6 +39,61 @@ async function answerWithAI(userText, ch) {
   return resp.choices[0]?.message?.content?.trim() || "Не понял запрос.";
 }
 
+function toTelegramHtml(html = "") {
+  // Простая адаптация: <br> -> \n, закрывающий </p> -> \n\n
+  let s = String(html)
+    .replace(/<br\s*\/?>/gi, "\n")
+    .replace(/<\/p>/gi, "\n\n")
+    .replace(/<p[^>]*>/gi, "");
+
+  // Заменим списки: </li> -> \n, уберём <ul>/<ol>/<li>
+  s = s.replace(/<\/li>/gi, "\n").replace(/<(\/)?(ul|ol|li)[^>]*>/gi, "");
+
+  // Оставим базовые теги Telegram, остальное вырежем
+  // Разрешённые: b,i,u,s,em,strong,code,pre,a,tg-spoiler
+  s = s.replace(
+    /<\/?(?!b|i|u|s|em|strong|code|pre|a|tg-spoiler)\w+[^>]*>/gi,
+    ""
+  );
+
+  // Убедимся, что ссылки имеют только href
+  s = s.replace(/<a\s+([^>]+)>/gi, (m, attrs) => {
+    const hrefMatch = attrs.match(/href\s*=\s*"(.*?)"/i);
+    const href = hrefMatch ? hrefMatch[1] : "#";
+    return `<a href="${href}">`;
+  });
+
+  // Сжимаем лишние пустые строки
+  s = s.replace(/\n{3,}/g, "\n\n").trim();
+  return s || "Правила будут добавлены.";
+}
+
+function chunkText(s, limit = 4096) {
+  const chunks = [];
+  let i = 0;
+  while (i < s.length) {
+    chunks.push(s.slice(i, i + limit));
+    i += limit;
+  }
+  return chunks;
+}
+
+async function sendHtmlOrEdit(ctx, text, opts) {
+  // Сначала пробуем отредактировать исходное сообщение
+  try {
+    await ctx.editMessageText(text, opts);
+    return;
+  } catch (e) {
+    console.error("editMessageText error:", e?.description || e?.message || e);
+  }
+  // Если не получилось — отправим новое сообщение
+  try {
+    await ctx.reply(text, opts);
+  } catch (e2) {
+    console.error("reply error:", e2?.description || e2?.message || e2);
+  }
+}
+
 function menu() {
   return {
     reply_markup: {
@@ -210,24 +265,9 @@ function attachHandlers(bot) {
   // Кнопки
   bot.on("callback_query:data", async (ctx) => {
     const data = ctx.callbackQuery.data || "";
-    const msgDate = ctx.callbackQuery.message?.date ?? 0; // UNIX сек
-    const isStale = Date.now() / 1000 - msgDate > 10; // старше 10с считаем протухшим
 
     // Ответить как можно раньше (и не падать, если уже поздно)
     await ctx.answerCallbackQuery().catch(() => {});
-
-    if (isStale) {
-      // Кнопка протухла — просто отправим новое меню
-      const { uid } = await resolveChannelUid(ctx);
-      if (!uid)
-        return ctx.reply("Кнопка устарела. Выберите канал командой /start.", {
-          disable_web_page_preview: true,
-        });
-      const { Channels } = collections();
-      const ch = await Channels.findOne({ uid });
-      if (!ch) return ctx.reply("Канал недоступен.");
-      return ctx.reply("Кнопка устарела. Обновляю меню ↓", menu());
-    }
 
     const chatId = ctx.chat.id;
 
@@ -260,13 +300,13 @@ function attachHandlers(bot) {
     await upsertPair(chatId, uid);
 
     const map = {
-      info: render.info,
-      link: render.link,
-      intro: render.intro,
-      prices: render.prices,
-      slots: render.slots,
-      rules: render.rules,
-      contact: () =>
+      info: (ch) => render.info(ch),
+      link: (ch) => render.link(ch),
+      intro: (ch) => toTelegramHtml(render.intro(ch)),
+      prices: (ch) => toTelegramHtml(render.prices(ch)),
+      slots: (ch) => toTelegramHtml(render.slots(ch)),
+      rules: (ch) => toTelegramHtml(render.rules(ch)),
+      contact: (ch) =>
         ch.owner?.username
           ? `Напишите владельцу: @${ch.owner.username}`
           : "Контакт владельца недоступен.",
@@ -274,7 +314,29 @@ function attachHandlers(bot) {
     const fn = map[data];
     if (!fn) return;
 
-    await ctx.editMessageText(fn(ch), menu()).catch(() => {});
+    const text = fn(ch);
+    const chunks = chunkText(text, 4000);
+
+    if (chunks.length === 1) {
+      await sendHtmlOrEdit(ctx, chunks[0], menu());
+    } else {
+      // 1) правим исходное сообщение первым чанком
+      await sendHtmlOrEdit(ctx, chunks[0], {
+        parse_mode: "HTML",
+        disable_web_page_preview: true,
+      });
+
+      // 2) серединки — просто новые сообщения
+      for (let i = 1; i < chunks.length - 1; i++) {
+        await ctx.reply(chunks[i], {
+          parse_mode: "HTML",
+          disable_web_page_preview: true,
+        });
+      }
+
+      // 3) завершающий чанк — с меню
+      await ctx.reply(chunks[chunks.length - 1], menu());
+    }
   });
 
   // Текстовые сообщения
