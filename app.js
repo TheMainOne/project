@@ -29,32 +29,8 @@ app.use(morgan("tiny"));
 app.use(cors());
 app.use(express.json());
 
-// статические файлы
-app.use("/uploads", express.static("uploads"));
+const bot = createBot(BOT_TOKEN);
 
-// твои API роуты
-app.use("/", authRouter);
-
-// глобальные error handlers
-process.on("uncaughtException", (err) => {
-  console.error("Uncaught Exception:", err);
-  sendTelegramMessage(`❗️ Uncaught Exception: ${err.message}`);
-  process.exit(1);
-});
-process.on("unhandledRejection", (reason, promise) => {
-  console.error("Unhandled Rejection at:", promise, "reason:", reason);
-  sendTelegramMessage(`⚠️ Unhandled Rejection: ${reason}`);
-});
-
-console.log("[BOOT] cwd=", process.cwd());
-console.log(
-  "[BOOT] WEBHOOK_SECRET(len)=",
-  (process.env.WEBHOOK_SECRET || "").length
-);
-console.log(
-  "[BOOT] WEBHOOK_SECRET(first6)=",
-  (process.env.WEBHOOK_SECRET || "").slice(0, 6)
-);
 /* ======================
    Mongo + Bot + Webhook
 ====================== */
@@ -65,9 +41,8 @@ mongoose
   .then(async () => {
     // создаём бота только ПОСЛЕ подключения к Mongo
 
-    const bot = createBot(BOT_TOKEN);
     // 🔎 ВРЕМЕННЫЙ диагностический эндпоинт
-    app.post("/diag-webhook/:secret", (req, res) => {
+    app.post("/diag-webhook/:secret", (req, res, next) => {
       const expected = (WEBHOOK_SECRET ?? "").toString().trim();
       const pathTok = (req.params.secret ?? "").toString().trim();
       const headTok = (req.headers["x-telegram-bot-api-secret-token"] ?? "")
@@ -107,6 +82,12 @@ mongoose
       }
       return webhookCallback(bot, "express")(req, res, next);
     });
+
+    // статические файлы
+    app.use("/uploads", express.static("uploads"));
+
+    // твои API роуты
+    app.use("/", authRouter);
 
     // error handlers
     app.use(errorHandler);
@@ -159,6 +140,17 @@ mongoose
     console.log(`Server not running. Error message: ${err.message}`);
     process.exit(1);
   });
+
+// глобальные error handlers
+process.on("uncaughtException", (err) => {
+  console.error("Uncaught Exception:", err);
+  sendTelegramMessage(`❗️ Uncaught Exception: ${err.message}`);
+  process.exit(1);
+});
+process.on("unhandledRejection", (reason, promise) => {
+  console.error("Unhandled Rejection at:", promise, "reason:", reason);
+  sendTelegramMessage(`⚠️ Unhandled Rejection: ${reason}`);
+});
 
 // const PORT = process.env.PORT || 3000;
 // const uriDB = process.env.DATABASE_URL;
