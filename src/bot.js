@@ -119,7 +119,6 @@ const render = {
   info: (ch) => {
     const lines = [];
     lines.push(`<b>${ch.title || "—"}</b>`);
-    if (ch.username) lines.push(`@${ch.username}`);
     // краткое описание из introHtml
     if (ch.introHtml) {
       const intro = toTelegramHtml(ch.introHtml);
