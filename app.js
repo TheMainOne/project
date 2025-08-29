@@ -89,8 +89,6 @@ mongoose
       });
     });
 
-    const bot = createBot(BOT_TOKEN);
-
     app.post(`/bot-webhook/:secret`, (req, res, next) => {
       const expected = (WEBHOOK_SECRET ?? "").toString().trim();
       const headTok = (req.headers["x-telegram-bot-api-secret-token"] ?? "")
@@ -102,6 +100,8 @@ mongoose
       }
       return webhookCallback(bot, "express")(req, res, next);
     });
+
+    const bot = createBot(BOT_TOKEN);
 
     // error handlers
     app.use(errorHandler);
