@@ -116,7 +116,19 @@ function menu() {
 }
 
 const render = {
-  info: (ch) => `<b>${ch.title}</b>\n${ch.username ? "@" + ch.username : ""}`,
+  info: (ch) => {
+    const lines = [];
+    lines.push(`<b>${ch.title || "—"}</b>`);
+    if (ch.username) lines.push(`@${ch.username}`);
+    // краткое описание из introHtml
+    if (ch.introHtml) {
+      const intro = toTelegramHtml(ch.introHtml);
+      // обрежем длинные простыни до 800 символов для карточки Инфо
+      const short = intro.length > 800 ? intro.slice(0, 800) + "…" : intro;
+      lines.push("", short);
+      return lines.join("\n");
+    }
+  },
   link: (ch) =>
     ch.username
       ? `Ссылка на канал:\n<a href="https://t.me/${ch.username}">https://t.me/${ch.username}</a>`
@@ -300,7 +312,7 @@ function attachHandlers(bot) {
     await upsertPair(chatId, uid);
 
     const map = {
-      info: (ch) => render.info(ch),
+      info: (ch) => toTelegramHtml(render.info(ch)),
       link: (ch) => render.link(ch),
       intro: (ch) => toTelegramHtml(render.intro(ch)),
       prices: (ch) => toTelegramHtml(render.prices(ch)),
