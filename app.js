@@ -66,7 +66,7 @@ mongoose
     // создаём бота только ПОСЛЕ подключения к Mongo
 
     // 🔎 ВРЕМЕННЫЙ диагностический эндпоинт
-    app.post("/webhook-test/:secret", (req, res) => {
+    app.post("/diag-webhook/:secret", (req, res) => {
       const expected = (WEBHOOK_SECRET ?? "").toString().trim();
       const pathTok = (req.params.secret ?? "").toString().trim();
       const headTok = (req.headers["x-telegram-bot-api-secret-token"] ?? "")
@@ -91,15 +91,12 @@ mongoose
 
     const bot = createBot(BOT_TOKEN);
 
-    // роут вебхука (до listen; без long polling!)
-    app.post(`/webhook/${WEBHOOK_SECRET}`, (req, res, next) => {
+    app.post(`/bot-webhook/${WEBHOOK_SECRET}`, (req, res, next) => {
       const expected = (WEBHOOK_SECRET ?? "").toString().trim();
       const headTok = (req.headers["x-telegram-bot-api-secret-token"] ?? "")
         .toString()
         .trim();
 
-      // (1) путь уже совпал во время монтирования маршрута; лишняя проверка не нужна
-      // (2) если заголовок пришёл — он ДОЛЖЕН совпасть
       if (headTok && headTok !== expected) {
         return res.status(401).send("header secret mismatch");
       }
@@ -136,18 +133,16 @@ mongoose
         const options = {
           secret_token: WEBHOOK_SECRET,
           drop_pending_updates: true,
-          // allowed_updates: ["message", "callback_query"], // при желании ограничь типы
         };
-        if (PUBLIC_IP) options.ip_address = PUBLIC_IP; // помогает при DNS/IPv6 странностях
+        if (PUBLIC_IP) options.ip_address = PUBLIC_IP;
 
         await bot.api.setWebhook(
           `${BASE_URL}/bot-webhook/${WEBHOOK_SECRET}`,
           options
         );
-
         console.log(
           "Telegram webhook set:",
-          `${BASE_URL}/webhook/${WEBHOOK_SECRET}`
+          `${BASE_URL}/bot-webhook/${WEBHOOK_SECRET}`
         );
       } catch (e) {
         console.error("Webhook setup error:", e);
