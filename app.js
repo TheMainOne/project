@@ -29,8 +29,6 @@ app.use(morgan("tiny"));
 app.use(cors());
 app.use(express.json());
 
-const bot = createBot(BOT_TOKEN);
-
 /* ======================
    Mongo + Bot + Webhook
 ====================== */
@@ -40,6 +38,7 @@ mongoose
   .connect(uriDB, { dbName: "materials_reader" })
   .then(async () => {
     // создаём бота только ПОСЛЕ подключения к Mongo
+    const bot = createBot(BOT_TOKEN);
 
     // 🔎 ВРЕМЕННЫЙ диагностический эндпоинт
     app.post("/diag-webhook/:secret", (req, res, next) => {
