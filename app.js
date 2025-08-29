@@ -40,44 +40,10 @@ mongoose
     // создаём бота только ПОСЛЕ подключения к Mongo
     const bot = createBot(BOT_TOKEN);
 
-    // 🔎 ВРЕМЕННЫЙ диагностический эндпоинт
-    app.post("/diag-webhook/:secret", (req, res, next) => {
-      const expected = (WEBHOOK_SECRET ?? "").toString().trim();
-      const pathTok = (req.params.secret ?? "").toString().trim();
-      const headTok = (req.headers["x-telegram-bot-api-secret-token"] ?? "")
-        .toString()
-        .trim();
-
-      if (pathTok !== expected)
-        return res.status(401).send("path secret mismatch");
-      if (headTok && headTok !== expected)
-        return res.status(401).send("header secret mismatch");
-
-      return webhookCallback(bot, "express")(req, res, next);
-      // return res.status(200).json({
-      //   expected_first6: expected.slice(0, 6),
-      //   pathTok_first6: pathTok.slice(0, 6),
-      //   headTok_first6: headTok.slice(0, 6),
-      //   len: {
-      //     expected: expected.length,
-      //     pathTok: pathTok.length,
-      //     headTok: headTok.length,
-      //   },
-      //   eq: {
-      //     path_eq_env: pathTok === expected,
-      //     head_eq_env: headTok === expected,
-      //   },
-      // });
-    });
-
-    app.post(`/bot-webhook/:secret`, (req, res, next) => {
-      const expected = (WEBHOOK_SECRET ?? "").toString().trim();
-      const headTok = (req.headers["x-telegram-bot-api-secret-token"] ?? "")
-        .toString()
-        .trim();
-
-      if (headTok && headTok !== expected) {
-        return res.status(401).send("header secret mismatch");
+    app.post("/bot/webhook", (req, res, next) => {
+      // Разрешаем ручной "пинг", чтобы не валить grammy тестовым телом
+      if (req.body && req.body.ping) {
+        return res.status(200).json({ ok: true });
       }
       return webhookCallback(bot, "express")(req, res, next);
     });
@@ -116,19 +82,12 @@ mongoose
       try {
         // ставим webhook
         const options = {
-          secret_token: WEBHOOK_SECRET,
           drop_pending_updates: true,
         };
         if (PUBLIC_IP) options.ip_address = PUBLIC_IP;
 
-        await bot.api.setWebhook(
-          `${BASE_URL}/diag-webhook/${WEBHOOK_SECRET}`,
-          options
-        );
-        console.log(
-          "Telegram webhook set:",
-          `${BASE_URL}/diag-webhook/${WEBHOOK_SECRET}`
-        );
+        await bot.api.setWebhook(`${BASE_URL}/bot/webhook`, options);
+        console.log("Telegram webhook set:", `${BASE_URL}/bot/webhook`);
       } catch (e) {
         console.error("Webhook setup error:", e);
         // ВАЖНО: без fallback на long polling, чтобы не было конфликта режимов
