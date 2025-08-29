@@ -123,12 +123,12 @@ mongoose
         if (PUBLIC_IP) options.ip_address = PUBLIC_IP;
 
         await bot.api.setWebhook(
-          `${BASE_URL}/bot-webhook/${WEBHOOK_SECRET}`,
+          `${BASE_URL}/diag-webhook/${WEBHOOK_SECRET}`,
           options
         );
         console.log(
           "Telegram webhook set:",
-          `${BASE_URL}/bot-webhook/${WEBHOOK_SECRET}`
+          `${BASE_URL}/diag-webhook/${WEBHOOK_SECRET}`
         );
       } catch (e) {
         console.error("Webhook setup error:", e);
