@@ -45,6 +45,16 @@ process.on("unhandledRejection", (reason, promise) => {
   console.error("Unhandled Rejection at:", promise, "reason:", reason);
   sendTelegramMessage(`⚠️ Unhandled Rejection: ${reason}`);
 });
+
+console.log("[BOOT] cwd=", process.cwd());
+console.log(
+  "[BOOT] WEBHOOK_SECRET(len)=",
+  (process.env.WEBHOOK_SECRET || "").length
+);
+console.log(
+  "[BOOT] WEBHOOK_SECRET(first6)=",
+  (process.env.WEBHOOK_SECRET || "").slice(0, 6)
+);
 /* ======================
    Mongo + Bot + Webhook
 ====================== */
@@ -54,12 +64,45 @@ mongoose
   .connect(uriDB, { dbName: "materials_reader" })
   .then(async () => {
     // создаём бота только ПОСЛЕ подключения к Mongo
+
+    // 🔎 ВРЕМЕННЫЙ диагностический эндпоинт
+    app.post("/webhook-test/:secret", (req, res) => {
+      const expected = (WEBHOOK_SECRET ?? "").toString().trim();
+      const pathTok = (req.params.secret ?? "").toString().trim();
+      const headTok = (req.headers["x-telegram-bot-api-secret-token"] ?? "")
+        .toString()
+        .trim();
+
+      return res.status(200).json({
+        expected_first6: expected.slice(0, 6),
+        pathTok_first6: pathTok.slice(0, 6),
+        headTok_first6: headTok.slice(0, 6),
+        len: {
+          expected: expected.length,
+          pathTok: pathTok.length,
+          headTok: headTok.length,
+        },
+        eq: {
+          path_eq_env: pathTok === expected,
+          head_eq_env: headTok === expected,
+        },
+      });
+    });
+
     const bot = createBot(BOT_TOKEN);
 
     // роут вебхука (до listen; без long polling!)
     app.post(`/webhook/${WEBHOOK_SECRET}`, (req, res, next) => {
-      const token = req.get("X-Telegram-Bot-Api-Secret-Token");
-      if (token && token !== WEBHOOK_SECRET) return res.sendStatus(401);
+      const expected = (WEBHOOK_SECRET ?? "").toString().trim();
+      const headTok = (req.headers["x-telegram-bot-api-secret-token"] ?? "")
+        .toString()
+        .trim();
+
+      // (1) путь уже совпал во время монтирования маршрута; лишняя проверка не нужна
+      // (2) если заголовок пришёл — он ДОЛЖЕН совпасть
+      if (headTok && headTok !== expected) {
+        return res.status(401).send("header secret mismatch");
+      }
       return webhookCallback(bot, "express")(req, res, next);
     });
 
