@@ -107,80 +107,106 @@ res.write(": heartbeat\n\n");             // первый байт — сраз�
        return res.status(200).json({ reply });
     }
 
-  if (stream) {
+if (stream) {
   // ---------- STREAM (SSE) ----------
   res.setHeader("Access-Control-Allow-Origin", req.headers.origin || "*");
   res.setHeader("Vary", "Origin");
   res.setHeader("Content-Type", "text/event-stream; charset=utf-8");
   res.setHeader("Cache-Control", "no-cache, no-transform");
   res.setHeader("Connection", "keep-alive");
-  res.setHeader("X-Accel-Buffering", "no"); // на всякий
+  res.setHeader("X-Accel-Buffering", "no");
   res.flushHeaders?.();
 
-  // сразу «пнул» поток, чтобы клиент увидел открытие
+  // мгновенно показываем, что поток открыт
   res.write(": heartbeat\n\n");
 
-let clientClosed = false;
-const endSafely = () => {
-  if (!clientClosed) {
-    clientClosed = true;
-    try { res.end(); } catch {}
-  }
-};
-req.on("close", endSafely);
-req.on("aborted", endSafely);
+  let clientClosed = false;
+  const endSafely = () => { if (!clientClosed) { clientClosed = true; try { res.end(); } catch {} } };
+  req.on("close", endSafely);
+  req.on("aborted", endSafely);
 
-  // watchdog: если за 20с не пришло ни одного токена — завершаем с сообщением
+  // --- 1) пытаемся реальный стрим от модели с тайм-аутом первых токенов
   let gotAnyToken = false;
-  const watchdog = setTimeout(() => {
-    if (!gotAnyToken && !clientClosed) {
-      res.write(`data: ⚠️ No tokens yet, finishing.\n\n`);
-      res.write("data: [DONE]\n\n");
-      res.end();
-    }
-  }, 20000);
+
+  // таймаут «первых токенов»: если 5с тишина — переключаемся на fallback
+  const FIRST_TOKEN_TIMEOUT_MS = 5000;
+  let firstTokenTimer;
+
+  // Abort для OpenAI (если поддерживается средой; в новых SDK — да)
+  const controller = new AbortController();
+  const { signal } = controller;
+
+  const startFirstTokenTimer = () => {
+    clearTimeout(firstTokenTimer);
+    firstTokenTimer = setTimeout(() => {
+      if (!gotAnyToken && !clientClosed) {
+        controller.abort(); // прерываем зависший стрим
+      }
+    }, FIRST_TOKEN_TIMEOUT_MS);
+  };
+  startFirstTokenTimer();
 
   try {
     const response = await oai.chat.completions.create({
       model: MODEL,
-      stream: true,
-      // не передаём temperature (некоторые модели ругаются на нестандартные значения)
       messages: [sys, ...safeMsgs],
+      stream: true,
+      signal,
     });
 
     for await (const chunk of response) {
       if (clientClosed) break;
-
-      // В новых SDK бывает 2 формата: delta.content или просто content
       const c = chunk?.choices?.[0];
-      const delta = choice?.delta?.content ?? choice?.message?.content ?? "";
-
+      const delta = c?.delta?.content ?? c?.message?.content ?? "";
       if (delta) {
-gotAnyToken = true;
-    res.write(`data: ${delta}\n\n`);
+        gotAnyToken = true;
+        clearTimeout(firstTokenTimer);
+        res.write(`data: ${delta}\n\n`);
       }
-
-      // Если провайдер прислал finish_reason — завершаем
-if (choice?.finish_reason) break;
+      if (c?.finish_reason) break;
     }
   } catch (err) {
-    // если упали — покажем ошибку прямо в потоке, чтобы фронт не зависал
-    if (!clientClosed) {
-      const msg =
-        (err && (err.message || err.toString())) || "Internal error";
+    // если это именно abort из-за тайм-аута первых токенов — молча пойдём в fallback
+    const aborted = String(err?.name || err).includes("Abort");
+    if (!aborted && !clientClosed) {
+      const msg = (err && (err.message || err.toString())) || "Internal error";
       res.write(`data: ⚠️ ${msg}\n\n`);
-    }
-  } finally {
-    clearTimeout(watchdog);
-    if (!clientClosed) {
-      res.write("data: [DONE]\n\n");
-      res.end();
     }
   }
 
+  // --- 2) Fallback: если не было ни одного токена — берём обычный completion и «стримим» сами
+  if (!clientClosed && !gotAnyToken) {
+    try {
+      const completion = await oai.chat.completions.create({
+        model: MODEL,
+        messages: [sys, ...safeMsgs],
+        // без stream
+      });
+      const full =
+        completion.choices?.[0]?.message?.content?.trim() || "…";
+
+      // «псевдо-стрим»: порциями, чтобы фронт красиво печатал
+      // можно по словам, можно по 10–15 символов — выбери, что приятнее
+      const CHUNK_SIZE = 20;
+      for (let i = 0; i < full.length && !clientClosed; i += CHUNK_SIZE) {
+        const part = full.slice(i, i + CHUNK_SIZE);
+        res.write(`data: ${part}\n\n`);
+        await new Promise((r) => setTimeout(r, 25));
+      }
+    } catch (e) {
+      if (!clientClosed) {
+        const msg = (e && (e.message || String(e))) || "Unknown error";
+res.write(`data: ⚠️ Fallback failed: ${msg}\n\n`);
+      }
+    }
+  }
+
+  if (!clientClosed) {
+    res.write("data: [DONE]\n\n");
+    res.end();
+  }
   return;
-}
- else {
+} else {
       // ---------- JSON ----------
       const completion = await oai.chat.completions.create({
         model: MODEL,
