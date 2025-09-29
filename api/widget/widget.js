@@ -93,7 +93,7 @@ res.flushHeaders?.();                     // форсируем отправку
 res.write(": heartbeat\n\n");             // первый байт — сразу (комментарий SSE)
         const parts = reply.split(" ");
         for (const w of parts) {
-          res.write(`data: ${w} \n\n`);
+          res.write(`data: ${w}\n\n`);
           await new Promise((r) => setTimeout(r, 15));
         }
         res.write("data: [DONE]\n\n");
@@ -107,42 +107,80 @@ res.write(": heartbeat\n\n");             // первый байт — сраз�
        return res.status(200).json({ reply });
     }
 
-    if (stream) {
-      // ---------- STREAM (SSE) ----------
-      res.setHeader("Access-Control-Allow-Origin", req.headers.origin || "*");
-      res.setHeader("Vary", "Origin");
-      res.setHeader("Content-Type", "text/event-stream; charset=utf-8");
-      res.setHeader("Cache-Control", "no-cache, no-transform");
-      res.setHeader("Connection", "keep-alive");
+  if (stream) {
+  // ---------- STREAM (SSE) ----------
+  res.setHeader("Access-Control-Allow-Origin", req.headers.origin || "*");
+  res.setHeader("Vary", "Origin");
+  res.setHeader("Content-Type", "text/event-stream; charset=utf-8");
+  res.setHeader("Cache-Control", "no-cache, no-transform");
+  res.setHeader("Connection", "keep-alive");
+  res.setHeader("X-Accel-Buffering", "no"); // на всякий
+  res.flushHeaders?.();
 
-      let clientClosed = false;
-      req.on("close", () => {
-        clientClosed = true;
-        try {
-          res.end();
-        } catch {}
-      });
+  // сразу «пнул» поток, чтобы клиент увидел открытие
+  res.write(": heartbeat\n\n");
 
-      const response = await oai.chat.completions.create({
-        model: MODEL,
-        stream: true,
-        messages: [sys, ...safeMsgs],
-      });
+let clientClosed = false;
+const endSafely = () => {
+  if (!clientClosed) {
+    clientClosed = true;
+    try { res.end(); } catch {}
+  }
+};
+req.on("close", endSafely);
+req.on("aborted", endSafely);
 
-      for await (const chunk of response) {
-        if (clientClosed) break;
-        const delta = chunk?.choices?.[0]?.delta?.content || "";
-        if (delta) {
-          // Отправляем корректный SSE-формат: "data: ...\n\n"
-          res.write(`data: ${delta}\n\n`);
-        }
+  // watchdog: если за 20с не пришло ни одного токена — завершаем с сообщением
+  let gotAnyToken = false;
+  const watchdog = setTimeout(() => {
+    if (!gotAnyToken && !clientClosed) {
+      res.write(`data: ⚠️ No tokens yet, finishing.\n\n`);
+      res.write("data: [DONE]\n\n");
+      res.end();
+    }
+  }, 20000);
+
+  try {
+    const response = await oai.chat.completions.create({
+      model: MODEL,
+      stream: true,
+      // не передаём temperature (некоторые модели ругаются на нестандартные значения)
+      messages: [sys, ...safeMsgs],
+    });
+
+    for await (const chunk of response) {
+      if (clientClosed) break;
+
+      // В новых SDK бывает 2 формата: delta.content или просто content
+      const c = chunk?.choices?.[0];
+      const delta = choice?.delta?.content ?? choice?.message?.content ?? "";
+
+      if (delta) {
+gotAnyToken = true;
+    res.write(`data: ${delta}\n\n`);
       }
-      if (!clientClosed) {
-        res.write("data: [DONE]\n\n");
-        res.end();
-      }
-      return;
-    } else {
+
+      // Если провайдер прислал finish_reason — завершаем
+if (choice?.finish_reason) break;
+    }
+  } catch (err) {
+    // если упали — покажем ошибку прямо в потоке, чтобы фронт не зависал
+    if (!clientClosed) {
+      const msg =
+        (err && (err.message || err.toString())) || "Internal error";
+      res.write(`data: ⚠️ ${msg}\n\n`);
+    }
+  } finally {
+    clearTimeout(watchdog);
+    if (!clientClosed) {
+      res.write("data: [DONE]\n\n");
+      res.end();
+    }
+  }
+
+  return;
+}
+ else {
       // ---------- JSON ----------
       const completion = await oai.chat.completions.create({
         model: MODEL,
