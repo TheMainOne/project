@@ -155,5 +155,6 @@ router.post("/chat", async (req, res) => {
     }
   }
 });
+router.options("/chat", cors(), (req, res) => res.sendStatus(204));
 
 export default router;

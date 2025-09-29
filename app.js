@@ -27,7 +27,16 @@ const app = express();
 const PORT = process.env.PORT || 3000;
 
 app.use(morgan("tiny"));
-app.use(cors());
+// app.use(cors());
+app.use(cors({
+  origin: true,                     // echo Origin
+  methods: ["GET", "POST", "OPTIONS"],
+  allowedHeaders: ["Content-Type", "Authorization"],
+  credentials: false
+}));
+
+// Явная обработка preflight для всех путей
+app.options("*", cors());
 app.use(express.json());
 
 /* ======================
