@@ -114,7 +114,6 @@ router.post("/chat", async (req, res) => {
       const response = await oai.chat.completions.create({
         model: MODEL,
         stream: true,
-        temperature: 0.2,
         messages: [sys, ...safeMsgs],
       });
 
@@ -135,7 +134,6 @@ router.post("/chat", async (req, res) => {
       // ---------- JSON ----------
       const completion = await oai.chat.completions.create({
         model: MODEL,
-        temperature: 0.2,
         messages: [sys, ...safeMsgs],
       });
       const reply = completion.choices?.[0]?.message?.content?.trim() || "";
