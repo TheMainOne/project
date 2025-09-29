@@ -88,6 +88,9 @@ res.setHeader("Vary", "Origin");
 res.setHeader("Content-Type","text/event-stream; charset=utf-8");
 res.setHeader("Cache-Control","no-cache, no-transform");
 res.setHeader("Connection","keep-alive");
+res.setHeader("X-Accel-Buffering", "no"); // для некоторых прокси
+res.flushHeaders?.();                     // форсируем отправку заголовков
+res.write(": heartbeat\n\n");             // первый байт — сразу (комментарий SSE)
         const parts = reply.split(" ");
         for (const w of parts) {
           res.write(`data: ${w} \n\n`);
@@ -169,5 +172,30 @@ res.setHeader("Connection","keep-alive");
 });
 router.options("/chat", (req, res) => res.sendStatus(204));
 router.get("/ping", (req, res) => res.json({ ok: true, t: Date.now() }));
+
+// for testing purpose
+router.get("/sse-test", async (req, res) => {
+  res.setHeader("Access-Control-Allow-Origin", req.headers.origin || "*");
+  res.setHeader("Vary", "Origin");
+  res.setHeader("Content-Type", "text/event-stream; charset=utf-8");
+  res.setHeader("Cache-Control", "no-cache, no-transform");
+  res.setHeader("Connection", "keep-alive");
+  res.setHeader("X-Accel-Buffering", "no");
+  res.flushHeaders?.();
+
+  res.write(": hello\n\n"); // комментарий — чтобы клиент сразу «увидел» поток
+
+  let i = 0;
+  const timer = setInterval(() => {
+    i += 1;
+    res.write(`data: tick ${i}\n\n`);
+    if (i >= 5) {
+      clearInterval(timer);
+      res.write("data: [DONE]\n\n");
+      res.end();
+    }
+  }, 500);
+});
+
 
 export default router;
