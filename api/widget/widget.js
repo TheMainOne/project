@@ -155,7 +155,7 @@ router.post("/chat", async (req, res) => {
     }
   }
 });
-router.options("/chat", cors(), (req, res) => res.sendStatus(204));
+router.options("/chat", (req, res) => res.sendStatus(204));
 router.get("/ping", (req, res) => res.json({ ok: true, t: Date.now() }));
 
 export default router;
