@@ -83,9 +83,11 @@ router.post("/chat", async (req, res) => {
     if (!oai) {
       const reply = fallbackReply(safeMsgs);
       if (stream) {
-        res.setHeader("Content-Type", "text/event-stream; charset=utf-8");
-        res.setHeader("Cache-Control", "no-cache, no-transform");
-        res.setHeader("Connection", "keep-alive");
+res.setHeader("Access-Control-Allow-Origin", req.headers.origin || "*");
+res.setHeader("Vary", "Origin");
+res.setHeader("Content-Type","text/event-stream; charset=utf-8");
+res.setHeader("Cache-Control","no-cache, no-transform");
+res.setHeader("Connection","keep-alive");
         const parts = reply.split(" ");
         for (const w of parts) {
           res.write(`data: ${w} \n\n`);
@@ -94,11 +96,18 @@ router.post("/chat", async (req, res) => {
         res.write("data: [DONE]\n\n");
         return res.end();
       }
-      return res.json({ reply });
+       if (!res.headersSent) {
+        res.setHeader("Access-Control-Allow-Origin", req.headers.origin || "*");
+        res.setHeader("Vary", "Origin");
+        res.setHeader("Content-Type", "application/json; charset=utf-8");
+       }
+       return res.status(200).json({ reply });
     }
 
     if (stream) {
       // ---------- STREAM (SSE) ----------
+      res.setHeader("Access-Control-Allow-Origin", req.headers.origin || "*");
+      res.setHeader("Vary", "Origin");
       res.setHeader("Content-Type", "text/event-stream; charset=utf-8");
       res.setHeader("Cache-Control", "no-cache, no-transform");
       res.setHeader("Connection", "keep-alive");
@@ -137,7 +146,12 @@ router.post("/chat", async (req, res) => {
         messages: [sys, ...safeMsgs],
       });
       const reply = completion.choices?.[0]?.message?.content?.trim() || "";
-      return res.json({ reply });
+      if (!res.headersSent) {
+        res.setHeader("Access-Control-Allow-Origin", req.headers.origin || "*");
+        res.setHeader("Vary", "Origin");
+        res.setHeader("Content-Type", "application/json; charset=utf-8");
+      }
+      return res.status(200).json({ reply });
     }
   } catch (e) {
     console.error("AIW /chat error:", e);
