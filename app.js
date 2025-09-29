@@ -5,6 +5,7 @@ import cors from "cors";
 import mongoose from "mongoose";
 import errorHandler from "./middlewares/errorHandler.js";
 import authRouter from "./api/auth.js";
+import widgetRouter from "./api/widget/widget.js";
 import sendTelegramMessage from "./services/telegramNotify.js";
 import { webhookCallback } from "grammy";
 import createBot from "./src/bot.js";
@@ -53,6 +54,7 @@ mongoose
 
     // твои API роуты
     app.use("/", authRouter);
+    app.use("/widget", widgetRouter);
 
     // error handlers
     app.use(errorHandler);
