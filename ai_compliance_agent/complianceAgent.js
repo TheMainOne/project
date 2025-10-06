@@ -942,26 +942,42 @@ async function tick() {
 /* =====================
    Bootstrap
 ===================== */
+// ... твой код выше
+
 async function main() {
   await mongoClient.connect();
   db = mongoClient.db(DB_NAME);
   materialsCol = db.collection('materials');
   documentsCol = db.collection('documents');
   processedEmailsCol = db.collection('processedEmails');
-  bomCol = db.collection('items'); 
-  regulatoryCol = db.collection('regulatory'); // ← та, что на твоём скрине
-  
+  bomCol = db.collection('items');
+  regulatoryCol = db.collection('regulatory');
 
-  console.log('Connected to Mongo. Starting scheduler...');
-  const schedule = CRON_SCHEDULE || '*/1 * * * *'; // every 5 minutes by default
-  cron.schedule(schedule, () => {
-    console.log(`[${new Date().toISOString()}] Gmail tick...`);
-    tick().catch(err => console.error('Tick failed:', err));
-  });
+  const useInternalCron = process.env.USE_INTERNAL_CRON === 'true';
+  if (useInternalCron) {
+    const schedule = process.env.CRON_SCHEDULE || '*/1 * * * *';
+    console.log('Starting internal scheduler:', schedule);
+    cron.schedule(schedule, () => {
+      console.log(`[${new Date().toISOString()}] Gmail tick...`);
+      tick().catch(err => console.error('Tick failed:', err));
+    });
 
-  // Optional: run once at start
-  await tick();
+    // при внутреннем cron — сразу один прогон и остаемся жить
+    await tick();
+  } else {
+    // внешний cron: один прогон и выходим
+    console.log('External cron mode: running single tick...');
+    await tick();
+    await mongoClient.close();
+    process.exit(0);
+  }
 }
+
+main().catch(err => {
+  console.error('Fatal:', err);
+  process.exit(1);
+});
+
 
 main().catch(err => {
   console.error('Fatal:', err);
