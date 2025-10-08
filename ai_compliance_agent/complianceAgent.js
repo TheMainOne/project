@@ -47,7 +47,7 @@ const PACKAGING_TERMS = [
   'label','sticker',
   'carton','box','tray','insert',
   'bag','sachet','pouch','polybag','wrap',
-  'package','packaging','ctn','pkc','pkg','lbl','lab','pch','sach','wrp'
+  'package','packaging','ctn','pkc','pkg','lbl','lab','pch','sach','wrp', 'pad', 'ptn', 'PARTITION'
 ];
 // единый регэксп для Mongo
 const PACKAGING_PATTERN = `\\b(?:${PACKAGING_TERMS.join('|')})\\b`;
@@ -777,7 +777,7 @@ const replyToEmail = (replyToHdr?.match(/<([^>]+)>/)?.[1] || replyToHdr || fromE
 
 const { text, html } = extractTextFromPayload(full.payload || {});
 const sfRef = findSalesforceRef({ subject, text, html });
-if (sfRef) console.log('[SF REF]', sfRef);
+
 
   // 1) ТОЛЬКО OpenAI → строгий JSON, БЕЗ fallback
   let extraction;
