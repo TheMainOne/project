@@ -194,68 +194,104 @@
   });
   sendBtn.addEventListener("click", doSend);
 
+
   let inflight = null;
-  async function doSend() {
-    const text = sanitize(input.value).trim();
-    if (!text || inflight) return;
 
-    history.push({ role: "user", content: text });
-    history.push({ role: "assistant", content: "" }); // streaming target
-    writeHistory(history);
-    render();
-    input.value = "";
+// НОВОЕ: аккуратный инкрементальный парсер SSE
+function pumpSSE(reader, onData) {
+  const decoder = new TextDecoder();
+  let buffer = ""; // копим «хвост» между чанками
 
-    const safeMsgs = history.map(({ role, content }) => ({ role, content })).slice(-30);
+  return (async () => {
+    while (true) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
 
-    // Abort controller to cancel if needed
-    const controller = new AbortController();
-    inflight = controller;
+      // режем только полные блоки, последний оставляем в буфере
+      const parts = buffer.split(/\r?\n\r?\n/);
+      buffer = parts.pop() || ""; // неполный «хвост» оставляем
 
-    try {
-      const res = await fetch(ENDPOINT, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "x-aiw-site": SITE_ID,
-        },
-        body: JSON.stringify({ messages: safeMsgs, stream: true, meta: { referrer: location.href } }),
-        signal: controller.signal,
-        keepalive: true,
-        mode: "cors",
-      });
-
-      if (!res.ok || !res.body) {
-        throw new Error("Bad response");
+      for (const block of parts) {
+        for (const ln of block.split(/\r?\n/)) {
+          if (ln.startsWith("data:")) {
+            onData(ln.slice(5).trimStart());
+          }
+        }
       }
+    }
 
-      const reader = res.body.getReader();
-      const decoder = new TextDecoder();
-      let assistantIndex = history.length - 1; // last placeholder
-
-      while (true) {
-        const { value, done } = await reader.read();
-        if (done) break;
-        const chunk = decoder.decode(value, { stream: true });
-        parseSSEChunk(chunk, (data) => {
-          if (data === "[DONE]") return; // final marker
-          // Append token
-          history[assistantIndex].content += data;
-          render();
-        });
+    // вдруг в конце остался полноценный блок без завершающего \n\n
+    if (buffer) {
+      for (const ln of buffer.split(/\r?\n/)) {
+        if (ln.startsWith("data:")) onData(ln.slice(5).trimStart());
       }
+    }
+  })();
+}
 
+async function doSend() {
+  const text = sanitize(input.value).trim();
+  if (!text || inflight) return;
 
+  history.push({ role: "user", content: text });
+  history.push({ role: "assistant", content: "" }); // placeholder
+  writeHistory(history);
+  render();
+  input.value = "";
 
-    } catch (err) {
-      // Graceful fallback message
-      const idx = history.length - 1;
-      history[idx].content += (history[idx].content ? "\n" : "") + (LANG.startsWith("ru") ? "Извините, произошла ошибка соединения." : "Sorry, connection error.");
-    } finally {
-      inflight = null;
+  const safeMsgs = history.map(({ role, content }) => ({ role, content })).slice(-30);
+  const controller = new AbortController();
+  inflight = controller;
+
+  try {
+    const res = await fetch(ENDPOINT, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "x-aiw-site": SITE_ID,
+      },
+      body: JSON.stringify({ messages: safeMsgs, stream: true, meta: { referrer: location.href } }),
+      signal: controller.signal,
+      keepalive: true,
+      mode: "cors",
+    });
+
+    if (!res.ok) throw new Error("Bad response");
+
+    const assistantIndex = history.length - 1;
+    const ct = (res.headers.get("content-type") || "").toLowerCase();
+
+    // ✅ если это НЕ SSE — читаем JSON целиком
+    if (!ct.includes("text/event-stream")) {
+      const text = await res.text(); // безопаснее: сначала как текст
+      let reply = "";
+      try { reply = (JSON.parse(text) || {}).reply || ""; } catch { reply = text || ""; }
+      history[assistantIndex].content = reply;
       writeHistory(history);
       render();
+      return;
     }
+
+    // ✅ нормальный SSE-режим
+    const reader = res.body.getReader();
+    await pumpSSE(reader, (data) => {
+      if (data === "[DONE]") return;
+      history[assistantIndex].content += data;
+      render();
+    });
+
+  } catch (err) {
+    const idx = history.length - 1;
+    history[idx].content += (history[idx].content ? "\n" : "") +
+      (LANG.startsWith("ru") ? "Извините, произошла ошибка соединения." : "Sorry, connection error.");
+  } finally {
+    inflight = null;
+    writeHistory(history);
+    render();
   }
+}
+
     function aiwOpen()  { try { if (panel.style.display === "none") btn.click(); } catch {} }
   function aiwClose() { try { if (panel.style.display !== "none") btn.click(); } catch {} }
   function aiwToggle(){ try { btn.click(); } catch {} }
