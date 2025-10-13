@@ -7,7 +7,11 @@
 */
 (function () {
   try {
-    var s = document.currentScript;
+     // robust: dynamic scripts + older browsers
+    var s = document.currentScript || (function () {
+      var arr = document.getElementsByTagName("script");
+        return arr[arr.length - 1];
+        })();
     // Support both currentScript and data- attributes passed explicitly
     var endpoint = s.getAttribute("data-endpoint");
     var siteId = s.getAttribute("data-site-id");

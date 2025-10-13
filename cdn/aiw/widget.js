@@ -243,6 +243,9 @@
           render();
         });
       }
+
+
+
     } catch (err) {
       // Graceful fallback message
       const idx = history.length - 1;
@@ -253,4 +256,15 @@
       render();
     }
   }
+    function aiwOpen()  { try { if (panel.style.display === "none") btn.click(); } catch {} }
+  function aiwClose() { try { if (panel.style.display !== "none") btn.click(); } catch {} }
+  function aiwToggle(){ try { btn.click(); } catch {} }
+
+  // Глобальные события
+  window.addEventListener("aiw:open", aiwOpen);
+  window.addEventListener("aiw:close", aiwClose);
+  window.addEventListener("aiw:toggle", aiwToggle);
+
+  // (опционально) экспортнём мини-API для отладки в консоли
+  window.__AIW__ = { open: aiwOpen, close: aiwClose, toggle: aiwToggle };
 })();
