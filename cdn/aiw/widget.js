@@ -43,16 +43,51 @@
   // ---------- DOM ----------
   const root = document.createElement("div");
   const shadow = root.attachShadow({ mode: "open" });
+  style.textContent = `
+@keyframes aiw-bounce {
+  0%, 80%, 100% { transform: scale(0.6); opacity: .45; }
+  40% { transform: scale(1); opacity: 1; }
+}
+.aiw-typing-bubble {
+  display: none;
+  align-self: flex-start;
+  max-width: 85%;
+  margin: 8px 0;
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: #EEF2FF;
+  box-shadow: none;
+}
+.aiw-typing-dots {
+  display: inline-flex;
+  gap: 6px;
+  align-items: center;
+}
+.aiw-typing-dot {
+  width: 8px; height: 8px;
+  border-radius: 50%;
+  background: #9aa1b2;
+  animation: aiw-bounce 1.2s infinite ease-in-out both;
+}
+.aiw-typing-dot:nth-child(2) { animation-delay: .15s; }
+.aiw-typing-dot:nth-child(3) { animation-delay: .30s; }
+`;
+shadow.appendChild(style);
     // typing bubble (assistant-style)
-  const typing = document.createElement("div");
-  typing.style.margin = "8px 0";
-  typing.style.maxWidth = "85%";
-  typing.style.whiteSpace = "pre-wrap";
-  typing.style.wordBreak = "break-word";
-  typing.style.alignSelf = "flex-start";
-  typing.style.padding = "10px 12px";
-  typing.style.borderRadius = "12px";
-  typing.style.background = "#EEF2FF"; // как ассистент
+const typing = document.createElement("div");
+typing.className = "aiw-typing-bubble";
+typing.innerHTML = `
+  <span class="aiw-typing-dots">
+    <span class="aiw-typing-dot"></span>
+    <span class="aiw-typing-dot"></span>
+    <span class="aiw-typing-dot"></span>
+  </span>
+`;
+body.appendChild(typing);
+
+// helpers to show/hide
+function showTyping() { typing.style.display = "inline-block"; body.scrollTop = body.scrollHeight; }
+function hideTyping() { typing.style.display = "none"; }
 
   const typingInner = document.createElement("div");
   typingInner.className = "aiw-dots";
@@ -137,6 +172,8 @@
   body.style.fontFamily = "system-ui, -apple-system, Segoe UI, Roboto, sans-serif";
   body.style.fontSize = "14px";
 
+
+  
   const footer = document.createElement("div");
   footer.style.padding = "10px";
   footer.style.borderTop = "1px solid #eee";
@@ -274,7 +311,7 @@ function pumpSSE(reader, onData) {
 
     try {
       // показать индикатор печати
-      showTyping();
+ showTyping(); // ← ПОКАЗАТЬ
 
       const res = await fetch(ENDPOINT, {
         method: "POST",
@@ -292,34 +329,43 @@ function pumpSSE(reader, onData) {
         mode: "cors",
       });
 
-      // спрятать индикатор
-      hideTyping();
-
-      if (!res.ok) throw new Error("Bad response");
-
-      // безопасно читаем как текст -> JSON
+       // если у тебя JSON-режим:
+    if (!((res.headers.get("content-type")||"").toLowerCase().includes("text/event-stream"))) {
       const raw = await res.text();
       let reply = "";
       try { reply = (JSON.parse(raw) || {}).reply || ""; } catch { reply = raw || ""; }
-
-      // теперь пушим ассистента одним сообщением
-      history.push({ role: "assistant", content: reply });
+      history.push({ role: "assistant", content: reply || (LANG.startsWith("ru") ? "…" : "…") });
       writeHistory(history);
       render();
+      return;
+    }
+
+    // если SSE-режим:
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder();
+    const assistantIndex = history.length;
+    history.push({ role: "assistant", content: "" });
+    writeHistory(history); render();
+
+    while (true) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      const chunk = decoder.decode(value, { stream: true });
+      // твой парсер SSE:
+      parseSSEChunk(chunk, (data) => {
+        if (data === "[DONE]") return;
+        history[assistantIndex].content += data;
+        render();
+      });
+    }
+
 
     } catch (err) {
-      hideTyping();
-      // graceful fallback
-      history.push({
-        role: "assistant",
-        content: LANG.startsWith("ru")
-          ? "Извините, произошла ошибка соединения."
-          : "Sorry, connection error."
-      });
-      writeHistory(history);
-      render();
+       history.push({ role: "assistant", content: LANG.startsWith("ru") ? "⚠️ Ошибка соединения" : "⚠️ Connection error" });
+    writeHistory(history); render();
     } finally {
-      inflight = null;
+        hideTyping();       // ← СПРЯТАТЬ
+    inflight = null;
     }
   }
 
