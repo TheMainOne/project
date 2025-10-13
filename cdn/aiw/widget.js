@@ -32,15 +32,25 @@ aiw widget (fixed)
   const shadow = root.attachShadow({ mode: "open" });
 
   // styles (Shadow DOM)
-  const style = document.createElement("style");
-  style.textContent = `
+const style = document.createElement("style");
+style.textContent = `
 @keyframes aiw-bounce { 0%,80%,100%{transform:scale(.6);opacity:.45} 40%{transform:scale(1);opacity:1} }
-.aiw-typing-bubble{ visibility:hidden; align-self:flex-start; max-width:85%; margin:8px 0; padding:10px 12px; border-radius:12px; background:#EEF2FF; }
+.aiw-typing-bubble{
+  display:inline-block;          /* <= всегда пузырь */
+  visibility:hidden;             /* <= прячем без сдвига вёрстки */
+  align-self:flex-start;
+  max-width:85%;
+  margin:8px 0;
+  padding:10px 12px;
+  border-radius:12px;
+  background:#EEF2FF;
+}
 .aiw-typing-dots{ display:inline-flex; gap:6px; align-items:center; }
 .aiw-typing-dot{ width:8px;height:8px;border-radius:50%;background:#9aa1b2; animation:aiw-bounce 1.2s infinite ease-in-out both; }
 .aiw-typing-dot:nth-child(2){ animation-delay:.15s }
 .aiw-typing-dot:nth-child(3){ animation-delay:.30s }
 `;
+
   shadow.appendChild(style);
 
   const wrap = document.createElement("div");
@@ -91,7 +101,15 @@ header.innerHTML = `<span>${TITLE}</span>`;
 header.appendChild(rightWrap);
 
   const body = document.createElement("div");
-  body.style.cssText = `flex:1;padding:12px;overflow:auto;font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;font-size:14px`;
+body.style.cssText = `
+  display:flex;
+  flex-direction:column;
+  flex:1;
+  padding:12px;
+  overflow:auto;
+  font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;
+  font-size:14px
+`;
 
   const footer = document.createElement("div");
   footer.style.cssText = `padding:10px;border-top:1px solid #eee;display:flex;gap:8px`;
@@ -124,8 +142,15 @@ header.appendChild(rightWrap);
       <span class="aiw-typing-dot"></span>
     </span>
   `;
-function showTyping(){ if(panel.style.display!=="none"){ typing.style.visibility="visible"; if(!typing.isConnected) body.appendChild(typing); body.scrollTop = body.scrollHeight; } }
-function hideTyping(){ typing.style.visibility="hidden"; }
+function showTyping() {
+  if (panel.style.display === "none") return;
+  if (!typing.isConnected) body.appendChild(typing);
+  typing.style.visibility = "visible";
+  body.scrollTop = body.scrollHeight;
+}
+function hideTyping() {
+  typing.style.visibility = "hidden";
+}
 
   // ---------- Chat logic ----------
   let history = readHistory();
