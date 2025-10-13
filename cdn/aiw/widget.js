@@ -43,6 +43,33 @@
   // ---------- DOM ----------
   const root = document.createElement("div");
   const shadow = root.attachShadow({ mode: "open" });
+    // typing bubble (assistant-style)
+  const typing = document.createElement("div");
+  typing.style.margin = "8px 0";
+  typing.style.maxWidth = "85%";
+  typing.style.whiteSpace = "pre-wrap";
+  typing.style.wordBreak = "break-word";
+  typing.style.alignSelf = "flex-start";
+  typing.style.padding = "10px 12px";
+  typing.style.borderRadius = "12px";
+  typing.style.background = "#EEF2FF"; // как ассистент
+
+  const typingInner = document.createElement("div");
+  typingInner.className = "aiw-dots";
+  typingInner.innerHTML = `<span class="aiw-dot"></span><span class="aiw-dot"></span><span class="aiw-dot"></span>`;
+  typing.appendChild(typingInner);
+
+  function showTyping() {
+    // не дублировать
+    if (!typing.isConnected) {
+      body.appendChild(typing);
+      body.scrollTop = body.scrollHeight;
+    }
+  }
+  function hideTyping() {
+    try { typing.remove(); } catch {}
+  }
+
 
   const wrap = document.createElement("div");
   wrap.setAttribute("part", "aiw-wrap");
@@ -206,7 +233,6 @@ function pumpSSE(reader, onData) {
     while (true) {
       const { value, done } = await reader.read();
       if (done) break;
-      buffer += decoder.decode(value, { stream: true });
       buffer += decoder.decode(value, { stream: false });
 
       // режем только полные блоки, последний оставляем в буфере
@@ -231,72 +257,72 @@ function pumpSSE(reader, onData) {
   })();
 }
 
-async function doSend() {
-  const text = sanitize(input.value).trim();
-  if (!text || inflight) return;
+  async function doSend() {
+    const text = sanitize(input.value).trim();
+    if (!text || inflight) return;
 
-  history.push({ role: "user", content: text });
-  history.push({ role: "assistant", content: "" }); // placeholder
-  writeHistory(history);
-  render();
-  input.value = "";
-
-  const safeMsgs = history.map(({ role, content }) => ({ role, content })).slice(-30);
-  const controller = new AbortController();
-  inflight = controller;
-
-  try {
-const res = await fetch(ENDPOINT, {
-  method: "POST",
-  headers: {
-    "Content-Type": "application/json",
-    "x-aiw-site": SITE_ID,
-  },
-  body: JSON.stringify({
-    messages: safeMsgs,
-    stream: false,                // <-- было true
-    meta: { referrer: location.href }
-  }),
-  signal: controller.signal,
-  keepalive: true,
-  mode: "cors",
-});
-
-
-    if (!res.ok) throw new Error("Bad response");
-
-    const assistantIndex = history.length - 1;
-    const ct = (res.headers.get("content-type") || "").toLowerCase();
-
-    // ✅ если это НЕ SSE — читаем JSON целиком
-    if (!ct.includes("text/event-stream")) {
-      const text = await res.text(); // безопаснее: сначала как текст
-      let reply = "";
-      try { reply = (JSON.parse(text) || {}).reply || ""; } catch { reply = text || ""; }
-      history[assistantIndex].content = reply;
-      writeHistory(history);
-      render();
-      return;
-    }
-
-    // ✅ нормальный SSE-режим
-    const reader = res.body.getReader();
-    await pumpSSE(reader, (data) => {
-      if (data === "[DONE]") return;
-      history[assistantIndex].content += data;
-      render();
-    });
-
-  } catch (err) {
-    const idx = history.length - 1;
-    history[idx].content += (history[idx].content ? "\n" : "") +
-      (LANG.startsWith("ru") ? "Извините, произошла ошибка соединения." : "Sorry, connection error.");
-  } finally {
-    inflight = null;
+    // пушим только юзера сразу
+    history.push({ role: "user", content: text });
     writeHistory(history);
     render();
+    input.value = "";
+
+    const safeMsgs = history.map(({ role, content }) => ({ role, content })).slice(-30);
+
+    const controller = new AbortController();
+    inflight = controller;
+
+    try {
+      // показать индикатор печати
+      showTyping();
+
+      const res = await fetch(ENDPOINT, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-aiw-site": SITE_ID,
+        },
+        body: JSON.stringify({
+          messages: safeMsgs,
+          stream: false, // JSON-режим
+          meta: { referrer: location.href }
+        }),
+        signal: controller.signal,
+        keepalive: true,
+        mode: "cors",
+      });
+
+      // спрятать индикатор
+      hideTyping();
+
+      if (!res.ok) throw new Error("Bad response");
+
+      // безопасно читаем как текст -> JSON
+      const raw = await res.text();
+      let reply = "";
+      try { reply = (JSON.parse(raw) || {}).reply || ""; } catch { reply = raw || ""; }
+
+      // теперь пушим ассистента одним сообщением
+      history.push({ role: "assistant", content: reply });
+      writeHistory(history);
+      render();
+
+    } catch (err) {
+      hideTyping();
+      // graceful fallback
+      history.push({
+        role: "assistant",
+        content: LANG.startsWith("ru")
+          ? "Извините, произошла ошибка соединения."
+          : "Sorry, connection error."
+      });
+      writeHistory(history);
+      render();
+    } finally {
+      inflight = null;
+    }
   }
-}
+
 
     function aiwOpen()  { try { if (panel.style.display === "none") btn.click(); } catch {} }
   function aiwClose() { try { if (panel.style.display !== "none") btn.click(); } catch {} }
