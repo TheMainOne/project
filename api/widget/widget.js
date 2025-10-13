@@ -1,4 +1,5 @@
 // api/widget/widget.js
+import 'dotenv/config';     
 import express from "express";
 import OpenAI from "openai";
 
@@ -8,6 +9,7 @@ const router = express.Router();
 const oai = process.env.OPENAI_API_KEY
   ? new OpenAI({ apiKey: process.env.OPENAI_API_KEY })
   : null;
+
 
 const MODEL = process.env.OPENAI_MODEL || "gpt-5-nano"; // можно сменить в .env
 const CURRENCY = process.env.AIW_CURRENCY || "USD";
