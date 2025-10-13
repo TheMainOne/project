@@ -9,6 +9,8 @@ import widgetRouter from "./api/widget/widget.js";
 import sendTelegramMessage from "./services/telegramNotify.js";
 import { webhookCallback } from "grammy";
 import createBot from "./src/bot.js";
+import widget from "./cdn/aiw/widget.js";
+
 
 /* ======================
    Bot env/config
@@ -64,6 +66,7 @@ mongoose
     // твои API роуты
     app.use("/", authRouter);
     app.use("/widget", widgetRouter);
+    app.use("/api/aiw", aiwRouter);
 
     // error handlers
     app.use(errorHandler);

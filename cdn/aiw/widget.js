@@ -7,7 +7,7 @@
 - Persists short chat history in localStorage per siteId.
 ====================================================
 */
-(function () {
+(function widget () {
   const CFG = (window.__AIW_CONFIG__ || {});
   const ENDPOINT = CFG.endpoint; // e.g. https://api.yourapp.com/api/aiw/chat
   const SITE_ID = CFG.siteId || (location.host + "::default");
@@ -268,3 +268,5 @@
   // (опционально) экспортнём мини-API для отладки в консоли
   window.__AIW__ = { open: aiwOpen, close: aiwClose, toggle: aiwToggle };
 })();
+
+export default widget;
