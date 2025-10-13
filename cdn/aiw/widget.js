@@ -268,5 +268,3 @@
   // (опционально) экспортнём мини-API для отладки в консоли
   window.__AIW__ = { open: aiwOpen, close: aiwClose, toggle: aiwToggle };
 })();
-
-export default widget;
