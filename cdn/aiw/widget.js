@@ -35,7 +35,7 @@ aiw widget (fixed)
   const style = document.createElement("style");
   style.textContent = `
 @keyframes aiw-bounce { 0%,80%,100%{transform:scale(.6);opacity:.45} 40%{transform:scale(1);opacity:1} }
-.aiw-typing-bubble{ display:none; align-self:flex-start; max-width:85%; margin:8px 0; padding:10px 12px; border-radius:12px; background:#EEF2FF; }
+.aiw-typing-bubble{ visibility:hidden; align-self:flex-start; max-width:85%; margin:8px 0; padding:10px 12px; border-radius:12px; background:#EEF2FF; }
 .aiw-typing-dots{ display:inline-flex; gap:6px; align-items:center; }
 .aiw-typing-dot{ width:8px;height:8px;border-radius:50%;background:#9aa1b2; animation:aiw-bounce 1.2s infinite ease-in-out both; }
 .aiw-typing-dot:nth-child(2){ animation-delay:.15s }
@@ -73,6 +73,23 @@ aiw widget (fixed)
   close.style.cssText = `background:transparent;border:none;color:#fff;font-size:20px;cursor:pointer`;
   header.appendChild(close);
 
+  const resetBtn = document.createElement("button");
+resetBtn.title = LANG.startsWith("ru") ? "Сбросить диалог" : "Reset chat";
+resetBtn.textContent = "↺";
+resetBtn.style.cssText = `
+  background:transparent;border:none;color:#fff;font-size:18px;cursor:pointer;
+  margin-right: 8px;
+`;
+
+// Порядок: [title] ... [Reset] [×]
+const rightWrap = document.createElement("div");
+rightWrap.style.display = "flex";
+rightWrap.style.alignItems = "center";
+rightWrap.appendChild(resetBtn);
+rightWrap.appendChild(close);
+header.innerHTML = `<span>${TITLE}</span>`;
+header.appendChild(rightWrap);
+
   const body = document.createElement("div");
   body.style.cssText = `flex:1;padding:12px;overflow:auto;font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;font-size:14px`;
 
@@ -107,8 +124,8 @@ aiw widget (fixed)
       <span class="aiw-typing-dot"></span>
     </span>
   `;
-  function showTyping(){ typing.style.display = "inline-block"; if(!typing.isConnected) body.appendChild(typing); body.scrollTop = body.scrollHeight; }
-  function hideTyping(){ typing.style.display = "none"; }
+function showTyping(){ if(panel.style.display!=="none"){ typing.style.visibility="visible"; if(!typing.isConnected) body.appendChild(typing); body.scrollTop = body.scrollHeight; } }
+function hideTyping(){ typing.style.visibility="hidden"; }
 
   // ---------- Chat logic ----------
   let history = readHistory();
@@ -137,7 +154,16 @@ aiw widget (fixed)
   let open = false;
   btn.addEventListener("click", () => { open = !open; panel.style.display = open ? "flex" : "none"; if (open) setTimeout(() => input.focus(), 0); });
   close.addEventListener("click", () => { open = false; panel.style.display = "none"; });
+resetBtn.addEventListener("click", (e) => {
+  e.preventDefault();
+  // по желанию: подтверждение
+  // if (!confirm(LANG.startsWith("ru") ? "Сбросить диалог?" : "Reset chat?")) return;
 
+  try { localStorage.removeItem(storeKey); } catch {}
+  history = [{ role: "assistant", content: WELCOME }];
+  writeHistory(history);
+  render();
+});
   input.addEventListener("keydown", (e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); doSend(); } });
   sendBtn.addEventListener("click", doSend);
 
