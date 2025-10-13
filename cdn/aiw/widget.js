@@ -1,41 +1,28 @@
-
 /*
 ====================================================
-2) widget.js (serve at https://cdn.yoursite.com/aiw/widget.js)
-- Pure vanilla JS, no dependencies. Shadow DOM encapsulated styles.
-- Streams tokens via fetch(SSE over POST) from your /api/aiw/chat endpoint.
-- Persists short chat history in localStorage per siteId.
+aiw widget (fixed)
 ====================================================
 */
 (function widget () {
   const CFG = (window.__AIW_CONFIG__ || {});
-  const ENDPOINT = CFG.endpoint; // e.g. https://api.yourapp.com/api/aiw/chat
-  const SITE_ID = CFG.siteId || (location.host + "::default");
-  const TITLE = CFG.title || "AI Assistant";
-  const ACCENT = CFG.accent || "#6D28D9";
+  const ENDPOINT = CFG.endpoint;
+  const SITE_ID  = CFG.siteId || (location.host + "::default");
+  const TITLE    = CFG.title || "AI Assistant";
+  const ACCENT   = CFG.accent || "#6D28D9";
   const POSITION = CFG.position === "bl" ? "bl" : "br";
-  const WELCOME = CFG.welcome || "Hi! How can I help?";
-  const LANG = CFG.lang || "en";
+  const WELCOME  = CFG.welcome || "Hi! How can I help?";
+  const LANG     = CFG.lang || "en";
 
   // ---------- Utilities ----------
   const storeKey = `aiw_hist_${SITE_ID}`;
-  const readHistory = () => {
-    try { return JSON.parse(localStorage.getItem(storeKey) || "[]"); } catch { return []; }
-  };
-  const writeHistory = (arr) => {
-    try { localStorage.setItem(storeKey, JSON.stringify(arr.slice(-30))); } catch {}
-  };
+  const readHistory = () => { try { return JSON.parse(localStorage.getItem(storeKey) || "[]"); } catch { return []; } };
+  const writeHistory = (arr) => { try { localStorage.setItem(storeKey, JSON.stringify(arr.slice(-30))); } catch {} };
   const sanitize = (s) => (s || "").toString().slice(0, 4000);
 
   function parseSSEChunk(buf, onData) {
-    // buf is a string of one or more SSE frames
-    const parts = buf.split(/\n\n/);
-    for (const block of parts) {
-      const lines = block.split(/\n/);
-      for (const ln of lines) {
-        if (ln.startsWith("data: ")) {
-          onData(ln.slice(6));
-        }
+    for (const block of buf.split(/\r?\n\r?\n/)) {
+      for (const ln of block.split(/\r?\n/)) {
+        if (ln.startsWith("data:")) onData(ln.slice(5).trimStart());
       }
     }
   }
@@ -43,71 +30,20 @@
   // ---------- DOM ----------
   const root = document.createElement("div");
   const shadow = root.attachShadow({ mode: "open" });
+
+  // styles (Shadow DOM)
+  const style = document.createElement("style");
   style.textContent = `
-@keyframes aiw-bounce {
-  0%, 80%, 100% { transform: scale(0.6); opacity: .45; }
-  40% { transform: scale(1); opacity: 1; }
-}
-.aiw-typing-bubble {
-  display: none;
-  align-self: flex-start;
-  max-width: 85%;
-  margin: 8px 0;
-  padding: 10px 12px;
-  border-radius: 12px;
-  background: #EEF2FF;
-  box-shadow: none;
-}
-.aiw-typing-dots {
-  display: inline-flex;
-  gap: 6px;
-  align-items: center;
-}
-.aiw-typing-dot {
-  width: 8px; height: 8px;
-  border-radius: 50%;
-  background: #9aa1b2;
-  animation: aiw-bounce 1.2s infinite ease-in-out both;
-}
-.aiw-typing-dot:nth-child(2) { animation-delay: .15s; }
-.aiw-typing-dot:nth-child(3) { animation-delay: .30s; }
+@keyframes aiw-bounce { 0%,80%,100%{transform:scale(.6);opacity:.45} 40%{transform:scale(1);opacity:1} }
+.aiw-typing-bubble{ display:none; align-self:flex-start; max-width:85%; margin:8px 0; padding:10px 12px; border-radius:12px; background:#EEF2FF; }
+.aiw-typing-dots{ display:inline-flex; gap:6px; align-items:center; }
+.aiw-typing-dot{ width:8px;height:8px;border-radius:50%;background:#9aa1b2; animation:aiw-bounce 1.2s infinite ease-in-out both; }
+.aiw-typing-dot:nth-child(2){ animation-delay:.15s }
+.aiw-typing-dot:nth-child(3){ animation-delay:.30s }
 `;
-shadow.appendChild(style);
-    // typing bubble (assistant-style)
-const typing = document.createElement("div");
-typing.className = "aiw-typing-bubble";
-typing.innerHTML = `
-  <span class="aiw-typing-dots">
-    <span class="aiw-typing-dot"></span>
-    <span class="aiw-typing-dot"></span>
-    <span class="aiw-typing-dot"></span>
-  </span>
-`;
-body.appendChild(typing);
-
-// helpers to show/hide
-function showTyping() { typing.style.display = "inline-block"; body.scrollTop = body.scrollHeight; }
-function hideTyping() { typing.style.display = "none"; }
-
-  const typingInner = document.createElement("div");
-  typingInner.className = "aiw-dots";
-  typingInner.innerHTML = `<span class="aiw-dot"></span><span class="aiw-dot"></span><span class="aiw-dot"></span>`;
-  typing.appendChild(typingInner);
-
-  function showTyping() {
-    // не дублировать
-    if (!typing.isConnected) {
-      body.appendChild(typing);
-      body.scrollTop = body.scrollHeight;
-    }
-  }
-  function hideTyping() {
-    try { typing.remove(); } catch {}
-  }
-
+  shadow.appendChild(style);
 
   const wrap = document.createElement("div");
-  wrap.setAttribute("part", "aiw-wrap");
   wrap.style.position = "fixed";
   wrap.style.zIndex = 2147483000;
   wrap.style[POSITION === "br" ? "right" : "left"] = "20px";
@@ -115,270 +51,179 @@ function hideTyping() { typing.style.display = "none"; }
   shadow.appendChild(wrap);
 
   const btn = document.createElement("button");
-  btn.setAttribute("part", "aiw-button");
-  btn.setAttribute("aria-label", TITLE);
-  btn.style.width = "56px";
-  btn.style.height = "56px";
-  btn.style.borderRadius = "50%";
-  btn.style.border = "none";
-  btn.style.cursor = "pointer";
-  btn.style.boxShadow = "0 8px 20px rgba(0,0,0,0.2)";
-  btn.style.background = ACCENT;
-  btn.style.color = "#fff";
-  btn.style.fontWeight = "700";
-  btn.style.fontSize = "16px";
+  btn.style.cssText = `
+    width:56px;height:56px;border-radius:50%;border:none;cursor:pointer;
+    box-shadow:0 8px 20px rgba(0,0,0,.2);background:${ACCENT};color:#fff;
+    font-weight:700;font-size:16px;
+  `;
   btn.textContent = "AI";
 
   const panel = document.createElement("div");
-  panel.setAttribute("part", "aiw-panel");
-  panel.style.position = "absolute";
-  panel.style[POSITION === "br" ? "right" : "left"] = "0";
-  panel.style.bottom = "70px";
-  panel.style.width = "360px";
-  panel.style.maxWidth = "80vw";
-  panel.style.height = "480px";
-  panel.style.maxHeight = "70vh";
-  panel.style.display = "none";
-  panel.style.flexDirection = "column";
-  panel.style.background = "#fff";
-  panel.style.borderRadius = "16px";
-  panel.style.overflow = "hidden";
-  panel.style.boxShadow = "0 14px 44px rgba(0,0,0,0.25)";
+  panel.style.cssText = `
+    position:absolute;${POSITION === "br" ? "right:0" : "left:0"};bottom:70px;
+    width:360px;max-width:80vw;height:480px;max-height:70vh;display:none;flex-direction:column;
+    background:#fff;border-radius:16px;overflow:hidden;box-shadow:0 14px 44px rgba(0,0,0,.25);
+  `;
 
   const header = document.createElement("div");
-  header.style.padding = "12px 16px";
-  header.style.background = ACCENT;
-  header.style.color = "#fff";
-  header.style.fontWeight = "700";
-  header.style.display = "flex";
-  header.style.alignItems = "center";
-  header.style.justifyContent = "space-between";
+  header.style.cssText = `padding:12px 16px;background:${ACCENT};color:#fff;font-weight:700;display:flex;align-items:center;justify-content:space-between`;
   header.innerHTML = `<span>${TITLE}</span>`;
-
   const close = document.createElement("button");
   close.textContent = "×";
-  close.style.background = "transparent";
-  close.style.border = "none";
-  close.style.color = "#fff";
-  close.style.fontSize = "20px";
-  close.style.cursor = "pointer";
-
+  close.style.cssText = `background:transparent;border:none;color:#fff;font-size:20px;cursor:pointer`;
   header.appendChild(close);
 
   const body = document.createElement("div");
-  body.style.flex = "1";
-  body.style.padding = "12px";
-  body.style.overflow = "auto";
-  body.style.fontFamily = "system-ui, -apple-system, Segoe UI, Roboto, sans-serif";
-  body.style.fontSize = "14px";
+  body.style.cssText = `flex:1;padding:12px;overflow:auto;font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;font-size:14px`;
 
-
-  
   const footer = document.createElement("div");
-  footer.style.padding = "10px";
-  footer.style.borderTop = "1px solid #eee";
-  footer.style.display = "flex";
-  footer.style.gap = "8px";
+  footer.style.cssText = `padding:10px;border-top:1px solid #eee;display:flex;gap:8px`;
 
   const input = document.createElement("textarea");
   input.rows = 1;
   input.placeholder = LANG.startsWith("ru") ? "Спросите что-нибудь…" : "Ask me anything…";
-  input.style.flex = "1";
-  input.style.resize = "none";
-  input.style.border = "1px solid #ddd";
-  input.style.borderRadius = "10px";
-  input.style.padding = "10px";
-  input.style.outline = "none";
+  input.style.cssText = `flex:1;resize:none;border:1px solid #ddd;border-radius:10px;padding:10px;outline:none`;
 
   const sendBtn = document.createElement("button");
   sendBtn.textContent = LANG.startsWith("ru") ? "Отправить" : "Send";
-  sendBtn.style.background = ACCENT;
-  sendBtn.style.color = "#fff";
-  sendBtn.style.border = "none";
-  sendBtn.style.borderRadius = "10px";
-  sendBtn.style.padding = "0 14px";
-  sendBtn.style.cursor = "pointer";
+  sendBtn.style.cssText = `background:${ACCENT};color:#fff;border:none;border-radius:10px;padding:0 14px;cursor:pointer`;
 
   footer.appendChild(input);
   footer.appendChild(sendBtn);
-
   panel.appendChild(header);
   panel.appendChild(body);
   panel.appendChild(footer);
-
   wrap.appendChild(btn);
   wrap.appendChild(panel);
   document.body.appendChild(root);
 
+  // typing bubble (created AFTER body exists)
+  const typing = document.createElement("div");
+  typing.className = "aiw-typing-bubble";
+  typing.innerHTML = `
+    <span class="aiw-typing-dots">
+      <span class="aiw-typing-dot"></span>
+      <span class="aiw-typing-dot"></span>
+      <span class="aiw-typing-dot"></span>
+    </span>
+  `;
+  function showTyping(){ typing.style.display = "inline-block"; if(!typing.isConnected) body.appendChild(typing); body.scrollTop = body.scrollHeight; }
+  function hideTyping(){ typing.style.display = "none"; }
+
   // ---------- Chat logic ----------
   let history = readHistory();
-  if (history.length === 0) {
-    history.push({ role: "assistant", content: WELCOME });
-  }
+  if (history.length === 0) history.push({ role: "assistant", content: WELCOME });
 
   function render() {
     body.innerHTML = "";
-    history.forEach((m, idx) => {
+    for (const m of history) {
       const bubble = document.createElement("div");
       bubble.style.margin = "8px 0";
       bubble.style.maxWidth = "85%";
       bubble.style.whiteSpace = "pre-wrap";
       bubble.style.wordBreak = "break-word";
-
       const isUser = m.role === "user";
       bubble.style.alignSelf = isUser ? "flex-end" : "flex-start";
       bubble.style.padding = "10px 12px";
       bubble.style.borderRadius = "12px";
       bubble.style.background = isUser ? "#F1F5F9" : "#EEF2FF";
       bubble.textContent = m.content;
-
       body.appendChild(bubble);
-    });
+    }
     body.scrollTop = body.scrollHeight;
   }
-
   render();
 
   let open = false;
-  btn.addEventListener("click", () => {
-    open = !open;
-    panel.style.display = open ? "flex" : "none";
-    if (open) setTimeout(() => input.focus(), 0);
-  });
-  close.addEventListener("click", () => {
-    open = false;
-    panel.style.display = "none";
-  });
+  btn.addEventListener("click", () => { open = !open; panel.style.display = open ? "flex" : "none"; if (open) setTimeout(() => input.focus(), 0); });
+  close.addEventListener("click", () => { open = false; panel.style.display = "none"; });
 
-  input.addEventListener("keydown", (e) => {
-    if (e.key === "Enter" && !e.shiftKey) {
-      e.preventDefault();
-      doSend();
-    }
-  });
+  input.addEventListener("keydown", (e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); doSend(); } });
   sendBtn.addEventListener("click", doSend);
 
+  function pumpSSE(reader, onData) {
+    const decoder = new TextDecoder();
+    let buffer = "";
+    return (async () => {
+      while (true) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        const parts = buffer.split(/\r?\n\r?\n/);
+        buffer = parts.pop() || "";
+        parts.forEach(block => block.split(/\r?\n/).forEach(ln => { if (ln.startsWith("data:")) onData(ln.slice(5).trimStart()); }));
+      }
+      if (buffer) buffer.split(/\r?\n/).forEach(ln => { if (ln.startsWith("data:")) onData(ln.slice(5).trimStart()); });
+    })();
+  }
 
   let inflight = null;
-
-// НОВОЕ: аккуратный инкрементальный парсер SSE
-function pumpSSE(reader, onData) {
-  const decoder = new TextDecoder();
-  let buffer = ""; // копим «хвост» между чанками
-
-  return (async () => {
-    while (true) {
-      const { value, done } = await reader.read();
-      if (done) break;
-      buffer += decoder.decode(value, { stream: false });
-
-      // режем только полные блоки, последний оставляем в буфере
-      const parts = buffer.split(/\r?\n\r?\n/);
-      buffer = parts.pop() || ""; // неполный «хвост» оставляем
-
-      for (const block of parts) {
-        for (const ln of block.split(/\r?\n/)) {
-          if (ln.startsWith("data:")) {
-            onData(ln.slice(5).trimStart());
-          }
-        }
-      }
-    }
-
-    // вдруг в конце остался полноценный блок без завершающего \n\n
-    if (buffer) {
-      for (const ln of buffer.split(/\r?\n/)) {
-        if (ln.startsWith("data:")) onData(ln.slice(5).trimStart());
-      }
-    }
-  })();
-}
 
   async function doSend() {
     const text = sanitize(input.value).trim();
     if (!text || inflight) return;
 
-    // пушим только юзера сразу
     history.push({ role: "user", content: text });
     writeHistory(history);
     render();
     input.value = "";
 
     const safeMsgs = history.map(({ role, content }) => ({ role, content })).slice(-30);
-
     const controller = new AbortController();
     inflight = controller;
 
     try {
-      // показать индикатор печати
- showTyping(); // ← ПОКАЗАТЬ
+      showTyping();
 
       const res = await fetch(ENDPOINT, {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "x-aiw-site": SITE_ID,
-        },
-        body: JSON.stringify({
-          messages: safeMsgs,
-          stream: false, // JSON-режим
-          meta: { referrer: location.href }
-        }),
+        headers: { "Content-Type": "application/json", "x-aiw-site": SITE_ID },
+        body: JSON.stringify({ messages: safeMsgs, stream: false, meta: { referrer: location.href } }),
         signal: controller.signal,
         keepalive: true,
         mode: "cors",
       });
 
-       // если у тебя JSON-режим:
-    if (!((res.headers.get("content-type")||"").toLowerCase().includes("text/event-stream"))) {
-      const raw = await res.text();
-      let reply = "";
-      try { reply = (JSON.parse(raw) || {}).reply || ""; } catch { reply = raw || ""; }
-      history.push({ role: "assistant", content: reply || (LANG.startsWith("ru") ? "…" : "…") });
-      writeHistory(history);
-      render();
-      return;
-    }
+      const ct = (res.headers.get("content-type") || "").toLowerCase();
 
-    // если SSE-режим:
-    const reader = res.body.getReader();
-    const decoder = new TextDecoder();
-    const assistantIndex = history.length;
-    history.push({ role: "assistant", content: "" });
-    writeHistory(history); render();
+      if (!ct.includes("text/event-stream")) {
+        // JSON mode
+        const raw = await res.text();
+        let reply = "";
+        try { reply = (JSON.parse(raw) || {}).reply || ""; } catch { reply = raw || ""; }
+        history.push({ role: "assistant", content: reply || (LANG.startsWith("ru") ? "…" : "…") });
+        writeHistory(history);
+        render();
+        return;
+      }
 
-    while (true) {
-      const { value, done } = await reader.read();
-      if (done) break;
-      const chunk = decoder.decode(value, { stream: true });
-      // твой парсер SSE:
-      parseSSEChunk(chunk, (data) => {
+      // SSE mode
+      history.push({ role: "assistant", content: "" });
+      const assistantIndex = history.length - 1;
+      writeHistory(history); render();
+
+      const reader = res.body.getReader();
+      await pumpSSE(reader, (data) => {
         if (data === "[DONE]") return;
         history[assistantIndex].content += data;
         render();
       });
-    }
-
 
     } catch (err) {
-       history.push({ role: "assistant", content: LANG.startsWith("ru") ? "⚠️ Ошибка соединения" : "⚠️ Connection error" });
-    writeHistory(history); render();
+      history.push({ role: "assistant", content: LANG.startsWith("ru") ? "⚠️ Ошибка соединения" : "⚠️ Connection error" });
+      writeHistory(history); render();
     } finally {
-        hideTyping();       // ← СПРЯТАТЬ
-    inflight = null;
+      hideTyping();
+      inflight = null;
     }
   }
 
-
-    function aiwOpen()  { try { if (panel.style.display === "none") btn.click(); } catch {} }
-  function aiwClose() { try { if (panel.style.display !== "none") btn.click(); } catch {} }
+  // Global events
+  function aiwOpen(){ try { if (panel.style.display === "none") btn.click(); } catch {} }
+  function aiwClose(){ try { if (panel.style.display !== "none") btn.click(); } catch {} }
   function aiwToggle(){ try { btn.click(); } catch {} }
-
-  // Глобальные события
   window.addEventListener("aiw:open", aiwOpen);
   window.addEventListener("aiw:close", aiwClose);
   window.addEventListener("aiw:toggle", aiwToggle);
-
-  // (опционально) экспортнём мини-API для отладки в консоли
   window.__AIW__ = { open: aiwOpen, close: aiwClose, toggle: aiwToggle };
 })();
