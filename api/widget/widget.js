@@ -1,4 +1,4 @@
-// api/aiw.js
+// api/widget/widget.js
 import express from "express";
 import OpenAI from "openai";
 
