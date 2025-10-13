@@ -207,6 +207,7 @@ function pumpSSE(reader, onData) {
       const { value, done } = await reader.read();
       if (done) break;
       buffer += decoder.decode(value, { stream: true });
+      buffer += decoder.decode(value, { stream: false });
 
       // режем только полные блоки, последний оставляем в буфере
       const parts = buffer.split(/\r?\n\r?\n/);
@@ -245,17 +246,22 @@ async function doSend() {
   inflight = controller;
 
   try {
-    const res = await fetch(ENDPOINT, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "x-aiw-site": SITE_ID,
-      },
-      body: JSON.stringify({ messages: safeMsgs, stream: true, meta: { referrer: location.href } }),
-      signal: controller.signal,
-      keepalive: true,
-      mode: "cors",
-    });
+const res = await fetch(ENDPOINT, {
+  method: "POST",
+  headers: {
+    "Content-Type": "application/json",
+    "x-aiw-site": SITE_ID,
+  },
+  body: JSON.stringify({
+    messages: safeMsgs,
+    stream: false,                // <-- было true
+    meta: { referrer: location.href }
+  }),
+  signal: controller.signal,
+  keepalive: true,
+  mode: "cors",
+});
+
 
     if (!res.ok) throw new Error("Bad response");
 
