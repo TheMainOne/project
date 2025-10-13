@@ -789,9 +789,8 @@ const sfRef = findSalesforceRef({ subject, text, html });
     await addLabel(msg.id, 'AutoError: OpenAI');
     return { skipped: true, reason: 'openai error' };
   }
+   
 
-
-  // === НИЖЕ — ПРОДАКШН-ЛОГИКА (включишь, когда будешь готов) ===
 
   // Если это не запрос на комплаенс — просто пометим и выйдем
   if (extraction.category !== 'compliance') {
