@@ -42,6 +42,20 @@ export async function retrieveTopK(siteId, query, { k=5, softLimit=300, minScore
   return scored.filter(x => x.score >= minScore).slice(0, k);
 }
 
+function condenseText(t, limit = 400) {
+  t = (t || '').replace(/\s+/g, ' ').trim();
+  if (t.length <= limit) return t;
+  // грубо: берём начало и конец — часто там хедеры/цены/выводы
+  const head = t.slice(0, Math.floor(limit * 0.7));
+  const tail = t.slice(-Math.floor(limit * 0.3));
+  return `${head} … ${tail}`;
+}
+
+const compact = filtered.map(c => ({
+  ...c,
+  text: condenseText(c.text, 500) // режем каждый чанк
+}));
+
 // services/web_crawler/core.js
 export function buildPrompt({ query, contexts, lang="ru" }) {
   const intro = lang.startsWith("ru")

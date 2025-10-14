@@ -3,8 +3,8 @@ import 'dotenv/config';
 import express from "express";
 import OpenAI from "openai";
 
-import { retrieveTopK, buildPrompt } from "../../services/web_crawler/core.js";
-import { tryFastAnswer } from '../../services/web_crawler/fastAnswer.js';
+import { retrieveTopK } from "../../services/web_crawler/core.js";
+// import { tryFastAnswer } from '../../services/web_crawler/fastAnswer.js';
 
 const router = express.Router();
 
@@ -179,72 +179,85 @@ router.post("/chat", async (req, res) => {
       res.write("data: [DONE]\n\n");
       return res.end();
     }
+const contextsRaw = await retrieveTopK(siteId, query, { k: 5, softLimit: 300, minScore: 0.18 });
 
-    // === 1) RAG retrieve (NEW)
-    const contexts = await retrieveTopK(siteId, query, { k: 5, softLimit: 300, minScore: 0.18 });
+// 2) Фильтруем + ужимаем контекст, чтобы не жечь токены
+function condenseText(t, limit = 500) {
+  t = (t || '').replace(/\s+/g, ' ').trim();
+  if (t.length <= limit) return t;
+  const head = t.slice(0, Math.floor(limit * 0.7));
+  const tail = t.slice(-Math.floor(limit * 0.3));
+  return `${head} … ${tail}`;
+}
 
-    // === 2) Fast path без LLM (NEW)
-    const fast = tryFastAnswer(query, contexts, lang);
-    if (fast) {
-      const payload = { reply: fast.reply, citations: fast.citations || [] };
-      putToCache(cacheKey, payload);
-      setSourceHeaders(res, "rag-extractive", payload.citations);
-      if (!stream) {
-        setJSONHeaders(req, res);
-        return sendJSON(req, res, { reply: payload.reply, source: "rag-extractive", citations: payload.citations });
-      }
-      setSSEHeaders(req, res);
-      res.write(": heartbeat\n\n");
-      const CH = 24;
-      for (let i = 0; i < payload.reply.length; i += CH) {
-        res.write(`data: ${payload.reply.slice(i, i + CH)}\n\n`);
-      }
-      res.write("data: [DONE]\n\n");
-      return res.end();
-    }
+const topScore = contextsRaw[0]?.score ?? 0;
+const gate = Math.max(0.18, Math.min(0.28, topScore - 0.06));
+const contexts = contextsRaw
+  .filter(c => (c.score ?? 0) >= gate)
+  .slice(0, 3)
+  .map(c => ({ ...c, text: condenseText(c.text, 500) }));
 
-    // === 3) Нет контекста — честный ответ (NEW)
-    if (!contexts.length) {
-      const reply = oai
-        ? (lang.startsWith("ru") ? "Недостаточно данных в базе для точного ответа." : "Not enough data in the knowledge base.")
-        : (lang.startsWith("ru") ? `Вы спросили: "${query}"\n\nДемо-ответ (нет OPENAI_API_KEY).` : `You asked: "${query}"\n\nDemo reply (no OPENAI_API_KEY).`);
-      const payload = { reply, citations: [] };
-      putToCache(cacheKey, payload);
-      setSourceHeaders(res, "no-context", []);
-      if (!stream) {
-        setJSONHeaders(req, res);
-        return sendJSON(req, res, { reply: payload.reply, source: "no-context", citations: [] });
-      }
-      setSSEHeaders(req, res);
-      res.write(`data: ${reply}\n\n`);
-      res.write("data: [DONE]\n\n");
-      return res.end();
-    }
+// 3) Строгий промпт: отвечаем только по контексту (но всегда через LLM)
+function buildStrictPrompt({ query, contexts, lang="ru" }) {
+  const RULES_RU = `Ты ассистент сайта. Формируй красивый, краткий ответ ТОЛЬКО по приведённым фрагментам (Контекст).
+Если факта нет в Контексте — ответь кратко: «Недостаточно данных».
+Формат: 2–4 буллета или 2–4 предложения. Без домыслов. Цены — с валютой ровно как в Контексте.`;
 
-    // === 4) LLM с RAG-контекстом (NEW)
-    const prompt = buildPrompt({ query, contexts, lang });
-    const citations = contexts.map((c, i) => ({ idx: i + 1, url: c.url }));
+  const RULES_EN = `You are a site assistant. Write a clean, concise answer ONLY from the provided snippets (Context).
+If information is missing, say “Not enough data”.
+Use 2–4 bullets or sentences. No speculation. Keep currency exactly as in Context.`;
 
-    if (!oai) {
-      const reply = (lang.startsWith("ru")
-        ? `Демо-ответ (нет OPENAI_API_KEY).`
-        : `Demo reply (no OPENAI_API_KEY).`);
-      const payload = { reply, citations };
-      putToCache(cacheKey, payload);
-      setSourceHeaders(res, "rag", citations);
-      if (!stream) {
-        setJSONHeaders(req, res);
-        return sendJSON(req, res, { reply: payload.reply, source: "rag", citations });
-      }
-      setSSEHeaders(req, res);
-      res.write(": heartbeat\n\n");
-      const CH = 24;
-      for (let i = 0; i < reply.length; i += CH) {
-        res.write(`data: ${reply.slice(i, i + CH)}\n\n`);
-      }
-      res.write("data: [DONE]\n\n");
-      return res.end();
-    }
+  const rules = lang.startsWith('ru') ? RULES_RU : RULES_EN;
+  const ctx = contexts.map((c,i)=>`[${i+1}] (${c.url}) ${c.text}`).join('\n\n');
+
+  return [
+    { role: "system", content: rules },
+    { role: "user", content: lang.startsWith('ru')
+        ? `Вопрос: ${query}\n\nКонтекст:\n${ctx || '—'}\n\nОтвет:`
+        : `Question: ${query}\n\nContext:\n${ctx || '—'}\n\nAnswer:` }
+  ];
+}
+
+// 4) Подбор модели: дешёвая для коротких, средняя — для длинных
+function pickModel(query, contexts) {
+  const len = (query||'').length + contexts.reduce((n,c)=>n + (c.text||'').length, 0);
+  if (len < 1200) return process.env.OPENAI_CHEAP_MODEL || 'gpt-5-nano';
+  return process.env.OPENAI_MID_MODEL || 'gpt-4o-mini';
+}
+
+const citations = contexts.map((c,i)=>({ idx: i+1, url: c.url }));
+const prompt = buildStrictPrompt({ query, contexts, lang });
+const modelToUse = pickModel(query, contexts);
+
+// 5) Если нет ключа — всё равно «красиво» отвечаем мок-LLM
+if (!oai) {
+  const reply = lang.startsWith('ru')
+    ? (contexts.length ? 'Демо-ответ (нет OPENAI_API_KEY).' : 'Недостаточно данных.')
+    : (contexts.length ? 'Demo reply (no OPENAI_API_KEY).' : 'Not enough data.');
+  const payload = { reply, citations };
+  putToCache(cacheKey, payload);
+  if (!stream) return sendJSON(req, res, { ...payload, source: contexts.length ? 'rag-llm' : 'llm-no-context' });
+  setSSEHeaders(req, res); res.write(": heartbeat\n\n");
+  const CH=24; for (let i=0;i<reply.length;i+=CH) res.write(`data: ${reply.slice(i,i+CH)}\n\n`);
+  res.write("data: [DONE]\n\n"); return res.end();
+}
+
+// 6) LLM всегда формирует финальный ответ (stream=false у фронта)
+const completion = await oai.chat.completions.create({
+  model: modelToUse,
+  messages: prompt,
+  temperature: 0.15,
+  top_p: 0.9,
+  max_tokens: 320
+});
+
+const reply = completion.choices?.[0]?.message?.content?.trim() || (lang.startsWith('ru') ? '…' : '…');
+const payload = { reply, citations };
+putToCache(cacheKey, payload);
+
+// JSON-ответ с источником
+setSourceHeaders(res, contexts.length ? "rag-llm" : "llm-no-context", citations);
+return sendJSON(req, res, { ...payload, source: contexts.length ? "rag-llm" : "llm-no-context" });
 
     // ——— режимы: STREAM vs JSON ———
     if (stream) {

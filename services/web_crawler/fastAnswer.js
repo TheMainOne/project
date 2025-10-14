@@ -64,3 +64,18 @@ export function tryFastAnswer(query, contexts, lang="ru") {
   return null;
 }
 
+const topScore = contexts[0]?.score || 0;
+const gateScore = Math.max(0.20, Math.min(0.28, topScore - 0.06));
+const filtered = contexts
+  .filter(c => c.score >= gateScore)
+  .slice(0, 3);
+
+if (!filtered.length) {
+  return sendJSON(req, res, {
+    reply: lang.startsWith('ru')
+      ? 'Недостаточно данных в базе для точного ответа.'
+      : 'Not enough data in the knowledge base.',
+    source: 'no-context',
+    citations: []
+  });
+}
