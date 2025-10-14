@@ -1,4 +1,4 @@
-// =========================
+
 // Web Crawler — MVP (+ optional JS render)
 // Node.js + MongoDB (Mongoose) — ESM imports
 // =========================
@@ -22,6 +22,7 @@ Usage:
 
 import path from 'path';
 import { fileURLToPath } from 'url';
+import { execa } from 'execa'; 
 import dotenv from 'dotenv';
 import PQueue from 'p-queue';
 import got from 'got';
@@ -49,6 +50,7 @@ let renderCtx = null;
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname  = path.dirname(__filename);
+const rendererPath = path.resolve(__dirname, 'render_one.js');
 
 // грузим .env из корня проекта (поднимемся на два уровня от services/web_crawler/)
 dotenv.config({ path: path.resolve(__dirname, '../../.env') });
@@ -76,7 +78,13 @@ const EXCLUDE      = (parseArgFlag('exclude', '') || '').split(',').map(s => s.t
 const MAX_DEPTH    = parseInt(parseArgFlag('depth', '5'), 10);
 const DOWNLOAD_PDFS= String(parseArgFlag('downloadPdfs', 'false')).toLowerCase() === 'true';
 const IGNORE_ROBOTS= String(parseArgFlag('ignoreRobots', 'false')).toLowerCase() === 'true';
-const RENDER       = String(parseArgFlag('render', 'false')).toLowerCase() === 'true';
+// ---- render mode flags ----
+const RENDER_MODE = String(parseArgFlag('renderMode', 'never')).toLowerCase(); // 'never' | 'child' | 'inline'
+const RENDER_FLAG = String(parseArgFlag('render', 'false')).toLowerCase() === 'true';
+// Включаем рендер, если либо --render true, либо renderMode != 'never'
+const RENDER = RENDER_FLAG || RENDER_MODE === 'child' || RENDER_MODE === 'inline';
+console.log('[MODE]', RENDER_MODE || (RENDER_FLAG ? 'render=true' : 'no-render'));
+
 
 if (!SEED) {
   console.error('Missing --seed URL');
@@ -171,10 +179,40 @@ function chunkText(text, chunkSize = 1800, overlap = 200) {
 
 async function initRenderer() {
   if (!chromium) throw new Error('Playwright not installed. Run: npm i playwright');
-  browser = await chromium.launch({ headless: true });     // можно добавить channel: 'chrome' при желании
-  renderCtx = await browser.newContext({ userAgent: UA });
+  browser = await chromium.launch({
+    headless: true,
+    args: [
+      '--no-sandbox',
+      '--disable-dev-shm-usage',
+      '--disable-gpu'
+    ]
+  });
+renderCtx = await browser.newContext({ userAgent: UA, viewport: { width: 800, height: 600 } });
+
+
+
+  await renderCtx.route('**/*', route => {
+    const req = route.request();
+    const type = req.resourceType();
+    const url  = req.url();
+    if (['image','media','font','stylesheet'].includes(type)) return route.abort();
+    if (url.includes('analytics') || url.includes('googletag') || url.includes('hotjar') || url.includes('metrika')) return route.abort();
+    // Ограничим очень большие ответы (кроме основного документа)
+    const u = url.toLowerCase();
+if (u.endsWith('.mp4') || u.endsWith('.webm') || u.endsWith('.zip') || u.endsWith('.svg') || u.endsWith('.ico') || u.endsWith('.woff2')) {
+  return route.abort();
 }
+    const headers = req.headers();
+    const cl = headers['content-length'] ? parseInt(headers['content-length'], 10) : 0;
+    if (cl && cl > 2_000_000) return route.abort(); // > ~2 МБ
+    route.continue();
+  });
+}
+
+
+
 async function closeRenderer() {
+  try { await pageSingleton?.close(); } catch {}
   try { await renderCtx?.close(); } catch {}
   try { await browser?.close(); } catch {}
   renderCtx = null; browser = null;
@@ -203,7 +241,7 @@ async function discoverSitemaps(baseUrl) {
     if (res.statusCode >= 200 && res.statusCode < 300) {
       const m = res.body.match(/^sitemap:\s*(.*)$/gim);
       if (m) for (const line of m) {
-        const url = line.split(':')[1]?.trim();
+        const url = line.replace(/^\s*sitemap:\s*/i, '').trim();
         if (url) list.push(url);
       }
     }
@@ -230,62 +268,45 @@ async function fetchPage(url) {
   return res;
 }
 
-async function fetchRendered(url) {
-  // блокируем тяжелые/не нужные ресурсы
-  await renderCtx.route('**/*', (route) => {
-    const r = route.request();
-    const type = r.resourceType();
-    const url = r.url();
 
-    // не грузим картинки/видео/шрифты/стили/трекеры
-    if (['image', 'media', 'font', 'stylesheet'].includes(type)) return route.abort();
-    if (url.includes('analytics') || url.includes('googletag') || url.includes('hotjar') || url.includes('metrika')) {
-      return route.abort();
-    }
-    route.continue();
-  });
-
-  const page = await renderCtx.newPage();
+let pageSingleton = null;
+// 4.1. INLINE (старый твой код Playwright) — просто переименуй:
+async function fetchRenderedInline(url) {
+  if (!pageSingleton) pageSingleton = await renderCtx.newPage();
+  const page = pageSingleton;
   try {
-    const resp = await page.goto(url, { waitUntil: 'networkidle', timeout: 25000 });
-
-    // важное: НЕ вызываем page.content() — часто раздувает память
+    const resp = await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 15000 });
     const contentType = resp ? (resp.headers()['content-type'] || '') : '';
     const statusCode  = resp ? resp.status() : 0;
-
     const title = await page.title();
 
-    // аккуратно читаем текст и ограничиваем длину (например, 500к символов)
-  // Лимитируем и нормализуем текст, чтобы не раздувать память
-const MAX_TEXT = 500_000;
-let text = await page.evaluate(() => (document.body ? document.body.innerText : ''));
-text = String(text || '')
-  .replace(/\u00A0/g, ' ')    // nbsp -> пробел
-  .replace(/[ \t]+\n/g, '\n') // убираем хвостовые пробелы
-  .replace(/\n{3,}/g, '\n\n') // не больше одной пустой строки подряд
-  .trim();
+    const MAX_TEXT = 200_000;
+    let text = await page.evaluate(() => (document.body ? document.body.innerText : ''));
+    text = String(text || '')
+      .replace(/\u00A0/g, ' ')
+      .replace(/[ \t]+\n/g, '\n')
+      .replace(/\n{3,}/g, '\n\n')
+      .trim();
+    if (text.length > MAX_TEXT) text = text.slice(0, MAX_TEXT);
 
-if (text.length > MAX_TEXT) {
-  text = text.slice(0, MAX_TEXT);
-}
-
-    // собираем ссылки — тоже без перебора
     let links = await page.evaluate(() => {
-      const as = Array.from(document.querySelectorAll('a[href]'));
-      // максимум 2000 ссылок на страницу, чтобы не раздувать память
-      const slice = as.slice(0, 2000);
-      return slice.map(a => {
+      const as = Array.from(document.querySelectorAll('a[href]')).slice(0, 2000);
+      return as.map(a => {
         try { return new URL(a.getAttribute('href'), location.href).toString(); } catch { return null; }
       }).filter(Boolean);
     });
     links = Array.from(new Set(links));
-
     const lang  = await page.evaluate(() => document.documentElement.getAttribute('lang') || '');
 
-    return { statusCode, contentType, title, text: String(text || '').trim(), links, lang, html: '' /* пустим html */ };
+    return { statusCode, contentType, title, text: String(text || '').trim(), links, lang, html: '' };
   } finally {
-    await page.close();
+    // ВАЖНО: ничего не закрываем тут; закрытие в closeRenderer()
   }
+}
+
+async function fetchRendered(url) {
+  const { stdout } = await execa('node', [rendererPath, url], { timeout: 30000 });
+  return JSON.parse(stdout);
 }
 
 
@@ -334,7 +355,7 @@ async function extractPdfContent(buf) {
 // ----------------- Crawler Core -----------------
 async function start() {
   const fallbackUri = 'mongodb://127.0.0.1:27017/webcrawler';
-  const mongoUri = process.env.DATABASE_URL || fallbackUri;
+const mongoUri = process.env.MONGODB_URI || process.env.DATABASE_URL || fallbackUri;
 
   let dbName = 'webcrawler';
   try { const u = new URL(mongoUri); dbName = (u.pathname || '').replace('/', '') || 'webcrawler'; } catch {}
@@ -343,14 +364,14 @@ async function start() {
   console.log('Connected to MongoDB');
   await ensureIndexes();
   console.log('Collections & indexes are ready');
-  if (RENDER && chromium) {
+if (RENDER_MODE === 'inline' && chromium) {
   await initRenderer();
 }
 
   const seedUrl    = new URL(SEED);
   const siteOrigin = seedUrl.origin;
   const robots     = await getRobots(SEED);
-const realConcurrency = RENDER ? 1 : CONCURRENCY;
+const realConcurrency = (RENDER_MODE === 'inline') ? 1 : CONCURRENCY;
 const queue = new PQueue({
   concurrency: realConcurrency,
   interval: Math.max(REQUEST_DELAY_MS, 1),
@@ -392,32 +413,43 @@ const queue = new PQueue({
     try {
       let status = 0, ct = '', title = '', text = '', links = [], lang = '', html = '';
 
-      if (RENDER && chromium) {
-        const r = await fetchRendered(url);
-        status = r.statusCode; ct = r.contentType; title = r.title; text = r.text; links = r.links; lang = r.lang; html = r.html;
-      } else {
-        const res = await fetchPage(url);
-        ct = (res.headers['content-type'] || '').toLowerCase();
-        status = res.statusCode;
+if (RENDER_MODE === 'child' || RENDER_FLAG) {
+  // Рендер в отдельном процессе (или по старому флагу --render)
+  const r = await fetchRendered(url); // см. п.4 ниже: это child-вариант
+  status = r.statusCode; ct = r.contentType; title = r.title; text = r.text; links = r.links; lang = r.lang; html = '';
+} else if (RENDER_MODE === 'inline' && chromium) {
+  // Рендер внутри процесса (Playwright inline)
+  const r = await fetchRenderedInline(url); // см. п.4 ниже
+  status = r.statusCode; ct = r.contentType; title = r.title; text = r.text; links = r.links; lang = r.lang; html = '';
+} else {
+  // Обычный HTML-запрос (без рендера)
+  const res = await fetchPage(url);
+  ct = (res.headers['content-type'] || '').toLowerCase();
+  status = res.statusCode;
 
-        if (status >= 300 && status < 400) { /* redirects auto-handled */ }
-        if (status >= 400) {
-          await Page.updateOne({ url }, { $set: { url, site: siteOrigin, contentType: ct, statusCode: status, fetchedAt: new Date(), depth } }, { upsert: true });
-          return;
-        }
+  if (status >= 300 && status < 400) { /* redirects auto-handled */ }
+  if (status >= 400) {
+    await Page.updateOne(
+      { url },
+      { $set: { url, site: siteOrigin, contentType: ct, statusCode: status, fetchedAt: new Date(), depth } },
+      { upsert: true }
+    );
+    return;
+  }
 
-        if (ct.includes('text/html')) {
-          const parsed = extractHtmlContent(url, res.body);
-          title = parsed.title; text = parsed.text; links = parsed.links; lang = parsed.lang;
-        } else if (DOWNLOAD_PDFS && (ct.includes('application/pdf') || url.toLowerCase().endsWith('.pdf'))) {
-          if (pdfParse) {
-            const buf = Buffer.isBuffer(res.rawBody) ? res.rawBody : Buffer.from(res.body);
-            text = await extractPdfContent(buf);
-            title = url.split('/').pop();
-            links = [];
-          }
-        }
-      }
+  if (ct.includes('text/html')) {
+    const parsed = extractHtmlContent(url, res.body);
+    title = parsed.title; text = parsed.text; links = parsed.links; lang = parsed.lang;
+  } else if (DOWNLOAD_PDFS && (ct.includes('application/pdf') || url.toLowerCase().endsWith('.pdf'))) {
+    if (pdfParse) {
+      const buf = Buffer.isBuffer(res.rawBody) ? res.rawBody : Buffer.from(res.body);
+      text = await extractPdfContent(buf);
+      title = url.split('/').pop();
+      links = [];
+    }
+  }
+}
+
 
       const hash = sha256(text);
 const pageDoc = await Page.findOneAndUpdate(
@@ -456,7 +488,7 @@ const pageDoc = await Page.findOneAndUpdate(
 
   while (toVisit.length && processed < MAX_PAGES) {
     const batch = [];
-    while (batch.length < CONCURRENCY && toVisit.length) {
+    while (batch.length < realConcurrency && toVisit.length) {
       const it = toVisit.shift();
       if (it) batch.push(it);
     }
@@ -466,7 +498,7 @@ const pageDoc = await Page.findOneAndUpdate(
   }
 
   console.log('\nDone.');
-  if (RENDER && chromium) {
+if (RENDER_MODE === 'inline' && chromium) {
   await closeRenderer();
 }
   await mongoose.disconnect();
