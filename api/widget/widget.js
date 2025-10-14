@@ -44,6 +44,17 @@ function setJSONHeaders(req, res) {
   res.setHeader("Content-Type", "application/json; charset=utf-8");
 }
 
+// ставим служебные заголовки, чтобы фронт мог понять тип ответа и источники в SSE
+function setSourceHeaders(res, source, citations = []) {
+  try {
+    res.setHeader("X-AIW-Source", source);
+    // короткая форма: количество источников
+    res.setHeader("X-AIW-Citations-Count", String(citations.length || 0));
+    // при желании можно положить JSON-строку ссылок (следи за размером заголовков):
+    // res.setHeader("X-AIW-Citations", encodeURIComponent(JSON.stringify(citations)));
+  } catch {}
+}
+
 
 // Опционально: прайсинг/бандлы из .env (JSON)
 // пример: AIW_PLANS='[{"name":"Growth","users":10,"price":299}]'
@@ -137,6 +148,7 @@ router.post("/chat", async (req, res) => {
     const cacheKey = `${siteId}::${lang}::${query}`;
     const cached = getFromCache(cacheKey);
     if (cached) {
+      setSourceHeaders(res, "cache", cached.citations || []);
       if (!stream) {
         setJSONHeaders(req, res);
         return res.status(200).json({ reply: cached.reply, source: "cache", citations: cached.citations || [] });
@@ -159,6 +171,7 @@ router.post("/chat", async (req, res) => {
     if (fast) {
       const payload = { reply: fast.reply, citations: fast.citations || [] };
       putToCache(cacheKey, payload);
+      setSourceHeaders(res, "rag-extractive", payload.citations);
       if (!stream) {
         setJSONHeaders(req, res);
         return res.status(200).json({ ...payload, source: "rag-extractive" });
@@ -180,6 +193,7 @@ router.post("/chat", async (req, res) => {
         : (lang.startsWith("ru") ? `Вы спросили: "${query}"\n\nДемо-ответ (нет OPENAI_API_KEY).` : `You asked: "${query}"\n\nDemo reply (no OPENAI_API_KEY).`);
       const payload = { reply, citations: [] };
       putToCache(cacheKey, payload);
+      setSourceHeaders(res, "no-context", []);
       if (!stream) {
         setJSONHeaders(req, res);
         return res.status(200).json({ ...payload, source: "no-context" });
@@ -200,6 +214,7 @@ router.post("/chat", async (req, res) => {
         : `Demo reply (no OPENAI_API_KEY).`);
       const payload = { reply, citations };
       putToCache(cacheKey, payload);
+      setSourceHeaders(res, "rag", citations);
       if (!stream) {
         setJSONHeaders(req, res);
         return res.status(200).json({ ...payload, source: "rag" });
@@ -217,7 +232,9 @@ router.post("/chat", async (req, res) => {
     // ——— режимы: STREAM vs JSON ———
     if (stream) {
       // STREAM (SSE)
-      setSSEHeaders(req, res);
+        // важно: сначала источник/ссылки, потом — SSE заголовки/флаш
+  setSourceHeaders(res, "rag", citations);
+  setSSEHeaders(req, res);
       res.write(": heartbeat\n\n");
 
       let clientClosed = false;
@@ -272,6 +289,7 @@ router.post("/chat", async (req, res) => {
       const payload = { reply, citations };
       putToCache(cacheKey, payload);
       setJSONHeaders(req, res);
+      setSourceHeaders(res, "rag", citations);
       return res.status(200).json({ ...payload, source: "rag" });
     }
   } catch (e) {
