@@ -136,7 +136,7 @@ router.use((req, res, next) => {
 router.post("/chat", async (req, res) => {
   try {
     res.setHeader("X-AIW-Build", BUILD_TAG);
-    const { messages = [], stream = true, meta = {} } = req.body || {};
+    const { messages = [], stream = false, meta = {} } = req.body || {};
     const allowedRoles = new Set(["system", "user", "assistant"]);
     const safeMsgs = (Array.isArray(messages) ? messages : [])
       .filter((m) => m && allowedRoles.has(m.role) && typeof m.content === "string")
@@ -150,35 +150,25 @@ router.post("/chat", async (req, res) => {
     const lastUser = [...safeMsgs].reverse().find((m) => m.role === "user");
     const query = (lastUser?.content || "").trim();
 
-    if (!query) {
-      if (!stream) {
-        setJSONHeaders(req, res);
-        return sendJSON(req, res, { reply: lang.startsWith("ru") ? "Пустой вопрос" : "Empty question", source: "empty", citations: [] });
-      }
-      setSSEHeaders(req, res);
-      res.write(`data: ${lang.startsWith("ru") ? "Пустой вопрос" : "Empty question"}\n\n`);
-      res.write("data: [DONE]\n\n");
-      return res.end();
-    }
+if (!query) {
+  return sendJSON(req, res, {
+    reply: lang.startsWith("ru") ? "Пустой вопрос" : "Empty question",
+    source: "empty",
+    citations: []
+  });
+}
 
     // === 0) CACHE (NEW)
     const cacheKey = `${siteId}::${lang}::${query}`;
     const cached = getFromCache(cacheKey);
-    if (cached) {
-      setSourceHeaders(res, "cache", cached.citations || []);
-      if (!stream) {
-        setJSONHeaders(req, res);
-        return sendJSON(req, res, { reply: cached.reply, source: "cache", citations: cached.citations || [] });
-      }
-      setSSEHeaders(req, res);
-      res.write(": heartbeat\n\n");
-      const CH = 24;
-      for (let i = 0; i < cached.reply.length; i += CH) {
-        res.write(`data: ${cached.reply.slice(i, i + CH)}\n\n`);
-      }
-      res.write("data: [DONE]\n\n");
-      return res.end();
-    }
+if (cached) {
+  setSourceHeaders(res, "cache", cached.citations || []);
+  return sendJSON(req, res, {
+    reply: cached.reply,
+    source: "cache",
+    citations: cached.citations || []
+  });
+}
 const contextsRaw = await retrieveTopK(siteId, query, { k: 5, softLimit: 300, minScore: 0.18 });
 
 // 2) Фильтруем + ужимаем контекст, чтобы не жечь токены
@@ -236,11 +226,10 @@ if (!oai) {
     : (contexts.length ? 'Demo reply (no OPENAI_API_KEY).' : 'Not enough data.');
   const payload = { reply, citations };
   putToCache(cacheKey, payload);
-  if (!stream) return sendJSON(req, res, { ...payload, source: contexts.length ? 'rag-llm' : 'llm-no-context' });
-  setSSEHeaders(req, res); res.write(": heartbeat\n\n");
-  const CH=24; for (let i=0;i<reply.length;i+=CH) res.write(`data: ${reply.slice(i,i+CH)}\n\n`);
-  res.write("data: [DONE]\n\n"); return res.end();
+  setSourceHeaders(res, contexts.length ? "rag-llm" : "llm-no-context", citations);
+  return sendJSON(req, res, { ...payload, source: contexts.length ? 'rag-llm' : 'llm-no-context' });
 }
+
 
 // 6) LLM всегда формирует финальный ответ (stream=false у фронта)
 const completion = await oai.chat.completions.create({
@@ -259,69 +248,7 @@ putToCache(cacheKey, payload);
 setSourceHeaders(res, contexts.length ? "rag-llm" : "llm-no-context", citations);
 return sendJSON(req, res, { ...payload, source: contexts.length ? "rag-llm" : "llm-no-context" });
 
-    // ——— режимы: STREAM vs JSON ———
-    if (stream) {
-      // STREAM (SSE)
-        // важно: сначала источник/ссылки, потом — SSE заголовки/флаш
-  setSourceHeaders(res, "rag", citations);
-  setSSEHeaders(req, res);
-      res.write(": heartbeat\n\n");
-
-      let clientClosed = false;
-      const endSafely = () => { if (!clientClosed) { clientClosed = true; try { res.end(); } catch {} } };
-      req.on("close", endSafely); req.on("aborted", endSafely);
-
-      let gotAnyToken = false;
-      const controller = new AbortController();
-      const timer = setTimeout(() => { if (!gotAnyToken) controller.abort(); }, 5000);
-
-      try {
-        const response = await oai.chat.completions.create({
-          model: MODEL,
-          messages: prompt, // ВАЖНО: используем RAG-промпт
-          stream: true,
-          signal: controller.signal,
-        });
-        for await (const chunk of response) {
-          if (clientClosed) break;
-          const c = chunk?.choices?.[0];
-          const delta = c?.delta?.content ?? c?.message?.content ?? "";
-          if (delta) { gotAnyToken = true; res.write(`data: ${delta}\n\n`); }
-          if (c?.finish_reason) break;
-        }
-      } catch (_) {
-        // если abort по таймауту — ниже fallback
-      } finally {
-        clearTimeout(timer);
-      }
-
-      if (!clientClosed && !gotAnyToken) {
-        try {
-          const full = await oai.chat.completions.create({ model: MODEL, messages: prompt });
-          const reply = full.choices?.[0]?.message?.content?.trim() || "…";
-          const CH = 24;
-          for (let i = 0; i < reply.length && !clientClosed; i += CH) {
-            res.write(`data: ${reply.slice(i, i + CH)}\n\n`);
-          }
-        } catch (e) {
-          if (!clientClosed) res.write(`data: ⚠️ ${e?.message || "LLM error"}\n\n`);
-        }
-      }
-
-      if (!clientClosed) { res.write("data: [DONE]\n\n"); res.end(); }
-      // кешируем факт ответа
-      putToCache(cacheKey, { reply: "(streamed)", citations });
-      return;
-    } else {
-      // JSON
-      const completion = await oai.chat.completions.create({ model: MODEL, messages: prompt });
-      const reply = completion.choices?.[0]?.message?.content?.trim() || "";
-      const payload = { reply, citations };
-      putToCache(cacheKey, payload);
-      setJSONHeaders(req, res);
-      setSourceHeaders(res, "rag", citations);
-      return sendJSON(req, res, { reply: payload.reply, source: "rag", citations });
-    }
+  
   } catch (e) {
     console.error("AIW /chat error:", e);
     if (!res.headersSent) return res.status(500).json({ error: "Internal error" });
