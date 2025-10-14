@@ -4,6 +4,7 @@ import dotenv from 'dotenv';
 import path from 'path';
 import OpenAI from 'openai';
 import { retrieveTopK, buildPrompt } from '../../services/web_crawler/core.js';
+import { tryFastAnswer } from '../../services/web_crawler/fastAnswer.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname  = path.dirname(__filename);
@@ -30,6 +31,13 @@ chatRouter.post('/aiw/chat', async (req,res)=>{
     }
 
     const contexts = await retrieveTopK(siteId, query, { k:5, softLimit:300, minScore:0.18 });
+
+       // === БЫСТРЫЙ ПУТЬ БЕЗ LLM (если контекст очевиден) ===
+   const fast = tryFastAnswer(query, contexts, lang);
+   if (fast) {
+     cache.set(key, { answer: fast.reply, ts: Date.now(), citations: fast.citations });
+     return res.json({ reply: fast.reply, source: 'rag-extractive', citations: fast.citations });
+   }
 
     if (!contexts.length) {
       // fallback без контекста

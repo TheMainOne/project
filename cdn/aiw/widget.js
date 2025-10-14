@@ -229,7 +229,7 @@ resetBtn.addEventListener("click", (e) => {
       const res = await fetch(ENDPOINT, {
         method: "POST",
         headers: { "Content-Type": "application/json", "x-aiw-site": SITE_ID },
-        body: JSON.stringify({ messages: safeMsgs, stream: false, meta: { referrer: location.href } }),
+        body: JSON.stringify({ messages: safeMsgs, stream: false, meta: { referrer: location.href, lang: LANG } }),
         signal: controller.signal,
         keepalive: true,
         mode: "cors",
@@ -239,10 +239,25 @@ resetBtn.addEventListener("click", (e) => {
 
       if (!ct.includes("text/event-stream")) {
         // JSON mode
-        const raw = await res.text();
-        let reply = "";
-        try { reply = (JSON.parse(raw) || {}).reply || ""; } catch { reply = raw || ""; }
-        history.push({ role: "assistant", content: reply || (LANG.startsWith("ru") ? "…" : "…") });
+        // const raw = await res.text();
+        // let reply = "";
+        // try { reply = (JSON.parse(raw) || {}).reply || ""; } catch { reply = raw || ""; }
+        // history.push({ role: "assistant", content: reply || (LANG.startsWith("ru") ? "…" : "…") });
+const raw = await res.text();
+ let reply = "";
+ let citations = [];
+ try { 
+   const obj = JSON.parse(raw) || {};
+   reply = obj.reply || ""; 
+   citations = Array.isArray(obj.citations) ? obj.citations : [];
+ } catch { reply = raw || ""; }
+ if (citations.length) {
+   const label = LANG.startsWith("ru") ? "Источники:" : "Sources:";
+   const list  = citations.map((c,i)=>`[${i+1}] ${c.url}`).join("  ");
+   reply = `${reply}\n\n${label} ${list}`;
+ }
+ history.push({ role: "assistant", content: reply || (LANG.startsWith("ru") ? "…" : "…") });
+
         writeHistory(history);
         render();
         return;
