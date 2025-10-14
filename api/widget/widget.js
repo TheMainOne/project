@@ -1,7 +1,10 @@
-// api/widget/widget.js
+// основной код для виджета. Вся логика обработки запросов лежит здесь
 import 'dotenv/config';     
 import express from "express";
 import OpenAI from "openai";
+
+import { retrieveTopK, buildPrompt } from "../../services/web_crawler/core.js";
+import { tryFastAnswer } from '../../services/web_crawler/fastAnswer.js';
 
 const router = express.Router();
 
@@ -13,6 +16,34 @@ const oai = process.env.OPENAI_API_KEY
 
 const MODEL = process.env.OPENAI_MODEL || "gpt-5-nano"; // можно сменить в .env
 const CURRENCY = process.env.AIW_CURRENCY || "USD";
+
+// === Simple in-process cache (NEW) ===
+const ANSWER_TTL_MS = 60 * 60 * 1000;
+const cache = new Map(); // key -> { ts, reply, citations }
+function getFromCache(key) {
+  const v = cache.get(key);
+  if (!v) return null;
+  if (Date.now() - v.ts > ANSWER_TTL_MS) { cache.delete(key); return null; }
+  return v;
+}
+function putToCache(key, payload) { cache.set(key, { ...payload, ts: Date.now() }); }
+
+// === Headers helpers (NEW) ===
+function setSSEHeaders(req, res) {
+  res.setHeader("Access-Control-Allow-Origin", req.headers.origin || "*");
+  res.setHeader("Vary", "Origin");
+  res.setHeader("Content-Type", "text/event-stream; charset=utf-8");
+  res.setHeader("Cache-Control", "no-cache, no-transform");
+  res.setHeader("Connection", "keep-alive");
+  res.setHeader("X-Accel-Buffering", "no");
+  res.flushHeaders?.();
+}
+function setJSONHeaders(req, res) {
+  res.setHeader("Access-Control-Allow-Origin", req.headers.origin || "*");
+  res.setHeader("Vary", "Origin");
+  res.setHeader("Content-Type", "application/json; charset=utf-8");
+}
+
 
 // Опционально: прайсинг/бандлы из .env (JSON)
 // пример: AIW_PLANS='[{"name":"Growth","users":10,"price":299}]'
@@ -77,163 +108,176 @@ function fallbackReply(messages = []) {
 // ============ Маршрут /chat ============
 router.post("/chat", async (req, res) => {
   try {
-    const { messages = [], stream = true } = req.body || {};
-    const safeMsgs = sanitizeMessages(messages);
-    const sys = { role: "system", content: buildSystemPrompt() };
+    const { messages = [], stream = true, meta = {} } = req.body || {};
+    const allowedRoles = new Set(["system", "user", "assistant"]);
+    const safeMsgs = (Array.isArray(messages) ? messages : [])
+      .filter((m) => m && allowedRoles.has(m.role) && typeof m.content === "string")
+      .map((m) => ({ role: m.role, content: m.content.slice(0, 4000) }))
+      .slice(-30);
 
-    // Если нет ключа — отдадим мок (и JSON, и стрим поддержаны)
+    // NEW: язык и siteId
+    const lang = String(meta.lang || "ru");
+    const siteId = String(req.header("x-aiw-site") || "demo");
+
+    const lastUser = [...safeMsgs].reverse().find((m) => m.role === "user");
+    const query = (lastUser?.content || "").trim();
+
+    if (!query) {
+      if (!stream) {
+        setJSONHeaders(req, res);
+        return res.status(200).json({ reply: lang.startsWith("ru") ? "Пустой вопрос" : "Empty question", source: "empty", citations: [] });
+      }
+      setSSEHeaders(req, res);
+      res.write(`data: ${lang.startsWith("ru") ? "Пустой вопрос" : "Empty question"}\n\n`);
+      res.write("data: [DONE]\n\n");
+      return res.end();
+    }
+
+    // === 0) CACHE (NEW)
+    const cacheKey = `${siteId}::${lang}::${query}`;
+    const cached = getFromCache(cacheKey);
+    if (cached) {
+      if (!stream) {
+        setJSONHeaders(req, res);
+        return res.status(200).json({ reply: cached.reply, source: "cache", citations: cached.citations || [] });
+      }
+      setSSEHeaders(req, res);
+      res.write(": heartbeat\n\n");
+      const CH = 24;
+      for (let i = 0; i < cached.reply.length; i += CH) {
+        res.write(`data: ${cached.reply.slice(i, i + CH)}\n\n`);
+      }
+      res.write("data: [DONE]\n\n");
+      return res.end();
+    }
+
+    // === 1) RAG retrieve (NEW)
+    const contexts = await retrieveTopK(siteId, query, { k: 5, softLimit: 300, minScore: 0.18 });
+
+    // === 2) Fast path без LLM (NEW)
+    const fast = tryFastAnswer(query, contexts, lang);
+    if (fast) {
+      const payload = { reply: fast.reply, citations: fast.citations || [] };
+      putToCache(cacheKey, payload);
+      if (!stream) {
+        setJSONHeaders(req, res);
+        return res.status(200).json({ ...payload, source: "rag-extractive" });
+      }
+      setSSEHeaders(req, res);
+      res.write(": heartbeat\n\n");
+      const CH = 24;
+      for (let i = 0; i < payload.reply.length; i += CH) {
+        res.write(`data: ${payload.reply.slice(i, i + CH)}\n\n`);
+      }
+      res.write("data: [DONE]\n\n");
+      return res.end();
+    }
+
+    // === 3) Нет контекста — честный ответ (NEW)
+    if (!contexts.length) {
+      const reply = oai
+        ? (lang.startsWith("ru") ? "Недостаточно данных в базе для точного ответа." : "Not enough data in the knowledge base.")
+        : (lang.startsWith("ru") ? `Вы спросили: "${query}"\n\nДемо-ответ (нет OPENAI_API_KEY).` : `You asked: "${query}"\n\nDemo reply (no OPENAI_API_KEY).`);
+      const payload = { reply, citations: [] };
+      putToCache(cacheKey, payload);
+      if (!stream) {
+        setJSONHeaders(req, res);
+        return res.status(200).json({ ...payload, source: "no-context" });
+      }
+      setSSEHeaders(req, res);
+      res.write(`data: ${reply}\n\n`);
+      res.write("data: [DONE]\n\n");
+      return res.end();
+    }
+
+    // === 4) LLM с RAG-контекстом (NEW)
+    const prompt = buildPrompt({ query, contexts, lang });
+    const citations = contexts.map((c, i) => ({ idx: i + 1, url: c.url }));
+
     if (!oai) {
-      const reply = fallbackReply(safeMsgs);
-      if (stream) {
-res.setHeader("Access-Control-Allow-Origin", req.headers.origin || "*");
-res.setHeader("Vary", "Origin");
-res.setHeader("Content-Type","text/event-stream; charset=utf-8");
-res.setHeader("Cache-Control","no-cache, no-transform");
-res.setHeader("Connection","keep-alive");
-res.setHeader("X-Accel-Buffering", "no"); // для некоторых прокси
-res.flushHeaders?.();                     // форсируем отправку заголовков
-res.write(": heartbeat\n\n");             // первый байт — сразу (комментарий SSE)
-        const parts = reply.split(" ");
-        for (const w of parts) {
-          res.write(`data: ${w}\n\n`);
-          await new Promise((r) => setTimeout(r, 15));
+      const reply = (lang.startsWith("ru")
+        ? `Демо-ответ (нет OPENAI_API_KEY).`
+        : `Demo reply (no OPENAI_API_KEY).`);
+      const payload = { reply, citations };
+      putToCache(cacheKey, payload);
+      if (!stream) {
+        setJSONHeaders(req, res);
+        return res.status(200).json({ ...payload, source: "rag" });
+      }
+      setSSEHeaders(req, res);
+      res.write(": heartbeat\n\n");
+      const CH = 24;
+      for (let i = 0; i < reply.length; i += CH) {
+        res.write(`data: ${reply.slice(i, i + CH)}\n\n`);
+      }
+      res.write("data: [DONE]\n\n");
+      return res.end();
+    }
+
+    // ——— режимы: STREAM vs JSON ———
+    if (stream) {
+      // STREAM (SSE)
+      setSSEHeaders(req, res);
+      res.write(": heartbeat\n\n");
+
+      let clientClosed = false;
+      const endSafely = () => { if (!clientClosed) { clientClosed = true; try { res.end(); } catch {} } };
+      req.on("close", endSafely); req.on("aborted", endSafely);
+
+      let gotAnyToken = false;
+      const controller = new AbortController();
+      const timer = setTimeout(() => { if (!gotAnyToken) controller.abort(); }, 5000);
+
+      try {
+        const response = await oai.chat.completions.create({
+          model: MODEL,
+          messages: prompt, // ВАЖНО: используем RAG-промпт
+          stream: true,
+          signal: controller.signal,
+        });
+        for await (const chunk of response) {
+          if (clientClosed) break;
+          const c = chunk?.choices?.[0];
+          const delta = c?.delta?.content ?? c?.message?.content ?? "";
+          if (delta) { gotAnyToken = true; res.write(`data: ${delta}\n\n`); }
+          if (c?.finish_reason) break;
         }
-        res.write("data: [DONE]\n\n");
-        return res.end();
+      } catch (_) {
+        // если abort по таймауту — ниже fallback
+      } finally {
+        clearTimeout(timer);
       }
-       if (!res.headersSent) {
-        res.setHeader("Access-Control-Allow-Origin", req.headers.origin || "*");
-        res.setHeader("Vary", "Origin");
-        res.setHeader("Content-Type", "application/json; charset=utf-8");
-       }
-       return res.status(200).json({ reply });
-    }
 
-if (stream) {
-  // ---------- STREAM (SSE) ----------
-  res.setHeader("Access-Control-Allow-Origin", req.headers.origin || "*");
-  res.setHeader("Vary", "Origin");
-  res.setHeader("Content-Type", "text/event-stream; charset=utf-8");
-  res.setHeader("Cache-Control", "no-cache, no-transform");
-  res.setHeader("Connection", "keep-alive");
-  res.setHeader("X-Accel-Buffering", "no");
-  res.flushHeaders?.();
-
-  // мгновенно показываем, что поток открыт
-  res.write(": heartbeat\n\n");
-
-  let clientClosed = false;
-  const endSafely = () => { if (!clientClosed) { clientClosed = true; try { res.end(); } catch {} } };
-  req.on("close", endSafely);
-  req.on("aborted", endSafely);
-
-  // --- 1) пытаемся реальный стрим от модели с тайм-аутом первых токенов
-  let gotAnyToken = false;
-
-  // таймаут «первых токенов»: если 5с тишина — переключаемся на fallback
-  const FIRST_TOKEN_TIMEOUT_MS = 5000;
-  let firstTokenTimer;
-
-  // Abort для OpenAI (если поддерживается средой; в новых SDK — да)
-  const controller = new AbortController();
-  const { signal } = controller;
-
-  const startFirstTokenTimer = () => {
-    clearTimeout(firstTokenTimer);
-    firstTokenTimer = setTimeout(() => {
-      if (!gotAnyToken && !clientClosed) {
-        controller.abort(); // прерываем зависший стрим
+      if (!clientClosed && !gotAnyToken) {
+        try {
+          const full = await oai.chat.completions.create({ model: MODEL, messages: prompt });
+          const reply = full.choices?.[0]?.message?.content?.trim() || "…";
+          const CH = 24;
+          for (let i = 0; i < reply.length && !clientClosed; i += CH) {
+            res.write(`data: ${reply.slice(i, i + CH)}\n\n`);
+          }
+        } catch (e) {
+          if (!clientClosed) res.write(`data: ⚠️ ${e?.message || "LLM error"}\n\n`);
+        }
       }
-    }, FIRST_TOKEN_TIMEOUT_MS);
-  };
-  startFirstTokenTimer();
 
-  try {
-    const response = await oai.chat.completions.create({
-      model: MODEL,
-      messages: [sys, ...safeMsgs],
-      stream: true,
-      signal,
-    });
-
-    for await (const chunk of response) {
-      if (clientClosed) break;
-      const c = chunk?.choices?.[0];
-      const delta = c?.delta?.content ?? c?.message?.content ?? "";
-      if (delta) {
-        gotAnyToken = true;
-        clearTimeout(firstTokenTimer);
-        res.write(`data: ${delta}\n\n`);
-      }
-      if (c?.finish_reason) break;
-    }
-  } catch (err) {
-    // если это именно abort из-за тайм-аута первых токенов — молча пойдём в fallback
-    const aborted = String(err?.name || err).includes("Abort");
-    if (!aborted && !clientClosed) {
-      const msg = (err && (err.message || err.toString())) || "Internal error";
-      res.write(`data: ⚠️ ${msg}\n\n`);
-    }
-  }
-
-  // --- 2) Fallback: если не было ни одного токена — берём обычный completion и «стримим» сами
-  if (!clientClosed && !gotAnyToken) {
-    try {
-      const completion = await oai.chat.completions.create({
-        model: MODEL,
-        messages: [sys, ...safeMsgs],
-        // без stream
-      });
-      const full =
-        completion.choices?.[0]?.message?.content?.trim() || "…";
-
-      // «псевдо-стрим»: порциями, чтобы фронт красиво печатал
-      // можно по словам, можно по 10–15 символов — выбери, что приятнее
-      const CHUNK_SIZE = 20;
-      for (let i = 0; i < full.length && !clientClosed; i += CHUNK_SIZE) {
-        const part = full.slice(i, i + CHUNK_SIZE);
-        res.write(`data: ${part}\n\n`);
-        await new Promise((r) => setTimeout(r, 25));
-      }
-    } catch (e) {
-      if (!clientClosed) {
-        const msg = (e && (e.message || String(e))) || "Unknown error";
-res.write(`data: ⚠️ Fallback failed: ${msg}\n\n`);
-      }
-    }
-  }
-
-  if (!clientClosed) {
-    res.write("data: [DONE]\n\n");
-    res.end();
-  }
-  return;
-} else {
-      // ---------- JSON ----------
-      const completion = await oai.chat.completions.create({
-        model: MODEL,
-        messages: [sys, ...safeMsgs],
-      });
+      if (!clientClosed) { res.write("data: [DONE]\n\n"); res.end(); }
+      // кешируем факт ответа
+      putToCache(cacheKey, { reply: "(streamed)", citations });
+      return;
+    } else {
+      // JSON
+      const completion = await oai.chat.completions.create({ model: MODEL, messages: prompt });
       const reply = completion.choices?.[0]?.message?.content?.trim() || "";
-      if (!res.headersSent) {
-        res.setHeader("Access-Control-Allow-Origin", req.headers.origin || "*");
-        res.setHeader("Vary", "Origin");
-        res.setHeader("Content-Type", "application/json; charset=utf-8");
-      }
-      return res.status(200).json({ reply });
+      const payload = { reply, citations };
+      putToCache(cacheKey, payload);
+      setJSONHeaders(req, res);
+      return res.status(200).json({ ...payload, source: "rag" });
     }
   } catch (e) {
     console.error("AIW /chat error:", e);
-    // Если уже начали SSE — завершим потоком
-    if (!res.headersSent) {
-      return res.status(500).json({ error: "Internal error" });
-    } else {
-      try {
-        res.write(`data: ⚠️ Internal error\n\n`);
-        res.write("data: [DONE]\n\n");
-        res.end();
-      } catch {}
-    }
+    if (!res.headersSent) return res.status(500).json({ error: "Internal error" });
+    try { res.write(`data: ⚠️ Internal error\n\n`); res.write("data: [DONE]\n\n"); res.end(); } catch {}
   }
 });
 router.options("/chat", (req, res) => res.sendStatus(204));
