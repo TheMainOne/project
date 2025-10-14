@@ -48,10 +48,7 @@ function setJSONHeaders(req, res) {
 function setSourceHeaders(res, source, citations = []) {
   try {
     res.setHeader("X-AIW-Source", source);
-    // короткая форма: количество источников
     res.setHeader("X-AIW-Citations-Count", String(citations.length || 0));
-    // при желании можно положить JSON-строку ссылок (следи за размером заголовков):
-    // res.setHeader("X-AIW-Citations", encodeURIComponent(JSON.stringify(citations)));
   } catch {}
 }
 
@@ -64,6 +61,11 @@ function loadPlans() {
   } catch {
     return [];
   }
+}
+
+function sendJSON(req, res, { reply, source, citations = [] }) {
+  setJSONHeaders(req, res);
+  return res.status(200).json({ reply, source, citations });
 }
 
 function buildSystemPrompt() {
@@ -136,7 +138,7 @@ router.post("/chat", async (req, res) => {
     if (!query) {
       if (!stream) {
         setJSONHeaders(req, res);
-        return res.status(200).json({ reply: lang.startsWith("ru") ? "Пустой вопрос" : "Empty question", source: "empty", citations: [] });
+        return sendJSON(req, res, { reply: lang.startsWith("ru") ? "Пустой вопрос" : "Empty question", source: "empty", citations: [] });
       }
       setSSEHeaders(req, res);
       res.write(`data: ${lang.startsWith("ru") ? "Пустой вопрос" : "Empty question"}\n\n`);
@@ -151,7 +153,7 @@ router.post("/chat", async (req, res) => {
       setSourceHeaders(res, "cache", cached.citations || []);
       if (!stream) {
         setJSONHeaders(req, res);
-        return res.status(200).json({ reply: cached.reply, source: "cache", citations: cached.citations || [] });
+        return sendJSON(req, res, { reply: cached.reply, source: "cache", citations: cached.citations || [] });
       }
       setSSEHeaders(req, res);
       res.write(": heartbeat\n\n");
@@ -174,7 +176,7 @@ router.post("/chat", async (req, res) => {
       setSourceHeaders(res, "rag-extractive", payload.citations);
       if (!stream) {
         setJSONHeaders(req, res);
-        return res.status(200).json({ ...payload, source: "rag-extractive" });
+        return sendJSON(req, res, { reply: payload.reply, source: "rag-extractive", citations: payload.citations });
       }
       setSSEHeaders(req, res);
       res.write(": heartbeat\n\n");
@@ -196,7 +198,7 @@ router.post("/chat", async (req, res) => {
       setSourceHeaders(res, "no-context", []);
       if (!stream) {
         setJSONHeaders(req, res);
-        return res.status(200).json({ ...payload, source: "no-context" });
+        return sendJSON(req, res, { reply: payload.reply, source: "no-context", citations: [] });
       }
       setSSEHeaders(req, res);
       res.write(`data: ${reply}\n\n`);
@@ -217,7 +219,7 @@ router.post("/chat", async (req, res) => {
       setSourceHeaders(res, "rag", citations);
       if (!stream) {
         setJSONHeaders(req, res);
-        return res.status(200).json({ ...payload, source: "rag" });
+        return sendJSON(req, res, { reply: payload.reply, source: "rag", citations });
       }
       setSSEHeaders(req, res);
       res.write(": heartbeat\n\n");
@@ -290,7 +292,7 @@ router.post("/chat", async (req, res) => {
       putToCache(cacheKey, payload);
       setJSONHeaders(req, res);
       setSourceHeaders(res, "rag", citations);
-      return res.status(200).json({ ...payload, source: "rag" });
+      return sendJSON(req, res, { reply: payload.reply, source: "rag", citations });
     }
   } catch (e) {
     console.error("AIW /chat error:", e);
