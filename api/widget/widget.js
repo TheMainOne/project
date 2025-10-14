@@ -42,6 +42,7 @@ function setJSONHeaders(req, res) {
   res.setHeader("Access-Control-Allow-Origin", req.headers.origin || "*");
   res.setHeader("Vary", "Origin");
   res.setHeader("Content-Type", "application/json; charset=utf-8");
+  res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate");
 }
 
 // ставим служебные заголовки, чтобы фронт мог понять тип ответа и источники в SSE
@@ -65,6 +66,7 @@ function loadPlans() {
 
 function sendJSON(req, res, { reply, source, citations = [] }) {
   setJSONHeaders(req, res);
+  setSourceHeaders(res, source, citations);
   return res.status(200).json({ reply, source, citations });
 }
 
@@ -117,10 +119,23 @@ function fallbackReply(messages = []) {
     "For 10 users: Growth Plan — $299/month. Annual discount — 20%.",
   ].join("\n");
 }
+const BUILD_TAG = "aiw-widget@rag-1.0.3";
 
+router.use((req, res, next) => {
+  const origJson = res.json.bind(res);
+  res.json = (body) => {
+    if (body && typeof body === "object") {
+      if (!("source" in body)) body.source = "unknown";
+      if (!("citations" in body)) body.citations = [];
+    }
+    return origJson(body);
+  };
+  next();
+});
 // ============ Маршрут /chat ============
 router.post("/chat", async (req, res) => {
   try {
+    res.setHeader("X-AIW-Build", BUILD_TAG);
     const { messages = [], stream = true, meta = {} } = req.body || {};
     const allowedRoles = new Set(["system", "user", "assistant"]);
     const safeMsgs = (Array.isArray(messages) ? messages : [])
