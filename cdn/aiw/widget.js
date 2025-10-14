@@ -66,7 +66,7 @@ style.textContent = `
     box-shadow:0 8px 20px rgba(0,0,0,.2);background:${ACCENT};color:#fff;
     font-weight:700;font-size:16px;
   `;
-  btn.textContent = "AI";
+  btn.textContent = "AI-Consultant";
 
   const panel = document.createElement("div");
   panel.style.cssText = `
