@@ -42,50 +42,16 @@ export async function retrieveTopK(siteId, query, { k=5, softLimit=300, minScore
   return scored.filter(x => x.score >= minScore).slice(0, k);
 }
 
-function condenseText(t, limit = 400) {
-  t = (t || '').replace(/\s+/g, ' ').trim();
-  if (t.length <= limit) return t;
-  // грубо: берём начало и конец — часто там хедеры/цены/выводы
-  const head = t.slice(0, Math.floor(limit * 0.7));
-  const tail = t.slice(-Math.floor(limit * 0.3));
-  return `${head} … ${tail}`;
-}
-
-const compact = filtered.map(c => ({
-  ...c,
-  text: condenseText(c.text, 500) // режем каждый чанк
-}));
-
-// services/web_crawler/core.js
-export function buildPrompt({ query, contexts, lang="ru" }) {
-  const intro = lang.startsWith("ru")
-    ? `Ты ассистент сайта. Отвечай ТОЛЬКО по приведённым фрагментам (Контекст). 
-Если информации нет — честно скажи «Недостаточно данных». 
-Требования:
-- Кратко (2–4 пункта или 2–4 предложения).
-- Без воды, без мысли вслух.
-- Не добавляй фактов вне Контекста.
-- Если спрашивают цену/тарифы — перечисли их чётко, с валютой (если есть в Контексте).
-- Если ответ частичный — явно укажи, чего нет в Контексте.
-В конце, если уместно, предложи 1 короткое следующее действие (например: “Нужна демо?”).`
-    : `You are a site assistant. Answer ONLY from the provided snippets (Context).
-If missing, say “Not enough data”. Requirements:
-- Concise (2–4 bullets or 2–4 sentences).
-- No fluff. 
-- No facts outside Context.
-- For pricing, list clearly with currency if present.
-- If partial, say what's missing.
-Optionally end with one short CTA.`;
-
-  const ctx = contexts.map((c,i)=>`[${i+1}] ${c.text}`).join('\n\n');
-
-  const messages = [
-    { role: "system", content: intro },
-    { role: "user", content: (lang.startsWith("ru")
-        ? `Вопрос: ${query}\n\nКонтекст:\n${ctx}\n\nОтвет:`
-        : `Question: ${query}\n\nContext:\n${ctx}\n\nAnswer:`)
-    }
+export function buildPrompt({ query, contexts, lang='ru' }) {
+  const intro = lang.startsWith('ru')
+    ? 'Ты ассистент сайта. Отвечай кратко и строго по данному контексту.'
+    : 'You are the site assistant. Answer concisely and stick to the provided context.';
+  const rules = lang.startsWith('ru')
+    ? 'Правила:\n- Используй только факты из контекста. Не выдумывай.\n- Если инфы нет — честно скажи, чего не хватает.\n- При необходимости ссылайся на кусочки как [#N].'
+    : 'Rules:\n- Use only facts from the context. Do not invent.\n- If info is missing, state what is missing.\n- Cite snippets as [#N] if helpful.';
+  const ctx = contexts.map((c,i)=>`[#${i+1}] ${c.text}`).join('\n\n');
+  return [
+    { role:'system', content:`${intro}\n\n${rules}` },
+    { role:'user',   content:`Question: ${query}\n\nContext:\n${ctx}\n` }
   ];
-  return messages;
 }
-
