@@ -251,12 +251,16 @@ const raw = await res.text();
    reply = obj.reply || ""; 
    citations = Array.isArray(obj.citations) ? obj.citations : [];
  } catch { reply = raw || ""; }
- if (citations.length) {
-   const label = LANG.startsWith("ru") ? "Источники:" : "Sources:";
-   const list  = citations.map((c,i)=>`[${i+1}] ${c.url}`).join("  ");
-   reply = `${reply}\n\n${label} ${list}`;
- }
- history.push({ role: "assistant", content: reply || (LANG.startsWith("ru") ? "…" : "…") });
+//  if (citations.length) {
+//    const label = LANG.startsWith("ru") ? "Источники:" : "Sources:";
+//    const list  = citations.map((c,i)=>`[${i+1}] ${c.url}`).join("  ");
+//    reply = `${reply}\n\n${label} ${list}`;
+//  }
+history.push({
+  role: "assistant",
+  content: reply || (LANG.startsWith("ru") ? "…" : "…"),
+  meta: { citations } // при желании сохраняем, но не рендерим
+});
 
         writeHistory(history);
         render();
