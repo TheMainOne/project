@@ -136,131 +136,125 @@ router.use((req, res, next) => {
 router.post("/chat", async (req, res) => {
   try {
     res.setHeader("X-AIW-Build", BUILD_TAG);
-
-    const { messages = [], meta = {} } = req.body || {};
+    const { messages = [], stream = false, meta = {} } = req.body || {};
     const allowedRoles = new Set(["system", "user", "assistant"]);
     const safeMsgs = (Array.isArray(messages) ? messages : [])
-      .filter(m => m && allowedRoles.has(m.role) && typeof m.content === "string")
-      .map(m => ({ role: m.role, content: m.content.slice(0, 4000) }))
+      .filter((m) => m && allowedRoles.has(m.role) && typeof m.content === "string")
+      .map((m) => ({ role: m.role, content: m.content.slice(0, 4000) }))
       .slice(-30);
 
-    const lang   = String(meta.lang || "ru");
+    // NEW: язык и siteId
+    const lang = String(meta.lang || "ru");
     const siteId = String(req.header("x-aiw-site") || "demo");
 
-    const lastUser = [...safeMsgs].reverse().find(m => m.role === "user");
-    const query    = (lastUser?.content || "").trim();
+    const lastUser = [...safeMsgs].reverse().find((m) => m.role === "user");
+    const query = (lastUser?.content || "").trim();
 
-    if (!query) {
-      return sendJSON(req, res, {
-        reply: lang.startsWith("ru") ? "Пустой вопрос" : "Empty question",
-        source: "empty",
-        citations: []
-      });
-    }
+if (!query) {
+  return sendJSON(req, res, {
+    reply: lang.startsWith("ru") ? "Пустой вопрос" : "Empty question",
+    source: "empty",
+    citations: []
+  });
+}
 
-    // ---- Cache
+    // === 0) CACHE (NEW)
     const cacheKey = `${siteId}::${lang}::${query}`;
     const cached = getFromCache(cacheKey);
-    if (cached) {
-      return sendJSON(req, res, {
-        reply: cached.reply,
-        source: "cache",
-        citations: cached.citations || []
-      });
-    }
+if (cached) {
+  setSourceHeaders(res, "cache", cached.citations || []);
+  return sendJSON(req, res, {
+    reply: cached.reply,
+    source: "cache",
+    citations: cached.citations || []
+  });
+}
+const contextsRaw = await retrieveTopK(siteId, query, { k: 5, softLimit: 300, minScore: 0.18 });
 
-    // ---- RAG retrieve
-    const contextsRaw = await retrieveTopK(siteId, query, {
-      k: 5, softLimit: 300, minScore: 0.18
-    });
+// 2) Фильтруем + ужимаем контекст, чтобы не жечь токены
+function condenseText(t, limit = 500) {
+  t = (t || '').replace(/\s+/g, ' ').trim();
+  if (t.length <= limit) return t;
+  const head = t.slice(0, Math.floor(limit * 0.7));
+  const tail = t.slice(-Math.floor(limit * 0.3));
+  return `${head} … ${tail}`;
+}
 
-    // Ужимаем контекст (экономим токены)
-    const condenseText = (t, limit = 500) => {
-      t = (t || "").replace(/\s+/g, " ").trim();
-      if (t.length <= limit) return t;
-      const head = t.slice(0, Math.floor(limit * 0.7));
-      const tail = t.slice(-Math.floor(limit * 0.3));
-      return `${head} … ${tail}`;
-    };
+const topScore = contextsRaw[0]?.score ?? 0;
+const gate = Math.max(0.18, Math.min(0.28, topScore - 0.06));
+const contexts = contextsRaw
+  .filter(c => (c.score ?? 0) >= gate)
+  .slice(0, 3)
+  .map(c => ({ ...c, text: condenseText(c.text, 500) }));
 
-    const topScore = contextsRaw[0]?.score ?? 0;
-    const gate     = Math.max(0.18, Math.min(0.28, topScore - 0.06));
-    const contexts = contextsRaw
-      .filter(c => (c.score ?? 0) >= gate)
-      .slice(0, 3)
-      .map(c => ({ ...c, text: condenseText(c.text, 500) }));
-
-    const citations = contexts.map((c, i) => ({ idx: i + 1, url: c.url }));
-
-    // ---- Промпт (строгий: отвечаем только по контексту)
-    const rulesRU = `Ты ассистент сайта. Формируй красивый, краткий ответ ТОЛЬКО по приведённым фрагментам (Контекст).
+// 3) Строгий промпт: отвечаем только по контексту (но всегда через LLM)
+function buildStrictPrompt({ query, contexts, lang="ru" }) {
+  const RULES_RU = `Ты ассистент сайта. Формируй красивый, краткий ответ ТОЛЬКО по приведённым фрагментам (Контекст).
 Если факта нет в Контексте — ответь кратко: «Недостаточно данных».
 Формат: 2–4 буллета или 2–4 предложения. Без домыслов. Цены — с валютой ровно как в Контексте.`;
 
-    const rulesEN = `You are a site assistant. Write a clean, concise answer ONLY from the provided snippets (Context).
+  const RULES_EN = `You are a site assistant. Write a clean, concise answer ONLY from the provided snippets (Context).
 If information is missing, say “Not enough data”.
 Use 2–4 bullets or sentences. No speculation. Keep currency exactly as in Context.`;
 
-    const rules = lang.startsWith("ru") ? rulesRU : rulesEN;
-    const ctx   = contexts.map((c, i) => `[${i+1}] (${c.url}) ${c.text}`).join("\n\n");
+  const rules = lang.startsWith('ru') ? RULES_RU : RULES_EN;
+  const ctx = contexts.map((c,i)=>`[${i+1}] (${c.url}) ${c.text}`).join('\n\n');
 
-    const prompt = [
-      { role: "system", content: rules },
-      { role: "user", content: lang.startsWith("ru")
-          ? `Вопрос: ${query}\n\nКонтекст:\n${ctx || "—"}\n\nОтвет:`
-          : `Question: ${query}\n\nContext:\n${ctx || "—"}\n\nAnswer:` }
-    ];
+  return [
+    { role: "system", content: rules },
+    { role: "user", content: lang.startsWith('ru')
+        ? `Вопрос: ${query}\n\nКонтекст:\n${ctx || '—'}\n\nОтвет:`
+        : `Question: ${query}\n\nContext:\n${ctx || '—'}\n\nAnswer:` }
+  ];
+}
 
-    // ---- Модель
-    const pickModel = (q, ctxs) => {
-      const len = (q || "").length + ctxs.reduce((n, c) => n + (c.text || "").length, 0);
-      if (len < 1200) return process.env.OPENAI_CHEAP_MODEL || "gpt-5-nano";
-      return process.env.OPENAI_MID_MODEL || "gpt-4o-mini";
-    };
-    const modelToUse = pickModel(query, contexts);
+// 4) Подбор модели: дешёвая для коротких, средняя — для длинных
+function pickModel(query, contexts) {
+  const len = (query||'').length + contexts.reduce((n,c)=>n + (c.text||'').length, 0);
+  if (len < 1200) return process.env.OPENAI_CHEAP_MODEL || 'gpt-5-nano';
+  return process.env.OPENAI_MID_MODEL || 'gpt-4o-mini';
+}
 
-    // ---- Если нет ключа — мок
-    if (!oai) {
-      const reply = lang.startsWith("ru")
-        ? (contexts.length ? "Демо-ответ (нет OPENAI_API_KEY)." : "Недостаточно данных.")
-        : (contexts.length ? "Demo reply (no OPENAI_API_KEY)." : "Not enough data.");
-      const payload = { reply, citations };
-      putToCache(cacheKey, payload);
-      return sendJSON(req, res, {
-        ...payload,
-        source: contexts.length ? "rag-llm" : "llm-no-context"
-      });
-    }
+const citations = contexts.map((c,i)=>({ idx: i+1, url: c.url }));
+const prompt = buildStrictPrompt({ query, contexts, lang });
+const modelToUse = pickModel(query, contexts);
 
-    // ---- LLM ВСЕГДА формирует ответ (только JSON)
-    const completion = await oai.chat.completions.create({
-      model: modelToUse,
-      messages: prompt,
-      temperature: 0.15,
-      top_p: 0.9,
-      max_tokens: 320
-    });
+// 5) Если нет ключа — всё равно «красиво» отвечаем мок-LLM
+if (!oai) {
+  const reply = lang.startsWith('ru')
+    ? (contexts.length ? 'Демо-ответ (нет OPENAI_API_KEY).' : 'Недостаточно данных.')
+    : (contexts.length ? 'Demo reply (no OPENAI_API_KEY).' : 'Not enough data.');
+  const payload = { reply, citations };
+  putToCache(cacheKey, payload);
+  setSourceHeaders(res, contexts.length ? "rag-llm" : "llm-no-context", citations);
+  return sendJSON(req, res, { ...payload, source: contexts.length ? 'rag-llm' : 'llm-no-context' });
+}
 
-    const reply = completion.choices?.[0]?.message?.content?.trim()
-      || (lang.startsWith("ru") ? "…" : "…");
 
-    const payload = { reply, citations };
-    putToCache(cacheKey, payload);
-
-    return sendJSON(req, res, {
-      ...payload,
-      source: contexts.length ? "rag-llm" : "llm-no-context"
-    });
-
-  } catch (e) {
-    console.error("AIW /chat error:", e);
-    if (!res.headersSent) {
-      return res.status(500).json({ error: "Internal error" });
-    }
-    try { res.end(); } catch {}
-  }
+// 6) LLM всегда формирует финальный ответ (stream=false у фронта)
+const completion = await oai.chat.completions.create({
+  model: modelToUse,
+  messages: prompt,
+  temperature: 0.15,
+  top_p: 0.9,
+  max_tokens: 320
 });
 
+const reply = completion.choices?.[0]?.message?.content?.trim() || (lang.startsWith('ru') ? '…' : '…');
+const payload = { reply, citations };
+putToCache(cacheKey, payload);
+
+// JSON-ответ с источником
+setSourceHeaders(res, contexts.length ? "rag-llm" : "llm-no-context", citations);
+return sendJSON(req, res, { ...payload, source: contexts.length ? "rag-llm" : "llm-no-context" });
+
+  
+  } catch (e) {
+    console.error("AIW /chat error:", e);
+    if (!res.headersSent) return res.status(500).json({ error: "Internal error" });
+    try { res.write(`data: ⚠️ Internal error\n\n`); res.write("data: [DONE]\n\n"); res.end(); } catch {}
+  }
+});
 router.options("/chat", (req, res) => res.sendStatus(204));
 router.get("/ping", (req, res) => res.json({ ok: true, t: Date.now() }));
 
