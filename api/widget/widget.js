@@ -25,53 +25,91 @@ function getIp(req) {
          req.socket?.remoteAddress || req.ip;
 }
 
-async function ensureSession(meta, req) {
-  const { siteId, sessionId, visitorId, pageUrl, referrer, utm, tz, lang } = meta || {};
-  if (!siteId || !sessionId) {
-    console.warn("[AIW] ensureSession skipped: missing ids", { siteId, sessionId });
-    return null;
+function resolveIds(req, meta = {}) {
+  // siteId: берём из заголовка/меты/тела, иначе — из Origin/Referer хоста, иначе — fallback
+  const rawSite =
+    req.header("x-aiw-site") ||
+    meta.siteId ||
+    req.body?.siteId ||
+    null;
+
+  let siteId = rawSite;
+  try {
+    if (!siteId) {
+      const origin = req.headers.origin || req.headers.referer || "";
+      if (origin) {
+        const h = new URL(origin).hostname.replace(/^www\./, "");
+        siteId = h || null;
+      }
+    }
+  } catch {}
+  if (!siteId) siteId = "unknown-site";
+
+  // sessionId: берём из заголовка/меты/тела; если нет — генерим
+  let sessionId =
+    req.header("x-aiw-session") ||
+    meta.sessionId ||
+    req.body?.sessionId ||
+    null;
+
+  const serverGenerated = !sessionId;
+  if (!sessionId) {
+    sessionId = "sess-" + Math.random().toString(36).slice(2) + Date.now().toString(36);
   }
 
-  const ipHashVal = hashIp(getIp(req), req.headers["user-agent"], siteId);
+  const visitorId = req.header("x-aiw-visitor") || meta.visitorId || null;
 
-  // upsert вместо find+create — надёжнее при параллельных запросах
-  const now = new Date();
-  await AiwSession.updateOne(
-    { sessionId },
-    {
-      $setOnInsert: {
-        siteId, sessionId, visitorId,
-        pageUrl: pageUrl || null,
-        referrer: referrer || null,
-        utm: utm || {},
-        tz: tz || null,
-        lang: lang || "ru",
-        userAgent: req.headers["user-agent"] || null,
-        ipHash: ipHashVal,
-        startedAt: now,
-        topics: [],
-        messagesCount: 0,
-        userMessages: 0,
-        assistantMessages: 0,
-      },
-      $set: { endedAt: now }, // обновляем "последнюю активность"
-    },
-    { upsert: true }
-  ).catch(e => console.error("[AIW] ensureSession updateOne error", e));
-
-  return { sessionId };
+  return { siteId, sessionId, visitorId, serverGenerated };
 }
 
 
-async function logUserMessage({ siteId, sessionId, content }) {
-  if (!siteId || !sessionId || !content) {
-    console.warn("[AIW] skip logUserMessage", { siteId, sessionId, contentLen: (content||"").length });
-    return;
-  }
+async function ensureSession(meta, req) {
   try {
+    const { siteId, sessionId, visitorId, pageUrl, referrer, utm, tz, lang } = meta || {};
+    const ipHashVal = hashIp(getIp(req), req.headers["user-agent"], siteId || "unknown-site");
+
+    const now = new Date();
+    await AiwSession.updateOne(
+      { sessionId },
+      {
+        $setOnInsert: {
+          siteId: siteId || "unknown-site",
+          sessionId,
+          visitorId: visitorId || null,
+          pageUrl: pageUrl || null,
+          referrer: referrer || null,
+          utm: utm || {},
+          tz: tz || null,
+          lang: lang || "ru",
+          userAgent: req.headers["user-agent"] || null,
+          ipHash: ipHashVal,
+          startedAt: now,
+          topics: [],
+          messagesCount: 0,
+          userMessages: 0,
+          assistantMessages: 0,
+        },
+        $set: { endedAt: now },
+      },
+      { upsert: true }
+    );
+    return { sessionId };
+  } catch (e) {
+    console.error("[AIW] ensureSession error", e);
+    return null;
+  }
+}
+
+
+
+async function logUserMessage({ siteId, sessionId, content }) {
+  try {
+    if (!content) return; // логично не писать пустоту
     const topics = classifyTopics(content);
     const doc = await AiwMessage.create({
-      siteId, sessionId, role: "user",
+      siteId: siteId || "unknown-site",
+      sessionId,
+      role: "user",
       content: String(content).slice(0, 8000),
       topic: topics[0],
     });
@@ -90,14 +128,13 @@ async function logUserMessage({ siteId, sessionId, content }) {
 }
 
 async function logAssistantMessage({ siteId, sessionId, content, latencyMs }) {
-  if (!siteId || !sessionId || content == null) {
-    console.warn("[AIW] skip logAssistantMessage", { siteId, sessionId, contentLen: content==null? null : String(content).length });
-    return;
-  }
   try {
+    if (content == null) return;
     const topics = classifyTopics(content);
     const doc = await AiwMessage.create({
-      siteId, sessionId, role: "assistant",
+      siteId: siteId || "unknown-site",
+      sessionId,
+      role: "assistant",
       content: String(content).slice(0, 200_000),
       topic: topics[0],
       latencyMs,
@@ -238,20 +275,14 @@ router.post("/chat", async (req, res) => {
   try {
     res.setHeader("X-AIW-Build", BUILD_TAG);
     const { messages = [], stream = true, meta = {} } = req.body || {};
-    
-    const allowedRoles = new Set(["system", "user", "assistant"]);
-    const safeMsgs = (Array.isArray(messages) ? messages : [])
-      .filter((m) => m && allowedRoles.has(m.role) && typeof m.content === "string")
-      .map((m) => ({ role: m.role, content: m.content.slice(0, 4000) }))
-      .slice(-30);
 
-// Считываем мету, которую шлёт виджет (Patch C у тебя уже стоит)
+const ids = resolveIds(req, meta);
+const { siteId, sessionId, visitorId, serverGenerated } = ids;
+
+// чтобы фронт мог узнать, какую сессию мы завели на сервере:
+if (serverGenerated) res.setHeader("X-AIW-Session", sessionId);
+
 const lang = String(meta.lang || "ru");
-const siteId = String(req.header("x-aiw-site") || meta.siteId || "demo");
-const sessionId = String(req.header("x-aiw-session") || meta.sessionId || "");
-const visitorId = String(req.header("x-aiw-visitor") || meta.visitorId || "");
-console.log("[AIW] meta", { siteId, sessionId, visitorId: !!visitorId, lang, pageUrl: meta.pageUrl, referrer: meta.referrer || req.headers.referer });
-
 const metaAll = {
   siteId,
   sessionId,
@@ -262,6 +293,19 @@ const metaAll = {
   tz: meta.tz || null,
   lang,
 };
+
+await ensureSession(metaAll, req);
+
+    
+    const allowedRoles = new Set(["system", "user", "assistant"]);
+    const safeMsgs = (Array.isArray(messages) ? messages : [])
+      .filter((m) => m && allowedRoles.has(m.role) && typeof m.content === "string")
+      .map((m) => ({ role: m.role, content: m.content.slice(0, 4000) }))
+      .slice(-30);
+
+console.log("[AIW] meta", { siteId, sessionId, visitorId: !!visitorId, lang, pageUrl: meta.pageUrl, referrer: meta.referrer || req.headers.referer });
+
+
 
 // гарантируем наличие записи сессии
 const ses = await ensureSession(metaAll, req);
