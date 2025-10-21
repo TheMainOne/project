@@ -2,7 +2,9 @@
 import 'dotenv/config';     
 import express from "express";
 import OpenAI from "openai";
-
+import AiwSession from "../../models/AiwSession.js";
+import AiwMessage from "../../models/AiwMessage.js";
+import { hashIp, classifyTopics } from "../../utils/telemetry.js";
 import { retrieveTopK, buildPrompt } from "../../services/web_crawler/core.js";
 import { tryFastAnswer } from '../../services/web_crawler/fastAnswer.js';
 
@@ -16,6 +18,75 @@ const oai = process.env.OPENAI_API_KEY
 
 const MODEL = process.env.OPENAI_MODEL || "gpt-5-nano"; // можно сменить в .env
 const CURRENCY = process.env.AIW_CURRENCY || "USD";
+
+// === Logging helpers (Mongo) ===
+function getIp(req) {
+  return (req.headers["x-forwarded-for"] || "").split(",")[0].trim() ||
+         req.socket?.remoteAddress || req.ip;
+}
+
+async function ensureSession(meta, req) {
+  const { siteId, sessionId, visitorId, pageUrl, referrer, utm, tz, lang } = meta || {};
+  if (!siteId || !sessionId) return null;
+
+  let s = await AiwSession.findOne({ sessionId });
+  if (!s) {
+    s = await AiwSession.create({
+      siteId, sessionId, visitorId,
+      pageUrl, referrer, utm, tz, lang,
+      userAgent: req.headers["user-agent"],
+      ipHash: hashIp(getIp(req), req.headers["user-agent"], siteId),
+      startedAt: new Date(),
+      messagesCount: 0,
+      userMessages: 0,
+      assistantMessages: 0,
+      topics: [],
+    });
+  }
+  return s;
+}
+
+async function logUserMessage({ siteId, sessionId, content }) {
+  if (!siteId || !sessionId || !content) return;
+  const topics = classifyTopics(content);
+  await AiwMessage.create({
+    siteId,
+    sessionId,
+    role: "user",
+    content: String(content).slice(0, 8000),
+    topic: topics[0],
+  });
+  await AiwSession.updateOne(
+    { sessionId },
+    {
+      $inc: { messagesCount: 1, userMessages: 1 },
+      $set: { lastUserQuestion: content, endedAt: new Date() },
+      $addToSet: { topics: { $each: topics } },
+    }
+  );
+}
+
+async function logAssistantMessage({ siteId, sessionId, content, latencyMs }) {
+  if (!siteId || !sessionId || content == null) return;
+  const topics = classifyTopics(content);
+  await AiwMessage.create({
+    siteId,
+    sessionId,
+    role: "assistant",
+    content: String(content).slice(0, 200_000),
+    topic: topics[0],
+    latencyMs,
+  });
+  await AiwSession.updateOne(
+    { sessionId },
+    {
+      $inc: { messagesCount: 1, assistantMessages: 1 },
+      $set: { endedAt: new Date() },
+      $addToSet: { topics: { $each: topics } },
+    }
+  );
+}
+
 
 // === Simple in-process cache (NEW) ===
 const ANSWER_TTL_MS = 60 * 60 * 1000;
@@ -137,18 +208,38 @@ router.post("/chat", async (req, res) => {
   try {
     res.setHeader("X-AIW-Build", BUILD_TAG);
     const { messages = [], stream = true, meta = {} } = req.body || {};
+    
     const allowedRoles = new Set(["system", "user", "assistant"]);
     const safeMsgs = (Array.isArray(messages) ? messages : [])
       .filter((m) => m && allowedRoles.has(m.role) && typeof m.content === "string")
       .map((m) => ({ role: m.role, content: m.content.slice(0, 4000) }))
       .slice(-30);
 
-    // NEW: язык и siteId
-    const lang = String(meta.lang || "ru");
-    const siteId = String(req.header("x-aiw-site") || "demo");
+// Считываем мету, которую шлёт виджет (Patch C у тебя уже стоит)
+const lang = String(meta.lang || "ru");
+const siteId = String(req.header("x-aiw-site") || meta.siteId || "demo");
+const sessionId = String(req.header("x-aiw-session") || meta.sessionId || "");
+const visitorId = String(req.header("x-aiw-visitor") || meta.visitorId || "");
+
+const metaAll = {
+  siteId,
+  sessionId,
+  visitorId,
+  pageUrl: meta.pageUrl || meta.referrer || req.headers.referer || null,
+  referrer: meta.referrer || null,
+  utm: meta.utm || {},
+  tz: meta.tz || null,
+  lang,
+};
+
+// гарантируем наличие записи сессии
+const ses = await ensureSession(metaAll, req);
+
 
     const lastUser = [...safeMsgs].reverse().find((m) => m.role === "user");
     const query = (lastUser?.content || "").trim();
+    await logUserMessage({ siteId, sessionId, content: query });
+const t0 = Date.now(); // замерим задержку до ответа ассистента
 
     if (!query) {
       if (!stream) {
@@ -161,24 +252,27 @@ router.post("/chat", async (req, res) => {
       return res.end();
     }
 
-    // === 0) CACHE (NEW)
-    const cacheKey = `${siteId}::${lang}::${query}`;
-    const cached = getFromCache(cacheKey);
-    if (cached) {
-      setSourceHeaders(res, "cache", cached.citations || []);
-      if (!stream) {
-        setJSONHeaders(req, res);
-        return sendJSON(req, res, { reply: cached.reply, source: "cache", citations: cached.citations || [] });
-      }
-      setSSEHeaders(req, res);
-      res.write(": heartbeat\n\n");
-      const CH = 24;
-      for (let i = 0; i < cached.reply.length; i += CH) {
-        res.write(`data: ${cached.reply.slice(i, i + CH)}\n\n`);
-      }
-      res.write("data: [DONE]\n\n");
-      return res.end();
-    }
+// === 0) CACHE (NEW)
+const cacheKey = `${siteId}::${lang}::${query}`;
+const cached = getFromCache(cacheKey);
+if (cached) {
+  setSourceHeaders(res, "cache", cached.citations || []);
+  if (!stream) {
+    setJSONHeaders(req, res);
+    await logAssistantMessage({ siteId, sessionId, content: cached.reply, latencyMs: Date.now() - t0 });
+    return sendJSON(req, res, { reply: cached.reply, source: "cache", citations: cached.citations || [] });
+  }
+  setSSEHeaders(req, res);
+  res.write(": heartbeat\n\n");
+  const CH = 24;
+  for (let i = 0; i < cached.reply.length; i += CH) {
+    res.write(`data: ${cached.reply.slice(i, i + CH)}\n\n`);
+  }
+  res.write("data: [DONE]\n\n");
+  await logAssistantMessage({ siteId, sessionId, content: cached.reply, latencyMs: Date.now() - t0 });
+  return res.end();
+}
+
 
     // === 1) RAG retrieve (NEW)
     const contexts = await retrieveTopK(siteId, query, { k: 5, softLimit: 300, minScore: 0.18 });
@@ -187,6 +281,7 @@ router.post("/chat", async (req, res) => {
     const fast = tryFastAnswer(query, contexts, lang);
     if (fast) {
       const payload = { reply: fast.reply, citations: fast.citations || [] };
+      await logAssistantMessage({ siteId, sessionId, content: payload.reply, latencyMs: Date.now() - t0 });
       putToCache(cacheKey, payload);
       setSourceHeaders(res, "rag-extractive", payload.citations);
       if (!stream) {
@@ -204,47 +299,56 @@ router.post("/chat", async (req, res) => {
     }
 
     // === 3) Нет контекста — честный ответ (NEW)
-    if (!contexts.length) {
-      const reply = oai
-        ? (lang.startsWith("ru") ? "Недостаточно данных в базе для точного ответа." : "Not enough data in the knowledge base.")
-        : (lang.startsWith("ru") ? `Вы спросили: "${query}"\n\nДемо-ответ (нет OPENAI_API_KEY).` : `You asked: "${query}"\n\nDemo reply (no OPENAI_API_KEY).`);
-      const payload = { reply, citations: [] };
-      putToCache(cacheKey, payload);
-      setSourceHeaders(res, "no-context", []);
-      if (!stream) {
-        setJSONHeaders(req, res);
-        return sendJSON(req, res, { reply: payload.reply, source: "no-context", citations: [] });
-      }
-      setSSEHeaders(req, res);
-      res.write(`data: ${reply}\n\n`);
-      res.write("data: [DONE]\n\n");
-      return res.end();
-    }
+if (!contexts.length) {
+  const reply = oai
+    ? (lang.startsWith("ru") ? "Недостаточно данных в базе для точного ответа." : "Not enough data in the knowledge base.")
+    : (lang.startsWith("ru") ? `Вы спросили: "${query}"\n\nДемо-ответ (нет OPENAI_API_KEY).` : `You asked: "${query}"\n\nDemo reply (no OPENAI_API_KEY).`);
+  const payload = { reply, citations: [] };
+  putToCache(cacheKey, payload);
+  setSourceHeaders(res, "no-context", []);
+  if (!stream) {
+    setJSONHeaders(req, res);
+    await logAssistantMessage({ siteId, sessionId, content: payload.reply, latencyMs: Date.now() - t0 });
+    return sendJSON(req, res, { reply: payload.reply, source: "no-context", citations: [] });
+  }
+  setSSEHeaders(req, res);
+  res.write(`data: ${reply}\n\n`);
+  res.write("data: [DONE]\n\n");
+  await logAssistantMessage({ siteId, sessionId, content: payload.reply, latencyMs: Date.now() - t0 });
+  return res.end();
+}
+
 
     // === 4) LLM с RAG-контекстом (NEW)
     const prompt = buildPrompt({ query, contexts, lang });
     const citations = contexts.map((c, i) => ({ idx: i + 1, url: c.url }));
 
-    if (!oai) {
-      const reply = (lang.startsWith("ru")
-        ? `Демо-ответ (нет OPENAI_API_KEY).`
-        : `Demo reply (no OPENAI_API_KEY).`);
-      const payload = { reply, citations };
-      putToCache(cacheKey, payload);
-      setSourceHeaders(res, "rag", citations);
-      if (!stream) {
-        setJSONHeaders(req, res);
-        return sendJSON(req, res, { reply: payload.reply, source: "rag", citations });
-      }
-      setSSEHeaders(req, res);
-      res.write(": heartbeat\n\n");
-      const CH = 24;
-      for (let i = 0; i < reply.length; i += CH) {
-        res.write(`data: ${reply.slice(i, i + CH)}\n\n`);
-      }
-      res.write("data: [DONE]\n\n");
-      return res.end();
-    }
+if (!oai) {
+  const reply = (lang.startsWith("ru")
+    ? `Демо-ответ (нет OPENAI_API_KEY).`
+    : `Demo reply (no OPENAI_API_KEY).`);
+
+  const payload = { reply, citations };
+  await logAssistantMessage({ siteId, sessionId, content: reply, latencyMs: Date.now() - t0 });
+
+  putToCache(cacheKey, payload);
+  setSourceHeaders(res, "rag", citations);
+
+  if (!stream) {
+    setJSONHeaders(req, res);
+    return sendJSON(req, res, { reply: payload.reply, source: "rag", citations });
+  }
+
+  setSSEHeaders(req, res);
+  res.write(": heartbeat\n\n");
+  const CH = 24;
+  for (let i = 0; i < reply.length; i += CH) {
+    res.write(`data: ${reply.slice(i, i + CH)}\n\n`);
+  }
+  res.write("data: [DONE]\n\n");
+  return res.end();
+}
+
 
     // ——— режимы: STREAM vs JSON ———
     if (stream) {
@@ -307,6 +411,7 @@ router.post("/chat", async (req, res) => {
       putToCache(cacheKey, payload);
       setJSONHeaders(req, res);
       setSourceHeaders(res, "rag", citations);
+      await logAssistantMessage({ siteId, sessionId, content: reply, latencyMs: Date.now() - t0 });
       return sendJSON(req, res, { reply: payload.reply, source: "rag", citations });
     }
   } catch (e) {

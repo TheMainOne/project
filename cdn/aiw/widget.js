@@ -13,6 +13,52 @@ aiw widget (fixed)
   const WELCOME  = CFG.welcome || "Hi! How can I help?";
   const LANG     = CFG.lang || "en";
 
+// [AIW-LOGGING] identities + meta
+function getVisitorId() {
+  try {
+    let v = localStorage.getItem("aiw:visitorId");
+    if (!v) {
+      v = (crypto?.randomUUID?.() || (Date.now() + ":" + Math.random().toString(16).slice(2)));
+      localStorage.setItem("aiw:visitorId", v);
+    }
+    return v;
+  } catch {
+    return "anon-" + Date.now();
+  }
+}
+
+function newSessionId() {
+  return (crypto?.randomUUID?.() || (Date.now() + ":" + Math.random().toString(16).slice(2)));
+}
+
+// создаём/переиспользуем идентификаторы
+const VISITOR_ID = getVisitorId();
+// сессию создаём при загрузке виджета (сбросится кнопкой Reset)
+let SESSION_ID = newSessionId();
+
+// [AIW-LOGGING] сбор метаданных страницы и UTM
+function collectMeta() {
+  const url = new URL(location.href);
+  const utm = {
+    utm_source:  url.searchParams.get("utm_source"),
+    utm_medium:  url.searchParams.get("utm_medium"),
+    utm_campaign:url.searchParams.get("utm_campaign"),
+    utm_term:    url.searchParams.get("utm_term"),
+    utm_content: url.searchParams.get("utm_content"),
+  };
+  return {
+    siteId: SITE_ID,
+    visitorId: VISITOR_ID,
+    sessionId: SESSION_ID,
+    pageUrl: location.href,
+    referrer: document.referrer || null,
+    tz: Intl.DateTimeFormat().resolvedOptions().timeZone,
+    lang: LANG,
+    utm
+  };
+}
+
+
   // ---------- Utilities ----------
   const storeKey = `aiw_hist_${SITE_ID}`;
   const readHistory = () => { try { return JSON.parse(localStorage.getItem(storeKey) || "[]"); } catch { return []; } };
@@ -181,12 +227,11 @@ function hideTyping() {
   close.addEventListener("click", () => { open = false; panel.style.display = "none"; });
 resetBtn.addEventListener("click", (e) => {
   e.preventDefault();
-  // по желанию: подтверждение
-  // if (!confirm(LANG.startsWith("ru") ? "Сбросить диалог?" : "Reset chat?")) return;
 
   try { localStorage.removeItem(storeKey); } catch {}
   history = [{ role: "assistant", content: WELCOME }];
   writeHistory(history);
+  SESSION_ID = newSessionId();
   render();
 });
   input.addEventListener("keydown", (e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); doSend(); } });
@@ -226,14 +271,35 @@ resetBtn.addEventListener("click", (e) => {
     try {
       showTyping();
 
-      const res = await fetch(ENDPOINT, {
-        method: "POST",
-        headers: { "Content-Type": "application/json", "x-aiw-site": SITE_ID },
-        body: JSON.stringify({ messages: safeMsgs, stream: false, meta: { referrer: location.href, lang: LANG } }),
-        signal: controller.signal,
-        keepalive: true,
-        mode: "cors",
-      });
+      const meta = collectMeta();
+
+const res = await fetch(ENDPOINT, {
+  method: "POST",
+  headers: {
+    "Content-Type": "application/json",
+    "x-aiw-site": SITE_ID,
+    "x-aiw-visitor": VISITOR_ID,
+    "x-aiw-session": SESSION_ID
+  },
+  body: JSON.stringify({
+    messages: safeMsgs,
+    stream: false,
+    meta // <- отправляем всю мету
+  }),
+  signal: controller.signal,
+  keepalive: true,
+  mode: "cors",
+});
+
+
+      // const res = await fetch(ENDPOINT, {
+      //   method: "POST",
+      //   headers: { "Content-Type": "application/json", "x-aiw-site": SITE_ID },
+      //   body: JSON.stringify({ messages: safeMsgs, stream: false, meta: { referrer: location.href, lang: LANG } }),
+      //   signal: controller.signal,
+      //   keepalive: true,
+      //   mode: "cors",
+      // });
 
       const ct = (res.headers.get("content-type") || "").toLowerCase();
 
