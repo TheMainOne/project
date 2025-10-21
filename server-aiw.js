@@ -34,6 +34,7 @@ app.get('/ping', (req, res) => res.json({ ok: true, t: Date.now() }));
 // 3) Корректные пути (совместимо с твоим Nginx конфигом)
 // Было: app.use("/", ...). Делай так:
 app.use('/aiw', chatRouter);      // => /aiw/chat
+app.use('/api/aiw', chatRouter);      // => /aiw/chat
 app.use('/aiw', retrieveRouter);  // => /aiw/<твои пути в этом роутере>
 app.use('/aiw', widgetRouter);    // => /aiw/<...>
 
