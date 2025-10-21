@@ -453,6 +453,17 @@ if (!oai) {
 });
 router.options("/chat", (req, res) => res.sendStatus(204));
 router.get("/ping", (req, res) => res.json({ ok: true, t: Date.now() }));
+router.get("/chat-debug-write", async (req, res) => {
+  try {
+    const sessionId = "debug-" + Date.now();
+    const a = await AiwSession.create({ siteId: "debug-site", sessionId, startedAt: new Date() });
+    const b = await AiwMessage.create({ siteId: "debug-site", sessionId, role: "assistant", content: "hello debug" });
+    res.json({ ok: true, sessionId, a: a._id.toString(), b: b._id.toString() });
+  } catch (e) {
+    console.error("debug-write error", e);
+    res.status(500).json({ ok: false, error: String(e) });
+  }
+});
 
 // for testing purpose
 router.get("/sse-test", async (req, res) => {
