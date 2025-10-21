@@ -68,9 +68,9 @@ mongoose
 
     // твои API роуты
     app.use("/", authRouter);
-    app.use("/widget", widgetRouter);
-    app.use(retrieveRouter);
-    app.use(chatRouter);
+    // app.use("/widget", widgetRouter);
+    // app.use(retrieveRouter);
+    // app.use(chatRouter);
 
     // error handlers
     app.use(errorHandler);

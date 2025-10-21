@@ -100,6 +100,27 @@ async function ensureSession(meta, req) {
   }
 }
 
+function setDebugHeaders(req, res, dbg = {}) {
+  try {
+    const t = Date.now() - (req.__trace?.start || Date.now());
+    res.setHeader("X-AIW-Build", BUILD_TAG);
+    res.setHeader("X-AIW-Trace", req.__trace?.id || "");
+    res.setHeader("X-AIW-Proc", `pid:${req.__trace?.pid}|port:${req.__trace?.port}`);
+    res.setHeader("X-AIW-Route", `${req.baseUrl || ""}${req.route?.path || req.originalUrl || ""}`);
+    if (dbg.siteId)    res.setHeader("X-AIW-Resolved-Site", dbg.siteId);
+    if (dbg.sessionId) res.setHeader("X-AIW-Resolved-Session", dbg.sessionId);
+    if (dbg.handler)   res.setHeader("X-AIW-Handler", dbg.handler);
+    if (dbg.phase)     res.setHeader("X-AIW-Phase", dbg.phase);           // cache | rag | rag-extractive | no-context | empty
+    if (dbg.db)        res.setHeader("X-AIW-DB", dbg.db);                 // user:+ assistant:+ / -
+    if (dbg.timing)    res.setHeader("X-AIW-Timing", JSON.stringify(dbg.timing)); // {retrieve:12, oai:45, total:60}
+    if (req.query.debug === "1" || req.headers["x-aiw-debug"] === "1") {
+      // Разрешим отдавать расширенные заголовки в браузер
+      res.setHeader("Access-Control-Expose-Headers",
+        "X-AIW-Build, X-AIW-Source, X-AIW-Citations-Count, X-AIW-Trace, X-AIW-Proc, X-AIW-Route, X-AIW-Resolved-Site, X-AIW-Resolved-Session, X-AIW-Handler, X-AIW-Phase, X-AIW-Timing, X-AIW-DB"
+      );
+    }
+  } catch {}
+}
 
 
 async function logUserMessage({ siteId, sessionId, content }) {
@@ -272,229 +293,248 @@ router.use((req, res, next) => {
 });
 // ============ Маршрут /chat ============
 router.post("/chat", async (req, res) => {
+  const started = Date.now();
+  let timing = {};
+  let dbMark = "user:- assistant:-";
+  let phase = "unknown";
+
   try {
+    // ====== Базовые заголовки/метки для дебага ======
     res.setHeader("X-AIW-Build", BUILD_TAG);
+    res.setHeader("X-AIW-Handler", "aiwChat/chat");
+
+    // Разрешим браузеру видеть все наши debug-заголовки
+    const expose = [
+      "X-AIW-Build","X-AIW-Source","X-AIW-Citations-Count",
+      "X-AIW-Handler","X-AIW-Resolved-Site","X-AIW-Resolved-Session",
+      "X-AIW-Phase","X-AIW-DB","X-AIW-Timing"
+    ].join(", ");
+    const existingExpose = res.getHeader("Access-Control-Expose-Headers");
+    res.setHeader(
+      "Access-Control-Expose-Headers",
+      existingExpose ? (existingExpose + ", " + expose) : expose
+    );
+
+    // ====== Чтение входа (как в твоём коде) ======
     const { messages = [], stream = true, meta = {} } = req.body || {};
-
-const ids = resolveIds(req, meta);
-const { siteId, sessionId, visitorId, serverGenerated } = ids;
-
-// чтобы фронт мог узнать, какую сессию мы завели на сервере:
-if (serverGenerated) res.setHeader("X-AIW-Session", sessionId);
-
-const lang = String(meta.lang || "ru");
-const metaAll = {
-  siteId,
-  sessionId,
-  visitorId,
-  pageUrl: meta.pageUrl || meta.referrer || req.headers.referer || null,
-  referrer: meta.referrer || null,
-  utm: meta.utm || {},
-  tz: meta.tz || null,
-  lang,
-};
-
-await ensureSession(metaAll, req);
-
-    
     const allowedRoles = new Set(["system", "user", "assistant"]);
     const safeMsgs = (Array.isArray(messages) ? messages : [])
       .filter((m) => m && allowedRoles.has(m.role) && typeof m.content === "string")
       .map((m) => ({ role: m.role, content: m.content.slice(0, 4000) }))
       .slice(-30);
 
-console.log("[AIW] meta", { siteId, sessionId, visitorId: !!visitorId, lang, pageUrl: meta.pageUrl, referrer: meta.referrer || req.headers.referer });
+    const lang = String(meta.lang || "ru");
+    const siteId = String(req.header("x-aiw-site") || meta.siteId || "demo");
+    const sessionId = String(req.header("x-aiw-session") || meta.sessionId || "");
+    const visitorId = String(req.header("x-aiw-visitor") || meta.visitorId || "");
 
+    res.setHeader("X-AIW-Resolved-Site", siteId);
+    res.setHeader("X-AIW-Resolved-Session", sessionId || "(empty)");
 
+    const metaAll = {
+      siteId,
+      sessionId,
+      visitorId,
+      pageUrl: meta.pageUrl || meta.referrer || req.headers.referer || null,
+      referrer: meta.referrer || null,
+      utm: meta.utm || {},
+      tz: meta.tz || null,
+      lang,
+    };
 
-// гарантируем наличие записи сессии
-const ses = await ensureSession(metaAll, req);
+    // ====== ensureSession ======
+    const tEnsure = Date.now();
+    await ensureSession(metaAll, req);
+    timing.ensure = Date.now() - tEnsure;
 
-
+    // ====== извлекаем пользовательский вопрос ======
     const lastUser = [...safeMsgs].reverse().find((m) => m.role === "user");
     const query = (lastUser?.content || "").trim();
-    await logUserMessage({ siteId, sessionId, content: query });
-const t0 = Date.now(); // замерим задержку до ответа ассистента
 
-    if (!query) {
-      if (!stream) {
-        setJSONHeaders(req, res);
-        return sendJSON(req, res, { reply: lang.startsWith("ru") ? "Пустой вопрос" : "Empty question", source: "empty", citations: [] });
-      }
-      setSSEHeaders(req, res);
-      res.write(`data: ${lang.startsWith("ru") ? "Пустой вопрос" : "Empty question"}\n\n`);
-      res.write("data: [DONE]\n\n");
-      return res.end();
+    // логируем юзера (не пишем пустоту)
+    if (query) {
+      await logUserMessage({ siteId, sessionId, content: query });
+      dbMark = "user:+ assistant:-";
     }
 
-// === 0) CACHE (NEW)
-const cacheKey = `${siteId}::${lang}::${query}`;
-const cached = getFromCache(cacheKey);
-if (cached) {
-  setSourceHeaders(res, "cache", cached.citations || []);
-  if (!stream) {
-    setJSONHeaders(req, res);
-    await logAssistantMessage({ siteId, sessionId, content: cached.reply, latencyMs: Date.now() - t0 });
-    return sendJSON(req, res, { reply: cached.reply, source: "cache", citations: cached.citations || [] });
-  }
-  setSSEHeaders(req, res);
-  res.write(": heartbeat\n\n");
-  const CH = 24;
-  for (let i = 0; i < cached.reply.length; i += CH) {
-    res.write(`data: ${cached.reply.slice(i, i + CH)}\n\n`);
-  }
-  res.write("data: [DONE]\n\n");
-  await logAssistantMessage({ siteId, sessionId, content: cached.reply, latencyMs: Date.now() - t0 });
-  return res.end();
-}
+    if (!query) {
+      phase = "empty";
+      res.setHeader("X-AIW-Phase", phase);
+      res.setHeader("X-AIW-DB", dbMark);
+      res.setHeader("X-AIW-Timing", JSON.stringify({ ...timing, total: Date.now() - started }));
 
+      if (!stream) {
+        setJSONHeaders(req, res);
+        return sendJSON(req, res, {
+          reply: lang.startsWith("ru") ? "Пустой вопрос" : "Empty question",
+          source: "empty",
+          citations: []
+        });
+      } else {
+        setSSEHeaders(req, res);
+        res.write(`data: ${lang.startsWith("ru") ? "Пустой вопрос" : "Empty question"}\n\n`);
+        res.write("data: [DONE]\n\n");
+        return res.end();
+      }
+    }
 
-    // === 1) RAG retrieve (NEW)
+    // ====== RAG retrieve ======
+    const tRetrieve = Date.now();
     const contexts = await retrieveTopK(siteId, query, { k: 5, softLimit: 300, minScore: 0.18 });
+    timing.retrieve = Date.now() - tRetrieve;
 
-    // === 2) Fast path без LLM (NEW)
+    // ====== Fast extractive ======
     const fast = tryFastAnswer(query, contexts, lang);
     if (fast) {
+      phase = "rag-extractive";
+      setSourceHeaders(res, "rag-extractive", fast.citations || []);
+      res.setHeader("X-AIW-Phase", phase);
+
       const payload = { reply: fast.reply, citations: fast.citations || [] };
-      await logAssistantMessage({ siteId, sessionId, content: payload.reply, latencyMs: Date.now() - t0 });
-      putToCache(cacheKey, payload);
-      setSourceHeaders(res, "rag-extractive", payload.citations);
+      await logAssistantMessage({ siteId, sessionId, content: payload.reply, latencyMs: Date.now() - started });
+      dbMark = "user:+ assistant:+";
+
+      res.setHeader("X-AIW-DB", dbMark);
+      res.setHeader("X-AIW-Timing", JSON.stringify({ ...timing, total: Date.now() - started }));
+
       if (!stream) {
         setJSONHeaders(req, res);
         return sendJSON(req, res, { reply: payload.reply, source: "rag-extractive", citations: payload.citations });
+      } else {
+        setSSEHeaders(req, res);
+        res.write(": heartbeat\n\n");
+        const CH = 24;
+        for (let i = 0; i < payload.reply.length; i += CH) {
+          res.write(`data: ${payload.reply.slice(i, i + CH)}\n\n`);
+        }
+        res.write("data: [DONE]\n\n");
+        return res.end();
       }
-      setSSEHeaders(req, res);
-      res.write(": heartbeat\n\n");
-      const CH = 24;
-      for (let i = 0; i < payload.reply.length; i += CH) {
-        res.write(`data: ${payload.reply.slice(i, i + CH)}\n\n`);
-      }
-      res.write("data: [DONE]\n\n");
-      return res.end();
     }
 
-    // === 3) Нет контекста — честный ответ (NEW)
-if (!contexts.length) {
-  const reply = oai
-    ? (lang.startsWith("ru") ? "Недостаточно данных в базе для точного ответа." : "Not enough data in the knowledge base.")
-    : (lang.startsWith("ru") ? `Вы спросили: "${query}"\n\nДемо-ответ (нет OPENAI_API_KEY).` : `You asked: "${query}"\n\nDemo reply (no OPENAI_API_KEY).`);
-  const payload = { reply, citations: [] };
-  putToCache(cacheKey, payload);
-  setSourceHeaders(res, "no-context", []);
-  if (!stream) {
-    setJSONHeaders(req, res);
-    await logAssistantMessage({ siteId, sessionId, content: payload.reply, latencyMs: Date.now() - t0 });
-    return sendJSON(req, res, { reply: payload.reply, source: "no-context", citations: [] });
-  }
-  setSSEHeaders(req, res);
-  res.write(`data: ${reply}\n\n`);
-  res.write("data: [DONE]\n\n");
-  await logAssistantMessage({ siteId, sessionId, content: payload.reply, latencyMs: Date.now() - t0 });
-  return res.end();
-}
+    // ====== Нет контекста ======
+    if (!contexts.length) {
+      phase = "no-context";
+      res.setHeader("X-AIW-Phase", phase);
+      setSourceHeaders(res, "no-context", []);
 
+      const reply = oai
+        ? (lang.startsWith("ru")
+          ? "Недостаточно данных в базе для точного ответа."
+          : "Not enough data in the knowledge base.")
+        : (lang.startsWith("ru")
+          ? `Демо-ответ (нет OPENAI_API_KEY).`
+          : `Demo reply (no OPENAI_API_KEY).`);
 
-    // === 4) LLM с RAG-контекстом (NEW)
-    const prompt = buildPrompt({ query, contexts, lang });
+      await logAssistantMessage({ siteId, sessionId, content: reply, latencyMs: Date.now() - started });
+      dbMark = "user:+ assistant:+";
+
+      res.setHeader("X-AIW-DB", dbMark);
+      res.setHeader("X-AIW-Timing", JSON.stringify({ ...timing, total: Date.now() - started }));
+
+      if (!stream) {
+        setJSONHeaders(req, res);
+        return sendJSON(req, res, { reply, source: "no-context", citations: [] });
+      } else {
+        setSSEHeaders(req, res);
+        res.write(`data: ${reply}\n\n`);
+        res.write("data: [DONE]\n\n");
+        return res.end();
+      }
+    }
+
+    // ====== Полноценный RAG через LLM ======
     const citations = contexts.map((c, i) => ({ idx: i + 1, url: c.url }));
+    const prompt = buildPrompt({ query, contexts, lang });
 
-if (!oai) {
-  const reply = (lang.startsWith("ru")
-    ? `Демо-ответ (нет OPENAI_API_KEY).`
-    : `Demo reply (no OPENAI_API_KEY).`);
-
-  const payload = { reply, citations };
-  await logAssistantMessage({ siteId, sessionId, content: reply, latencyMs: Date.now() - t0 });
-
-  putToCache(cacheKey, payload);
-  setSourceHeaders(res, "rag", citations);
-
-  if (!stream) {
-    setJSONHeaders(req, res);
-    return sendJSON(req, res, { reply: payload.reply, source: "rag", citations });
-  }
-
-  setSSEHeaders(req, res);
-  res.write(": heartbeat\n\n");
-  const CH = 24;
-  for (let i = 0; i < reply.length; i += CH) {
-    res.write(`data: ${reply.slice(i, i + CH)}\n\n`);
-  }
-  res.write("data: [DONE]\n\n");
-  return res.end();
-}
-
-
-    // ——— режимы: STREAM vs JSON ———
     if (stream) {
-      // STREAM (SSE)
-        // важно: сначала источник/ссылки, потом — SSE заголовки/флаш
-  setSourceHeaders(res, "rag", citations);
-  setSSEHeaders(req, res);
+      // ---- STREAM (SSE) ----
+      phase = "rag";
+      res.setHeader("X-AIW-Phase", phase);
+      setSourceHeaders(res, "rag", citations);
+      setSSEHeaders(req, res);
       res.write(": heartbeat\n\n");
 
       let clientClosed = false;
-      const endSafely = () => { if (!clientClosed) { clientClosed = true; try { res.end(); } catch {} } };
-      req.on("close", endSafely); req.on("aborted", endSafely);
+      req.on("close", () => { clientClosed = true; });
+      req.on("aborted", () => { clientClosed = true; });
 
-      let gotAnyToken = false;
-      const controller = new AbortController();
-      const timer = setTimeout(() => { if (!gotAnyToken) controller.abort(); }, 5000);
-
-      try {
-        const response = await oai.chat.completions.create({
-          model: MODEL,
-          messages: prompt, // ВАЖНО: используем RAG-промпт
-          stream: false,
-          signal: controller.signal,
-        });
-        for await (const chunk of response) {
-          if (clientClosed) break;
-          const c = chunk?.choices?.[0];
-          const delta = c?.delta?.content ?? c?.message?.content ?? "";
-          if (delta) { gotAnyToken = true; res.write(`data: ${delta}\n\n`); }
-          if (c?.finish_reason) break;
+      let buffer = "";
+      if (!oai) {
+        const demo = lang.startsWith("ru") ? "Демо-ответ (нет OPENAI_API_KEY)." : "Demo reply (no OPENAI_API_KEY).";
+        buffer = demo;
+        const CH = 24;
+        for (let i = 0; i < demo.length && !clientClosed; i += CH) {
+          res.write(`data: ${demo.slice(i, i + CH)}\n\n`);
         }
-      } catch (_) {
-        // если abort по таймауту — ниже fallback
-      } finally {
-        clearTimeout(timer);
-      }
-
-      if (!clientClosed && !gotAnyToken) {
+      } else {
         try {
-          const full = await oai.chat.completions.create({ model: MODEL, messages: prompt });
-          const reply = full.choices?.[0]?.message?.content?.trim() || "…";
+          // здесь можно включить реальный стрим; у тебя сейчас синхронный вариант
+          const completion = await oai.chat.completions.create({ model: MODEL, messages: prompt });
+          const reply = completion.choices?.[0]?.message?.content?.trim() || "";
+          buffer = reply;
           const CH = 24;
           for (let i = 0; i < reply.length && !clientClosed; i += CH) {
             res.write(`data: ${reply.slice(i, i + CH)}\n\n`);
           }
         } catch (e) {
-          if (!clientClosed) res.write(`data: ⚠️ ${e?.message || "LLM error"}\n\n`);
+          const msg = `⚠️ ${e?.message || "LLM error"}`;
+          buffer = msg;
+          if (!clientClosed) res.write(`data: ${msg}\n\n`);
         }
       }
 
-      if (!clientClosed) { res.write("data: [DONE]\n\n"); res.end(); }
-      // кешируем факт ответа
-      putToCache(cacheKey, { reply: "(streamed)", citations });
+      // лог ассистента и финальные заголовки
+      await logAssistantMessage({ siteId, sessionId, content: buffer, latencyMs: Date.now() - started });
+      dbMark = "user:+ assistant:+";
+      res.setHeader("X-AIW-DB", dbMark);
+      res.setHeader("X-AIW-Timing", JSON.stringify({ ...timing, total: Date.now() - started }));
+
+      if (!clientClosed) {
+        res.write("data: [DONE]\n\n");
+        res.end();
+      }
       return;
     } else {
-      // JSON
-      const completion = await oai.chat.completions.create({ model: MODEL, messages: prompt });
-      const reply = completion.choices?.[0]?.message?.content?.trim() || "";
-      const payload = { reply, citations };
-      putToCache(cacheKey, payload);
-      setJSONHeaders(req, res);
+      // ---- JSON ----
+      phase = "rag";
+      res.setHeader("X-AIW-Phase", phase);
       setSourceHeaders(res, "rag", citations);
-      await logAssistantMessage({ siteId, sessionId, content: reply, latencyMs: Date.now() - t0 });
-      return sendJSON(req, res, { reply: payload.reply, source: "rag", citations });
+
+      const tLLM = Date.now();
+      let reply = lang.startsWith("ru") ? "Демо-ответ (нет OPENAI_API_KEY)." : "Demo reply (no OPENAI_API_KEY).";
+      if (oai) {
+        const completion = await oai.chat.completions.create({ model: MODEL, messages: prompt });
+        reply = completion.choices?.[0]?.message?.content?.trim() || reply;
+      }
+      timing.llm = Date.now() - tLLM;
+
+      await logAssistantMessage({ siteId, sessionId, content: reply, latencyMs: Date.now() - started });
+      dbMark = "user:+ assistant:+";
+
+      res.setHeader("X-AIW-DB", dbMark);
+      res.setHeader("X-AIW-Timing", JSON.stringify({ ...timing, total: Date.now() - started }));
+
+      setJSONHeaders(req, res);
+      return sendJSON(req, res, { reply, source: "rag", citations });
     }
   } catch (e) {
+    phase = "error";
+    res.setHeader("X-AIW-Phase", phase);
+    res.setHeader("X-AIW-DB", dbMark);
+    res.setHeader("X-AIW-Timing", JSON.stringify({ ...timing, total: Date.now() - started }));
     console.error("AIW /chat error:", e);
-    if (!res.headersSent) return res.status(500).json({ error: "Internal error" });
-    try { res.write(`data: ⚠️ Internal error\n\n`); res.write("data: [DONE]\n\n"); res.end(); } catch {}
+    if (!res.headersSent) {
+      return res.status(500).json({ ok: false, error: String(e) });
+    }
+    try {
+      res.write(`data: ⚠️ Internal error\n\n`);
+      res.write("data: [DONE]\n\n");
+      res.end();
+    } catch {}
   }
 });
+
 router.options("/chat", (req, res) => res.sendStatus(204));
 router.get("/ping", (req, res) => res.json({ ok: true, t: Date.now() }));
 router.get("/chat-debug-write", async (req, res) => {

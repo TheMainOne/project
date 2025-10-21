@@ -2,7 +2,7 @@
 import 'dotenv/config';
 import express from 'express';
 import mongoose from 'mongoose';
-
+import { randomUUID } from "crypto";
 import widgetRouter from './api/widget/widget.js';
 import retrieveRouter from './api/widget/aiwSearch.js';
 import chatRouter from './api/widget/aiwChat.js';
@@ -16,6 +16,34 @@ app.use(express.json({ limit: '1mb' }));
 
 // чтобы корректно брать IP из X-Forwarded-For за Nginx
 app.set('trust proxy', true);
+
+
+// для тестирования 
+app.use((req, res, next) => {
+  // Уникальный traceId для запроса
+  const traceId = randomUUID();
+  const t0 = Date.now();
+
+  // Сохраним немного контекста
+  req.__trace = {
+    id: traceId,
+    start: t0,
+    baseUrl: req.baseUrl,
+    originalUrl: req.originalUrl,
+    pid: process.pid,
+    port: process.env.PORT || "unknown",
+  };
+
+  // Когда ответ уходит — поставим системные заголовки
+  res.on("finish", () => {
+    // ничего — всё проставим прямо в хендлере
+  });
+
+  next();
+});
+
+// для тестирования 
+
 
 // 1) Глобальный коннект к Mongo (ОДИН РАЗ)
 const MONGODB_URI = process.env.DATABASE_URL;
