@@ -27,24 +27,41 @@ function getIp(req) {
 
 async function ensureSession(meta, req) {
   const { siteId, sessionId, visitorId, pageUrl, referrer, utm, tz, lang } = meta || {};
-  if (!siteId || !sessionId) return null;
-
-  let s = await AiwSession.findOne({ sessionId });
-  if (!s) {
-    s = await AiwSession.create({
-      siteId, sessionId, visitorId,
-      pageUrl, referrer, utm, tz, lang,
-      userAgent: req.headers["user-agent"],
-      ipHash: hashIp(getIp(req), req.headers["user-agent"], siteId),
-      startedAt: new Date(),
-      messagesCount: 0,
-      userMessages: 0,
-      assistantMessages: 0,
-      topics: [],
-    });
+  if (!siteId || !sessionId) {
+    console.warn("[AIW] ensureSession skipped: missing ids", { siteId, sessionId });
+    return null;
   }
-  return s;
+
+  const ipHashVal = hashIp(getIp(req), req.headers["user-agent"], siteId);
+
+  // upsert вместо find+create — надёжнее при параллельных запросах
+  const now = new Date();
+  await AiwSession.updateOne(
+    { sessionId },
+    {
+      $setOnInsert: {
+        siteId, sessionId, visitorId,
+        pageUrl: pageUrl || null,
+        referrer: referrer || null,
+        utm: utm || {},
+        tz: tz || null,
+        lang: lang || "ru",
+        userAgent: req.headers["user-agent"] || null,
+        ipHash: ipHashVal,
+        startedAt: now,
+        topics: [],
+        messagesCount: 0,
+        userMessages: 0,
+        assistantMessages: 0,
+      },
+      $set: { endedAt: now }, // обновляем "последнюю активность"
+    },
+    { upsert: true }
+  ).catch(e => console.error("[AIW] ensureSession updateOne error", e));
+
+  return { sessionId };
 }
+
 
 async function logUserMessage({ siteId, sessionId, content }) {
   if (!siteId || !sessionId || !content) {
@@ -98,6 +115,7 @@ async function logAssistantMessage({ siteId, sessionId, content, latencyMs }) {
     console.error("[AIW] logAssistantMessage error", e);
   }
 }
+
 
 
 // === Simple in-process cache (NEW) ===
@@ -383,7 +401,7 @@ if (!oai) {
         const response = await oai.chat.completions.create({
           model: MODEL,
           messages: prompt, // ВАЖНО: используем RAG-промпт
-          stream: true,
+          stream: false,
           signal: controller.signal,
         });
         for await (const chunk of response) {
