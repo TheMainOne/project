@@ -47,44 +47,56 @@ async function ensureSession(meta, req) {
 }
 
 async function logUserMessage({ siteId, sessionId, content }) {
-  if (!siteId || !sessionId || !content) return;
-  const topics = classifyTopics(content);
-  await AiwMessage.create({
-    siteId,
-    sessionId,
-    role: "user",
-    content: String(content).slice(0, 8000),
-    topic: topics[0],
-  });
-  await AiwSession.updateOne(
-    { sessionId },
-    {
-      $inc: { messagesCount: 1, userMessages: 1 },
-      $set: { lastUserQuestion: content, endedAt: new Date() },
-      $addToSet: { topics: { $each: topics } },
-    }
-  );
+  if (!siteId || !sessionId || !content) {
+    console.warn("[AIW] skip logUserMessage", { siteId, sessionId, contentLen: (content||"").length });
+    return;
+  }
+  try {
+    const topics = classifyTopics(content);
+    const doc = await AiwMessage.create({
+      siteId, sessionId, role: "user",
+      content: String(content).slice(0, 8000),
+      topic: topics[0],
+    });
+    await AiwSession.updateOne(
+      { sessionId },
+      {
+        $inc: { messagesCount: 1, userMessages: 1 },
+        $set: { lastUserQuestion: content, endedAt: new Date() },
+        $addToSet: { topics: { $each: topics } },
+      }
+    );
+    console.log("[AIW] logged user msg", doc._id.toString());
+  } catch (e) {
+    console.error("[AIW] logUserMessage error", e);
+  }
 }
 
 async function logAssistantMessage({ siteId, sessionId, content, latencyMs }) {
-  if (!siteId || !sessionId || content == null) return;
-  const topics = classifyTopics(content);
-  await AiwMessage.create({
-    siteId,
-    sessionId,
-    role: "assistant",
-    content: String(content).slice(0, 200_000),
-    topic: topics[0],
-    latencyMs,
-  });
-  await AiwSession.updateOne(
-    { sessionId },
-    {
-      $inc: { messagesCount: 1, assistantMessages: 1 },
-      $set: { endedAt: new Date() },
-      $addToSet: { topics: { $each: topics } },
-    }
-  );
+  if (!siteId || !sessionId || content == null) {
+    console.warn("[AIW] skip logAssistantMessage", { siteId, sessionId, contentLen: content==null? null : String(content).length });
+    return;
+  }
+  try {
+    const topics = classifyTopics(content);
+    const doc = await AiwMessage.create({
+      siteId, sessionId, role: "assistant",
+      content: String(content).slice(0, 200_000),
+      topic: topics[0],
+      latencyMs,
+    });
+    await AiwSession.updateOne(
+      { sessionId },
+      {
+        $inc: { messagesCount: 1, assistantMessages: 1 },
+        $set: { endedAt: new Date() },
+        $addToSet: { topics: { $each: topics } },
+      }
+    );
+    console.log("[AIW] logged assistant msg", doc._id.toString());
+  } catch (e) {
+    console.error("[AIW] logAssistantMessage error", e);
+  }
 }
 
 
@@ -220,6 +232,7 @@ const lang = String(meta.lang || "ru");
 const siteId = String(req.header("x-aiw-site") || meta.siteId || "demo");
 const sessionId = String(req.header("x-aiw-session") || meta.sessionId || "");
 const visitorId = String(req.header("x-aiw-visitor") || meta.visitorId || "");
+console.log("[AIW] meta", { siteId, sessionId, visitorId: !!visitorId, lang, pageUrl: meta.pageUrl, referrer: meta.referrer || req.headers.referer });
 
 const metaAll = {
   siteId,

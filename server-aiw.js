@@ -9,7 +9,7 @@ import chatRouter from './api/widget/aiwChat.js';
 
 import AiwMessage from './models/AiwMessage.js';
 import AiwSession from './models/AiwSession.js';
-
+mongoose.set("debug", true);
 
 const app = express();
 app.use(express.json({ limit: '1mb' }));
