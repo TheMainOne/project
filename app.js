@@ -5,14 +5,9 @@ import cors from "cors";
 import mongoose from "mongoose";
 import errorHandler from "./middlewares/errorHandler.js";
 import authRouter from "./api/auth.js";
-import widgetRouter from "./api/widget/widget.js";
 import sendTelegramMessage from "./services/telegramNotify.js";
 import { webhookCallback } from "grammy";
 import createBot from "./src/bot.js";
-import router from "./api/widget/widget.js";
-import retrieveRouter from "./api/widget/aiwSearch.js";
-import chatRouter from "./api/widget/aiwChat.js";
-
 
 
 /* ======================
@@ -67,7 +62,7 @@ mongoose
     app.use("/uploads", express.static("uploads"));
 
     // твои API роуты
-    app.use("/", authRouter);
+    app.use("/api/auth", authRouter);
     // app.use("/widget", widgetRouter);
     // app.use(retrieveRouter);
     // app.use(chatRouter);
