@@ -499,4 +499,17 @@ history.push({
   window.addEventListener("aiw:close", aiwClose);
   window.addEventListener("aiw:toggle", aiwToggle);
   window.__AIW__ = { open: aiwOpen, close: aiwClose, toggle: aiwToggle };
+     try {
+    // первичный запуск через AUTO_DELAY
+    scheduleAutoGreet();
+
+    // если вкладка стала видимой (вернулись на страницу) — пробуем ещё раз
+    document.addEventListener("visibilitychange", () => {
+      if (document.visibilityState === "visible") {
+        scheduleAutoGreet();
+      }
+    });
+  } catch (e) {
+    console.debug("[AIW][autogreet] trigger error:", e);
+  }
 })();
