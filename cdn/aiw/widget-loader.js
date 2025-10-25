@@ -39,6 +39,12 @@
       accent: accent,
       welcome: welcome,
       lang: lang,
+      autostart: s.getAttribute("data-autostart") === "true",
+      autostartDelay: +(s.getAttribute("data-autostart-delay") || 5000),
+      autostartMode: (s.getAttribute("data-autostart-mode") || "local").toLowerCase(), // "local" | "ai"
+      autostartMessage: s.getAttribute("data-autostart-message") || "",
+      autostartPrompt: s.getAttribute("data-autostart-prompt") || "",
+      autostartCooldownHours: +(s.getAttribute("data-autostart-cooldown-hours") || 12)
     };
 
     // Load main widget bundle

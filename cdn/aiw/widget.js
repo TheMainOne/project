@@ -12,6 +12,15 @@ aiw widget (fixed)
   const POSITION = CFG.position === "bl" ? "bl" : "br";
   const WELCOME  = CFG.welcome || "Hi! How can I help?";
   const LANG     = CFG.lang || "en";
+  const AUTOSTART   = CFG.autostart === true;
+  const AUTO_DELAY  = Math.max(0, CFG.autostartDelay || 5000);
+  const AUTO_MODE   = (CFG.autostartMode || "local").toLowerCase(); // "local"|"ai"
+  const AUTO_MSG    = CFG.autostartMessage || "";
+  const AUTO_PROMPT = CFG.autostartPrompt || "";
+  const AUTO_COOLDOWN_HOURS = Math.max(0, CFG.autostartCooldownHours || 12);
+
+  const AUTO_KEY_SESSION = `aiw:autoGreet:session:${SITE_ID}`;
+  const AUTO_KEY_LAST_TS = `aiw:autoGreet:lastTs:${SITE_ID}`;
 
 // [AIW-LOGGING] identities + meta
 function getVisitorId() {
@@ -57,6 +66,37 @@ function collectMeta() {
     utm
   };
 }
+
+  function isTabVisible() {
+    return document.visibilityState === "visible";
+  }
+
+  function alreadyInteracted() {
+    // если пользователь уже что-то писал в этой сессии
+    try {
+      const arr = readHistory();
+      return arr.some(m => m.role === "user");
+    } catch { return false; }
+  }
+
+  function shouldAutoGreetNow() {
+    if (!AUTOSTART) return false;
+    if (sessionStorage.getItem(AUTO_KEY_SESSION) === "1") return false;
+    if (!isTabVisible()) return false;
+    if (alreadyInteracted()) return false;
+
+    const lastTs = +(localStorage.getItem(AUTO_KEY_LAST_TS) || 0);
+    const hoursPassed = (Date.now() - lastTs) / 36e5;
+    if (hoursPassed < AUTO_COOLDOWN_HOURS) return false;
+
+    return true;
+  }
+
+  function markAutoGreetUsed() {
+    sessionStorage.setItem(AUTO_KEY_SESSION, "1");
+    localStorage.setItem(AUTO_KEY_LAST_TS, String(Date.now()));
+  }
+
 
 
   // ---------- Utilities ----------
@@ -254,6 +294,103 @@ resetBtn.addEventListener("click", (e) => {
   }
 
   let inflight = null;
+
+
+    function openPanelIfHidden() {
+    if (panel.style.display === "none") {
+      btn.click(); // использует твою логику открытия
+    }
+  }
+
+  function showLocalGreeting() {
+    if (!AUTO_MSG) return;
+    openPanelIfHidden();
+    // можно показать "typing", чтобы выглядело живо
+    showTyping();
+    setTimeout(() => {
+      hideTyping();
+      history.push({ role: "assistant", content: AUTO_MSG });
+      writeHistory(history);
+      render();
+    }, 800); // небольшая имитация набора
+  }
+
+  async function fetchAIGreeting() {
+    openPanelIfHidden();
+    const safeMsgs = [
+      { role: "system", content: "You are a concise, friendly website assistant." },
+      { role: "user",   content: AUTO_PROMPT || "Write a short warm greeting and suggest 3 quick questions." }
+    ];
+
+    const controller = new AbortController();
+    try {
+      showTyping();
+
+      const meta = collectMeta();
+      // помечаем автогрит для аналитики на бэке
+      const res = await fetch(ENDPOINT, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-aiw-site": SITE_ID,
+          "x-aiw-visitor": VISITOR_ID,
+          "x-aiw-session": SESSION_ID
+        },
+        body: JSON.stringify({
+          messages: safeMsgs,
+          stream: false,
+          meta: { ...meta, startedBy: "system", startedReason: "autogreet" }
+        }),
+        signal: controller.signal,
+        keepalive: true,
+        mode: "cors"
+      });
+
+      const ct = (res.headers.get("content-type") || "").toLowerCase();
+      if (!ct.includes("text/event-stream")) {
+        const raw = await res.text();
+        let reply = "";
+        try { reply = (JSON.parse(raw) || {}).reply || ""; } catch { reply = raw || ""; }
+        history.push({ role: "assistant", content: reply || (LANG.startsWith("ru") ? "…" : "…") });
+        writeHistory(history);
+        render();
+        return;
+      }
+
+      // SSE
+      history.push({ role: "assistant", content: "" });
+      const idx = history.length - 1;
+      writeHistory(history);
+      render();
+
+      const reader = res.body.getReader();
+      await pumpSSE(reader, (data) => {
+        if (data === "[DONE]") return;
+        history[idx].content += data;
+        render();
+      });
+    } catch (e) {
+      history.push({ role: "assistant", content: LANG.startsWith("ru") ? "⚠️ Ошибка соединения" : "⚠️ Connection error" });
+      writeHistory(history);
+      render();
+    } finally {
+      hideTyping();
+    }
+  }
+
+  function scheduleAutoGreet() {
+    if (!shouldAutoGreetNow()) return;
+    setTimeout(() => {
+      if (!shouldAutoGreetNow()) return; // повторная проверка (вкладка могла стать невидимой и т.п.)
+      markAutoGreetUsed();
+      if (AUTO_MODE === "ai") {
+        fetchAIGreeting();
+      } else {
+        showLocalGreeting();
+      }
+    }, AUTO_DELAY);
+  }
+
 
   async function doSend() {
     const text = sanitize(input.value).trim();
