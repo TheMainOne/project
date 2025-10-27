@@ -18,6 +18,7 @@ aiw widget (fixed)
   const AUTO_MSG    = CFG.autostartMessage || "";
   const AUTO_PROMPT = CFG.autostartPrompt || "";
   const AUTO_COOLDOWN_HOURS = Math.max(0, CFG.autostartCooldownHours || 12);
+  const USER_INTERACTED_KEY = `aiw:userInteracted:session:${SITE_ID}`;
 
   const AUTO_KEY_SESSION = `aiw:autoGreet:session:${SITE_ID}`;
   const AUTO_KEY_LAST_TS = `aiw:autoGreet:lastTs:${SITE_ID}`;
@@ -71,13 +72,18 @@ function collectMeta() {
     return document.visibilityState === "visible";
   }
 
-  function alreadyInteracted() {
-    // если пользователь уже что-то писал в этой сессии
-    try {
-      const arr = readHistory();
-      return arr.some(m => m.role === "user");
-    } catch { return false; }
-  }
+  // function alreadyInteracted() {
+  //   // если пользователь уже что-то писал в этой сессии
+  //   try {
+  //     const arr = readHistory();
+  //     return arr.some(m => m.role === "user");
+  //   } catch { return false; }
+  // }
+
+function alreadyInteracted() {
+  return sessionStorage.getItem(USER_INTERACTED_KEY) === "1";
+}
+
 
   function shouldAutoGreetNow() {
     if (!AUTOSTART) return false;
@@ -269,6 +275,7 @@ resetBtn.addEventListener("click", (e) => {
   e.preventDefault();
 
   try { localStorage.removeItem(storeKey); } catch {}
+  try { sessionStorage.removeItem(USER_INTERACTED_KEY); } catch {}
   history = [{ role: "assistant", content: WELCOME }];
   writeHistory(history);
   SESSION_ID = newSessionId();
@@ -441,6 +448,7 @@ function renderSuggestions(suggestions) {
     if (!text || inflight) return;
 
     history.push({ role: "user", content: text });
+    try { sessionStorage.setItem(USER_INTERACTED_KEY, "1"); } catch {}
     writeHistory(history);
     render();
     input.value = "";
