@@ -19,6 +19,9 @@ aiw widget (fixed)
   const AUTO_PROMPT = CFG.autostartPrompt || "";
   const AUTO_COOLDOWN_HOURS = Math.max(0, CFG.autostartCooldownHours || 12);
   const USER_INTERACTED_KEY = `aiw:userInteracted:session:${SITE_ID}`;
+  const PRESERVE_HISTORY   = CFG.preserveHistory !== false;   // по умолчанию true (сохранять историю)
+const RESET_HISTORY_ON_OPEN = CFG.resetHistoryOnOpen === true; // если true — чистим при каждом открытии
+
 
   const AUTO_KEY_SESSION = `aiw:autoGreet:session:${SITE_ID}`;
   const AUTO_KEY_LAST_TS = `aiw:autoGreet:lastTs:${SITE_ID}`;
@@ -106,9 +109,21 @@ function alreadyInteracted() {
 
 
   // ---------- Utilities ----------
-  const storeKey = `aiw_hist_${SITE_ID}`;
-  const readHistory = () => { try { return JSON.parse(localStorage.getItem(storeKey) || "[]"); } catch { return []; } };
-  const writeHistory = (arr) => { try { localStorage.setItem(storeKey, JSON.stringify(arr.slice(-30))); } catch {} };
+const storeKey = `aiw_hist_${SITE_ID}`;
+
+const readHistory = () => {
+  if (PRESERVE_HISTORY === false) return [];
+  try { return JSON.parse(localStorage.getItem(storeKey) || "[]"); } catch { return []; }
+};
+
+const writeHistory = (arr) => {
+  if (PRESERVE_HISTORY === false) return; // no-op
+  try { localStorage.setItem(storeKey, JSON.stringify(arr.slice(-30))); } catch {}
+};
+
+if (PRESERVE_HISTORY === false) {
+  try { localStorage.removeItem(storeKey); } catch {}
+}
   const sanitize = (s) => (s || "").toString().slice(0, 4000);
 
   function parseSSEChunk(buf, onData) {
@@ -193,6 +208,19 @@ header.innerHTML = `<span>${TITLE}</span>`;
 header.appendChild(rightWrap);
 
   const body = document.createElement("div");
+// пустой хинт (виден только когда нет сообщений)
+const emptyHint = document.createElement("div");
+emptyHint.style.cssText = `
+  align-self:flex-start; max-width:85%; margin:8px 0; padding:10px 12px;
+  border-radius:12px; background:#EEF2FF; color:#334155; opacity:.7; display:none;
+`;
+emptyHint.textContent = WELCOME;
+body.appendChild(emptyHint);
+
+function updateEmptyHint(){
+  emptyHint.style.display = history.length ? "none" : "block";
+}
+
 body.style.cssText = `
   display:flex;
   flex-direction:column;
@@ -202,6 +230,10 @@ body.style.cssText = `
   font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;
   font-size:14px
 `;
+const messagesWrap = document.createElement("div");
+messagesWrap.style.display = "flex";
+messagesWrap.style.flexDirection = "column";
+body.appendChild(messagesWrap);
 
   const footer = document.createElement("div");
   footer.style.cssText = `padding:10px;border-top:1px solid #eee;display:flex;gap:8px`;
@@ -236,7 +268,7 @@ body.style.cssText = `
   `;
 function showTyping() {
   if (panel.style.display === "none") return;
-  if (!typing.isConnected) body.appendChild(typing);
+  if (!typing.isConnected) messagesWrap.appendChild(typing);
   typing.style.visibility = "visible";
   body.scrollTop = body.scrollHeight;
 }
@@ -244,39 +276,61 @@ function hideTyping() {
   typing.style.visibility = "hidden";
 }
 
-  // ---------- Chat logic ----------
-  let history = readHistory();
-  if (history.length === 0) history.push({ role: "assistant", content: WELCOME });
+function dedupeAutogreet(){
+  history = history.filter(m => !(m.meta && m.meta.kind === "autogreet"));
+}
 
-  function render() {
-    body.innerHTML = "";
-    for (const m of history) {
-      const bubble = document.createElement("div");
-      bubble.style.margin = "8px 0";
-      bubble.style.maxWidth = "85%";
-      bubble.style.whiteSpace = "pre-wrap";
-      bubble.style.wordBreak = "break-word";
-      const isUser = m.role === "user";
-      bubble.style.alignSelf = isUser ? "flex-end" : "flex-start";
-      bubble.style.padding = "10px 12px";
-      bubble.style.borderRadius = "12px";
-      bubble.style.background = isUser ? "#F1F5F9" : "#EEF2FF";
-      bubble.textContent = m.content;
-      body.appendChild(bubble);
-    }
-    body.scrollTop = body.scrollHeight;
+  // ---------- Chat logic ----------
+let history = readHistory();
+
+function render() {
+  while (messagesWrap.firstChild) messagesWrap.removeChild(messagesWrap.firstChild);
+
+  for (const m of history) {
+    const bubble = document.createElement("div");
+    bubble.style.margin = "8px 0";
+    bubble.style.maxWidth = "85%";
+    bubble.style.whiteSpace = "pre-wrap";
+    bubble.style.wordBreak = "break-word";
+    const isUser = m.role === "user";
+    bubble.style.alignSelf = isUser ? "flex-end" : "flex-start";
+    bubble.style.padding = "10px 12px";
+    bubble.style.borderRadius = "12px";
+    bubble.style.background = isUser ? "#F1F5F9" : "#EEF2FF";
+    bubble.textContent = m.content;
+    messagesWrap.appendChild(bubble);
   }
+
+  updateEmptyHint();
+  body.scrollTop = body.scrollHeight;
+}
+
   render();
 
   let open = false;
-  btn.addEventListener("click", () => { open = !open; panel.style.display = open ? "flex" : "none"; if (open) setTimeout(() => input.focus(), 0); });
+  btn.addEventListener("click", () => {
+  open = !open;
+  panel.style.display = open ? "flex" : "none";
+
+  if (open) {
+    if (RESET_HISTORY_ON_OPEN) {
+      try { localStorage.removeItem(storeKey); } catch {}
+      try { sessionStorage.removeItem(USER_INTERACTED_KEY); } catch {}
+      history = [];
+      writeHistory(history);
+      render();
+    }
+    setTimeout(() => input.focus(), 0);
+  }
+});
+
   close.addEventListener("click", () => { open = false; panel.style.display = "none"; });
 resetBtn.addEventListener("click", (e) => {
   e.preventDefault();
 
   try { localStorage.removeItem(storeKey); } catch {}
   try { sessionStorage.removeItem(USER_INTERACTED_KEY); } catch {}
-  history = [{ role: "assistant", content: WELCOME }];
+  history = [];
   writeHistory(history);
   SESSION_ID = newSessionId();
   render();
@@ -317,7 +371,8 @@ function showLocalGreeting() {
   showTyping();
   setTimeout(() => {
     hideTyping();
-    history.push({ role: "assistant", content: AUTO_MSG });
+    dedupeAutogreet();
+    history.push({ role: "assistant", content: AUTO_MSG, meta: { kind: "autogreet" }});
     writeHistory(history);
     render();
 
@@ -333,6 +388,10 @@ function showLocalGreeting() {
 function renderSuggestions(suggestions) {
   if (!Array.isArray(suggestions) || !suggestions.length) return;
 
+  // убрать прежний блок подсказок, если был
+  const prev = messagesWrap.querySelector('[data-aiw-suggestions="1"]');
+  if (prev) prev.remove();
+
   const row = document.createElement("div");
   row.style.cssText = "display:flex; flex-wrap:wrap; gap:8px; margin-top:6px;";
 
@@ -345,13 +404,13 @@ function renderSuggestions(suggestions) {
     `;
     b.addEventListener("click", () => {
       input.value = label;
-      doSend(); // обычная отправка (вот тут уже пойдёт запрос на бэк)
+      doSend();
     });
     row.appendChild(b);
   });
 
-  // рисуем как "сообщение ассистента"
   const bubble = document.createElement("div");
+  bubble.setAttribute("data-aiw-suggestions", "1");
   bubble.style.margin = "6px 0";
   bubble.style.maxWidth = "85%";
   bubble.style.alignSelf = "flex-start";
@@ -360,9 +419,10 @@ function renderSuggestions(suggestions) {
   bubble.style.background = "#EEF2FF";
   bubble.appendChild(row);
 
-  body.appendChild(bubble);
+  messagesWrap.appendChild(bubble);
   body.scrollTop = body.scrollHeight;
 }
+
 
 
 
@@ -402,7 +462,8 @@ function renderSuggestions(suggestions) {
         const raw = await res.text();
         let reply = "";
         try { reply = (JSON.parse(raw) || {}).reply || ""; } catch { reply = raw || ""; }
-        history.push({ role: "assistant", content: reply || (LANG.startsWith("ru") ? "…" : "…") });
+        dedupeAutogreet();
+        history.push({ role: "assistant", content: reply || (LANG.startsWith("ru") ? "…" : "…"), meta: { kind: "autogreet" }});
         writeHistory(history);
         render();
         return;
@@ -435,8 +496,16 @@ function renderSuggestions(suggestions) {
       if (!shouldAutoGreetNow()) return; // повторная проверка (вкладка могла стать невидимой и т.п.)
       markAutoGreetUsed();
       if (AUTO_MODE === "ai") {
+        if (RESET_HISTORY_ON_OPEN) {
+  try { localStorage.removeItem(storeKey); } catch {}
+  history = []; writeHistory(history); render();
+}
         fetchAIGreeting();
       } else {
+        if (RESET_HISTORY_ON_OPEN) {
+  try { localStorage.removeItem(storeKey); } catch {}
+  history = []; writeHistory(history); render();
+}
         showLocalGreeting();
       }
     }, AUTO_DELAY);
@@ -511,6 +580,7 @@ const raw = await res.text();
 //    const list  = citations.map((c,i)=>`[${i+1}] ${c.url}`).join("  ");
 //    reply = `${reply}\n\n${label} ${list}`;
 //  }
+dedupeAutogreet();
 history.push({
   role: "assistant",
   content: reply || (LANG.startsWith("ru") ? "…" : "…"),
