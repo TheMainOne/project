@@ -302,18 +302,62 @@ resetBtn.addEventListener("click", (e) => {
     }
   }
 
-  function showLocalGreeting() {
-    if (!AUTO_MSG) return;
-    openPanelIfHidden();
-    // можно показать "typing", чтобы выглядело живо
-    showTyping();
-    setTimeout(() => {
-      hideTyping();
-      history.push({ role: "assistant", content: AUTO_MSG });
-      writeHistory(history);
-      render();
-    }, 800); // небольшая имитация набора
-  }
+function showLocalGreeting() {
+  if (!AUTO_MSG) return;
+  openPanelIfHidden();
+
+  // можно показать "typing" ради эффекта
+  showTyping();
+  setTimeout(() => {
+    hideTyping();
+    history.push({ role: "assistant", content: AUTO_MSG });
+    writeHistory(history);
+    render();
+
+    // OPTIONAL: быстрые предложения
+    renderSuggestions([
+      "Pricing for 10 users",
+      "What bundles do you have?",
+      "Book a demo"
+    ]);
+  }, 250); // делаем почти мгновенно
+}
+
+function renderSuggestions(suggestions) {
+  if (!Array.isArray(suggestions) || !suggestions.length) return;
+
+  const row = document.createElement("div");
+  row.style.cssText = "display:flex; flex-wrap:wrap; gap:8px; margin-top:6px;";
+
+  suggestions.forEach(label => {
+    const b = document.createElement("button");
+    b.textContent = label;
+    b.style.cssText = `
+      padding:6px 10px; border:1px solid #e2e8f0; border-radius:9999px;
+      background:#fff; cursor:pointer; font-size:12px;
+    `;
+    b.addEventListener("click", () => {
+      input.value = label;
+      doSend(); // обычная отправка (вот тут уже пойдёт запрос на бэк)
+    });
+    row.appendChild(b);
+  });
+
+  // рисуем как "сообщение ассистента"
+  const bubble = document.createElement("div");
+  bubble.style.margin = "6px 0";
+  bubble.style.maxWidth = "85%";
+  bubble.style.alignSelf = "flex-start";
+  bubble.style.padding = "8px 10px";
+  bubble.style.borderRadius = "12px";
+  bubble.style.background = "#EEF2FF";
+  bubble.appendChild(row);
+
+  body.appendChild(bubble);
+  body.scrollTop = body.scrollHeight;
+}
+
+
 
   async function fetchAIGreeting() {
     openPanelIfHidden();
