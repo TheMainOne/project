@@ -276,9 +276,22 @@ function hideTyping() {
   typing.style.visibility = "hidden";
 }
 
-function dedupeAutogreet(){
-  history = history.filter(m => !(m.meta && m.meta.kind === "autogreet"));
+function dedupeAutogreetAtTail() {
+  let seen = false;
+  for (let k = history.length - 1; k >= 0; k--) {
+    const m = history[k];
+    if (m && m.meta && m.meta.kind === "autogreet") {
+      if (seen) {
+        history.splice(k, 1); // убрать лишние автоприветы перед последним
+      } else {
+        seen = true; // сохраняем самый последний автопривет
+      }
+    } else {
+      break; // как только дошли до не-автоприветствия — стоп
+    }
+  }
 }
+
 
   // ---------- Chat logic ----------
 let history = readHistory();
@@ -371,7 +384,7 @@ function showLocalGreeting() {
   showTyping();
   setTimeout(() => {
     hideTyping();
-    dedupeAutogreet();
+    dedupeAutogreetAtTail();
     history.push({ role: "assistant", content: AUTO_MSG, meta: { kind: "autogreet" }});
     writeHistory(history);
     render();
@@ -462,7 +475,7 @@ function renderSuggestions(suggestions) {
         const raw = await res.text();
         let reply = "";
         try { reply = (JSON.parse(raw) || {}).reply || ""; } catch { reply = raw || ""; }
-        dedupeAutogreet();
+        dedupeAutogreetAtTail();
         history.push({ role: "assistant", content: reply || (LANG.startsWith("ru") ? "…" : "…"), meta: { kind: "autogreet" }});
         writeHistory(history);
         render();
@@ -580,7 +593,6 @@ const raw = await res.text();
 //    const list  = citations.map((c,i)=>`[${i+1}] ${c.url}`).join("  ");
 //    reply = `${reply}\n\n${label} ${list}`;
 //  }
-dedupeAutogreet();
 history.push({
   role: "assistant",
   content: reply || (LANG.startsWith("ru") ? "…" : "…"),
