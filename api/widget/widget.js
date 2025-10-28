@@ -4,11 +4,133 @@ import express from "express";
 import OpenAI from "openai";
 import AiwSession from "../../models/AiwSession.js";
 import AiwMessage from "../../models/AiwMessage.js";
+import AiwGap from "../../models/AiwGap.js"; 
 import { hashIp, classifyTopics } from "../../utils/telemetry.js";
 import { retrieveTopK, buildPrompt } from "../../services/web_crawler/core.js";
 import { tryFastAnswer } from '../../services/web_crawler/fastAnswer.js';
 
 const router = express.Router();
+
+// === Judge helpers (NEW) ===
+function topCitations(contexts = []) {
+  return (contexts || []).map(c => c.url).filter(Boolean).slice(0, 5);
+}
+
+// fire-and-forget без падений
+function defer(promiseFactory) {
+  try {
+    Promise.resolve().then(promiseFactory).catch(e => {
+      console.error("[AIW] deferred error:", e?.message || e);
+    });
+  } catch (e) {
+    console.error("[AIW] defer sync error:", e?.message || e);
+  }
+}
+
+function quickFlag({ phase, contexts, reply }) {
+  const pre = quickHeuristicGood({ phase, contexts, reply }) 
+           || { goodAnswer: true, confidence: 0.6, reason: "default" };
+  return pre; // используем для заголовка/поля в ответе
+}
+
+// Быстрая эвристика на случай отсутствия ключа или ошибок LLM
+function quickHeuristicGood({ phase, contexts, reply }) {
+  if (!contexts?.length) return { goodAnswer: false, confidence: 0.9, reason: "no-context" };
+  const r = (reply || "").toLowerCase();
+  const badPhrases = [
+   "не удалось",
+   "нет информации",
+   "не могу предоставить",
+   "не могу раскрыть",
+   "нет доступа",
+   "конфиденциал",
+   "конфиденциально",
+   "конфиденциаль",
+   "не имею доступа",
+   "i don't know",
+   "insufficient",
+   "cannot provide",
+   "cannot disclose",
+   "can't share",
+   "confidential"
+ ];
+  if (badPhrases.some(p => r.includes(p))) return { goodAnswer: false, confidence: 0.8, reason: "fallback-phrase" };
+  if (phase === "rag-extractive") return { goodAnswer: true, confidence: 0.75, reason: "extractive" };
+  return null; // пусть решит модель
+}
+
+async function assessGoodAnswer({ oai, model, question, reply, contexts, lang }) {
+  // 1) эвристика до модели
+  const pre = quickHeuristicGood({ phase: null, contexts, reply });
+  if (pre) return pre;
+
+  if (!oai) {
+    // нет ключа — не тормозим пайплайн
+    return { goodAnswer: true, confidence: 0.5, reason: "no-oai-fallback" };
+  }
+
+  const prompt = [
+    { role: "system", content:
+`You are a strict QA checker for a retrieval-based assistant.
+ Return ONLY valid JSON:
+ {"goodAnswer":true|false,"confidence":0..1,"reason":"short text"}
+
+ Rules:
+ - "goodAnswer": true ONLY if the assistant fully answers ALL parts of the user's question
+   with specific, grounded statements that are directly supported by the retrieved sources.
+ - If any requested part is missing, refused, vague, generic, or not grounded in the sources, set goodAnswer=false.
+ - Refusals like "cannot provide/disclose", "не могу предоставить/раскрыть" MUST be marked goodAnswer=false.
+ - Prefer being strict; if unsure, lean to false.` },
+    { role: "user", content:
+`Question:
+"""${question}"""
+
+Assistant reply:
+"""${(reply || "").slice(0, 2000)}"""
+
+Retrieved source URLs:
+${topCitations(contexts).join("\n") || "(none)"}
+
+Return JSON only.`}
+  ];
+
+  try {
+    const r = await oai.chat.completions.create({
+      model: "gpt-5-nano",                 // дешёвая/быстрая
+      messages: prompt,
+      response_format: { type: "json_object" },
+      temperature: 0
+    });
+    const txt = r.choices?.[0]?.message?.content || "{}";
+    const parsed = JSON.parse(txt);
+    return {
+      goodAnswer: !!parsed.goodAnswer,
+      confidence: Math.max(0, Math.min(1, Number(parsed.confidence) || 0)),
+      reason: String(parsed.reason || "")
+    };
+  } catch (e) {
+    // при ошибке — не блокируем ответ
+    return { goodAnswer: true, confidence: 0.5, reason: "judge-error" };
+  }
+}
+
+// Лог в БД, если ответ «плохой»
+async function logGapIfBad({ goodAnswer, confidence, reason, siteId, sessionId, question, reply, phase, citations }) {
+  if (goodAnswer) return;
+  try {
+    await AiwGap.create({
+      siteId, sessionId,
+      question,
+      answerPreview: (reply || "").slice(0, 1500),
+      phase,
+      citations: (citations || []).map(c => c.url || c).slice(0, 5),
+      judge: { goodAnswer, confidence, reason }
+    });
+  } catch (e) {
+    console.error("[AIW] gap log error:", e?.message || e);
+  }
+}
+
 
 // ============ Конфигурация ============
 const oai = process.env.OPENAI_API_KEY
@@ -223,10 +345,13 @@ function loadPlans() {
   }
 }
 
-function sendJSON(req, res, { reply, source, citations = [] }) {
+function sendJSON(req, res, { reply, source, citations = [], goodAnswer, confidence }) {
   setJSONHeaders(req, res);
   setSourceHeaders(res, source, citations);
-  return res.status(200).json({ reply, source, citations });
+   const body = { reply, source, citations };
+  if (goodAnswer !== undefined) body.goodAnswer = goodAnswer;
+  if (confidence !== undefined) body.confidence = confidence;
+  return res.status(200).json(body);
 }
 
 function buildSystemPrompt() {
@@ -307,7 +432,7 @@ router.post("/chat", async (req, res) => {
     const expose = [
       "X-AIW-Build","X-AIW-Source","X-AIW-Citations-Count",
       "X-AIW-Handler","X-AIW-Resolved-Site","X-AIW-Resolved-Session",
-      "X-AIW-Phase","X-AIW-DB","X-AIW-Timing"
+      "X-AIW-Phase","X-AIW-DB","X-AIW-Timing", "X-AIW-Good-Answer"
     ].join(", ");
     const existingExpose = res.getHeader("Access-Control-Expose-Headers");
     res.setHeader(
@@ -324,9 +449,10 @@ router.post("/chat", async (req, res) => {
       .slice(-30);
 
     const lang = String(meta.lang || "ru");
-    const siteId = String(req.header("x-aiw-site") || meta.siteId || "demo");
-    const sessionId = String(req.header("x-aiw-session") || meta.sessionId || "");
-    const visitorId = String(req.header("x-aiw-visitor") || meta.visitorId || "");
+    // const siteId = String(req.header("x-aiw-site") || meta.siteId || "demo");
+    // const sessionId = String(req.header("x-aiw-session") || meta.sessionId || "");
+    // const visitorId = String(req.header("x-aiw-visitor") || meta.visitorId || "");
+    const { siteId, sessionId, visitorId } = resolveIds(req, meta);
 
     res.setHeader("X-AIW-Resolved-Site", siteId);
     res.setHeader("X-AIW-Resolved-Session", sessionId || "(empty)");
@@ -393,13 +519,34 @@ router.post("/chat", async (req, res) => {
       const payload = { reply: fast.reply, citations: fast.citations || [] };
       await logAssistantMessage({ siteId, sessionId, content: payload.reply, latencyMs: Date.now() - started });
       dbMark = "user:+ assistant:+";
+      // === judge & optional gap log (NEW) ===
+const quick = quickFlag({ phase, contexts, reply: payload.reply });
+res.setHeader("X-AIW-Good-Answer", String(quick.goodAnswer)); // быстрый флаг
+
+defer(async () => {
+  const judge = await assessGoodAnswer({
+    oai, model: "gpt-5-nano",
+    question: query, reply: payload.reply, contexts, lang
+  });
+const finalBad =
+   !judge.goodAnswer || (judge.goodAnswer && (judge.confidence ?? 0) < 0.70);
+ await logGapIfBad({
+   goodAnswer: !finalBad,
+   confidence: judge.confidence,
+   reason: finalBad ? (judge.reason || "low-confidence") : (judge.reason || "ok"),
+   siteId, sessionId, question: query, reply: payload.reply, phase, citations: payload.citations
+ });
+});
 
       res.setHeader("X-AIW-DB", dbMark);
       res.setHeader("X-AIW-Timing", JSON.stringify({ ...timing, total: Date.now() - started }));
 
       if (!stream) {
         setJSONHeaders(req, res);
-        return sendJSON(req, res, { reply: payload.reply, source: "rag-extractive", citations: payload.citations });
+return sendJSON(req, res, { 
+  reply: payload.reply, source: "rag-extractive", citations: payload.citations,
+  goodAnswer: quick.goodAnswer, confidence: quick.confidence
+});
       } else {
         setSSEHeaders(req, res);
         res.write(": heartbeat\n\n");
@@ -427,6 +574,18 @@ router.post("/chat", async (req, res) => {
           : `Demo reply (no OPENAI_API_KEY).`);
 
       await logAssistantMessage({ siteId, sessionId, content: reply, latencyMs: Date.now() - started });
+      // === mark bad without judge (NEW) ===
+const judge = { goodAnswer: false, confidence: 0.95, reason: "no-context" };
+res.setHeader("X-AIW-Good-Answer", "false");
+const finalBad =
+   !judge.goodAnswer || (judge.goodAnswer && (judge.confidence ?? 0) < 0.70);
+ await logGapIfBad({
+   goodAnswer: !finalBad ? true : false,
+   confidence: judge.confidence,
+   reason: finalBad ? (judge.reason || "low-confidence") : (judge.reason || "ok"),
+   siteId, sessionId, question: query, reply, phase, citations: []
+ });
+
       dbMark = "user:+ assistant:+";
 
       res.setHeader("X-AIW-DB", dbMark);
@@ -434,7 +593,16 @@ router.post("/chat", async (req, res) => {
 
       if (!stream) {
         setJSONHeaders(req, res);
-        return sendJSON(req, res, { reply, source: "no-context", citations: [] });
+
+        // для no-context флаг сразу "плохо"
+        res.setHeader("X-AIW-Good-Answer", "false");
+        return sendJSON(req, res, {
+          reply,
+          source: "no-context",
+          citations: [],
+          goodAnswer: false,
+          confidence: 0.95
+        });
       } else {
         setSSEHeaders(req, res);
         res.write(`data: ${reply}\n\n`);
@@ -454,6 +622,8 @@ router.post("/chat", async (req, res) => {
       setSourceHeaders(res, "rag", citations);
       setSSEHeaders(req, res);
       res.write(": heartbeat\n\n");
+      const quick = quickFlag({ phase, contexts, reply: "" });
+res.setHeader("X-AIW-Good-Answer", String(quick.goodAnswer));
 
       let clientClosed = false;
       req.on("close", () => { clientClosed = true; });
@@ -494,6 +664,22 @@ router.post("/chat", async (req, res) => {
         res.write("data: [DONE]\n\n");
         res.end();
       }
+
+      defer(async () => {
+  const judge = await assessGoodAnswer({
+    oai, model: "gpt-5-nano",
+    question: query, reply: buffer, contexts, lang
+  });
+  const finalBad =
+   !judge.goodAnswer || (judge.goodAnswer && (judge.confidence ?? 0) < 0.70);
+ await logGapIfBad({
+   goodAnswer: !finalBad,
+   confidence: judge.confidence,
+   reason: finalBad ? (judge.reason || "low-confidence") : (judge.reason || "ok"),
+   siteId, sessionId, question: query, reply: buffer, phase, citations
+ });
+});
+
       return;
     } else {
       // ---- JSON ----
@@ -515,8 +701,30 @@ router.post("/chat", async (req, res) => {
       res.setHeader("X-AIW-DB", dbMark);
       res.setHeader("X-AIW-Timing", JSON.stringify({ ...timing, total: Date.now() - started }));
 
-      setJSONHeaders(req, res);
-      return sendJSON(req, res, { reply, source: "rag", citations });
+ setJSONHeaders(req, res);
+ const quick = quickFlag({ phase, contexts, reply });
+ res.setHeader("X-AIW-Good-Answer", String(quick.goodAnswer));
+
+ defer(async () => {
+   const judge = await assessGoodAnswer({
+     oai, model: "gpt-5-nano",
+     question: query, reply, contexts, lang
+   });
+   const finalBad =
+   !judge.goodAnswer || (judge.goodAnswer && (judge.confidence ?? 0) < 0.70);
+ await logGapIfBad({
+   goodAnswer: !finalBad ? true : false,
+   confidence: judge.confidence,
+   reason: finalBad ? (judge.reason || "low-confidence") : (judge.reason || "ok"),
+   siteId, sessionId, question: query, reply, phase, citations
+ });
+ });
+
+ return sendJSON(req, res, {
+   reply, source: "rag", citations,
+   goodAnswer: quick.goodAnswer, confidence: quick.confidence
+ });
+
     }
   } catch (e) {
     phase = "error";

@@ -28,7 +28,7 @@ const AiwSessionSchema = new mongoose.Schema({
   lastUserQuestion: String,
 
   // expiresAt: { type: Date, index: { expireAfterSeconds: 0 } }
-}, { timestamps: true });
+}, { timestamps: true, versionKey: false  });
 
 AiwSessionSchema.index({ siteId: 1, startedAt: -1 });
 AiwSessionSchema.index({ visitorId: 1, siteId: 1 });

@@ -13,7 +13,7 @@ const AiwMessageSchema = new mongoose.Schema({
 
   topic: { type: String, index: true },
   createdAt: { type: Date, default: Date.now, index: true },
-}, { timestamps: true });
+}, { timestamps: true, versionKey: false });
 
 AiwMessageSchema.index({ sessionId: 1, createdAt: 1 });
 AiwMessageSchema.index({ content: "text" });

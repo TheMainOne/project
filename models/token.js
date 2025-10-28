@@ -9,7 +9,7 @@ const TokenSchema = new mongoose.Schema(
     userAgent: String,
     ip: String
   },
-  { timestamps: true }
+  { timestamps: true, versionKey: false }
 );
 
 export default mongoose.model("Token", TokenSchema);

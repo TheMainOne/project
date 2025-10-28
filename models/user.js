@@ -9,7 +9,7 @@ const UserSchema = new mongoose.Schema(
     roles: { type: [String], default: ["user"] },
     isActive: { type: Boolean, default: true }
   },
-  { timestamps: true }
+  { timestamps: true, versionKey: false }
 );
 
 UserSchema.pre("save", async function (next) {
