@@ -1,10 +1,23 @@
 import jwt from "jsonwebtoken";
 
-export const signAccess = (payload) =>
-  jwt.sign(payload, process.env.JWT_ACCESS_SECRET, { expiresIn: process.env.JWT_ACCESS_EXPIRES || "15m" });
+export function signAccess(payload) {
+  const secret = process.env.JWT_ACCESS_SECRET;
+  const expiresIn = process.env.JWT_ACCESS_EXPIRES || '15m';
+  if (!secret) {
+    throw new Error('JWT_ACCESS_SECRET is missing. Check your environment variables and dotenv loading order.');
+  }
+  return jwt.sign(payload, secret, { expiresIn: expiresIn });
+}
 
-export const signRefresh = (payload) =>
-  jwt.sign(payload, process.env.JWT_REFRESH_SECRET, { expiresIn: process.env.JWT_REFRESH_EXPIRES || "30d" });
+
+export function signRefresh(payload) {
+  const secret = process.env.JWT_REFRESH_SECRET;
+    const expiresIn = process.env.JWT_ACCESS_EXPIRES || '15m';
+  if (!secret) {
+    throw new Error('JWT_REFRESH_SECRET is missing.');
+  }
+  return jwt.sign(payload, secret, { expiresIn: expiresIn });
+}
 
 export const verifyAccess = (token) =>
   jwt.verify(token, process.env.JWT_ACCESS_SECRET);

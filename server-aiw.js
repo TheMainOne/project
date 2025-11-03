@@ -90,8 +90,16 @@ app.use('/aiw', retrieveRouter);  // => /aiw/<твои пути в этом ро
 app.use('/aiw', widgetRouter);    // => /aiw/<...>
 app.use('/aiw/auth', authRouter);   // => /auth/<твои пути в этом роутере>
 
+app.use((err, req, res, next) => {
+  console.error('[ERROR]', err);
+  if (res.headersSent) return next(err);
+  res.status(500).json({ error: 'Internal Server Error', details: err.message });
+});
+
 // Для префлайта, если напрямую ходишь в Node (через Nginx уже настроено)
 app.options('/aiw/chat', (req, res) => res.sendStatus(204));
+
+
 
 const PORT = 8088;
 app.listen(PORT, () => {
