@@ -9,82 +9,98 @@ function parseExpiryToDate(expStr, fallback = "30d") {
 }
 
 /** POST /api/auth/register */
-export const register = async (req, res) => {
-  const { email, password, name } = req.body;
+export const register = async (req, res, next) => {
+  try {
+    const { email, password, name } = req.body;
 
-  const exists = await User.findOne({ email }).lean();
-  if (exists) return res.status(409).json({ error: "Email already registered" });
+    const exists = await User.findOne({ email }).lean();
+    if (exists) return res.status(409).json({ error: "Email already registered" });
 
-  const user = await User.create({ email, password, name });
+    const user = await User.create({ email, password, name });
 
-  const accessToken = signAccess({ sub: user._id.toString(), email: user.email });
-  const refreshToken = signRefresh({ sub: user._id.toString() });
+    // ⚠️ если нет секрета — тут падает
+    const accessToken = signAccess({ sub: user._id.toString(), email: user.email });
+    const refreshToken = signRefresh({ sub: user._id.toString() });
 
-  await Token.create({
-    userId: user._id,
-    refreshToken,
-    expiresAt: parseExpiryToDate(process.env.JWT_REFRESH_EXPIRES),
-    userAgent: req.headers["user-agent"],
-    ip: req.ip
-  });
+    await Token.create({
+      userId: user._id,
+      refreshToken,
+      expiresAt: parseExpiryToDate(process.env.JWT_REFRESH_EXPIRES),
+      userAgent: req.headers["user-agent"],
+      ip: req.ip
+    });
 
-  return res.status(201).json({
-    user: { id: user._id, email: user.email, name: user.name, roles: user.roles },
-    tokens: { accessToken, refreshToken }
-  });
+    return res.status(201).json({
+      user: { id: user._id, email: user.email, name: user.name, roles: user.roles },
+      tokens: { accessToken, refreshToken }
+    });
+  } catch (err) {
+    return next(err);
+  }
 };
 
+
 /** POST /api/auth/login */
-export const login = async (req, res) => {
-  const { email, password } = req.body;
-  const user = await User.findOne({ email }).select("+password");
-  if (!user) return res.status(401).json({ error: "Invalid email or password" });
+export const login = async (req, res, next) => {
+  try {
+    const { email, password } = req.body;
+    const user = await User.findOne({ email }).select("+password");
+    if (!user) return res.status(401).json({ error: "Invalid email or password" });
 
-  const ok = await user.comparePassword(password);
-  if (!ok) return res.status(401).json({ error: "Invalid email or password" });
+    const ok = await user.comparePassword(password);
+    if (!ok) return res.status(401).json({ error: "Invalid email or password" });
 
-  const accessToken = signAccess({ sub: user._id.toString(), email: user.email });
-  const refreshToken = signRefresh({ sub: user._id.toString() });
+    const accessToken = signAccess({ sub: user._id.toString(), email: user.email });
+    const refreshToken = signRefresh({ sub: user._id.toString() });
 
-  await Token.create({
-    userId: user._id,
-    refreshToken,
-    expiresAt: parseExpiryToDate(process.env.JWT_REFRESH_EXPIRES),
-    userAgent: req.headers["user-agent"],
-    ip: req.ip
-  });
+    await Token.create({
+      userId: user._id,
+      refreshToken,
+      expiresAt: parseExpiryToDate(process.env.JWT_REFRESH_EXPIRES),
+      userAgent: req.headers["user-agent"],
+      ip: req.ip
+    });
 
-  return res.json({
-    user: { id: user._id, email: user.email, name: user.name, roles: user.roles },
-    tokens: { accessToken, refreshToken }
-  });
+    return res.json({
+      user: { id: user._id, email: user.email, name: user.name, roles: user.roles },
+      tokens: { accessToken, refreshToken }
+    });
+  } catch (err) {
+    return next(err);
+  }
 };
 
 /** POST /api/auth/refresh */
-export const refresh = async (req, res) => {
-  const { refreshToken } = req.body || {};
-  if (!refreshToken) return res.status(400).json({ error: "refreshToken required" });
-
-  const stored = await Token.findOne({ refreshToken, revokedAt: { $exists: false } });
-  if (!stored) return res.status(401).json({ error: "Invalid refresh token" });
-
+export const refresh = async (req, res, next) => {
   try {
+    const { refreshToken } = req.body || {};
+    if (!refreshToken) return res.status(400).json({ error: "refreshToken required" });
+
+    const stored = await Token.findOne({ refreshToken, revokedAt: { $exists: false } });
+    if (!stored) return res.status(401).json({ error: "Invalid refresh token" });
+
     const decoded = verifyRefresh(refreshToken);
     const accessToken = signAccess({ sub: decoded.sub });
     return res.json({ accessToken });
-  } catch {
+  } catch (err) {
     return res.status(401).json({ error: "Invalid refresh token" });
   }
 };
 
+
 /** POST /api/auth/logout */
-export const logout = async (req, res) => {
-  const { refreshToken } = req.body || {};
-  if (refreshToken) {
-    await Token.updateOne({ refreshToken }, { $set: { revokedAt: new Date() } });
+export const logout = async (req, res, next) => {
+  try {
+    const { refreshToken } = req.body || {};
+    if (refreshToken) {
+      await Token.updateOne({ refreshToken }, { $set: { revokedAt: new Date() } });
+    }
+    return res.json({ ok: true });
+  } catch (err) {
+    return next(err);
   }
-  return res.json({ ok: true });
 };
+
 
 /** GET /api/auth/me (protected) */
 export const me = async (req, res) => {
