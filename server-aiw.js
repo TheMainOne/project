@@ -3,6 +3,7 @@ import 'dotenv/config';
 import express from 'express';
 import mongoose from 'mongoose';
 import { randomUUID } from "crypto";
+import cors from 'cors';   
 import widgetRouter from './api/widget/widget.js';
 import retrieveRouter from './api/widget/aiwSearch.js';
 import chatRouter from './api/widget/aiwChat.js';
@@ -17,6 +18,26 @@ app.use(express.json({ limit: '1mb' }));
 // чтобы корректно брать IP из X-Forwarded-For за Nginx
 app.set('trust proxy', true);
 
+// ===== CORS (ДО всех роутов) =====
+const ALLOWED_ORIGINS = [
+  'https://themainone.github.io',      // твой фронт
+  'http://localhost:5173',             // локальная разработка
+  'https://cloudcompliance.duckdns.org'
+];
+
+app.use(cors({
+  origin: (origin, cb) => {
+    if (!origin || ALLOWED_ORIGINS.includes(origin)) return cb(null, true);
+    return cb(new Error('Not allowed by CORS'));
+  },
+  credentials: true, // нужно если используешь cookie/сессионки
+  methods: ['GET','POST','PUT','PATCH','DELETE','OPTIONS'],
+  allowedHeaders: ['Content-Type','Authorization','X-Requested-With','Accept','Origin']
+}));
+
+// preflight на всё
+app.options('*', cors());
+// =================================
 
 // для тестирования 
 app.use((req, res, next) => {
