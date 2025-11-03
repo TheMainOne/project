@@ -26,19 +26,19 @@ const ALLOWED_ORIGINS = [
   'https://cloudcompliance.duckdns.org'
 ];
 
-app.use(cors({
-  origin: (origin, cb) => {
-    if (!origin || ALLOWED_ORIGINS.includes(origin)) return cb(null, true);
-    return cb(new Error('Not allowed by CORS'));
-  },
-  credentials: true, // нужно если используешь cookie/сессионки
-  methods: ['GET','POST','PUT','PATCH','DELETE','OPTIONS'],
-  allowedHeaders: ['Content-Type','Authorization','X-Requested-With','Accept','Origin']
-}));
+// app.use(cors({
+//   origin: (origin, cb) => {
+//     if (!origin || ALLOWED_ORIGINS.includes(origin)) return cb(null, true);
+//     return cb(new Error('Not allowed by CORS'));
+//   },
+//   credentials: true, // нужно если используешь cookie/сессионки
+//   methods: ['GET','POST','PUT','PATCH','DELETE','OPTIONS'],
+//   allowedHeaders: ['Content-Type','Authorization','X-Requested-With','Accept','Origin']
+// }));
 
-// preflight на всё
-app.options('*', cors());
-// =================================
+// // preflight на всё
+// app.options('*', cors());
+// // =================================
 
 // для тестирования 
 app.use((req, res, next) => {
