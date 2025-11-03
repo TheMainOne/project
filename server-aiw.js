@@ -88,7 +88,7 @@ app.use('/aiw', chatRouter);      // => /aiw/chat
 app.use('/api/aiw', chatRouter);      // => /aiw/chat
 app.use('/aiw', retrieveRouter);  // => /aiw/<твои пути в этом роутере>
 app.use('/aiw', widgetRouter);    // => /aiw/<...>
-app.use('/api/aiw/auth', authRouter);   // => /auth/<твои пути в этом роутере>
+app.use('/aiw/auth', authRouter);   // => /auth/<твои пути в этом роутере>
 
 // Для префлайта, если напрямую ходишь в Node (через Nginx уже настроено)
 app.options('/aiw/chat', (req, res) => res.sendStatus(204));
