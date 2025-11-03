@@ -1,5 +1,5 @@
 import User from "../models/user.js";
-import Token from "../models/Token.js";
+import Token from "../models/token.js";
 import { signAccess, signRefresh, verifyRefresh } from "../utils/jwt.js";
 import ms from "ms";
 
