@@ -10,6 +10,7 @@ import chatRouter from './api/widget/aiwChat.js';
 
 import AiwMessage from './models/AiwMessage.js';
 import AiwSession from './models/AiwSession.js';
+import authRouter from './api/auth.js';
 mongoose.set("debug", true);
 
 const app = express();
@@ -87,6 +88,7 @@ app.use('/aiw', chatRouter);      // => /aiw/chat
 app.use('/api/aiw', chatRouter);      // => /aiw/chat
 app.use('/aiw', retrieveRouter);  // => /aiw/<твои пути в этом роутере>
 app.use('/aiw', widgetRouter);    // => /aiw/<...>
+app.use('/api/aiw/auth', authRouter);   // => /auth/<твои пути в этом роутере>
 
 // Для префлайта, если напрямую ходишь в Node (через Nginx уже настроено)
 app.options('/aiw/chat', (req, res) => res.sendStatus(204));
