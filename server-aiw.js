@@ -21,7 +21,8 @@ app.set('trust proxy', true);
 // ===== CORS (ДО всех роутов) =====
 const ALLOWED_ORIGINS = [
   'https://themainone.github.io',      // твой фронт
-  'http://localhost:5173',             // локальная разработка
+  'http://localhost:5173',   
+  'http://localhost:8080',          // локальная разработка
   'https://cloudcompliance.duckdns.org'
 ];
 
