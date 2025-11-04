@@ -33,6 +33,26 @@ function quickFlag({ phase, contexts, reply }) {
   return pre; // используем для заголовка/поля в ответе
 }
 
+// === Timing helpers (ADD) ===
+function makeTimer(req) {
+  const t0 = Date.now();
+  const marks = Object.create(null);
+  function mark(label) { marks[label] = Date.now() - t0; }
+  async function wrap(label, fn) {
+    const s = Date.now(); const r = await fn(); marks[label] = Date.now() - s; return r;
+  }
+  function get() { return { ...marks, total: Date.now() - t0 }; }
+  req.__timer = { mark, wrap, get, t0 };
+  return req.__timer;
+}
+
+// инициализируем trace (у тебя setDebugHeaders его читает)
+router.use((req, _res, next) => {
+  req.__trace = { start: Date.now(), id: Math.random().toString(36).slice(2), pid: process.pid, port: process.env.PORT || "" };
+  next();
+});
+
+
 // Быстрая эвристика на случай отсутствия ключа или ошибок LLM
 function quickHeuristicGood({ phase, contexts, reply }) {
   if (!contexts?.length) return { goodAnswer: false, confidence: 0.9, reason: "no-context" };
@@ -419,6 +439,8 @@ router.use((req, res, next) => {
 // ============ Маршрут /chat ============
 router.post("/chat", async (req, res) => {
   const started = Date.now();
+  const T = makeTimer(req);
+T.mark("entered"); // t=0
   let timing = {};
   let dbMark = "user:- assistant:-";
   let phase = "unknown";
@@ -472,6 +494,8 @@ router.post("/chat", async (req, res) => {
     const tEnsure = Date.now();
     await ensureSession(metaAll, req);
     timing.ensure = Date.now() - tEnsure;
+    T.mark("ensureSession");
+
 
     // ====== извлекаем пользовательский вопрос ======
     const lastUser = [...safeMsgs].reverse().find((m) => m.role === "user");
@@ -480,6 +504,7 @@ router.post("/chat", async (req, res) => {
     // логируем юзера (не пишем пустоту)
     if (query) {
       await logUserMessage({ siteId, sessionId, content: query });
+      T.mark("logUserMessage");
       dbMark = "user:+ assistant:-";
     }
 
@@ -487,7 +512,29 @@ router.post("/chat", async (req, res) => {
       phase = "empty";
       res.setHeader("X-AIW-Phase", phase);
       res.setHeader("X-AIW-DB", dbMark);
-      res.setHeader("X-AIW-Timing", JSON.stringify({ ...timing, total: Date.now() - started }));
+      const timings = T.get();
+// добавим производные: buildPromptDur, llmWait, ttfb (time-to-first-byte), firstChunk
+const derived = {
+  buildPromptDur: (timings.buildPrompt ?? 0) - (timings.prePrompt ?? 0),
+  llmWait: (timings.afterLLM ?? 0) - (timings.beforeLLM ?? 0),
+  ttfb: timings.firstByteToClient ?? undefined,
+  firstChunk: (timings.firstChunkFlushed ?? 0) - (timings.firstByteToClient ?? 0),
+};
+
+
+
+res.setHeader("X-AIW-Timing", JSON.stringify({
+  ...timing,          // твои старые поля для совместимости
+  ...timings,         // подробные метки
+  ...derived,
+  total: timings.total
+}));
+
+// опционально красивый серверный лог
+console.log("[AIW][timings]", JSON.stringify({
+  siteId, sessionId, phase,
+  timings: { ...timings, ...derived }
+}));
 
       if (!stream) {
         setJSONHeaders(req, res);
@@ -505,9 +552,10 @@ router.post("/chat", async (req, res) => {
     }
 
     // ====== RAG retrieve ======
-    const tRetrieve = Date.now();
-    const contexts = await retrieveTopK(siteId, query, { k: 5, softLimit: 300, minScore: 0.18 });
-    timing.retrieve = Date.now() - tRetrieve;
+    const contexts = await T.wrap("retrieve", async () =>
+  retrieveTopK(siteId, query, { k: 5, softLimit: 300, minScore: 0.18 })
+);
+timing.retrieve = T.get().retrieve; // чтобы дублировать в X-AIW-Timing как раньше
 
     // ====== Fast extractive ======
     const fast = tryFastAnswer(query, contexts, lang);
@@ -539,7 +587,29 @@ const finalBad =
 });
 
       res.setHeader("X-AIW-DB", dbMark);
-      res.setHeader("X-AIW-Timing", JSON.stringify({ ...timing, total: Date.now() - started }));
+      const timings = T.get();
+// добавим производные: buildPromptDur, llmWait, ttfb (time-to-first-byte), firstChunk
+const derived = {
+  buildPromptDur: (timings.buildPrompt ?? 0) - (timings.prePrompt ?? 0),
+  llmWait: (timings.afterLLM ?? 0) - (timings.beforeLLM ?? 0),
+  ttfb: timings.firstByteToClient ?? undefined,
+  firstChunk: (timings.firstChunkFlushed ?? 0) - (timings.firstByteToClient ?? 0),
+};
+
+
+
+res.setHeader("X-AIW-Timing", JSON.stringify({
+  ...timing,          // твои старые поля для совместимости
+  ...timings,         // подробные метки
+  ...derived,
+  total: timings.total
+}));
+
+// опционально красивый серверный лог
+console.log("[AIW][timings]", JSON.stringify({
+  siteId, sessionId, phase,
+  timings: { ...timings, ...derived }
+}));
 
       if (!stream) {
         setJSONHeaders(req, res);
@@ -550,6 +620,7 @@ return sendJSON(req, res, {
       } else {
         setSSEHeaders(req, res);
         res.write(": heartbeat\n\n");
+          T.mark("firstByteToClient");   
         const CH = 24;
         for (let i = 0; i < payload.reply.length; i += CH) {
           res.write(`data: ${payload.reply.slice(i, i + CH)}\n\n`);
@@ -589,7 +660,27 @@ const finalBad =
       dbMark = "user:+ assistant:+";
 
       res.setHeader("X-AIW-DB", dbMark);
-      res.setHeader("X-AIW-Timing", JSON.stringify({ ...timing, total: Date.now() - started }));
+      const timings = T.get();
+// добавим производные: buildPromptDur, llmWait, ttfb (time-to-first-byte), firstChunk
+const derived = {
+  buildPromptDur: (timings.buildPrompt ?? 0) - (timings.prePrompt ?? 0),
+  llmWait: (timings.afterLLM ?? 0) - (timings.beforeLLM ?? 0),
+  ttfb: timings.firstByteToClient ?? undefined,
+  firstChunk: (timings.firstChunkFlushed ?? 0) - (timings.firstByteToClient ?? 0),
+};
+
+res.setHeader("X-AIW-Timing", JSON.stringify({
+  ...timing,          // твои старые поля для совместимости
+  ...timings,         // подробные метки
+  ...derived,
+  total: timings.total
+}));
+
+// опционально красивый серверный лог
+console.log("[AIW][timings]", JSON.stringify({
+  siteId, sessionId, phase,
+  timings: { ...timings, ...derived }
+}));
 
       if (!stream) {
         setJSONHeaders(req, res);
@@ -604,16 +695,20 @@ const finalBad =
           confidence: 0.95
         });
       } else {
-        setSSEHeaders(req, res);
-        res.write(`data: ${reply}\n\n`);
-        res.write("data: [DONE]\n\n");
-        return res.end();
+setSSEHeaders(req, res);
+  res.write(": heartbeat\n\n");
+  T.mark("firstByteToClient");            // +++
+  res.write(`data: ${reply}\n\n`);
+  res.write("data: [DONE]\n\n");
+  return res.end();
       }
     }
 
     // ====== Полноценный RAG через LLM ======
     const citations = contexts.map((c, i) => ({ idx: i + 1, url: c.url }));
+    T.mark("prePrompt");
     const prompt = buildPrompt({ query, contexts, lang });
+    T.mark("buildPrompt"); // длительность = (buildPrompt - prePrompt)
 
     if (stream) {
       // ---- STREAM (SSE) ----
@@ -622,6 +717,7 @@ const finalBad =
       setSourceHeaders(res, "rag", citations);
       setSSEHeaders(req, res);
       res.write(": heartbeat\n\n");
+      T.mark("firstByteToClient");  
       const quick = quickFlag({ phase, contexts, reply: "" });
 res.setHeader("X-AIW-Good-Answer", String(quick.goodAnswer));
 
@@ -639,13 +735,20 @@ res.setHeader("X-AIW-Good-Answer", String(quick.goodAnswer));
         }
       } else {
         try {
-          // здесь можно включить реальный стрим; у тебя сейчас синхронный вариант
-          const completion = await oai.chat.completions.create({ model: MODEL, messages: prompt });
-          const reply = completion.choices?.[0]?.message?.content?.trim() || "";
-          buffer = reply;
-          const CH = 24;
-          for (let i = 0; i < reply.length && !clientClosed; i += CH) {
-            res.write(`data: ${reply.slice(i, i + CH)}\n\n`);
+ T.mark("beforeLLM");
+    const completion = await oai.chat.completions.create({ model: MODEL, messages: prompt });
+    T.mark("afterLLM");
+    const reply = completion.choices?.[0]?.message?.content?.trim() || "";
+    buffer = reply;
+
+    // первая полезная часть ушла клиенту
+    res.write(`data: ${reply.slice(0, 24)}\n\n`);
+    T.mark("firstChunkFlushed");
+
+    // остаток
+    const CH = 24;
+    for (let i = 24; i < reply.length && !clientClosed; i += CH) {
+      res.write(`data: ${reply.slice(i, i + CH)}\n\n`);
           }
         } catch (e) {
           const msg = `⚠️ ${e?.message || "LLM error"}`;
@@ -656,9 +759,31 @@ res.setHeader("X-AIW-Good-Answer", String(quick.goodAnswer));
 
       // лог ассистента и финальные заголовки
       await logAssistantMessage({ siteId, sessionId, content: buffer, latencyMs: Date.now() - started });
+      T.mark("logAssistantMessage");
       dbMark = "user:+ assistant:+";
       res.setHeader("X-AIW-DB", dbMark);
-      res.setHeader("X-AIW-Timing", JSON.stringify({ ...timing, total: Date.now() - started }));
+      const timings = T.get();
+// добавим производные: buildPromptDur, llmWait, ttfb (time-to-first-byte), firstChunk
+const derived = {
+  buildPromptDur: (timings.buildPrompt ?? 0) - (timings.prePrompt ?? 0),
+  llmWait: (timings.afterLLM ?? 0) - (timings.beforeLLM ?? 0),
+  ttfb: timings.firstByteToClient ?? undefined,
+  firstChunk: (timings.firstChunkFlushed ?? 0) - (timings.firstByteToClient ?? 0),
+};
+
+
+res.setHeader("X-AIW-Timing", JSON.stringify({
+  ...timing,          // твои старые поля для совместимости
+  ...timings,         // подробные метки
+  ...derived,
+  total: timings.total
+}));
+
+// опционально красивый серверный лог
+console.log("[AIW][timings]", JSON.stringify({
+  siteId, sessionId, phase,
+  timings: { ...timings, ...derived }
+}));
 
       if (!clientClosed) {
         res.write("data: [DONE]\n\n");
@@ -686,20 +811,43 @@ res.setHeader("X-AIW-Good-Answer", String(quick.goodAnswer));
       phase = "rag";
       res.setHeader("X-AIW-Phase", phase);
       setSourceHeaders(res, "rag", citations);
+T.mark("beforeLLM");
+let reply = lang.startsWith("ru") ? "Демо-ответ (нет OPENAI_API_KEY)." : "Demo reply (no OPENAI_API_KEY).";
+if (oai) {
+  const completion = await oai.chat.completions.create({ model: MODEL, messages: prompt });
+  reply = completion.choices?.[0]?.message?.content?.trim() || reply;
+}
+T.mark("afterLLM");
+timing.llm = T.get().afterLLM - T.get().beforeLLM;
 
-      const tLLM = Date.now();
-      let reply = lang.startsWith("ru") ? "Демо-ответ (нет OPENAI_API_KEY)." : "Demo reply (no OPENAI_API_KEY).";
-      if (oai) {
-        const completion = await oai.chat.completions.create({ model: MODEL, messages: prompt });
-        reply = completion.choices?.[0]?.message?.content?.trim() || reply;
-      }
-      timing.llm = Date.now() - tLLM;
 
       await logAssistantMessage({ siteId, sessionId, content: reply, latencyMs: Date.now() - started });
       dbMark = "user:+ assistant:+";
 
       res.setHeader("X-AIW-DB", dbMark);
-      res.setHeader("X-AIW-Timing", JSON.stringify({ ...timing, total: Date.now() - started }));
+      const timings = T.get();
+// добавим производные: buildPromptDur, llmWait, ttfb (time-to-first-byte), firstChunk
+const derived = {
+  buildPromptDur: (timings.buildPrompt ?? 0) - (timings.prePrompt ?? 0),
+  llmWait: (timings.afterLLM ?? 0) - (timings.beforeLLM ?? 0),
+  ttfb: timings.firstByteToClient ?? undefined,
+  firstChunk: (timings.firstChunkFlushed ?? 0) - (timings.firstByteToClient ?? 0),
+};
+
+
+
+res.setHeader("X-AIW-Timing", JSON.stringify({
+  ...timing,          // твои старые поля для совместимости
+  ...timings,         // подробные метки
+  ...derived,
+  total: timings.total
+}));
+
+// опционально красивый серверный лог
+console.log("[AIW][timings]", JSON.stringify({
+  siteId, sessionId, phase,
+  timings: { ...timings, ...derived }
+}));
 
  setJSONHeaders(req, res);
  const quick = quickFlag({ phase, contexts, reply });
@@ -730,7 +878,29 @@ res.setHeader("X-AIW-Good-Answer", String(quick.goodAnswer));
     phase = "error";
     res.setHeader("X-AIW-Phase", phase);
     res.setHeader("X-AIW-DB", dbMark);
-    res.setHeader("X-AIW-Timing", JSON.stringify({ ...timing, total: Date.now() - started }));
+    const timings = T.get();
+// добавим производные: buildPromptDur, llmWait, ttfb (time-to-first-byte), firstChunk
+const derived = {
+  buildPromptDur: (timings.buildPrompt ?? 0) - (timings.prePrompt ?? 0),
+  llmWait: (timings.afterLLM ?? 0) - (timings.beforeLLM ?? 0),
+  ttfb: timings.firstByteToClient ?? undefined,
+  firstChunk: (timings.firstChunkFlushed ?? 0) - (timings.firstByteToClient ?? 0),
+};
+
+
+
+res.setHeader("X-AIW-Timing", JSON.stringify({
+  ...timing,          // твои старые поля для совместимости
+  ...timings,         // подробные метки
+  ...derived,
+  total: timings.total
+}));
+
+// опционально красивый серверный лог
+console.log("[AIW][timings]", JSON.stringify({
+  siteId, sessionId, phase,
+  timings: { ...timings, ...derived }
+}));
     console.error("AIW /chat error:", e);
     if (!res.headersSent) {
       return res.status(500).json({ ok: false, error: String(e) });
