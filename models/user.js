@@ -3,15 +3,13 @@ import bcrypt from "bcryptjs";
 
 const SiteAccessSchema = new mongoose.Schema(
   {
-    // Твой формат siteId уже есть в виджете: host::label (например, "mysite.com::default")
     siteId: { type: String, required: true, index: true },
     role: {
       type: String,
       enum: ["owner", "admin", "editor", "viewer", "support"],
       default: "viewer"
     },
-    // При необходимости — точечные флаги доступа (R/W на конкретные разделы)
-    permissions: { type: [String], default: [] }, // напр. ["sessions.read","content.write"]
+    permissions: { type: [String], default: [] },
     invitedBy: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
     joinedAt: { type: Date, default: Date.now },
     isActive: { type: Boolean, default: true }
@@ -22,16 +20,19 @@ const SiteAccessSchema = new mongoose.Schema(
 const UserSchema = new mongoose.Schema(
   {
     email: { type: String, required: true, unique: true, lowercase: true, trim: true },
-    name: { type: String, trim: true },
+    name:  { type: String, trim: true },
     password: { type: String, required: true, minlength: 6, select: false },
-    roles: { type: [String], default: ["user"] }, // глобальные роли (суперадмин и т.д.)
+    roles: { type: [String], default: ["user"] },
     isActive: { type: Boolean, default: true },
 
-    // 🔗 Привязка к сайтам (мульти-тенант)
+    // 🔗 Привязка к сайтам (как и было)
     sites: { type: [SiteAccessSchema], default: [] },
-    defaultSiteId: { type: String }, // денормализованно: чем открывать админку по умолчанию
+    defaultSiteId: { type: String },
 
-    tokenVersion: { type: Number, default: 0 }, // инкремент — инвалидировать все refresh токены
+    // 🔗 ССЫЛКА НА КЛИЕНТОВ (новое)
+    clientIds: [{ type: mongoose.Schema.Types.ObjectId, ref: "Client", index: true }],
+
+    tokenVersion: { type: Number, default: 0 },
     emailVerified: { type: Boolean, default: false },
 
     locale: { type: String, default: "en" },
@@ -44,10 +45,19 @@ const UserSchema = new mongoose.Schema(
   { timestamps: true, versionKey: false }
 );
 
-// Индексы
+// ——— Индексы ———
 UserSchema.index({ email: 1 }, { unique: true });
-UserSchema.index({ "sites.siteId": 1 });               // быстрые проверки членства
-UserSchema.index({ "sites.siteId": 1, _id: 1 });        // часто удобно для фильтров
+UserSchema.index({ "sites.siteId": 1 });
+UserSchema.index({ "sites.siteId": 1, _id: 1 });
+UserSchema.index({ clientIds: 1 }); // быстрый поиск по клиентам
+
+// Удобная виртуалка: user.clients -> массив документов Client (через populate)
+UserSchema.virtual("clients", {
+  ref: "Client",
+  localField: "clientIds",
+  foreignField: "_id",
+  justOne: false,
+});
 
 // Хеш пароля
 UserSchema.pre("save", async function (next) {
