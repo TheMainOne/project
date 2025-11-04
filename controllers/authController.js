@@ -61,6 +61,8 @@ export const login = async (req, res, next) => {
       ip: req.ip
     });
 
+
+    
     return res.json({
       user: { id: user._id, email: user.email, name: user.name, roles: user.roles, sites: user.sites || [] },
       tokens: { accessToken, refreshToken }
