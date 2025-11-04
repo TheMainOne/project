@@ -62,7 +62,7 @@ export const login = async (req, res, next) => {
     });
 
     return res.json({
-      user: { id: user._id, email: user.email, name: user.name, roles: user.roles },
+      user: { id: user._id, email: user.email, name: user.name, roles: user.roles, sites: user.sites || [] },
       tokens: { accessToken, refreshToken }
     });
   } catch (err) {
@@ -104,6 +104,19 @@ export const logout = async (req, res, next) => {
 
 /** GET /api/auth/me (protected) */
 export const me = async (req, res) => {
-  // req.user проставляется в middleware requireAuth
-  return res.json({ user: req.user });
+  const u = await User.findById(req.user.sub || req.user.id)
+    .lean()
+    .select('_id email name roles sites isActive timezone');
+
+  if (!u) return res.status(404).json({ error: 'User not found' });
+
+  return res.json({
+    id: String(u._id),
+    email: u.email,
+    name: u.name,
+    roles: u.roles || ['user'],
+    sites: u.sites || [],       
+    isActive: u.isActive !== false,
+    timezone: u.timezone || 'UTC',
+  });
 };
