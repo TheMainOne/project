@@ -7,7 +7,7 @@ import cors from 'cors';
 import widgetRouter from './api/widget/widget.js';
 import retrieveRouter from './api/widget/aiwSearch.js';
 import chatRouter from './api/widget/aiwChat.js';
-
+import clientRouter from './api/client.js';
 import AiwMessage from './models/AiwMessage.js';
 import AiwSession from './models/AiwSession.js';
 import authRouter from './api/auth.js';
