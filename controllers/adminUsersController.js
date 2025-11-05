@@ -1,0 +1,249 @@
+// controllers/adminUsersController.js
+import User from "../models/user.js";
+import ms from "ms";
+
+/* утилиты */
+const pick = (obj, fields) =>
+  Object.fromEntries(Object.entries(obj || {}).filter(([k]) => fields.includes(k)));
+
+const idToString = (u) => ({ ...u, id: String(u._id), _id: undefined });
+
+/** GET /api/admin/users
+ *  ?q=search&role=admin&site=mysite.com::default&active=true&page=1&limit=20&sort=-createdAt
+ */
+export async function listUsers(req, res, next) {
+  try {
+    const {
+      q,
+      role,
+      site,
+      active,
+      page = 1,
+      limit = 20,
+      sort = "-createdAt",
+      select,
+    } = req.query;
+
+    const filter = {};
+    if (q) {
+      filter.$or = [
+        { email: { $regex: q, $options: "i" } },
+        { name: { $regex: q, $options: "i" } },
+      ];
+    }
+    if (role) filter.roles = role; // точное совпадение; при необходимости -> {$in:[...]}
+    if (site) filter.sites = site;
+    if (active === "true") filter.isActive = { $ne: false };
+    if (active === "false") filter.isActive = false;
+
+    const pageNum = Math.max(parseInt(page, 10) || 1, 1);
+    const limitNum = Math.min(Math.max(parseInt(limit, 10) || 20, 1), 200);
+
+    const proj = (select || "_id email name roles sites isActive createdAt").split(",");
+
+    const [items, total] = await Promise.all([
+      User.find(filter)
+        .select(proj.join(" "))
+        .sort(sort)
+        .skip((pageNum - 1) * limitNum)
+        .limit(limitNum)
+        .lean(),
+      User.countDocuments(filter),
+    ]);
+
+    return res.json({
+      total,
+      page: pageNum,
+      limit: limitNum,
+      users: items.map(idToString),
+    });
+  } catch (err) {
+    next(err);
+  }
+}
+
+/** GET /api/admin/users/:id */
+export async function getUserById(req, res, next) {
+  try {
+    const u = await User.findById(req.params.id)
+      .select("_id email name roles sites isActive createdAt timezone")
+      .lean();
+    if (!u) return res.status(404).json({ error: "Not found" });
+    return res.json(idToString(u));
+  } catch (err) {
+    next(err);
+  }
+}
+
+/** POST /api/admin/users  {email, password, name, roles?, sites?, isActive?} */
+export async function createUser(req, res, next) {
+  try {
+    const body = pick(req.body, ["email", "password", "name", "roles", "sites", "isActive", "timezone"]);
+    if (!body.email || !body.password) {
+      return res.status(400).json({ error: "email and password are required" });
+    }
+    // запрет понижать последнего супер-админа не нужен тут, но пригодится в update/delete
+
+    const exists = await User.findOne({ email: body.email }).lean();
+    if (exists) return res.status(409).json({ error: "Email already exists" });
+
+    const user = await User.create(body);
+    const out = await User.findById(user._id)
+      .select("_id email name roles sites isActive createdAt")
+      .lean();
+
+    return res.status(201).json(idToString(out));
+  } catch (err) {
+    next(err);
+  }
+}
+
+/** PATCH /api/admin/users/:id  {name?, email?, roles?, sites?, isActive?, timezone?} */
+export async function updateUser(req, res, next) {
+  try {
+    const updates = pick(req.body, ["name", "email", "roles", "sites", "isActive", "timezone"]);
+
+    // Нельзя удалить последнего супер-админа или снять у него роль
+    if (Array.isArray(updates.roles)) {
+      const target = await User.findById(req.params.id).lean();
+      if (!target) return res.status(404).json({ error: "Not found" });
+
+      const isTargetSuper = (target.roles || []).includes("superadmin");
+      const willBeSuper = updates.roles.includes("superadmin");
+
+      if (isTargetSuper && !willBeSuper) {
+        const superCount = await User.countDocuments({ roles: "superadmin", _id: { $ne: target._id } });
+        if (superCount === 0) {
+          return res.status(400).json({ error: "Cannot remove the last superadmin" });
+        }
+      }
+    }
+
+    const u = await User.findByIdAndUpdate(req.params.id, { $set: updates }, { new: true })
+      .select("_id email name roles sites isActive createdAt timezone")
+      .lean();
+
+    if (!u) return res.status(404).json({ error: "Not found" });
+    return res.json(idToString(u));
+  } catch (err) {
+    next(err);
+  }
+}
+
+/** PATCH /api/admin/users/:id/password  {password} */
+export async function updateUserPassword(req, res, next) {
+  try {
+    const { password } = req.body || {};
+    if (!password || String(password).length < 6) {
+      return res.status(400).json({ error: "Password must be at least 6 chars" });
+    }
+    const u = await User.findById(req.params.id).select("+password");
+    if (!u) return res.status(404).json({ error: "Not found" });
+    u.password = password; // pre-save hook в модели захеширует
+    await u.save();
+    return res.json({ ok: true });
+  } catch (err) {
+    next(err);
+  }
+}
+
+/** PATCH /api/admin/users/:id/roles  {roles: string[]}  (только superadmin) */
+export async function updateUserRoles(req, res, next) {
+  try {
+    const { roles } = req.body || {};
+    if (!Array.isArray(roles)) return res.status(400).json({ error: "roles must be an array" });
+
+    // защита «последний супер-админ»
+    const target = await User.findById(req.params.id).lean();
+    if (!target) return res.status(404).json({ error: "Not found" });
+
+    const isTargetSuper = (target.roles || []).includes("superadmin");
+    const willBeSuper = roles.includes("superadmin");
+    if (isTargetSuper && !willBeSuper) {
+      const superCount = await User.countDocuments({ roles: "superadmin", _id: { $ne: target._id } });
+      if (superCount === 0) {
+        return res.status(400).json({ error: "Cannot remove the last superadmin" });
+      }
+    }
+
+    const u = await User.findByIdAndUpdate(req.params.id, { $set: { roles } }, { new: true })
+      .select("_id email name roles sites isActive")
+      .lean();
+
+    return res.json(idToString(u));
+  } catch (err) {
+    next(err);
+  }
+}
+
+/** PATCH /api/admin/users/:id/sites  {sites: string[] | {add?:string[], remove?:string[]}} */
+export async function updateUserSites(req, res, next) {
+  try {
+    let update;
+    if (Array.isArray(req.body?.sites)) {
+      update = { $set: { sites: req.body.sites } };
+    } else {
+      const add = Array.isArray(req.body?.add) ? req.body.add : [];
+      const remove = Array.isArray(req.body?.remove) ? req.body.remove : [];
+      update = {
+        ...(add.length ? { $addToSet: { sites: { $each: add } } } : {}),
+        ...(remove.length ? { $pull: { sites: { $in: remove } } } : {}),
+      };
+    }
+
+    const u = await User.findByIdAndUpdate(req.params.id, update, { new: true })
+      .select("_id email name roles sites isActive")
+      .lean();
+
+    if (!u) return res.status(404).json({ error: "Not found" });
+    return res.json(idToString(u));
+  } catch (err) {
+    next(err);
+  }
+}
+
+/** PATCH /api/admin/users/:id/deactivate {isActive:false} */
+export async function deactivateUser(req, res, next) {
+  try {
+    const { isActive } = req.body || {};
+    if (typeof isActive !== "boolean")
+      return res.status(400).json({ error: "isActive boolean required" });
+
+    // запрет деактивировать последнего супер-админа
+    if (isActive === false) {
+      const target = await User.findById(req.params.id).lean();
+      if ((target?.roles || []).includes("superadmin")) {
+        const others = await User.countDocuments({
+          roles: "superadmin",
+          _id: { $ne: target._id },
+          isActive: { $ne: false },
+        });
+        if (others === 0) return res.status(400).json({ error: "Cannot deactivate the last superadmin" });
+      }
+    }
+
+    const u = await User.findByIdAndUpdate(req.params.id, { $set: { isActive } }, { new: true })
+      .select("_id email name roles sites isActive")
+      .lean();
+
+    return res.json(idToString(u));
+  } catch (err) {
+    next(err);
+  }
+}
+
+/** DELETE /api/admin/users/:id  (жёсткое удаление, только superadmin) */
+export async function deleteUserHard(req, res, next) {
+  try {
+    const target = await User.findById(req.params.id).lean();
+    if (!target) return res.status(404).json({ error: "Not found" });
+    if ((target.roles || []).includes("superadmin")) {
+      const others = await User.countDocuments({ roles: "superadmin", _id: { $ne: target._id } });
+      if (others === 0) return res.status(400).json({ error: "Cannot delete the last superadmin" });
+    }
+    await User.deleteOne({ _id: target._id });
+    return res.json({ ok: true });
+  } catch (err) {
+    next(err);
+  }
+}

@@ -6,6 +6,7 @@ import mongoose from "mongoose";
 import errorHandler from "./middlewares/errorHandler.js";
 import authRouter from "./api/auth.js";
 import clientRouter from "./api/clientRoutes.js";
+import adminUsersRouter from "./api/adminUsers.js";
 import sendTelegramMessage from "./services/telegramNotify.js";
 import { webhookCallback } from "grammy";
 import createBot from "./src/bot.js";
@@ -65,6 +66,7 @@ mongoose
     // твои API роуты
     app.use("/api/auth", authRouter);
     app.use("/api/clients", clientRouter);
+    app.use("/api/users", adminUsersRouter);
     // app.use("/widget", widgetRouter);
     // app.use(retrieveRouter);
     // app.use(chatRouter);
