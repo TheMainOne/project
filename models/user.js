@@ -4,6 +4,7 @@ import bcrypt from "bcryptjs";
 const SiteAccessSchema = new mongoose.Schema(
   {
     siteId: { type: String, required: true, index: true },
+    clientId: { type: mongoose.Schema.Types.ObjectId, ref: "Client" },
     role: {
       type: String,
       enum: ["owner", "admin", "editor", "viewer", "support"],

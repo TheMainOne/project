@@ -1,4 +1,6 @@
 import Client from "../models/Client.js";
+import User from "../models/user.js";
+import ClientDocument from "../models/ClientDocument.js";
 
 // 🔹 helper для slug
 function slugify(s) {
@@ -59,23 +61,6 @@ export const getAllClients = async (req, res, next) => {
   }
 };
 
-// 🔹 Получить одного клиента по ID или slug
-export const getClient = async (req, res, next) => {
-  try {
-    const { idOrSlug } = req.params;
-
-    const client = await Client.findOne({
-      $or: [{ _id: idOrSlug }, { slug: idOrSlug }],
-    });
-
-    if (!client) return res.status(404).json({ error: "Client not found" });
-
-    res.json(client);
-  } catch (err) {
-    next(err);
-  }
-};
-
 // 🔹 Обновить клиента
 export const updateClient = async (req, res, next) => {
   try {
@@ -116,3 +101,74 @@ export const deleteClient = async (req, res, next) => {
     next(err);
   }
 };
+
+export async function getClient(req, res) {
+  try {
+    const idOrSlug = req.params.id;
+    const byId = idOrSlug.match(/^[0-9a-fA-F]{24}$/);
+    const client = await Client.findOne(byId ? { _id: idOrSlug } : { slug: idOrSlug })
+      .lean();
+
+    if (!client) return res.status(404).json({ error: "Client not found" });
+
+    const [docCount, userCount] = await Promise.all([
+      ClientDocument.countDocuments({ clientId: client._id }),
+      Promise.resolve((client.users || []).length),
+    ]);
+
+    return res.json({
+      ...client,
+      stats: { documents: docCount, users: userCount },
+    });
+  } catch (e) {
+    return res.status(500).json({ error: e.message });
+  }
+}
+
+export async function listClientUsers(req, res) {
+  try {
+    const idOrSlug = req.params.id;
+    const client = await Client.findOne(idOrSlug.match(/^[0-9a-fA-F]{24}$/) ? { _id: idOrSlug } : { slug: idOrSlug }).lean();
+    if (!client) return res.status(404).json({ error: "Client not found" });
+
+    const ids = (client.users || []).map(u => u.userId).filter(Boolean);
+    const users = ids.length ? await User.find({ _id: { $in: ids } }, { email: 1 }).lean() : [];
+
+    const emailById = Object.fromEntries(users.map(u => [String(u._id), u.email]));
+
+    res.json((client.users || []).map(u => ({
+      userId: String(u.userId),
+      email: emailById[String(u.userId)] || "(unknown)",
+      role: u.role,
+      addedAt: u.addedAt,
+    })));
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+}
+
+
+export async function listClientDocuments(req, res) {
+  try {
+    const idOrSlug = req.params.id;
+    const client = await Client.findOne(idOrSlug.match(/^[0-9a-fA-F]{24}$/) ? { _id: idOrSlug } : { slug: idOrSlug });
+    if (!client) return res.status(404).json({ error: "Client not found" });
+
+    const docs = await ClientDocument
+      .find({ clientId: client._id })
+      .sort({ createdAt: -1 })
+      .lean();
+
+    res.json(docs.map(d => ({
+      _id: d._id,
+      title: d.title,
+      fileName: d.fileName,
+      fileSize: d.fileSize,
+      isActive: d.isActive,
+      createdAt: d.createdAt,
+    })));
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+}
+

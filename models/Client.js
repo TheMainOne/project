@@ -1,6 +1,18 @@
 // models/Client.js
 import mongoose from "mongoose";
 
+
+const WidgetConfigSchema = new mongoose.Schema({
+  widgetTitle: { type: String, default: "AI Assistant" },
+  welcomeMessage: { type: String, default: "Hi! How can I help you today?" },
+  primaryColor: { type: String, default: "#2927ea" },
+  backgroundColor: { type: String, default: "#0f0f0f" },
+  textColor: { type: String, default: "#ffffff" },
+  borderColor: { type: String, default: "#2927ea" },
+  logoUrl: { type: String, default: null },
+  systemPrompt: { type: String, default: "" },
+}, { _id: false });
+
 const ClientSchema = new mongoose.Schema(
   {
     // Человекочитаемое имя
@@ -14,15 +26,16 @@ const ClientSchema = new mongoose.Schema(
 
     // Состояние
     isActive: { type: Boolean, default: true },
+     apiKey: { type: String },          // для Embed Code
+       config: { type: WidgetConfigSchema, default: () => ({}) },
+  users: [{
+    userId: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
+    role: { type: String, enum: ["owner", "admin", "editor", "viewer"], default: "viewer" },
+    addedAt: { type: Date, default: Date.now },
+  }],
 
-    // Любые настройки клиента (логотипы, цвета, конфиг виджета и т.п.)
-    config: {
-      logoUrl: String,
-      accentColor: String,
-      widget: mongoose.Schema.Types.Mixed,
-    },
   },
-  { timestamps: true }
+  { timestamps: true, versionKey: false }
 );
 
 ClientSchema.index({ slug: 1 }, { unique: true });
