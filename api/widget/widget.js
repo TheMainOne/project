@@ -5,9 +5,12 @@ import OpenAI from "openai";
 import AiwSession from "../../models/AiwSession.js";
 import AiwMessage from "../../models/AiwMessage.js";
 import AiwGap from "../../models/AiwGap.js"; 
+import Client from "../../models/Client.js";
 import { hashIp, classifyTopics } from "../../utils/telemetry.js";
 import { retrieveTopK, buildPrompt } from "../../services/web_crawler/core.js";
 import { tryFastAnswer } from '../../services/web_crawler/fastAnswer.js';
+import { retrieveUnified } from "../../services/rag/index.js";
+
 
 const router = express.Router();
 
@@ -135,11 +138,13 @@ Return JSON only.`}
 }
 
 // Лог в БД, если ответ «плохой»
-async function logGapIfBad({ goodAnswer, confidence, reason, siteId, sessionId, question, reply, phase, citations }) {
+async function logGapIfBad({ goodAnswer, confidence, reason, siteId, sessionId, clientId, question, reply, phase, citations }) {
   if (goodAnswer) return;
   try {
     await AiwGap.create({
-      siteId, sessionId,
+      siteId,
+      sessionId,
+      clientId: clientId || null,
       question,
       answerPreview: (reply || "").slice(0, 1500),
       phase,
@@ -204,13 +209,49 @@ function resolveIds(req, meta = {}) {
   return { siteId, sessionId, visitorId, serverGenerated };
 }
 
+async function resolveClientId(req, meta, siteId) {
+  // 1) приоритет: явный clientId из заголовка/боди/меты
+  const explicit =
+    req.header("x-aiw-client") ||
+    meta?.clientId ||
+    req.body?.clientId ||
+    null;
+  if (explicit) return String(explicit);
+
+  // 2) clientSlug (если фронт шлёт слаг)
+  const slug =
+    req.header("x-aiw-client-slug") ||
+    meta?.clientSlug ||
+    req.body?.clientSlug ||
+    null;
+  if (slug) {
+    const c = await Client.findOne({ slug }).select("_id").lean();
+    if (c?._id) return String(c._id);
+  }
+
+  // 3) попытка найти по siteId (гибкий OR под разные варианты схемы)
+  if (siteId && siteId !== "unknown-site") {
+    const c = await Client.findOne({
+      $or: [
+        { siteId },                     // если поле единичное
+        { "sites.siteId": siteId },     // если массив сайтов
+        { domains: siteId },            // если храните домены
+      ]
+    }).select("_id").lean();
+    if (c?._id) return String(c._id);
+  }
+
+  return null;
+}
+
+
 
 async function ensureSession(meta, req) {
   try {
-    const { siteId, sessionId, visitorId, pageUrl, referrer, utm, tz, lang } = meta || {};
+    const { siteId, sessionId, visitorId, pageUrl, referrer, utm, tz, lang, clientId } = meta || {};
     const ipHashVal = hashIp(getIp(req), req.headers["user-agent"], siteId || "unknown-site");
-
     const now = new Date();
+
     await AiwSession.updateOne(
       { sessionId },
       {
@@ -218,6 +259,7 @@ async function ensureSession(meta, req) {
           siteId: siteId || "unknown-site",
           sessionId,
           visitorId: visitorId || null,
+          clientId: clientId || null,               // <— NEW
           pageUrl: pageUrl || null,
           referrer: referrer || null,
           utm: utm || {},
@@ -231,7 +273,7 @@ async function ensureSession(meta, req) {
           userMessages: 0,
           assistantMessages: 0,
         },
-        $set: { endedAt: now },
+        $set: { endedAt: now, ...(clientId ? { clientId } : {}) }, // <— обновляем, если появился
       },
       { upsert: true }
     );
@@ -241,6 +283,7 @@ async function ensureSession(meta, req) {
     return null;
   }
 }
+
 
 function setDebugHeaders(req, res, dbg = {}) {
   try {
@@ -265,12 +308,13 @@ function setDebugHeaders(req, res, dbg = {}) {
 }
 
 
-async function logUserMessage({ siteId, sessionId, content }) {
+async function logUserMessage({ siteId, sessionId, content, clientId }) {
   try {
-    if (!content) return; // логично не писать пустоту
+    if (!content) return;
     const topics = classifyTopics(content);
     const doc = await AiwMessage.create({
       siteId: siteId || "unknown-site",
+      clientId: clientId || null,        // <— NEW
       sessionId,
       role: "user",
       content: String(content).slice(0, 8000),
@@ -280,7 +324,7 @@ async function logUserMessage({ siteId, sessionId, content }) {
       { sessionId },
       {
         $inc: { messagesCount: 1, userMessages: 1 },
-        $set: { lastUserQuestion: content, endedAt: new Date() },
+        $set: { lastUserQuestion: content, endedAt: new Date(), ...(clientId ? { clientId } : {}) },
         $addToSet: { topics: { $each: topics } },
       }
     );
@@ -290,12 +334,13 @@ async function logUserMessage({ siteId, sessionId, content }) {
   }
 }
 
-async function logAssistantMessage({ siteId, sessionId, content, latencyMs }) {
+async function logAssistantMessage({ siteId, sessionId, content, latencyMs, clientId }) {
   try {
     if (content == null) return;
     const topics = classifyTopics(content);
     const doc = await AiwMessage.create({
       siteId: siteId || "unknown-site",
+      clientId: clientId || null,        // <— NEW
       sessionId,
       role: "assistant",
       content: String(content).slice(0, 200_000),
@@ -306,7 +351,7 @@ async function logAssistantMessage({ siteId, sessionId, content, latencyMs }) {
       { sessionId },
       {
         $inc: { messagesCount: 1, assistantMessages: 1 },
-        $set: { endedAt: new Date() },
+        $set: { endedAt: new Date(), ...(clientId ? { clientId } : {}) },
         $addToSet: { topics: { $each: topics } },
       }
     );
@@ -315,6 +360,7 @@ async function logAssistantMessage({ siteId, sessionId, content, latencyMs }) {
     console.error("[AIW] logAssistantMessage error", e);
   }
 }
+
 
 
 
@@ -454,7 +500,7 @@ T.mark("entered"); // t=0
     const expose = [
       "X-AIW-Build","X-AIW-Source","X-AIW-Citations-Count",
       "X-AIW-Handler","X-AIW-Resolved-Site","X-AIW-Resolved-Session",
-      "X-AIW-Phase","X-AIW-DB","X-AIW-Timing", "X-AIW-Good-Answer"
+      "X-AIW-Phase","X-AIW-DB","X-AIW-Timing","X-AIW-Good-Answer","X-AIW-Client"
     ].join(", ");
     const existingExpose = res.getHeader("Access-Control-Expose-Headers");
     res.setHeader(
@@ -476,6 +522,10 @@ T.mark("entered"); // t=0
     // const visitorId = String(req.header("x-aiw-visitor") || meta.visitorId || "");
     const { siteId, sessionId, visitorId } = resolveIds(req, meta);
 
+    const clientId = await resolveClientId(req, meta, siteId);
+
+    if (clientId) res.setHeader("X-AIW-Client", clientId);
+
     res.setHeader("X-AIW-Resolved-Site", siteId);
     res.setHeader("X-AIW-Resolved-Session", sessionId || "(empty)");
 
@@ -483,6 +533,7 @@ T.mark("entered"); // t=0
       siteId,
       sessionId,
       visitorId,
+        clientId,    
       pageUrl: meta.pageUrl || meta.referrer || req.headers.referer || null,
       referrer: meta.referrer || null,
       utm: meta.utm || {},
@@ -503,7 +554,7 @@ T.mark("entered"); // t=0
 
     // логируем юзера (не пишем пустоту)
     if (query) {
-      await logUserMessage({ siteId, sessionId, content: query });
+      await logUserMessage({ siteId, sessionId, content: query, clientId });
       T.mark("logUserMessage");
       dbMark = "user:+ assistant:-";
     }
@@ -552,9 +603,14 @@ console.log("[AIW][timings]", JSON.stringify({
     }
 
     // ====== RAG retrieve ======
-    const contexts = await T.wrap("retrieve", async () =>
-  retrieveTopK(siteId, query, { k: 5, softLimit: 300, minScore: 0.18 })
+const { contexts: ragContexts } = await T.wrap("retrieve", async () =>
+  retrieveUnified({ clientId, siteId, query })  
 );
+const contexts = ragContexts; // дальше твой код использует contexts
+
+//     const contexts = await T.wrap("retrieve", async () =>
+//   retrieveTopK(siteId, query, { k: 5, softLimit: 300, minScore: 0.18 })
+// );
 timing.retrieve = T.get().retrieve; // чтобы дублировать в X-AIW-Timing как раньше
 
     // ====== Fast extractive ======
@@ -565,7 +621,7 @@ timing.retrieve = T.get().retrieve; // чтобы дублировать в X-AI
       res.setHeader("X-AIW-Phase", phase);
 
       const payload = { reply: fast.reply, citations: fast.citations || [] };
-      await logAssistantMessage({ siteId, sessionId, content: payload.reply, latencyMs: Date.now() - started });
+      await logAssistantMessage({ siteId, sessionId, content: payload.reply, latencyMs: Date.now() - started, clientId });
       dbMark = "user:+ assistant:+";
       // === judge & optional gap log (NEW) ===
 const quick = quickFlag({ phase, contexts, reply: payload.reply });
@@ -582,7 +638,7 @@ const finalBad =
    goodAnswer: !finalBad,
    confidence: judge.confidence,
    reason: finalBad ? (judge.reason || "low-confidence") : (judge.reason || "ok"),
-   siteId, sessionId, question: query, reply: payload.reply, phase, citations: payload.citations
+   siteId, sessionId, clientId, question: query, reply: payload.reply, phase, citations: payload.citations
  });
 });
 
@@ -644,7 +700,7 @@ return sendJSON(req, res, {
           ? `Демо-ответ (нет OPENAI_API_KEY).`
           : `Demo reply (no OPENAI_API_KEY).`);
 
-      await logAssistantMessage({ siteId, sessionId, content: reply, latencyMs: Date.now() - started });
+      await logAssistantMessage({ siteId, sessionId, content: reply, latencyMs: Date.now() - started, clientId });
       // === mark bad without judge (NEW) ===
 const judge = { goodAnswer: false, confidence: 0.95, reason: "no-context" };
 res.setHeader("X-AIW-Good-Answer", "false");
@@ -654,7 +710,7 @@ const finalBad =
    goodAnswer: !finalBad ? true : false,
    confidence: judge.confidence,
    reason: finalBad ? (judge.reason || "low-confidence") : (judge.reason || "ok"),
-   siteId, sessionId, question: query, reply, phase, citations: []
+   siteId, sessionId, clientId, question: query, reply, phase, citations: []
  });
 
       dbMark = "user:+ assistant:+";
@@ -758,7 +814,7 @@ res.setHeader("X-AIW-Good-Answer", String(quick.goodAnswer));
       }
 
       // лог ассистента и финальные заголовки
-      await logAssistantMessage({ siteId, sessionId, content: buffer, latencyMs: Date.now() - started });
+      await logAssistantMessage({ siteId, sessionId, content: buffer, latencyMs: Date.now() - started, clientId });
       T.mark("logAssistantMessage");
       dbMark = "user:+ assistant:+";
       res.setHeader("X-AIW-DB", dbMark);
@@ -801,7 +857,7 @@ console.log("[AIW][timings]", JSON.stringify({
    goodAnswer: !finalBad,
    confidence: judge.confidence,
    reason: finalBad ? (judge.reason || "low-confidence") : (judge.reason || "ok"),
-   siteId, sessionId, question: query, reply: buffer, phase, citations
+   siteId, sessionId, clientId, question: query, reply: buffer, phase, citations
  });
 });
 
@@ -821,7 +877,7 @@ T.mark("afterLLM");
 timing.llm = T.get().afterLLM - T.get().beforeLLM;
 
 
-      await logAssistantMessage({ siteId, sessionId, content: reply, latencyMs: Date.now() - started });
+      await logAssistantMessage({ siteId, sessionId, content: reply, latencyMs: Date.now() - started, clientId });
       dbMark = "user:+ assistant:+";
 
       res.setHeader("X-AIW-DB", dbMark);
@@ -864,7 +920,7 @@ console.log("[AIW][timings]", JSON.stringify({
    goodAnswer: !finalBad ? true : false,
    confidence: judge.confidence,
    reason: finalBad ? (judge.reason || "low-confidence") : (judge.reason || "ok"),
-   siteId, sessionId, question: query, reply, phase, citations
+   siteId, sessionId, clientId, question: query, reply, phase, citations
  });
  });
 

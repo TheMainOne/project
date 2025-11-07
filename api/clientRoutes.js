@@ -1,4 +1,6 @@
 import express from "express";
+import upload from "../middlewares/s3Upload.js";
+import { createClientDocument } from "../controllers/clientDocumentsController.js";
 import {
   createClient,
   getAllClients,
@@ -14,6 +16,7 @@ const clientRouter = express.Router();
 clientRouter.post("/", createClient);              // POST /api/clients
 clientRouter.get("/", getAllClients);              // GET /api/clients
 clientRouter.get("/:id", getClient);         // GET /api/clients/:idOrSlug
+clientRouter.post("/:id/documents", upload.single("file"), createClientDocument);
 clientRouter.get("/:id/documents", listClientDocuments);
 clientRouter.get("/:id/users", listClientUsers);
 clientRouter.put("/:idOrSlug", updateClient);      // PUT /api/clients/:idOrSlug
