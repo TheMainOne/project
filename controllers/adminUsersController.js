@@ -31,15 +31,19 @@ export async function listUsers(req, res, next) {
         { name: { $regex: q, $options: "i" } },
       ];
     }
-    if (role) filter.roles = role; // точное совпадение; при необходимости -> {$in:[...]}
-    if (site) filter.sites = site;
+if (role) filter.roles = { $in: [role] };           // roles — массив
+if (req.query.site) filter["sites.siteId"] = req.query.site;  // sites.* — вложенный объект
+if (req.query.clientId) filter.clientIds = req.query.clientId; // поиск по привязке к клиенту
+
+const proj = (select || "_id email name roles isActive clientIds sites.createdAt sites.siteId sites.clientId sites.role sites.isActive createdAt")
+  .split(",");
+
     if (active === "true") filter.isActive = { $ne: false };
     if (active === "false") filter.isActive = false;
 
     const pageNum = Math.max(parseInt(page, 10) || 1, 1);
     const limitNum = Math.min(Math.max(parseInt(limit, 10) || 20, 1), 200);
 
-    const proj = (select || "_id email name roles sites isActive createdAt").split(",");
 
     const [items, total] = await Promise.all([
       User.find(filter)
@@ -65,9 +69,10 @@ export async function listUsers(req, res, next) {
 /** GET /api/admin/users/:id */
 export async function getUserById(req, res, next) {
   try {
-    const u = await User.findById(req.params.id)
-      .select("_id email name roles sites isActive createdAt timezone")
-      .lean();
+const u = await User.findById(req.params.id)
+  .select("_id email name roles isActive timezone clientIds sites.siteId sites.clientId sites.role sites.isActive createdAt")
+  .lean();
+
     if (!u) return res.status(404).json({ error: "Not found" });
     return res.json(idToString(u));
   } catch (err) {
@@ -76,20 +81,38 @@ export async function getUserById(req, res, next) {
 }
 
 /** POST /api/admin/users  {email, password, name, roles?, sites?, isActive?} */
+/** POST /api/admin/users
+ *  body: { email, password, name?, roles?, isActive?, timezone?, clientIds?: string[], sites?: SiteAccess[] }
+ */
 export async function createUser(req, res, next) {
   try {
-    const body = pick(req.body, ["email", "password", "name", "roles", "sites", "isActive", "timezone"]);
+    const body = pick(req.body, ["email","password","name","roles","isActive","timezone","clientIds","sites"]);
     if (!body.email || !body.password) {
       return res.status(400).json({ error: "email and password are required" });
     }
-    // запрет понижать последнего супер-админа не нужен тут, но пригодится в update/delete
 
     const exists = await User.findOne({ email: body.email }).lean();
     if (exists) return res.status(409).json({ error: "Email already exists" });
 
+    // нормализация clientIds -> массив строк/ObjectId
+    if (body.clientIds && !Array.isArray(body.clientIds)) {
+      return res.status(400).json({ error: "clientIds must be an array" });
+    }
+
+    // нормализация sites -> массив объектов {siteId, clientId?, role?, isActive?}
+    if (body.sites && !Array.isArray(body.sites)) {
+      return res.status(400).json({ error: "sites must be an array of objects" });
+    }
+    if (Array.isArray(body.sites)) {
+      for (const s of body.sites) {
+        if (!s?.siteId) return res.status(400).json({ error: "each site must include siteId" });
+      }
+    }
+
     const user = await User.create(body);
+
     const out = await User.findById(user._id)
-      .select("_id email name roles sites isActive createdAt")
+      .select("_id email name roles isActive timezone clientIds sites.siteId sites.clientId sites.role sites.isActive createdAt")
       .lean();
 
     return res.status(201).json(idToString(out));
@@ -97,6 +120,7 @@ export async function createUser(req, res, next) {
     next(err);
   }
 }
+
 
 /** PATCH /api/admin/users/:id  {name?, email?, roles?, sites?, isActive?, timezone?} */
 export async function updateUser(req, res, next) {
