@@ -65,6 +65,18 @@ router.use((req, _res, next) => {
 function quickHeuristicGood({ phase, contexts, reply }) {
   if (!contexts?.length) return { goodAnswer: false, confidence: 0.9, reason: "no-context" };
   const r = (reply || "").toLowerCase();
+
+ // Явное сообщение, что в базе/контексте нет нужных данных — считаем gap
+ const noInfoPatterns = [
+   /в контексте нет информации/i,
+   /в базе нет информации/i,
+   /нет (информации|данных) (об|по)/i,
+   /не найден[аоы] информация/i
+ ];
+ if (noInfoPatterns.some(rx => rx.test(r))) {
+   return { goodAnswer: false, confidence: 0.9, reason: "no-data-in-knowledge-base" };
+ }
+
   const badPhrases = [
    "не удалось",
    "не могу предоставить",
@@ -645,7 +657,10 @@ defer(async () => {
 const THRESH = Number(process.env.AIW_JUDGE_THRESHOLD || 0.60);
  const hasSupport = ((payload.citations?.length || 0) > 0) || ((contexts?.length || 0) > 0);
  // Плохо только если судья явно сказал false ИЛИ если нет опоры и низкая уверенность
- const finalBad = (judge?.goodAnswer === false) || (!hasSupport && (judge?.confidence ?? 0) < THRESH);
+ 
+ const explicitNoInfo = /в контексте нет информации|в базе нет информации|нет (информации|данных) (об|по)|не найден[аоы] информация/i.test((payload.reply || ""));
+
+ const finalBad = explicitNoInfo || (judge?.goodAnswer === false) || (!hasSupport && (judge?.confidence ?? 0) < THRESH);
  await logGapIfBad({
    goodAnswer: !finalBad,
    confidence: judge.confidence,
@@ -719,7 +734,8 @@ res.setHeader("X-AIW-Good-Answer", "false");
 const THRESH = Number(process.env.AIW_JUDGE_THRESHOLD || 0.60);
  const hasSupport = (contexts?.length || 0) > 0;
  // Плохо только если судья явно сказал false ИЛИ если нет опоры и низкая уверенность
- const finalBad = (judge?.goodAnswer === false) || (!hasSupport && (judge?.confidence ?? 0) < THRESH);
+ const explicitNoInfo = /в контексте нет информации|в базе нет информации|нет (информации|данных) (об|по)|не найден[аоы] информация/i.test((reply || ""));
+const finalBad = explicitNoInfo || (judge?.goodAnswer === false) || (!hasSupport && (judge?.confidence ?? 0) < THRESH);
  await logGapIfBad({
    goodAnswer: !finalBad ? true : false,
    confidence: judge.confidence,
@@ -868,7 +884,9 @@ console.log("[AIW][timings]", JSON.stringify({
 const THRESH = Number(process.env.AIW_JUDGE_THRESHOLD || 0.60);
  const hasSupport = (citations?.length || 0) > 0 || (contexts?.length || 0) > 0;
  // Плохо только если судья явно сказал false ИЛИ если нет опоры и низкая уверенность
- const finalBad = (judge?.goodAnswer === false) || (!hasSupport && (judge?.confidence ?? 0) < THRESH);
+
+ const explicitNoInfo = /в контексте нет информации|в базе нет информации|нет (информации|данных) (об|по)|не найден[аоы] информация/i.test((buffer || ""));
+const finalBad = explicitNoInfo || (judge?.goodAnswer === false) || (!hasSupport && (judge?.confidence ?? 0) < THRESH);
  await logGapIfBad({
    goodAnswer: !finalBad,
    confidence: judge.confidence,
@@ -933,7 +951,10 @@ console.log("[AIW][timings]", JSON.stringify({
 const THRESH = Number(process.env.AIW_JUDGE_THRESHOLD || 0.60);
  const hasSupport = (citations?.length || 0) > 0 || (contexts?.length || 0) > 0;
  // Плохо только если судья явно сказал false ИЛИ если нет опоры и низкая уверенность
- const finalBad = (judge?.goodAnswer === false) || (!hasSupport && (judge?.confidence ?? 0) < THRESH);
+ const explicitNoInfo = /в контексте нет информации|в базе нет информации|нет (информации|данных) (об|по)|не найден[аоы] информация/i.test((reply || ""));
+
+const finalBad = explicitNoInfo || (judge?.goodAnswer === false) || (!hasSupport && (judge?.confidence ?? 0) < THRESH);
+
  await logGapIfBad({
    goodAnswer: !finalBad ? true : false,
    confidence: judge.confidence,
