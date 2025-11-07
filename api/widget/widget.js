@@ -1,4 +1,9 @@
 // основной код для виджета. Вся логика обработки запросов лежит здесь
+
+
+// !!!! если изменения вносятся в этот файл, нужно через PuTTY выполнить команду pm2 restart aiw чтобы подхватить изменения!!!!!
+
+
 import 'dotenv/config';     
 import express from "express";
 import OpenAI from "openai";

@@ -5,7 +5,7 @@ import path from "path";
 import OpenAI from "openai";
 import mammoth from "mammoth";
 import * as XLSX from "xlsx";
-import * as pdfjs from "pdfjs-dist/legacy/build/pdf.mjs"; // <-- правильная сборка для Node (без workerSrc!)
+import * as pdfjs from "pdfjs-dist/legacy/build/pdf.mjs"; // правильная сборка для Node
 import ClientDocument from "../../models/ClientDocument.js";
 import ClientDocChunk from "../../models/ClientDocChunk.js";
 
@@ -63,15 +63,14 @@ function extFrom({ mimeType, localPath, s3Key }) {
 
 // =================== Parsing ===================
 async function parsePDFBuffer(buffer) {
-  // pdfjs в Node требует "чистый" Uint8Array без наследования от Buffer
+  // pdfjs в Node требует Uint8Array с корректными offset/length
   let data;
   if (Buffer.isBuffer(buffer)) {
-    // ВАЖНО: создаём представление поверх того же ArrayBuffer, учитывая offset/length
     data = new Uint8Array(buffer.buffer, buffer.byteOffset, buffer.byteLength);
   } else if (buffer instanceof Uint8Array) {
     data = buffer;
   } else {
-    data = new Uint8Array(buffer); // fallback на случай ArrayBuffer
+    data = new Uint8Array(buffer);
   }
 
   const loadingTask = pdfjs.getDocument({ data });
@@ -90,18 +89,16 @@ async function parsePDFBuffer(buffer) {
 }
 
 function bufferToUtf8(bufLike) {
-   const buf = Buffer.isBuffer(bufLike)
-     ? bufLike
-     : bufLike instanceof Uint8Array
-       ? Buffer.from(bufLike)
-       : Buffer.from(bufLike || []);
-   let s = buf.toString("utf8");
-   // remove UTF-8 BOM
-   if (s.charCodeAt(0) === 0xFEFF) s = s.slice(1);
-   return s;
- }
-
-
+  const buf = Buffer.isBuffer(bufLike)
+    ? bufLike
+    : bufLike instanceof Uint8Array
+      ? Buffer.from(bufLike)
+      : Buffer.from(bufLike || []);
+  let s = buf.toString("utf8");
+  // remove UTF-8 BOM
+  if (s.charCodeAt(0) === 0xFEFF) s = s.slice(1);
+  return s;
+}
 
 async function parseByBuffer({ buffer, mimeType, ext }) {
   // PDF
@@ -131,11 +128,11 @@ async function parseByBuffer({ buffer, mimeType, ext }) {
     return { text: parts.join("\n\n"), pages: 0 };
   }
 
-// TXT / явные текстовые форматы
+  // TXT / явные текстовые форматы
   const isTextMime = typeof mimeType === "string" && /^text\//i.test(mimeType);
   const isTextExt = [".txt", ".md", ".csv", ".log"].includes(ext);
   if (isTextMime || isTextExt || !mimeType) {
-    // если вдруг в S3 лежит gzipped-текст (редко, но бывает) — распакуем
+    // если вдруг в S3 лежит gzipped-текст — распакуем
     const gzHeader = Buffer.isBuffer(buffer) ? buffer.slice(0, 2) : Buffer.from(buffer).slice(0, 2);
     const looksGzip = gzHeader.length === 2 && gzHeader[0] === 0x1f && gzHeader[1] === 0x8b;
     const decoded = looksGzip ? gunzipSync(Buffer.from(buffer)) : buffer;
@@ -144,10 +141,9 @@ async function parseByBuffer({ buffer, mimeType, ext }) {
 
   // Фолбэк: пробуем как UTF-8
   return { text: bufferToUtf8(buffer), pages: 0 };
- }
+}
 
-
-// =================== Text normalize + smart chunking ===================
+// =================== Text normalize + FULL chunking (без потерь) ===================
 function normalizeText(raw) {
   return String(raw || "")
     .replace(/\r/g, "\n")
@@ -158,67 +154,44 @@ function normalizeText(raw) {
 }
 
 /**
- * Чанкёр "не плодит" сотни кусков на коротких файлах.
- * - сначала бьём по абзацам
- * - склеиваем мелкие абзацы
- * - ограничиваем общее число чанков
+ * Полный чанкер с перекрытием:
+ * - идём по тексту окнами chunkSize
+ * - стараемся заканчивать на границе предложения/строки (если рядом)
+ * - перекрытие overlap, чтобы не терять смысл на стыках
  */
-function smartChunks(text, {
-  maxChars = 1500,
-  overlap = 120,
-  minChunkChars = 200,
-  hardMaxChunks = 60,      // защита от разрастания
+export function splitIntoChunksFull(text, {
+  chunkSize = 1400,
+  overlap   = 200,
+  normalize = true
 } = {}) {
-  const paragraphs = text
-    .split(/\n{2,}/)
-    .map(p => p.replace(/\s+/g, " ").trim())
-    .filter(Boolean);
-
-  const merged = [];
-  let buf = "";
-  for (const p of paragraphs) {
-    if ((buf + " " + p).trim().length <= maxChars) {
-      buf = (buf ? buf + " " : "") + p;
-    } else {
-      if (buf) merged.push(buf);
-      buf = p;
-    }
-  }
-  if (buf) merged.push(buf);
-
-  // Склейка слишком коротких чанков
-  const compact = [];
-  let current = "";
-  for (const m of merged) {
-    if ((current ? current.length : 0) < minChunkChars) {
-      current = current ? (current + " " + m) : m;
-    } else {
-      compact.push(current || m);
-      current = "";
-    }
-  }
-  if (current) compact.push(current);
-
-  // Пересекающиеся окна поверх компактных абзацев
-  const out = [];
-  for (const block of compact) {
-    if (block.length <= maxChars) {
-      out.push(block);
-      continue;
-    }
-    let i = 0;
-    while (i < block.length) {
-      const end = Math.min(i + maxChars, block.length);
-      const slice = block.slice(i, end).trim();
-      if (slice) out.push(slice);
-      if (end === block.length) break;
-      i = Math.max(end - overlap, i + 1);
-      if (out.length >= hardMaxChunks) break;
-    }
-    if (out.length >= hardMaxChunks) break;
+  let s = text || "";
+  if (normalize) {
+    s = s.replace(/\r/g, "").replace(/[ \t]+/g, " ").replace(/\n{3,}/g, "\n\n").trim();
   }
 
-  return out.slice(0, hardMaxChunks);
+  const chunks = [];
+  let i = 0;
+  while (i < s.length) {
+    const end = Math.min(i + chunkSize, s.length);
+    let slice = s.slice(i, end);
+
+    // стараемся закончить на границе предложения/пункта, если недалеко
+    let best = end;
+    for (const re of [/[.!?]\s/g, /\n/g]) {
+      const local = slice.search(re);
+      if (local !== -1 && slice.length - local <= 200) {
+        best = i + local + 1;
+        break;
+      }
+    }
+    if (best > i) slice = s.slice(i, best);
+
+    chunks.push(slice.trim());
+    if (end === s.length) break;
+    i = (best > i ? best : end) - overlap; // шаг назад на overlap
+    if (i < 0) i = 0;
+  }
+  return chunks.filter(Boolean);
 }
 
 // =================== Embeddings ===================
@@ -251,7 +224,7 @@ async function embedBatch(texts, { model = "text-embedding-3-small", retries = 3
  * Ингест документа:
  * - читает из S3 или диска
  * - парсит в текст (PDF/Word/Excel/TXT)
- * - нормализует и режет на адекватные чанки
+ * - нормализует и бьёт на чанки с перекрытием (без потерь)
  * - делает эмбеддинги
  * - сохраняет в ClientDocChunk, обновляет ClientDocument
  */
@@ -284,23 +257,19 @@ export async function ingestDocument({
     return { chunks: 0, pages: 0 };
   }
 
-  // 3) умные чанки (мало текста -> мало чанков)
-  let chunks = smartChunks(text, {
-    maxChars: 1500,
-    overlap: 120,
-    minChunkChars: 180,
-    hardMaxChunks: 60, // защитный лимит
+  // 3) Чанкируем ПОЛНОСТЬЮ, без отбрасывания хвостов
+  const chunks = splitIntoChunksFull(text, {
+    chunkSize: 1400,
+    overlap: 200,
+    normalize: false
   });
 
-  // Совсем маленькие файлы — один чанк
-  if (text.length < 900 && chunks.length > 1) {
-    chunks = [text];
-  }
-
-  // 4) эмбеддинги
+  // 4) Эмбеддинги
   const embeddings = await embedBatch(chunks, { model: "text-embedding-3-small" });
 
-  // 5) запись
+  // 5) Запись чанков (сначала удаляем старые этого документа)
+  await ClientDocChunk.deleteMany({ documentId });
+
   const docs = chunks.map((content, idx) => ({
     clientId,
     siteId: siteId || null,
@@ -309,13 +278,14 @@ export async function ingestDocument({
     page: 0,                // если нужна разметка по страницам — добавь сюда
     section: null,
     chunkIndex: idx,
-    content,
+    content,                // <— ключевое поле
     embedding: embeddings[idx],
     tokenCount: content.length,
     source: s3Key || localPath || null,
+    createdAt: new Date(),
+    updatedAt: new Date(),
   }));
 
-  await ClientDocChunk.deleteMany({ documentId });
   if (docs.length) await ClientDocChunk.insertMany(docs);
 
   // 6) обновим документ
