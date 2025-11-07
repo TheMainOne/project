@@ -141,10 +141,15 @@ export const getAllClients = async (req, res, next) => {
 // ====== GET ONE (с простой статистикой) ======
 export const getClient = async (req, res) => {
   try {
-    const idOrSlug = req.params.id;
-    const client = await findClientByIdOrSlug(idOrSlug).lean();
+     const idOrSlug = req.params.id;
+    const byId = /^[0-9a-fA-F]{24}$/.test(idOrSlug);
+
+    const client = await (byId
+      ? Client.findById(idOrSlug).lean()
+      : Client.findOne({ slug: idOrSlug }).lean());
 
     if (!client) return res.status(404).json({ error: "Client not found" });
+
 
     const [docCount, userCount] = await Promise.all([
       ClientDocument.countDocuments({ clientId: client._id }),
