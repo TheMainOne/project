@@ -67,7 +67,6 @@ function quickHeuristicGood({ phase, contexts, reply }) {
   const r = (reply || "").toLowerCase();
   const badPhrases = [
    "не удалось",
-   "нет информации",
    "не могу предоставить",
    "не могу раскрыть",
    "нет доступа",
@@ -94,7 +93,7 @@ async function assessGoodAnswer({ oai, model, question, reply, contexts, lang })
 
   if (!oai) {
     // нет ключа — не тормозим пайплайн
-    return { goodAnswer: true, confidence: 0.5, reason: "no-oai-fallback" };
+    return { goodAnswer: true, confidence: 0.99, reason: "no-oai" };
   }
 
   const prompt = [
@@ -104,8 +103,7 @@ async function assessGoodAnswer({ oai, model, question, reply, contexts, lang })
  {"goodAnswer":true|false,"confidence":0..1,"reason":"short text"}
 
  Rules:
- - "goodAnswer": true ONLY if the assistant fully answers ALL parts of the user's question
-   with specific, grounded statements that are directly supported by the retrieved sources.
+ - "goodAnswer": true if the assistant adequately answers the user's question, with specific statements grounded in the retrieved sources. Minor omissions are acceptable if the main question is answered and grounded.
  - If any requested part is missing, refused, vague, generic, or not grounded in the sources, set goodAnswer=false.
  - Refusals like "cannot provide/disclose", "не могу предоставить/раскрыть" MUST be marked goodAnswer=false.
  - Prefer being strict; if unsure, lean to false.` },
@@ -146,20 +144,27 @@ Return JSON only.`}
 async function logGapIfBad({ goodAnswer, confidence, reason, siteId, sessionId, clientId, question, reply, phase, citations }) {
   if (goodAnswer) return;
   try {
-    await AiwGap.create({
-      siteId,
-      sessionId,
-      clientId: clientId || null,
-      question,
-      answerPreview: (reply || "").slice(0, 1500),
-      phase,
-      citations: (citations || []).map(c => c.url || c).slice(0, 5),
-      judge: { goodAnswer, confidence, reason }
-    });
+    const normalizedQuestion = (question || "").toLowerCase().trim().replace(/\s+/g," ");
+    await AiwGap.updateOne(
+      { siteId, sessionId, normalizedQuestion, resolvedAt: { $exists: false } },
+      {
+        $setOnInsert: { siteId, sessionId, clientId: clientId || null, question, normalizedQuestion, createdAt: new Date() },
+        $set: {
+          answerPreview: (reply || "").slice(0, 1500),
+          phase,
+          citations: (citations || []).map(c => c.url || c).slice(0, 5),
+          judge: { goodAnswer:false, confidence, reason },
+          lastSeenAt: new Date()
+        },
+        $inc: { attempts: 1 }
+      },
+      { upsert: true }
+    );
   } catch (e) {
     console.error("[AIW] gap log error:", e?.message || e);
   }
 }
+
 
 
 // ============ Конфигурация ============
@@ -637,8 +642,10 @@ defer(async () => {
     oai, model: "gpt-5-nano",
     question: query, reply: payload.reply, contexts, lang
   });
-const finalBad =
-   !judge.goodAnswer || (judge.goodAnswer && (judge.confidence ?? 0) < 0.70);
+const THRESH = Number(process.env.AIW_JUDGE_THRESHOLD || 0.60);
+ const hasSupport = ((payload.citations?.length || 0) > 0) || ((contexts?.length || 0) > 0);
+ // Плохо только если судья явно сказал false ИЛИ если нет опоры и низкая уверенность
+ const finalBad = (judge?.goodAnswer === false) || (!hasSupport && (judge?.confidence ?? 0) < THRESH);
  await logGapIfBad({
    goodAnswer: !finalBad,
    confidence: judge.confidence,
@@ -709,8 +716,10 @@ return sendJSON(req, res, {
       // === mark bad without judge (NEW) ===
 const judge = { goodAnswer: false, confidence: 0.95, reason: "no-context" };
 res.setHeader("X-AIW-Good-Answer", "false");
-const finalBad =
-   !judge.goodAnswer || (judge.goodAnswer && (judge.confidence ?? 0) < 0.70);
+const THRESH = Number(process.env.AIW_JUDGE_THRESHOLD || 0.60);
+ const hasSupport = (contexts?.length || 0) > 0;
+ // Плохо только если судья явно сказал false ИЛИ если нет опоры и низкая уверенность
+ const finalBad = (judge?.goodAnswer === false) || (!hasSupport && (judge?.confidence ?? 0) < THRESH);
  await logGapIfBad({
    goodAnswer: !finalBad ? true : false,
    confidence: judge.confidence,
@@ -856,8 +865,10 @@ console.log("[AIW][timings]", JSON.stringify({
     oai, model: "gpt-5-nano",
     question: query, reply: buffer, contexts, lang
   });
-  const finalBad =
-   !judge.goodAnswer || (judge.goodAnswer && (judge.confidence ?? 0) < 0.70);
+const THRESH = Number(process.env.AIW_JUDGE_THRESHOLD || 0.60);
+ const hasSupport = (citations?.length || 0) > 0 || (contexts?.length || 0) > 0;
+ // Плохо только если судья явно сказал false ИЛИ если нет опоры и низкая уверенность
+ const finalBad = (judge?.goodAnswer === false) || (!hasSupport && (judge?.confidence ?? 0) < THRESH);
  await logGapIfBad({
    goodAnswer: !finalBad,
    confidence: judge.confidence,
@@ -919,8 +930,10 @@ console.log("[AIW][timings]", JSON.stringify({
      oai, model: "gpt-5-nano",
      question: query, reply, contexts, lang
    });
-   const finalBad =
-   !judge.goodAnswer || (judge.goodAnswer && (judge.confidence ?? 0) < 0.70);
+const THRESH = Number(process.env.AIW_JUDGE_THRESHOLD || 0.60);
+ const hasSupport = (citations?.length || 0) > 0 || (contexts?.length || 0) > 0;
+ // Плохо только если судья явно сказал false ИЛИ если нет опоры и низкая уверенность
+ const finalBad = (judge?.goodAnswer === false) || (!hasSupport && (judge?.confidence ?? 0) < THRESH);
  await logGapIfBad({
    goodAnswer: !finalBad ? true : false,
    confidence: judge.confidence,
