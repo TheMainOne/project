@@ -21,6 +21,10 @@ const ClientDocChunkSchema = new mongoose.Schema({
   tokenCount: { type: Number, default: 0 },
 }, { timestamps: true, versionKey: false });
 
-ClientDocChunkSchema.index({ clientId: 1, siteId: 1, documentId: 1, chunkIndex: 1 });
+ClientDocChunkSchema.index({ content: "text" });
+
+// (опционально, если часто фильтруешь по связкам)
+ClientDocChunkSchema.index({ clientId: 1, documentId: 1 });
+
 
 export default mongoose.model("ClientDocChunk", ClientDocChunkSchema);
