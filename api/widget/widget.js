@@ -70,6 +70,7 @@ function quickHeuristicGood({ phase, contexts, reply }) {
  const noInfoPatterns = [
    /в контексте нет информации/i,
    /в базе нет информации/i,
+   /не указано/i,
    /нет (информации|данных) (об|по)/i,
    /не найден[аоы] информация/i
  ];
