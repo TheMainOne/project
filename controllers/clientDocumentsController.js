@@ -1,8 +1,29 @@
 // controllers/clientDocumentsController.js
 import mongoose from "mongoose";
+import { DeleteObjectCommand } from "@aws-sdk/client-s3";
+import s3 from "../services/amazon/s3Client.js";
 import Client from "../models/Client.js";
 import ClientDocument from "../models/ClientDocument.js";
+import ClientDocChunk from "../models/ClientDocChunk.js";
 import { ingestDocument } from "../services/rag/ingestDocument.js";
+
+// вспомогательный разбор ключа из URL (если нужно)
+function extractKeyFromUrl(url) {
+  try {
+    const u = new URL(url);
+    // pathname без ведущего слэша
+    let key = u.pathname.replace(/^\/+/, "");
+    // если формат s3.amazonaws.com/<bucket>/<key> — убрать первый сегмент (bucket)
+    if (u.hostname === "s3.amazonaws.com" || /^s3\.[^.]+\.amazonaws\.com$/.test(u.hostname)) {
+      const parts = key.split("/");
+      parts.shift();
+      key = parts.join("/");
+    }
+    return decodeURIComponent(key);
+  } catch {
+    return null;
+  }
+}
 
 export async function createClientDocument(req, res) {
   try {
@@ -80,5 +101,51 @@ export async function createClientDocument(req, res) {
     console.error("createClientDocument error:", e);
     const status = e?.status || 500;
     return res.status(status).json({ ok: false, error: String(e?.message || e) });
+  }
+}
+
+export async function deleteClientDocument(req, res) {
+  try {
+    const { docId } = req.params;
+
+    const doc = await ClientDocument.findById(docId);
+    if (!doc) return res.status(404).json({ error: "Document not found" });
+
+    // (опционально) проверить клиента
+    // const client = await Client.findById(doc.clientId);
+    // if (!client) return res.status(404).json({ error: "Client not found" });
+
+    // --- FIX: читаем плоские поля из БД ---
+    let Bucket = doc.s3Bucket || process.env.AWS_S3_BUCKET || null;
+    let Key    = doc.s3Key || null;
+
+    // фолбэк: попробуем достать ключ из URL, если его нет
+    if (!Key && doc.s3Url) {
+      Key = extractKeyFromUrl(doc.s3Url);
+    }
+
+    // 1) Удаляем объект из S3 (идемпотентно)
+    if (Bucket && Key) {
+      try {
+        await s3.send(new DeleteObjectCommand({ Bucket, Key }));
+      } catch (err) {
+        console.error("[S3] DeleteObject error:", err?.name || err?.message || err);
+        // Если хочешь фейлить целиком — раскомментируй следующую строку:
+        // return res.status(502).json({ error: "Failed to delete file from S3" });
+      }
+    } else {
+      console.warn("[S3] Skip delete: missing Bucket/Key", { Bucket, Key, url: doc.s3Url });
+    }
+
+    // 2) Чистим чанки
+    await ClientDocChunk.deleteMany({ $or: [{ documentId: doc._id }, { docId: doc._id }] });
+
+    // 3) Удаляем запись документа
+    await ClientDocument.deleteOne({ _id: doc._id });
+
+    return res.json({ ok: true, removed: docId });
+  } catch (e) {
+    console.error("deleteClientDocument:", e);
+    return res.status(500).json({ error: e.message });
   }
 }

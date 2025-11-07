@@ -67,9 +67,6 @@ mongoose
     app.use("/api/auth", authRouter);
     app.use("/api/clients", clientRouter);
     app.use("/api/users", adminUsersRouter);
-    // app.use("/widget", widgetRouter);
-    // app.use(retrieveRouter);
-    // app.use(chatRouter);
 
     // error handlers
     app.use(errorHandler);
