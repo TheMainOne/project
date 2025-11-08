@@ -1,6 +1,6 @@
 import express from "express";
 import upload from "../middlewares/s3Upload.js";
-import { createClientDocument, deleteClientDocument } from "../controllers/clientDocumentsController.js";
+import { createClientDocument, deleteClientDocument, countAllClientDocuments } from "../controllers/clientDocumentsController.js";
 import {
   createClient,
   getAllClients,
@@ -22,6 +22,6 @@ clientRouter.get("/:id/users", listClientUsers);
 clientRouter.put("/:idOrSlug", updateClient);      // PUT /api/clients/:idOrSlug
 clientRouter.delete("/:idOrSlug", deleteClient);   // DELETE /api/clients/:idOrSlug
 clientRouter.delete("/:id/documents/:docId", deleteClientDocument); // DELETE /api/clients/:id/documents/:docId
-
+clientRouter.get("/documents/count", countAllClientDocuments); // count all documents across clients
 
 export default clientRouter;

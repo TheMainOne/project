@@ -149,3 +149,20 @@ export async function deleteClientDocument(req, res) {
     return res.status(500).json({ error: e.message });
   }
 }
+
+// ====== COUNT ALL CLIENT DOCUMENTS ======
+export async function countAllClientDocuments(req, res) {
+  try {
+    // Быстрое приближённое число (быстрее на больших коллекциях):
+    const estimated = await ClientDocument.estimatedDocumentCount();
+
+    const exact = await ClientDocument.countDocuments();
+
+    return res.json({
+      total: estimated,
+      // exact  // вернёт точное число, если используешь строкой выше
+    });
+  } catch (e) {
+    return res.status(500).json({ error: e.message });
+  }
+}
