@@ -1,3 +1,4 @@
+import mongoose from "mongoose";
 
 const AiwGapSchema = new mongoose.Schema({
   siteId:    { type: String, index: true },
