@@ -7,6 +7,7 @@ import errorHandler from "./middlewares/errorHandler.js";
 import authRouter from "./api/auth.js";
 import clientRouter from "./api/clientRoutes.js";
 import adminUsersRouter from "./api/adminUsers.js";
+import aiwStatsRouter from "./api/aiwStats.js";
 import sendTelegramMessage from "./services/telegramNotify.js";
 import { webhookCallback } from "grammy";
 import createBot from "./src/bot.js";
@@ -67,6 +68,7 @@ mongoose
     app.use("/api/auth", authRouter);
     app.use("/api/clients", clientRouter);
     app.use("/api/users", adminUsersRouter);
+    app.use("/api/statistic", aiwStatsRouter);
 
     // error handlers
     app.use(errorHandler);
