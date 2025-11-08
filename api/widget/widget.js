@@ -157,29 +157,71 @@ Return JSON only.`}
 }
 
 // Лог в БД, если ответ «плохой»
-async function logGapIfBad({ goodAnswer, confidence, reason, siteId, sessionId, clientId, question, reply, phase, citations }) {
-  if (goodAnswer) return;
-  try {
-    const normalizedQuestion = (question || "").toLowerCase().trim().replace(/\s+/g," ");
-    await AiwGap.updateOne(
-      { siteId, sessionId, normalizedQuestion, resolvedAt: { $exists: false } },
-      {
-        $setOnInsert: { siteId, sessionId, clientId: clientId || null, question, normalizedQuestion, createdAt: new Date() },
-        $set: {
-          answerPreview: (reply || "").slice(0, 1500),
-          phase,
-          citations: (citations || []).map(c => c.url || c).slice(0, 5),
-          judge: { goodAnswer:false, confidence, reason },
-          lastSeenAt: new Date()
-        },
-        $inc: { attempts: 1 }
-      },
-      { upsert: true }
-    );
-  } catch (e) {
-    console.error("[AIW] gap log error:", e?.message || e);
+async function logGapIfBad({
+  goodAnswer,
+  confidence,
+  reason,
+  siteId,
+  sessionId,
+  clientId,
+  question,
+  reply,
+  phase,
+  citations
+}) {
+  // 1) Коэрсим goodAnswer — защищаемся от "false" (строка), чтобы не выйти раньше времени
+  const isGood = goodAnswer === true || goodAnswer === "true";
+  if (isGood) return;
+
+  // 2) Нормализуем вопрос
+  const normalizedQuestion = (question || "")
+    .toLowerCase()
+    .trim()
+    .replace(/\s+/g, " ");
+
+  if (!normalizedQuestion) return; // пустоту не логируем
+
+  // 3) Фильтр на "незакрытый" гэп в рамках siteId+sessionId+вопроса
+  const filter = {
+    siteId: siteId || null,
+    sessionId: sessionId || null,
+    normalizedQuestion,
+    resolvedAt: { $exists: false },
+  };
+
+  // 4) Обновление
+  const update = {
+    $setOnInsert: {
+      siteId: siteId || null,
+      sessionId: sessionId || null,
+      clientId: clientId || null,
+      question,
+      normalizedQuestion,
+      createdAt: new Date(),
+    },
+    $set: {
+      answerPreview: (reply || "").slice(0, 1500),
+      phase: phase || "judge",
+      citations: (citations || []).map(c => c.url || c).slice(0, 5),
+      judge: { goodAnswer: false, confidence, reason },
+      lastSeenAt: new Date(),
+    },
+  };
+
+  // 5) Критично: upsert:true; полезно: setDefaultsOnInsert:true
+  const result = await AiwGap.updateOne(filter, update, {
+    upsert: true,
+    setDefaultsOnInsert: true,
+  });
+
+  // 6) Для диагностики выведи итог
+  if (result.upsertedId) {
+    console.log("[AiwGap] upserted", result.upsertedId);
+  } else {
+    console.log("[AiwGap] updated existing gap; matched:", result.matchedCount, "modified:", result.modifiedCount);
   }
 }
+
 
 
 
