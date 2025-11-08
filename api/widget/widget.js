@@ -156,8 +156,7 @@ Return JSON only.`}
   }
 }
 
-// Лог в БД, если ответ «плохой»
-async function logGapIfBad({
+export async function logGapIfBad({
   goodAnswer,
   confidence,
   reason,
@@ -169,7 +168,7 @@ async function logGapIfBad({
   phase,
   citations
 }) {
-  // 1) Коэрсим goodAnswer — защищаемся от "false" (строка), чтобы не выйти раньше времени
+  // 1) Коэрсим goodAnswer — "false" (строка) => false, "true" => true
   const isGood = goodAnswer === true || goodAnswer === "true";
   if (isGood) return;
 
@@ -178,54 +177,73 @@ async function logGapIfBad({
     .toLowerCase()
     .trim()
     .replace(/\s+/g, " ");
-
   if (!normalizedQuestion) return; // пустоту не логируем
 
-  // 3) Фильтр на "незакрытый" гэп в рамках siteId+sessionId+вопроса
+  // 3) Безопасные значения. Вариант А: подставляем "UNKNOWN_*"
+  const safeSiteId = siteId || "UNKNOWN_SITE";
+  const safeSessionId = sessionId || "UNKNOWN_SESSION";
+
+  // Если НЕ хочешь писать мусор без siteId/sessionId — раскомментируй эту «жёсткую» защиту:
+  // if (!siteId || !sessionId) return;
+
+  // 4) Аккуратно собираем фильтр и апдейт
   const filter = {
-    siteId: siteId || null,
-    sessionId: sessionId || null,
+    siteId: safeSiteId,
+    sessionId: safeSessionId,
     normalizedQuestion,
     resolvedAt: { $exists: false },
   };
 
-  // 4) Обновление
   const update = {
     $setOnInsert: {
-      siteId: siteId || null,
-      sessionId: sessionId || null,
+      siteId: safeSiteId,
+      sessionId: safeSessionId,
       clientId: clientId || null,
       question,
       normalizedQuestion,
       createdAt: new Date(),
+      resolvedAt: null,
     },
     $set: {
       answerPreview: (reply || "").slice(0, 1500),
       phase: phase || "judge",
-      citations: (citations || []).map(c => c.url || c).slice(0, 5),
+      citations: (Array.isArray(citations) ? citations : [])
+        .map(c => (typeof c === "string" ? c : c?.url))
+        .filter(Boolean)
+        .slice(0, 5),
       judge: { goodAnswer: false, confidence, reason },
       lastSeenAt: new Date(),
+      updatedAt: new Date(),
     },
   };
-  
-try {
-  const result = await AiwGap.updateOne(filter, update, {
-    upsert: true,
-    setDefaultsOnInsert: true,
-    // runValidators: false // по умолчанию и так false, оставляю, чтобы явно
-  });
-  console.log("[AiwGap] result:", result);
-} catch (e) {
-  console.error("[AiwGap] updateOne ERROR:", e?.name, e?.message, e);
-}
 
-  // 6) Для диагностики выведи итог
-  if (result.upsertedId) {
-    console.log("[AiwGap] upserted", result.upsertedId);
-  } else {
-    console.log("[AiwGap] updated existing gap; matched:", result.matchedCount, "modified:", result.modifiedCount);
+  // 5) Апсерт с ловлей ошибок
+  let updRes = null;
+  try {
+    updRes = await AiwGap.updateOne(filter, update, { upsert: true });
+    console.log("[AiwGap] result:", updRes);
+  } catch (e) {
+    console.error("[AiwGap] updateOne ERROR:", e?.name, e?.message, e);
+    return; // на ошибке — просто выходим, чтобы не уронить поток
+  }
+
+  // 6) Диагностика результата (используем updRes, а не несуществующий 'result')
+  try {
+    if (updRes?.upsertedId) {
+      console.log("[AiwGap] upserted", updRes.upsertedId);
+    } else {
+      console.log(
+        "[AiwGap] updated existing gap; matched:",
+        updRes?.matchedCount,
+        "modified:",
+        updRes?.modifiedCount
+      );
+    }
+  } catch (_) {
+    // не мешаем основному потоку даже если лог сломается
   }
 }
+
 
 
 
@@ -449,6 +467,7 @@ function getFromCache(key) {
 function putToCache(key, payload) { cache.set(key, { ...payload, ts: Date.now() }); }
 
 // === Headers helpers (NEW) ===
+
 function setSSEHeaders(req, res) {
   res.setHeader("Access-Control-Allow-Origin", req.headers.origin || "*");
   res.setHeader("Vary", "Origin");
