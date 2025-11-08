@@ -207,12 +207,17 @@ async function logGapIfBad({
       lastSeenAt: new Date(),
     },
   };
-
-  // 5) Критично: upsert:true; полезно: setDefaultsOnInsert:true
+  
+try {
   const result = await AiwGap.updateOne(filter, update, {
     upsert: true,
     setDefaultsOnInsert: true,
+    // runValidators: false // по умолчанию и так false, оставляю, чтобы явно
   });
+  console.log("[AiwGap] result:", result);
+} catch (e) {
+  console.error("[AiwGap] updateOne ERROR:", e?.name, e?.message, e);
+}
 
   // 6) Для диагностики выведи итог
   if (result.upsertedId) {
