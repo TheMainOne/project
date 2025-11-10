@@ -1,59 +1,60 @@
-/*
-====================================================
-1) widget-loader.js (serve at https://cdn.yoursite.com/aiw/widget-loader.js)
-- Purpose: small loader so sites can embed with one line.
-- It defers loading the heavier widget.js and passes data-attributes as config.
-====================================================
-*/
+// aiw/widget-loader.js
 (function () {
-  try {
-     // robust: dynamic scripts + older browsers
-    var s = document.currentScript || (function () {
-      var arr = document.getElementsByTagName("script");
-        return arr[arr.length - 1];
-        })();
-    // Support both currentScript and data- attributes passed explicitly
-    var endpoint = s.getAttribute("data-endpoint");
-    var siteId = s.getAttribute("data-site-id");
-    var title = s.getAttribute("data-title") || "AI Assistant";
-    var position = s.getAttribute("data-position") || "br"; // br, bl
-    var accent = s.getAttribute("data-accent") || "#6D28D9"; // Tailwind violet-700
-    var welcome = s.getAttribute("data-welcome") || "Hi! How can I help?";
-    var lang = s.getAttribute("data-lang") || "en";
+  const s = document.currentScript || (function () {
+    const arr = document.getElementsByTagName("script");
+    return arr[arr.length - 1];
+  })();
 
-    if (!endpoint) {
-      console.error("[AIW] Missing data-endpoint on script tag");
-      return;
+  const host   = s.getAttribute("data-host");     // https://cloudcompliance.duckdns.org
+  const siteId = s.getAttribute("data-site-id");  // SITE_123
+  const jsSrc  = s.getAttribute("data-src") || (host.replace(/\/$/,'') + "/aiw/widget.js");
+
+  if (!host || !siteId) { console.error("[AIW] missing data-host/site-id"); return; }
+  if (window.__AIW_LOADED__) return;
+  window.__AIW_LOADED__ = true;
+
+  const cfgUrl = `${host.replace(/\/$/,'')}/api/widget-config?siteId=${encodeURIComponent(siteId)}`;
+
+  (async () => {
+    let config = null;
+    try {
+      const r = await fetch(cfgUrl, { credentials: "omit", mode: "cors" });
+      const j = await r.json();
+      config = (j && j.config) || null;
+    } catch (e) {
+      console.warn("[AIW] config fetch failed:", e);
     }
 
-    // Prevent double init
-    if (window.__AIW_LOADED__) return; 
-    window.__AIW_LOADED__ = true;
+    // ▼ дефолты на случай отсутствия конфига
+    const cfg = {
+      endpoint: host.replace(/\/$/,'') + "/api/aiw/chat",
+      siteId,
+      title: (config && config.widgetTitle) || "AI Assistant",
+      position: (config && config.position) || "br",
+      accent: (config && config.primaryColor) || "#6D28D9",
+      welcome: (config && config.welcomeMessage) || "Hi! How can I help?",
+      lang: (config && config.lang) || "en",
+      backgroundColor: (config && config.backgroundColor) || "#0f0f0f",
+      textColor: (config && config.textColor) || "#ffffff",
+      borderColor: (config && config.borderColor) || ((config && config.primaryColor) || "#6D28D9"),
+      logo: (config && config.logoUrl) || null,
 
-    // Create a global config object the widget can read
-    window.__AIW_CONFIG__ = {
-      endpoint: endpoint,
-      siteId: siteId || null,
-      title: title,
-      position: position,
-      accent: accent,
-      welcome: welcome,
-      lang: lang,
-      autostart: s.getAttribute("data-autostart") === "true",
-      autostartDelay: +(s.getAttribute("data-autostart-delay") || 5000),
-      autostartMode: (s.getAttribute("data-autostart-mode") || "local").toLowerCase(), // "local" | "ai"
-      autostartMessage: s.getAttribute("data-autostart-message") || "",
-      autostartPrompt: s.getAttribute("data-autostart-prompt") || "",
-      autostartCooldownHours: +(s.getAttribute("data-autostart-cooldown-hours") || 12)
+      autostart: !!(config && config.autostart),
+      autostartDelay: Number((config && config.autostartDelay) || 5000),
+      autostartMode: ((config && config.autostartMode) || "local").toLowerCase(),
+      autostartMessage: (config && config.autostartMessage) || "",
+      autostartPrompt: (config && config.autostartPrompt) || "",
+      autostartCooldownHours: Number((config && config.autostartCooldownHours) || 12),
+      preserveHistory: (config ? config.preserveHistory !== false : true),
+      resetHistoryOnOpen: !!(config && config.resetHistoryOnOpen),
     };
 
-    // Load main widget bundle
-    var js = document.createElement("script");
-    js.src = s.getAttribute("data-src") || "https://cdn.yoursite.com/aiw/widget.js";
+    window.__AIW_CONFIG__ = cfg;
+
+    const js = document.createElement("script");
+    js.src = jsSrc;
     js.async = true;
     js.crossOrigin = "anonymous";
     document.head.appendChild(js);
-  } catch (e) {
-    console.error("[AIW] loader error", e);
-  }
+  })();
 })();

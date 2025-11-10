@@ -10,7 +10,7 @@ import {
   listClientDocuments,
   listClientUsers
 } from "../controllers/clientController.js";
-import { getWidgetConfig, upsertWidgetConfig } from "../controllers/widgetConfigController.js";
+import { getWidgetConfig, upsertWidgetConfig, getPublicWidgetConfig } from "../controllers/widgetConfigController.js";
 
 const clientRouter = express.Router();
 
@@ -25,7 +25,9 @@ clientRouter.delete("/:idOrSlug", deleteClient);   // DELETE /api/clients/:idOrS
 clientRouter.delete("/:id/documents/:docId", deleteClientDocument); // DELETE /api/clients/:id/documents/:docId
 clientRouter.get("/documents/count", countAllClientDocuments); // count all documents across clients
 
+
 // Widget Config routes
+clientRouter.get("/widget-config", getPublicWidgetConfig);
 clientRouter.get("/:idOrSlug/widget-config", getWidgetConfig);
 clientRouter.put("/:idOrSlug/widget-config", upsertWidgetConfig);
 
