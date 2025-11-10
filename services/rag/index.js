@@ -1,4 +1,5 @@
 // services/rag/index.js
+import mongoose from "mongoose"; // ← добавлено
 import ClientDocChunk from "../../models/ClientDocChunk.js";
 import ClientDocument from "../../models/ClientDocument.js";
 import { retrieveTopK } from "../web_crawler/core.js";
@@ -11,76 +12,73 @@ export async function retrieveUnified({
   clientId,
   siteId,
   query,
-  kClient = 6,           // сколько контекстов из клиентских документов
-  kWeb = 3,              // сколько контекстов из краулера (опционально)
-  includeWeb = true,     // можно выключить если нужен только клиентский RAG
-  minTextLen = 25        // отсечём слишком короткие куски
+  kClient = 6,
+  kWeb = 3,
+  includeWeb = true,
+  minTextLen = 25
 }) {
+  const cid =
+    clientId instanceof mongoose.Types.ObjectId
+      ? clientId
+      : (mongoose.isValidObjectId(clientId) ? new mongoose.Types.ObjectId(clientId) : null);
+
+  if (!cid) return { contexts: [] };
+
   const contexts = [];
 
   // -------- 1) Клиентские документы (MongoDB $text) --------
-  // Нужен текстовый индекс: см. ниже раздел "Индекс"
   let chunks = [];
-  if (clientId) {
-    try {
-      chunks = await ClientDocChunk.find(
-   { clientId, ...(query ? { $text: { $search: query } } : {}) },
-        { score: { $meta: "textScore" } } // добавим поле score
-      )
-        .sort(query ? { score: { $meta: "textScore" } } : { createdAt: -1 })
-        .limit(kClient * 2) // возьмём с запасом, потом профильтруем
-        .lean();
-    } catch (e) {
-      // fallback если по какой-то причине $text не сработал
-      const rx = new RegExp(escapeRegExp(query || ""), "i");
-      chunks = await ClientDocChunk.find({ clientId, content: rx })
-        .sort({ createdAt: -1 })
-        .limit(kClient * 2)
-        .lean();
-    }
-
-    // Подтянем метаданные документов (имя, ссылка и т.п.)
-    const docIds = [...new Set(chunks.map(c => String(c.documentId)).filter(Boolean))];
-    const docs = docIds.length
-      ? await ClientDocument.find({ _id: { $in: docIds } })
-          .select("_id originalName publicUrl s3Key mimeType")
-          .lean()
-      : [];
-    const docMap = new Map(docs.map(d => [String(d._id), d]));
-
-    // Нормализуем в формат, который уже понимает buildPrompt/fastAnswer
-    const normalizedClient = chunks
-      .filter(c => (c.content || "").trim().length >= minTextLen)
-      .slice(0, kClient)
-      .map((c, i) => {
-        const d = c.documentId ? docMap.get(String(c.documentId)) : null;
-
-        // Строим "URL" для цитаты:
-        // - при наличии публичной ссылки на документ — используем её
-        // - иначе формируем внутреннюю ссылку на API с якорем страницы/чанка
-        const url =
-          d?.publicUrl
-           ? addAnchor(d.publicUrl, chunkAnchor(c))
-         : `/api/client-documents/${String(c.documentId)}?chunk=${c._id}`;
-
-        const title = d?.originalName || c.title || "Client Document";
-        const score = typeof c.score === "number" ? c.score : 0.5;
-
-        return {
-          source: "client-doc",
-          url,
-          title,
-          // buildPrompt/fastAnswer обычно смотрят на одно из полей: text | snippet | content
-          text: c.content,
-      snippet: c.content.slice(0, 500),
-          score
-        };
-      });
-
-    contexts.push(...normalizedClient);
+  try {
+    chunks = await ClientDocChunk.find(
+      { clientId: cid, ...(query ? { $text: { $search: query } } : {}) },
+      { score: { $meta: "textScore" } }
+    )
+      .sort(query ? { score: { $meta: "textScore" } } : { createdAt: -1 })
+      .limit(kClient * 2)
+      .lean();
+  } catch (e) {
+    const rx = new RegExp(escapeRegExp(query || ""), "i");
+    chunks = await ClientDocChunk.find({ clientId: cid, content: rx })
+      .sort({ createdAt: -1 })
+      .limit(kClient * 2)
+      .lean();
   }
 
+  const docIds = [...new Set(chunks.map(c => c.documentId).filter(Boolean))];
+  const docs = docIds.length
+    ? await ClientDocument.find({ _id: { $in: docIds } })
+        .select("_id originalName publicUrl s3Key mimeType")
+        .lean()
+    : [];
+  const docMap = new Map(docs.map(d => [String(d._id), d]));
+
+  const normalizedClient = chunks
+    .filter(c => (c.content || "").trim().length >= minTextLen)
+    .slice(0, kClient)
+    .map((c) => {
+      const d = c.documentId ? docMap.get(String(c.documentId)) : null;
+      const url =
+        d?.publicUrl
+          ? addAnchor(d.publicUrl, chunkAnchor(c))
+          : `/api/client-documents/${String(c.documentId)}?chunk=${c._id}`;
+
+      const title = d?.originalName || c.title || "Client Document";
+      const score = typeof c.score === "number" ? c.score : 0.5;
+
+      return {
+        source: "client-doc",
+        url,
+        title,
+        text: c.content,
+        snippet: c.content.slice(0, 500),
+        score
+      };
+    });
+
+  contexts.push(...normalizedClient);
+
   // -------- 2) Веб-источники (краулер) — опционально --------
+  // (оставляю закомментированным, как в твоем коде)
   // if (includeWeb && siteId && siteId !== "unknown-site") {
   //   try {
   //     const web = await retrieveTopK(siteId, query, { k: kWeb, softLimit: 300, minScore: 0.18 });
@@ -98,11 +96,9 @@ export async function retrieveUnified({
   //   }
   // }
 
-  // -------- 3) Дедуп, сортировка, усечём до разумного k --------
   const deduped = dedupeByUrl(contexts);
   deduped.sort((a, b) => (b.score ?? 0) - (a.score ?? 0));
 
-  // Отдадим сразу «плоский» список
   return { contexts: deduped.slice(0, kClient + (includeWeb ? kWeb : 0)) };
 }
 
@@ -122,11 +118,8 @@ function dedupeByUrl(items = []) {
   }
   return out;
 }
- 
 
-// добавим #page= / #chunk= — чтобы при клике можно было вернуться к месту
 function chunkAnchor(c) {
-  // если в чанке есть страница – хорошо, если нет — используем id чанка
   if (c.page != null) return `page=${c.page}`;
   return `chunk=${c._id}`;
 }
@@ -134,13 +127,9 @@ function chunkAnchor(c) {
 function addAnchor(url, anchor) {
   try {
     const u = new URL(url);
-    if (u.hash) {
-      // не перетираем чужой якорь
-      return url;
-    }
+    if (u.hash) return url;
     return `${url}#${anchor}`;
   } catch {
-    // для относительных URL (например, /api/...)
     return url.includes("#") ? url : `${url}#${anchor}`;
   }
 }

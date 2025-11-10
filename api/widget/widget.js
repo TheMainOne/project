@@ -246,6 +246,45 @@ export async function logGapIfBad({
 }
 
 
+// сверху
+import mongoose from "mongoose";
+
+// ...
+
+async function resolveClientIdStrict(req, meta, siteId) {
+  // 1) явный x-aiw-client
+  const raw =
+    req.header("x-aiw-client") ||
+    meta?.clientId ||
+    req.body?.clientId ||
+    null;
+
+  if (raw && mongoose.isValidObjectId(raw)) {
+    return new mongoose.Types.ObjectId(raw);
+  }
+
+  // 2) slug → _id
+  const slug =
+    req.header("x-aiw-client-slug") ||
+    meta?.clientSlug ||
+    req.body?.clientSlug ||
+    null;
+
+  if (slug) {
+    const c = await Client.findOne({ slug }).select("_id").lean();
+    if (c?._id) return new mongoose.Types.ObjectId(c._id);
+  }
+
+  // 3) legacy fallback: попытка найти по siteId (если есть)
+  if (siteId && siteId !== "unknown-site") {
+    const c = await Client.findOne({
+      $or: [{ siteId }, { "sites.siteId": siteId }, { domains: siteId }]
+    }).select("_id").lean();
+    if (c?._id) return new mongoose.Types.ObjectId(c._id);
+  }
+
+  return null;
+}
 
 
 
@@ -615,7 +654,9 @@ T.mark("entered"); // t=0
     // const visitorId = String(req.header("x-aiw-visitor") || meta.visitorId || "");
     const { siteId, sessionId, visitorId } = resolveIds(req, meta);
 
-    const clientId = await resolveClientId(req, meta, siteId);
+
+    const clientId = await resolveClientIdStrict(req, meta, siteId);
+if (clientId) res.setHeader("X-AIW-Client", String(clientId));
     const cfg = await getWidgetConfigCached({ clientId, siteId });
 
 // пригодится для фронта:
@@ -701,7 +742,7 @@ console.log("[AIW][timings]", JSON.stringify({
 
     // ====== RAG retrieve ======
 const { contexts: ragContexts } = await T.wrap("retrieve", async () =>
-  retrieveUnified({ clientId, siteId, query })  
+  retrieveUnified({ clientId, query })   
 );
 const contexts = ragContexts; // дальше твой код использует contexts
 

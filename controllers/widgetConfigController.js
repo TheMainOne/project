@@ -7,16 +7,22 @@ function resolveClientFilter(idOrSlug) {
   return /^[0-9a-fA-F]{24}$/.test(idOrSlug) ? { _id: idOrSlug } : { slug: idOrSlug };
 }
 
-// GET /api/clients/:idOrSlug/widget-config  (или /api/widget-config?siteId=)
+// GET /api/clients/:idOrSlug/widget-config  (или /api/widget-config?siteId= | ?clientId=)
 export async function getWidgetConfig(req, res) {
   try {
     const { idOrSlug } = req.params;
     const siteId = req.query.siteId || req.header("x-aiw-site") || null;
 
+    // ← добавлено: поддержка clientId из query/header
+    const rawClientId = req.query.clientId || req.header("x-aiw-client") || null;
+    const clientIdFromQuery =
+      rawClientId && mongoose.isValidObjectId(rawClientId) ? new mongoose.Types.ObjectId(rawClientId) : null;
+
     let client = null;
     if (idOrSlug) client = await Client.findOne(resolveClientFilter(idOrSlug)).select("_id").lean();
 
     const filter = {
+      ...(clientIdFromQuery ? { clientId: clientIdFromQuery } : {}),
       ...(client?._id ? { clientId: client._id } : {}),
       ...(siteId      ? { siteId } : {})
     };
@@ -36,10 +42,17 @@ export async function upsertWidgetConfig(req, res) {
     const { idOrSlug } = req.params;
     const siteId = req.body.siteId || req.query.siteId || req.header("x-aiw-site") || null;
 
+    // ← добавлено: поддержка clientId из body/query/header
+    const rawClientId =
+      req.body.clientId || req.query.clientId || req.header("x-aiw-client") || null;
+    const clientIdFromReq =
+      rawClientId && mongoose.isValidObjectId(rawClientId) ? new mongoose.Types.ObjectId(rawClientId) : null;
+
     let client = null;
     if (idOrSlug) client = await Client.findOne(resolveClientFilter(idOrSlug)).select("_id").lean();
 
     const filter = {
+      ...(clientIdFromReq ? { clientId: clientIdFromReq } : {}),
       ...(client?._id ? { clientId: client._id } : {}),
       ...(siteId      ? { siteId } : {})
     };
@@ -62,7 +75,6 @@ export async function upsertWidgetConfig(req, res) {
       { new: true, upsert: true }
     );
 
-    // простая инвалидация кэша (см. п.3)
     if (global.__WIDGET_CFG_CACHE) {
       const key = JSON.stringify(filter);
       global.__WIDGET_CFG_CACHE.delete(key);

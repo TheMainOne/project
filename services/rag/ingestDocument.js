@@ -6,6 +6,8 @@ import OpenAI from "openai";
 import mammoth from "mammoth";
 import * as XLSX from "xlsx";
 import * as pdfjs from "pdfjs-dist/legacy/build/pdf.mjs";
+import mongoose from "mongoose"; // ← добавлено
+
 import ClientDocument from "../../models/ClientDocument.js";
 import ClientDocChunk from "../../models/ClientDocChunk.js";
 
@@ -220,6 +222,16 @@ export async function ingestDocument({
   // метаданные:
   mimeType,
 }) {
+  // ← Приводим clientId к ObjectId (МИНИМАЛЬНАЯ ПРАВКА)
+  const clientObjectId =
+    clientId instanceof mongoose.Types.ObjectId
+      ? clientId
+      : (mongoose.isValidObjectId(clientId) ? new mongoose.Types.ObjectId(clientId) : null);
+
+  if (!clientObjectId) {
+    throw new Error("ingestDocument: invalid clientId");
+  }
+
   // 1) читаем источник
   const buffer = await readSource({ localPath, s3Bucket, s3Key });
 
@@ -254,15 +266,13 @@ export async function ingestDocument({
     });
   }
 
-  // 3.1) Full-doc sentinel: добавим дополнительный «цельный» чанк,
-  // если документ не слишком большой (влезет в лимит эмбеддингов).
-  // Помечаем его isFull: true, чтобы в дальнейшем можно было управлять весом/логикой.
+  // 3.1) Full-doc sentinel
   let fullSentinel = null;
   if (len <= FULL_DOC_MAX_CHARS && !(chunks.length === 1 && chunks[0] === text)) {
     fullSentinel = text;
   }
 
-  // 4) Эмбеддинги (вместе с sentinel, если есть)
+  // 4) Эмбеддинги
   const embedInputs = fullSentinel ? [...chunks, fullSentinel] : chunks;
   const embeddings = await embedBatch(embedInputs, { model: "text-embedding-3-small" });
 
@@ -273,7 +283,7 @@ export async function ingestDocument({
   // обычные чанки
   chunks.forEach((content, idx) => {
     docs.push({
-      clientId,
+      clientId: clientObjectId,            // ← ставим ObjectId
       siteId: siteId || null,
       documentId,
       title,
@@ -293,13 +303,13 @@ export async function ingestDocument({
   // sentinel-чанк (если есть)
   if (fullSentinel) {
     docs.push({
-      clientId,
+      clientId: clientObjectId,            // ← ставим ObjectId
       siteId: siteId || null,
       documentId,
       title,
       page: 0,
       section: "FULL_DOC",
-      chunkIndex: chunks.length, // после обычных
+      chunkIndex: chunks.length,
       isFull: true,
       content: fullSentinel,
       embedding: embeddings[embeddings.length - 1],
@@ -315,7 +325,7 @@ export async function ingestDocument({
   // 6) обновим документ
   await ClientDocument.updateOne(
     { _id: documentId },
-    { $set: { pages, textPreview: text.slice(0, 1500) } }
+    { $set: { pages, textPreview: text.slice(0, 1500), clientId: clientObjectId } } // ← сохраним clientId в документе тоже
   );
 
   return { chunks: docs.length, pages, smallDocMode: len <= SMALL_DOC_CHARS, hasFullSentinel: !!fullSentinel };
