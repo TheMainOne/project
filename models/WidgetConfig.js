@@ -10,6 +10,7 @@ const WidgetConfigSchema = new mongoose.Schema({
   backgroundColor:    { type: String, default: "#000000" },
   textColor:          { type: String, default: "#E5E7EB" },
   customSystemPrompt: { type: String, default: "" }, // ← главный герой
+  logoUrl:            { type: String, default: null },
 
   // флаги/метаданные
   isActive:   { type: Boolean, default: true },
