@@ -15,6 +15,7 @@ import { hashIp, classifyTopics } from "../../utils/telemetry.js";
 import { retrieveTopK, buildPrompt } from "../../services/web_crawler/core.js";
 import { tryFastAnswer } from '../../services/web_crawler/fastAnswer.js';
 import { retrieveUnified } from "../../services/rag/index.js";
+import { getWidgetConfigCached } from '../../services/widgetConfig/cache.js';
 
 
 const router = express.Router();
@@ -615,6 +616,10 @@ T.mark("entered"); // t=0
     const { siteId, sessionId, visitorId } = resolveIds(req, meta);
 
     const clientId = await resolveClientId(req, meta, siteId);
+    const cfg = await getWidgetConfigCached({ clientId, siteId });
+
+// пригодится для фронта:
+if (cfg?._id) res.setHeader("X-AIW-WidgetCfg", String(cfg._id));
 
     if (clientId) res.setHeader("X-AIW-Client", clientId);
 
@@ -881,7 +886,17 @@ setSSEHeaders(req, res);
     // ====== Полноценный RAG через LLM ======
     const citations = contexts.map((c, i) => ({ idx: i + 1, url: c.url }));
     T.mark("prePrompt");
-    const prompt = buildPrompt({ query, contexts, lang });
+    // const prompt = buildPrompt({ query, contexts, lang });
+    let prompt = buildPrompt({ query, contexts, lang });
+
+// если есть кастомный системный промпт — добавим его первым сообщением
+if (cfg?.customSystemPrompt) {
+  const sys = { role: "system", content: cfg.customSystemPrompt };
+  // System должен идти первым. На случай если buildPrompt сам добавляет system — ставим наш в самое начало.
+  prompt = [sys, ...prompt.filter(m => m.role !== "system"), ...prompt.filter(m => m.role === "system")];
+}
+
+
     T.mark("buildPrompt"); // длительность = (buildPrompt - prePrompt)
 
     if (stream) {
