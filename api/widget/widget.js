@@ -881,7 +881,8 @@ const baseMessages = [
   }
 
   await logAssistantMessage({ siteId, sessionId, content: reply, latencyMs: Date.now() - started, clientId });
-
+ 
+  
   // для no-context теперь не помечаем «плохо» — пусть решит судья
   const quick = quickFlag({ phase, contexts: [], reply });
   res.setHeader("X-AIW-Good-Answer", String(quick.goodAnswer));
