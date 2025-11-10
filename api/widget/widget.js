@@ -886,6 +886,7 @@ const baseMessages = [
   const quick = quickFlag({ phase, contexts: [], reply });
   res.setHeader("X-AIW-Good-Answer", String(quick.goodAnswer));
 
+  
   defer(async () => {
   const judge = await assessGoodAnswer({
     oai, model: "gpt-5-nano",
