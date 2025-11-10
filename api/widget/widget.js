@@ -5,6 +5,7 @@
 
 
 import 'dotenv/config';     
+import mongoose from "mongoose";
 import express from "express";
 import OpenAI from "openai";
 import AiwSession from "../../models/AiwSession.js";
@@ -246,11 +247,6 @@ export async function logGapIfBad({
 }
 
 
-// сверху
-import mongoose from "mongoose";
-
-// ...
-
 async function resolveClientIdStrict(req, meta, siteId) {
   // 1) явный x-aiw-client
   const raw =
@@ -286,8 +282,6 @@ async function resolveClientIdStrict(req, meta, siteId) {
   return null;
 }
 
-
-
 // ============ Конфигурация ============
 const oai = process.env.OPENAI_API_KEY
   ? new OpenAI({ apiKey: process.env.OPENAI_API_KEY })
@@ -296,6 +290,17 @@ const oai = process.env.OPENAI_API_KEY
 
 const MODEL = process.env.OPENAI_MODEL || "gpt-5-nano"; // можно сменить в .env
 const CURRENCY = process.env.AIW_CURRENCY || "USD";
+
+const DEFAULT_SYS_RU = `Ты — бот-ассистент этого сайта. Отвечай кратко и дружелюбно.
+- Помогаешь с вопросами о компании, услугах, тарифах, документах и контактах.
+- Если информации не хватает, вежливо уточни 1–2 вопроса.
+- Формат: 2–4 коротких предложения.`;
+
+const DEFAULT_SYS_EN = `You are this website's bot assistant. Be brief and friendly.
+- Help with info about the company, services, pricing, docs and contacts.
+- If info is missing, politely ask 1–2 clarifying questions.
+- Keep answers to 2–4 short sentences.`;
+
 
 // === Logging helpers (Mongo) ===
 function getIp(req) {
@@ -552,6 +557,14 @@ function sendJSON(req, res, { reply, source, citations = [], goodAnswer, confide
   return res.status(200).json(body);
 }
 
+function pickSystemPrompt(cfg, lang = "ru") {
+  const fromDb = (cfg?.customSystemPrompt || "").trim();
+  if (fromDb) return fromDb;                       // 1) из БД, если задан
+  return lang.startsWith("ru") ? DEFAULT_SYS_RU    // 2) иначе дефолт
+                               : DEFAULT_SYS_EN;
+}
+
+
 function buildSystemPrompt() {
   const plans = loadPlans();
   const plansText = plans.length
@@ -740,7 +753,7 @@ console.log("[AIW][timings]", JSON.stringify({
     }
 console.log("[AIW] clientId:", String(clientId), "query:", query);
     // ====== RAG retrieve ======
-const { contexts: ragContexts } = await T.wrap("retrieve", async () =>
+const { contexts: ragContexts = [] } = await T.wrap("retrieve", async () =>
   retrieveUnified({ clientId, query })   
 );
 const contexts = ragContexts; // дальше твой код использует contexts
@@ -841,21 +854,17 @@ return sendJSON(req, res, {
 if (!contexts.length) {
   phase = "no-context";
   res.setHeader("X-AIW-Phase", phase);
-  setSourceHeaders(res, "no-context", []);
+setSourceHeaders(res, "no-context-llm", []);
 
   // <-- добавлено: если есть модель — отвечаем без RAG
   let reply;
   if (oai) {
     // cfg вы уже получаете раньше через getWidgetConfigCached({ clientId })
-    const sys = (cfg?.customSystemPrompt && String(cfg.customSystemPrompt).trim())
-      ? cfg.customSystemPrompt
-      : "You are a helpful, concise assistant. If the user's request is a greeting or small talk, greet them and explain briefly how you can help. If the user asks for info that requires company docs, ask a clarifying question.";
-
-    const baseMessages = [
-      { role: "system", content: sys },
-      // (!!) можно добавить короткое описание возможностей виджета
-      { role: "user", content: query }
-    ];
+const sys = pickSystemPrompt(cfg, lang);
+const baseMessages = [
+  { role: "system", content: sys },
+  { role: "user",   content: query }
+];
 
     try {
       const r = await oai.chat.completions.create({ model: MODEL, messages: baseMessages, temperature: 0.4 });
@@ -941,11 +950,11 @@ if (!contexts.length) {
     let prompt = buildPrompt({ query, contexts, lang });
 
 // если есть кастомный системный промпт — добавим его первым сообщением
-if (cfg?.customSystemPrompt) {
-  const sys = { role: "system", content: cfg.customSystemPrompt };
-  // System должен идти первым. На случай если buildPrompt сам добавляет system — ставим наш в самое начало.
-  prompt = [sys, ...prompt.filter(m => m.role !== "system"), ...prompt.filter(m => m.role === "system")];
-}
+
+  const sys = pickSystemPrompt(cfg, lang);
+  // если buildPrompt где-то добавляет свой system — наш будет иметь приоритет
+  prompt = [{ role: "system", content: sys }, ...prompt.filter(m => m.role !== "system")];
+
 
 
     T.mark("buildPrompt"); // длительность = (buildPrompt - prePrompt)
