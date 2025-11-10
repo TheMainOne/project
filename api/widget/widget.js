@@ -632,7 +632,8 @@ T.mark("entered"); // t=0
     const expose = [
       "X-AIW-Build","X-AIW-Source","X-AIW-Citations-Count",
       "X-AIW-Handler","X-AIW-Resolved-Site","X-AIW-Resolved-Session",
-      "X-AIW-Phase","X-AIW-DB","X-AIW-Timing","X-AIW-Good-Answer","X-AIW-Client"
+      "X-AIW-Phase","X-AIW-DB","X-AIW-Timing","X-AIW-Good-Answer","X-AIW-Client",
+       "X-AIW-WidgetCfg"
     ].join(", ");
     const existingExpose = res.getHeader("Access-Control-Expose-Headers");
     res.setHeader(
@@ -661,8 +662,6 @@ if (clientId) res.setHeader("X-AIW-Client", String(clientId));
 
 // пригодится для фронта:
 if (cfg?._id) res.setHeader("X-AIW-WidgetCfg", String(cfg._id));
-
-    if (clientId) res.setHeader("X-AIW-Client", clientId);
 
     res.setHeader("X-AIW-Resolved-Site", siteId);
     res.setHeader("X-AIW-Resolved-Session", sessionId || "(empty)");
@@ -739,12 +738,13 @@ console.log("[AIW][timings]", JSON.stringify({
         return res.end();
       }
     }
-
+console.log("[AIW] clientId:", String(clientId), "query:", query);
     // ====== RAG retrieve ======
 const { contexts: ragContexts } = await T.wrap("retrieve", async () =>
   retrieveUnified({ clientId, query })   
 );
 const contexts = ragContexts; // дальше твой код использует contexts
+console.log("[AIW] contexts:", contexts.length);
 
 //     const contexts = await T.wrap("retrieve", async () =>
 //   retrieveTopK(siteId, query, { k: 5, softLimit: 300, minScore: 0.18 })
@@ -838,91 +838,101 @@ return sendJSON(req, res, {
     }
 
     // ====== Нет контекста ======
-    if (!contexts.length) {
-      phase = "no-context";
-      res.setHeader("X-AIW-Phase", phase);
-      setSourceHeaders(res, "no-context", []);
+if (!contexts.length) {
+  phase = "no-context";
+  res.setHeader("X-AIW-Phase", phase);
+  setSourceHeaders(res, "no-context", []);
 
-      const reply = oai
-        ? (lang.startsWith("ru")
-          ? "Недостаточно данных в базе для точного ответа."
-          : "Not enough data in the knowledge base.")
-        : (lang.startsWith("ru")
-          ? `Демо-ответ (нет OPENAI_API_KEY).`
-          : `Demo reply (no OPENAI_API_KEY).`);
+  // <-- добавлено: если есть модель — отвечаем без RAG
+  let reply;
+  if (oai) {
+    // cfg вы уже получаете раньше через getWidgetConfigCached({ clientId })
+    const sys = (cfg?.customSystemPrompt && String(cfg.customSystemPrompt).trim())
+      ? cfg.customSystemPrompt
+      : "You are a helpful, concise assistant. If the user's request is a greeting or small talk, greet them and explain briefly how you can help. If the user asks for info that requires company docs, ask a clarifying question.";
 
-      await logAssistantMessage({ siteId, sessionId, content: reply, latencyMs: Date.now() - started, clientId });
-      // === mark bad without judge (NEW) ===
-const judge = { goodAnswer: false, confidence: 0.95, reason: "no-context" };
-res.setHeader("X-AIW-Good-Answer", "false");
-const THRESH = Number(process.env.AIW_JUDGE_THRESHOLD || 0.60);
- const hasSupport = (contexts?.length || 0) > 0;
- // Плохо только если судья явно сказал false ИЛИ если нет опоры и низкая уверенность
- 
- const ans = reply || "";
-const explicitNoInfo = /(в контексте нет информации|в базе нет информации|в справке не указано|не (указан|приведён|сообщено|известно)|указано только контактн)/i.test(ans);
+    const baseMessages = [
+      { role: "system", content: sys },
+      // (!!) можно добавить короткое описание возможностей виджета
+      { role: "user", content: query }
+    ];
 
-const finalBad = explicitNoInfo || (judge?.goodAnswer === false) || (!hasSupport && (judge?.confidence ?? 0) < THRESH);
-
- const reason =
-   explicitNoInfo ? "no-data-in-kb" :
-   (judge?.goodAnswer === false ? (judge?.reason || "judge-false") :
-   (!hasSupport && (judge?.confidence ?? 0) < THRESH ? "low-confidence" : "ok"));
-
-
- await logGapIfBad({
-   goodAnswer: !finalBad ? true : false,
-   confidence: judge.confidence,
-   reason,
-   siteId, sessionId, clientId, question: query, reply, phase, citations: []
- });
-
-      dbMark = "user:+ assistant:+";
-
-      res.setHeader("X-AIW-DB", dbMark);
-      const timings = T.get();
-// добавим производные: buildPromptDur, llmWait, ttfb (time-to-first-byte), firstChunk
-const derived = {
-  buildPromptDur: (timings.buildPrompt ?? 0) - (timings.prePrompt ?? 0),
-  llmWait: (timings.afterLLM ?? 0) - (timings.beforeLLM ?? 0),
-  ttfb: timings.firstByteToClient ?? undefined,
-  firstChunk: (timings.firstChunkFlushed ?? 0) - (timings.firstByteToClient ?? 0),
-};
-
-res.setHeader("X-AIW-Timing", JSON.stringify({
-  ...timing,          // твои старые поля для совместимости
-  ...timings,         // подробные метки
-  ...derived,
-  total: timings.total
-}));
-
-// опционально красивый серверный лог
-console.log("[AIW][timings]", JSON.stringify({
-  siteId, sessionId, phase,
-  timings: { ...timings, ...derived }
-}));
-
-      if (!stream) {
-        setJSONHeaders(req, res);
-
-        // для no-context флаг сразу "плохо"
-        res.setHeader("X-AIW-Good-Answer", "false");
-        return sendJSON(req, res, {
-          reply,
-          source: "no-context",
-          citations: [],
-          goodAnswer: false,
-          confidence: 0.95
-        });
-      } else {
-setSSEHeaders(req, res);
-  res.write(": heartbeat\n\n");
-  T.mark("firstByteToClient");            // +++
-  res.write(`data: ${reply}\n\n`);
-  res.write("data: [DONE]\n\n");
-  return res.end();
-      }
+    try {
+      const r = await oai.chat.completions.create({ model: MODEL, messages: baseMessages, temperature: 0.4 });
+      reply = r.choices?.[0]?.message?.content?.trim() || (lang.startsWith("ru")
+        ? "Чем могу помочь?"
+        : "How can I help?");
+    } catch (e) {
+      reply = lang.startsWith("ru")
+        ? "Чем могу помочь?"
+        : "How can I help?";
     }
+  } else {
+    reply = lang.startsWith("ru") ? "Демо-ответ (нет OPENAI_API_KEY)." : "Demo reply (no OPENAI_API_KEY).";
+  }
+
+  await logAssistantMessage({ siteId, sessionId, content: reply, latencyMs: Date.now() - started, clientId });
+
+  // для no-context теперь не помечаем «плохо» — пусть решит судья
+  const quick = quickFlag({ phase, contexts: [], reply });
+  res.setHeader("X-AIW-Good-Answer", String(quick.goodAnswer));
+
+  defer(async () => {
+  const judge = await assessGoodAnswer({
+    oai, model: "gpt-5-nano",
+    question: query, reply, contexts: [], lang
+  });
+  const THRESH = Number(process.env.AIW_JUDGE_THRESHOLD || 0.60);
+  const hasSupport = false; // нет контекста и нет цитат
+
+  const ans = reply || "";
+  const explicitNoInfo = /(в контексте нет информации|в базе нет информации|в справке не указано|не (указан|приведён|сообщено|известно)|указано только контактн)/i.test(ans);
+
+  const finalBad = explicitNoInfo || (judge?.goodAnswer === false) || (!hasSupport && (judge?.confidence ?? 0) < THRESH);
+
+  const reason =
+    explicitNoInfo ? "no-data-in-kb" :
+    (judge?.goodAnswer === false ? (judge?.reason || "judge-false") :
+    (!hasSupport && (judge?.confidence ?? 0) < THRESH ? "low-confidence" : "ok"));
+
+  await logGapIfBad({
+    goodAnswer: !finalBad,
+    confidence: judge.confidence,
+    reason,
+    siteId, sessionId, clientId, question: query, reply, phase: "no-context", citations: []
+  });
+});
+
+  dbMark = "user:+ assistant:+";
+  res.setHeader("X-AIW-DB", dbMark);
+
+  const timings = T.get();
+  const derived = {
+    buildPromptDur: (timings.buildPrompt ?? 0) - (timings.prePrompt ?? 0),
+    llmWait: (timings.afterLLM ?? 0) - (timings.beforeLLM ?? 0),
+    ttfb: timings.firstByteToClient ?? undefined,
+    firstChunk: (timings.firstChunkFlushed ?? 0) - (timings.firstByteToClient ?? 0),
+  };
+  res.setHeader("X-AIW-Timing", JSON.stringify({ ...timing, ...timings, ...derived, total: timings.total }));
+
+  if (!stream) {
+    setJSONHeaders(req, res);
+    return sendJSON(req, res, {
+      reply,
+      source: "no-context-llm",      // <-- чтобы было видно, что ответ без RAG
+      citations: [],
+      goodAnswer: quick.goodAnswer,
+      confidence: quick.confidence
+    });
+  } else {
+    setSSEHeaders(req, res);
+    res.write(": heartbeat\n\n");
+    T.mark("firstByteToClient");
+    res.write(`data: ${reply}\n\n`);
+    res.write("data: [DONE]\n\n");
+    return res.end();
+  }
+}
 
     // ====== Полноценный RAG через LLM ======
     const citations = contexts.map((c, i) => ({ idx: i + 1, url: c.url }));
