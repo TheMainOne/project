@@ -10,7 +10,7 @@ import {
   listClientDocuments,
   listClientUsers
 } from "../controllers/clientController.js";
-import { getWidgetConfig, upsertWidgetConfig } from " ../controllers/widgetConfigController.js";
+import { getWidgetConfig, upsertWidgetConfig } from "../controllers/widgetConfigController.js";
 
 const clientRouter = express.Router();
 
