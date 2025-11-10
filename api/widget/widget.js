@@ -886,7 +886,7 @@ const baseMessages = [
   const quick = quickFlag({ phase, contexts: [], reply });
   res.setHeader("X-AIW-Good-Answer", String(quick.goodAnswer));
 
-  
+
   defer(async () => {
   const judge = await assessGoodAnswer({
     oai, model: "gpt-5-nano",
@@ -1048,7 +1048,6 @@ console.log("[AIW][timings]", JSON.stringify({
 const THRESH = Number(process.env.AIW_JUDGE_THRESHOLD || 0.60);
  const hasSupport = (citations?.length || 0) > 0 || (contexts?.length || 0) > 0;
  // Плохо только если судья явно сказал false ИЛИ если нет опоры и низкая уверенность
-
 
 const ans = buffer || "";
 const explicitNoInfo = /(в контексте нет информации|в базе нет информации|в справке не указано|не (указан|приведён|сообщено|известно)|указано только контактн)/i.test(ans);
