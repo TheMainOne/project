@@ -301,6 +301,22 @@ const DEFAULT_SYS_EN = `You are this website's bot assistant. Be brief and frien
 - If info is missing, politely ask 1–2 clarifying questions.
 - Keep answers to 2–4 short sentences.`;
 
+function defaultNoContextReply(lang = "ru", cfg = {}) {
+  const title = (cfg?.widgetTitle || (lang.startsWith("ru") ? "AI-ассистент" : "AI Assistant")).trim();
+  const welcome = (cfg?.welcomeMessage || "").trim();
+
+  if (lang.startsWith("ru")) {
+    const base = `Привет! Я ${title} этого сайта.`;
+    const cap  = `Могу помочь с услугами, ценами, документами/FAQ и контактами.`;
+    const ask  = `С чего начнём?`;
+    return [welcome || base, cap, ask].filter(Boolean).join(" ");
+  }
+  const base = `Hi! I’m the site’s ${title}.`;
+  const cap  = `I can help with services, pricing, docs/FAQ, and contacts.`;
+  const ask  = `What would you like to start with?`;
+  return [welcome || base, cap, ask].filter(Boolean).join(" ");
+}
+
 
 // === Logging helpers (Mongo) ===
 function getIp(req) {
@@ -866,16 +882,17 @@ const baseMessages = [
   { role: "user",   content: query }
 ];
 
-    try {
-      const r = await oai.chat.completions.create({ model: MODEL, messages: baseMessages, temperature: 0.4 });
-      reply = r.choices?.[0]?.message?.content?.trim() || (lang.startsWith("ru")
-        ? "Чем могу помочь?"
-        : "How can I help?");
-    } catch (e) {
-      reply = lang.startsWith("ru")
-        ? "Чем могу помочь?"
-        : "How can I help?";
-    }
+try {
+  const r = await oai.chat.completions.create({
+    model: MODEL,
+    messages: baseMessages,
+  });
+  reply = (r.choices?.[0]?.message?.content || "").trim();
+  if (!reply) reply = defaultNoContextReply(lang, cfg);
+} catch (e) {
+  console.error("[AIW] no-context LLM error:", e?.message || e);
+  reply = defaultNoContextReply(lang, cfg);
+}
   } else {
     reply = lang.startsWith("ru") ? "Демо-ответ (нет OPENAI_API_KEY)." : "Demo reply (no OPENAI_API_KEY).";
   }
