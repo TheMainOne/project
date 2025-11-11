@@ -5,39 +5,46 @@
     return arr[arr.length - 1];
   })();
 
-  const host   = s.getAttribute("data-host");     // https://cloudcompliance.duckdns.org
-  const siteId = s.getAttribute("data-site-id");  // SITE_123
-  const jsSrc  = s.getAttribute("data-src") || (host.replace(/\/$/,'') + "/aiw/widget.js");
+  const host      = s.getAttribute("data-host");        // https://cloudcompliance.duckdns.org
+  const siteId    = s.getAttribute("data-site-id");     // напр. ZORKA_SITE_001
+  const clientId  = s.getAttribute("data-client-id");   // (опционально) ObjectId клиента
+  const jsSrc     = s.getAttribute("data-src") || (host.replace(/\/$/,'') + "/aiw/widget.js");
 
   if (!host || !siteId) { console.error("[AIW] missing data-host/site-id"); return; }
   if (window.__AIW_LOADED__) return;
   window.__AIW_LOADED__ = true;
 
-  const cfgUrl = `${host.replace(/\/$/,'')}/api/widget-config?siteId=${encodeURIComponent(siteId)}`;
+  // --- Вариант А: передаём siteId/clientId в query ---
+  const base = host.replace(/\/$/,'');
+  const url  = new URL(base + "/api/clients/widget-config");
+  url.searchParams.set("siteId", siteId);
+  if (clientId) url.searchParams.set("clientId", clientId);
 
   (async () => {
     let config = null;
     try {
-      const r = await fetch(cfgUrl, { credentials: "omit", mode: "cors" });
+      const r = await fetch(url.toString(), { method: "GET", credentials: "omit", mode: "cors" });
+      if (!r.ok) throw new Error("HTTP " + r.status);
       const j = await r.json();
-      config = (j && j.config) || null;
+      // сервер может вернуть либо { config: {...} }, либо уже готовый объект конфига
+      config = (j && (j.config || j)) || null;
     } catch (e) {
       console.warn("[AIW] config fetch failed:", e);
     }
 
-    // ▼ дефолты на случай отсутствия конфига
+    // ▼ дефолты на случай отсутствия/неполного конфига
     const cfg = {
-      endpoint: host.replace(/\/$/,'') + "/api/aiw/chat",
+      endpoint: base + "/api/aiw/chat",
       siteId,
-      title: (config && config.widgetTitle) || "AI Assistant",
+      title: (config && (config.widgetTitle || config.title)) || "AI Assistant",
       position: (config && config.position) || "br",
-      accent: (config && config.primaryColor) || "#6D28D9",
-      welcome: (config && config.welcomeMessage) || "Hi! How can I help?",
+      accent: (config && (config.primaryColor || config.accent)) || "#6D28D9",
+      welcome: (config && (config.welcomeMessage || config.welcome)) || "Hi! How can I help?",
       lang: (config && config.lang) || "en",
       backgroundColor: (config && config.backgroundColor) || "#0f0f0f",
       textColor: (config && config.textColor) || "#ffffff",
-      borderColor: (config && config.borderColor) || ((config && config.primaryColor) || "#6D28D9"),
-      logo: (config && config.logoUrl) || null,
+      borderColor: (config && (config.borderColor || config.primaryColor)) || "#6D28D9",
+      logo: (config && (config.logo || config.logoUrl)) || null,
 
       autostart: !!(config && config.autostart),
       autostartDelay: Number((config && config.autostartDelay) || 5000),
