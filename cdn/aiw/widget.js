@@ -22,7 +22,11 @@ aiw widget (fixed)
   const PRESERVE_HISTORY   = CFG.preserveHistory !== false;   // по умолчанию true (сохранять историю)
 const RESET_HISTORY_ON_OPEN = CFG.resetHistoryOnOpen === true; // если true — чистим при каждом открытии
 // логотип для аватарки ассистента
-const LOGO = CFG.logo || null;
+const LOGO = (
+  typeof CFG.logo === "string"
+    ? CFG.logo
+    : (CFG.logo && CFG.logo.url) // поддержка { url: "..." }
+) || null;
 
 // тема (тёмная) — цвета по умолчанию + из конфига
 const THEME = {
