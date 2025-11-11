@@ -175,9 +175,6 @@ export async function getPublicWidgetConfig(req, res) {
 } : null;
 
 
-    // CORS + cache (можно смягчить)
-    res.setHeader("Access-Control-Allow-Origin", "*");
-    res.setHeader("Cache-Control", "public, max-age=60"); // 1 минута
     return res.json({ ok: true, config: out });
   } catch (e) {
     console.error("getPublicWidgetConfig", e);
