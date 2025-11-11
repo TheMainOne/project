@@ -1,5 +1,19 @@
 import mongoose from "mongoose";
 
+const LogoSchema = new mongoose.Schema(
+  {
+    s3Key:        { type: String, required: true },   // напр. "documents/uuid.png"
+    url:          { type: String, required: true },   // публичный или presigned (если сохраняешь на лету)
+    originalName: { type: String },
+    contentType:  { type: String, default: "image/png" },
+    size:         { type: Number },                   // байты
+    uploadedAt:   { type: Date, default: Date.now },
+    alt:          { type: String, default: "" },      // опционально для доступности
+  },
+  { _id: false }
+);
+
+
 const WidgetConfigSchema = new mongoose.Schema({
   clientId: { type: mongoose.Schema.Types.ObjectId, ref: "Client", index: true },
   siteId:   { type: String, index: true }, // например, "zorka.agency" или "zorka.agency::default"
@@ -11,8 +25,7 @@ const WidgetConfigSchema = new mongoose.Schema({
   borderColor:        { type: String, default: null },         // если null — loader возьмёт primaryColor
   backgroundColor:    { type: String, default: "#0f0f0f" },
   textColor:          { type: String, default: "#ffffff" },
-  logoUrl:            { type: String, default: null },
-
+logo:               { type: LogoSchema, default: null },
   // необязательные, но удобные:
   lang:               { type: String, default: "en" },         // "en" | "ru" | ...
   position:           { type: String, enum: ["br","bl"], default: "br" },

@@ -13,10 +13,11 @@ export async function getWidgetConfig(req, res) {
     const { idOrSlug } = req.params;
     const siteId = req.query.siteId || req.header("x-aiw-site") || null;
 
-    // ← добавлено: поддержка clientId из query/header
     const rawClientId = req.query.clientId || req.header("x-aiw-client") || null;
     const clientIdFromQuery =
-      rawClientId && mongoose.isValidObjectId(rawClientId) ? new mongoose.Types.ObjectId(rawClientId) : null;
+      rawClientId && mongoose.isValidObjectId(rawClientId)
+        ? new mongoose.Types.ObjectId(rawClientId)
+        : null;
 
     let client = null;
     if (idOrSlug) client = await Client.findOne(resolveClientFilter(idOrSlug)).select("_id").lean();
@@ -24,9 +25,11 @@ export async function getWidgetConfig(req, res) {
     const filter = {
       ...(clientIdFromQuery ? { clientId: clientIdFromQuery } : {}),
       ...(client?._id ? { clientId: client._id } : {}),
-      ...(siteId      ? { siteId } : {})
+      ...(siteId ? { siteId } : {})
     };
-    if (!filter.clientId && !filter.siteId) return res.status(400).json({ error: "Provide client or siteId" });
+    if (!filter.clientId && !filter.siteId) {
+      return res.status(400).json({ error: "Provide client or siteId" });
+    }
 
     const cfg = await WidgetConfig.findOne(filter).lean();
     return res.json({ ok: true, config: cfg || null });
@@ -36,17 +39,18 @@ export async function getWidgetConfig(req, res) {
   }
 }
 
-// PUT /api/clients/:idOrSlug/widget-config  (body: поля конфигурации)
+// PUT /api/clients/:idOrSlug/widget-config  (form-data: logo=file; body: остальные поля)
 export async function upsertWidgetConfig(req, res) {
   try {
     const { idOrSlug } = req.params;
     const siteId = req.body.siteId || req.query.siteId || req.header("x-aiw-site") || null;
 
-    // ← добавлено: поддержка clientId из body/query/header
     const rawClientId =
       req.body.clientId || req.query.clientId || req.header("x-aiw-client") || null;
     const clientIdFromReq =
-      rawClientId && mongoose.isValidObjectId(rawClientId) ? new mongoose.Types.ObjectId(rawClientId) : null;
+      rawClientId && mongoose.isValidObjectId(rawClientId)
+        ? new mongoose.Types.ObjectId(rawClientId)
+        : null;
 
     let client = null;
     if (idOrSlug) client = await Client.findOne(resolveClientFilter(idOrSlug)).select("_id").lean();
@@ -54,35 +58,50 @@ export async function upsertWidgetConfig(req, res) {
     const filter = {
       ...(clientIdFromReq ? { clientId: clientIdFromReq } : {}),
       ...(client?._id ? { clientId: client._id } : {}),
-      ...(siteId      ? { siteId } : {})
+      ...(siteId ? { siteId } : {})
     };
-    if (!filter.clientId && !filter.siteId) return res.status(400).json({ error: "Provide client or siteId" });
+    if (!filter.clientId && !filter.siteId) {
+      return res.status(400).json({ error: "Provide client or siteId" });
+    }
 
-const payload = {
-  widgetTitle:        req.body.widgetTitle,
-  welcomeMessage:     req.body.welcomeMessage,
-  primaryColor:       req.body.primaryColor,
-  borderColor:        req.body.borderColor,
-  backgroundColor:    req.body.backgroundColor,
-  textColor:          req.body.textColor,
-  logoUrl:            req.body.logoUrl,          // <== добавить
-  lang:               req.body.lang,             // <== добавить
-  position:           req.body.position,         // <== добавить
+    // соберём payload из body
+    const payload = {
+      widgetTitle:        req.body.widgetTitle,
+      welcomeMessage:     req.body.welcomeMessage,
+      primaryColor:       req.body.primaryColor,
+      borderColor:        req.body.borderColor,
+      backgroundColor:    req.body.backgroundColor,
+      textColor:          req.body.textColor,
 
-  customSystemPrompt: req.body.customSystemPrompt,
+      lang:               req.body.lang,
+      position:           req.body.position,
 
-  // поведение
-  autostart:               req.body.autostart,
-  autostartDelay:          req.body.autostartDelay,
-  autostartMode:           req.body.autostartMode,
-  autostartMessage:        req.body.autostartMessage,
-  autostartPrompt:         req.body.autostartPrompt,
-  autostartCooldownHours:  req.body.autostartCooldownHours,
-  preserveHistory:         req.body.preserveHistory,
-  resetHistoryOnOpen:      req.body.resetHistoryOnOpen,
+      customSystemPrompt: req.body.customSystemPrompt,
 
-  isActive:           req.body.isActive ?? true,
-};
+      // поведение
+      autostart:               req.body.autostart,
+      autostartDelay:          req.body.autostartDelay,
+      autostartMode:           req.body.autostartMode,
+      autostartMessage:        req.body.autostartMessage,
+      autostartPrompt:         req.body.autostartPrompt,
+      autostartCooldownHours:  req.body.autostartCooldownHours,
+      preserveHistory:         req.body.preserveHistory,
+      resetHistoryOnOpen:      req.body.resetHistoryOnOpen,
+
+      isActive:           req.body.isActive ?? true,
+    };
+
+    // если пришёл файл лого — добавим объект logo
+    if (req.file) {
+      payload.logo = {
+        s3Key: req.file.key,
+        url: req.file.location, // добавляет multer-s3
+        originalName: req.file.uploadedOriginalName || req.file.originalname,
+        contentType: req.file.uploadedMimeType || req.file.mimetype,
+        size: req.file.size,
+        uploadedAt: new Date(),
+      };
+    }
 
     const cfg = await WidgetConfig.findOneAndUpdate(
       filter,
@@ -115,65 +134,67 @@ export async function getPublicWidgetConfig(req, res) {
       return res.status(400).json({ ok: false, error: "Provide siteId or clientId" });
     }
 
-    // при совпадении — пусть выигрывает clientId (точнее)
+    // при совпадении — выигрывает clientId
     const filter = {
       ...(siteId   ? { siteId } : {}),
       ...(clientId ? { clientId } : {}),
       isActive: { $ne: false },
     };
 
-    // ограничим поля, чтобы не утекло лишнее
-  const projection = {
-  widgetTitle: 1,
-  welcomeMessage: 1,
-  primaryColor: 1,
-  backgroundColor: 1,
-  textColor: 1,
-  borderColor: 1,
-  logoUrl: 1,
-  lang: 1,          // <== добавить
-  position: 1,      // <== добавить
-  // behavior...
-  autostart: 1,
-  autostartDelay: 1,
-  autostartMode: 1,
-  autostartMessage: 1,
-  autostartPrompt: 1,
-  autostartCooldownHours: 1,
-  preserveHistory: 1,
-  resetHistoryOnOpen: 1,
-  siteId: 1,
-  clientId: 1,
-  isActive: 1,
-};
+    // ограничим поля (без служебных)
+    const projection = {
+      widgetTitle: 1,
+      welcomeMessage: 1,
+      primaryColor: 1,
+      backgroundColor: 1,
+      textColor: 1,
+      borderColor: 1,
+      logo: 1,        // <-- только объект logo
+      lang: 1,
+      position: 1,
 
+      // behavior...
+      autostart: 1,
+      autostartDelay: 1,
+      autostartMode: 1,
+      autostartMessage: 1,
+      autostartPrompt: 1,
+      autostartCooldownHours: 1,
+      preserveHistory: 1,
+      resetHistoryOnOpen: 1,
+
+      siteId: 1,
+      clientId: 1,
+      isActive: 1,
+    };
 
     const cfg = await WidgetConfig.findOne(filter, projection).lean();
 
-    // отдаём нормализованный «плоский» объект (без обёртки admin-полей)
+    // плоский публичный объект (logo остаётся объектом)
     const out = cfg ? {
-  siteId: cfg.siteId || null,
-  clientId: cfg.clientId || null,
-  widgetTitle:        cfg.widgetTitle        ?? "AI Assistant",
-  welcomeMessage:     cfg.welcomeMessage     ?? "Hi! How can I help?",
-  primaryColor:       cfg.primaryColor       ?? "#6D28D9",
-  backgroundColor:    cfg.backgroundColor    ?? "#0f0f0f",
-  textColor:          cfg.textColor          ?? "#ffffff",
-  borderColor:        cfg.borderColor        ?? (cfg.primaryColor || "#6D28D9"),
-  logoUrl:            cfg.logoUrl            ?? null,
-  lang:               cfg.lang               ?? "en",     // <== добавить
-  position:           cfg.position           ?? "br",     // <== добавить
+      siteId: cfg.siteId || null,
+      clientId: cfg.clientId || null,
+      widgetTitle:        cfg.widgetTitle        ?? "AI Assistant",
+      welcomeMessage:     cfg.welcomeMessage     ?? "Hi! How can I help?",
+      primaryColor:       cfg.primaryColor       ?? "#6D28D9",
+      backgroundColor:    cfg.backgroundColor    ?? "#0f0f0f",
+      textColor:          cfg.textColor          ?? "#ffffff",
+      borderColor:        cfg.borderColor        ?? (cfg.primaryColor || "#6D28D9"),
 
-  autostart:          !!cfg.autostart,
-  autostartDelay:     Number(cfg.autostartDelay ?? 5000),
-  autostartMode:     (cfg.autostartMode || "local").toLowerCase(),
-  autostartMessage:   cfg.autostartMessage   ?? "",
-  autostartPrompt:    cfg.autostartPrompt    ?? "",
-  autostartCooldownHours: Number(cfg.autostartCooldownHours ?? 12),
-  preserveHistory:    cfg.preserveHistory !== false,
-  resetHistoryOnOpen: !!cfg.resetHistoryOnOpen,
-} : null;
+      logo:               cfg.logo || null,  // <-- единственная истина
 
+      lang:               cfg.lang            ?? "en",
+      position:           cfg.position        ?? "br",
+
+      autostart:          !!cfg.autostart,
+      autostartDelay:     Number(cfg.autostartDelay ?? 5000),
+      autostartMode:     (cfg.autostartMode || "local").toLowerCase(),
+      autostartMessage:   cfg.autostartMessage   ?? "",
+      autostartPrompt:    cfg.autostartPrompt    ?? "",
+      autostartCooldownHours: Number(cfg.autostartCooldownHours ?? 12),
+      preserveHistory:    cfg.preserveHistory !== false,
+      resetHistoryOnOpen: !!cfg.resetHistoryOnOpen,
+    } : null;
 
     return res.json({ ok: true, config: out });
   } catch (e) {

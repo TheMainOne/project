@@ -30,6 +30,6 @@ clientRouter.get("/documents/count", countAllClientDocuments); // count all docu
 // Widget Config routes
 
 clientRouter.get("/:idOrSlug/widget-config", getWidgetConfig);
-clientRouter.put("/:idOrSlug/widget-config", upsertWidgetConfig);
+clientRouter.put("/:idOrSlug/widget-config", upload.single("logo"), upsertWidgetConfig);
 
 export default clientRouter;
