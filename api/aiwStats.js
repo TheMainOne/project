@@ -9,10 +9,12 @@ import {
   messagesSummary,
   messagesTimeseries,
   topUserMessages,
+  messagesList,      
   // Gaps
   gapsSummary,
   gapsTimeseries,
   topUnresolvedGaps,
+  gapsList          
 } from "../controllers/aiwStatsController.js";
 
 const aiwStatsRouter = express.Router();
@@ -27,11 +29,13 @@ aiwStatsRouter.get("/sessions/list", sessionsList);
 aiwStatsRouter.get("/messages/summary", messagesSummary);
 aiwStatsRouter.get("/messages/timeseries", messagesTimeseries);
 aiwStatsRouter.get("/messages/top", topUserMessages);
+aiwStatsRouter.get("/messages/list", messagesList);  
 
 // ===== Gaps =====
 aiwStatsRouter.get("/gaps/summary", gapsSummary);
 aiwStatsRouter.get("/gaps/timeseries", gapsTimeseries);
 aiwStatsRouter.get("/gaps/top-unresolved", topUnresolvedGaps);
+aiwStatsRouter.get("/gaps/list", gapsList);  
 
 
 export default aiwStatsRouter;

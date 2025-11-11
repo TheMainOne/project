@@ -481,3 +481,124 @@ export async function topUnresolvedGaps(req, res) {
     return res.status(500).json({ error: e.message });
   }
 }
+
+export async function messagesList(req, res) {
+  try {
+    const { days, since } = parseSince(req);
+    const siteIds = parseSites(req);
+    const { page, limit, skip } = pagination(req);
+
+    const role = req.query.role;                 // user | assistant
+    const sessionId = req.query.sessionId || ""; // фильтр по сессии
+    const topic = req.query.topic || "";         // фильтр по topic
+    const q = (req.query.q || "").trim();        // поиск по тексту
+
+    const match = { createdAt: { $gte: since } };
+    if (siteIds) match.siteId = { $in: siteIds };
+    if (role) match.role = role;
+    if (sessionId) match.sessionId = sessionId;
+    if (topic) match.topic = topic;
+    if (q) match.content = { $regex: q, $options: "i" };
+
+    const [items, total] = await Promise.all([
+      AiwMessage.find(match, {
+        _id: 0,
+        siteId: 1,
+        sessionId: 1,
+        role: 1,
+        content: 1,
+        topic: 1,
+        latencyMs: 1,
+        promptTokens: 1,
+        completionTokens: 1,
+        createdAt: 1
+      })
+      .sort({ createdAt: -1 })
+      .skip(skip)
+      .limit(limit)
+      .lean(),
+      AiwMessage.countDocuments(match)
+    ]);
+
+    res.json({
+      page, limit, total, days,
+      scope: siteIds ? { sites: siteIds } : { sites: "all" },
+      filters: { role: role || null, sessionId: sessionId || null, topic: topic || null, q: q || null },
+      items
+    });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+}
+
+// GET /api/aiw/gaps/list?days=30&siteId=...&clientId=...&unresolvedOnly=true&phase=rag&q=...&page=1&limit=20
+export async function gapsList(req, res) {
+  try {
+    const { days, since } = parseSince(req);
+    const siteIds = parseSites(req);
+    const { page, limit, skip } = pagination(req);
+
+    const clientId = req.query.clientId || "";
+    const phase = req.query.phase || ""; // "no-context" | "rag" | ...
+    const q = (req.query.q || "").trim(); // поиск по question/normalizedQuestion
+    const unresolvedOnly = String(req.query.unresolvedOnly || "").toLowerCase() === "true";
+
+    const match = { createdAt: { $gte: since } };
+    if (siteIds) match.siteId = { $in: siteIds };
+    if (clientId) match.clientId = clientId;
+    if (phase) match.phase = phase;
+    if (q) {
+      match.$or = [
+        { question: { $regex: q, $options: "i" } },
+        { normalizedQuestion: { $regex: q, $options: "i" } }
+      ];
+    }
+    if (unresolvedOnly) {
+      match.$or = [
+        ...(match.$or || []),
+        { resolvedAt: { $exists: false } },
+        { resolvedAt: null }
+      ];
+    }
+
+    // сортируем по lastSeenAt (если есть), иначе по createdAt
+    const sort = { lastSeenAt: -1, createdAt: -1 };
+
+    const [items, total] = await Promise.all([
+      AiwGap.find(match, {
+        _id: 0,
+        siteId: 1,
+        sessionId: 1,
+        clientId: 1,
+        question: 1,
+        normalizedQuestion: 1,
+        phase: 1,
+        citations: 1,
+        judge: 1,
+        answerPreview: 1,
+        lastSeenAt: 1,
+        resolvedAt: 1,
+        createdAt: 1
+      })
+      .sort(sort)
+      .skip(skip)
+      .limit(limit)
+      .lean(),
+      AiwGap.countDocuments(match)
+    ]);
+
+    res.json({
+      page, limit, total, days,
+      scope: siteIds ? { sites: siteIds } : { sites: "all" },
+      filters: {
+        clientId: clientId || null,
+        phase: phase || null,
+        q: q || null,
+        unresolvedOnly
+      },
+      items
+    });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+}
