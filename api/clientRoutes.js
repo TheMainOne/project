@@ -16,6 +16,7 @@ const clientRouter = express.Router();
 
 clientRouter.post("/", createClient);              // POST /api/clients
 clientRouter.get("/", getAllClients);              // GET /api/clients
+clientRouter.get("/widget-config", getPublicWidgetConfig);
 clientRouter.get("/:id", getClient);         // GET /api/clients/:idOrSlug
 clientRouter.post("/:id/documents", upload.single("file"), createClientDocument);
 clientRouter.get("/:id/documents", listClientDocuments);
@@ -27,7 +28,7 @@ clientRouter.get("/documents/count", countAllClientDocuments); // count all docu
 
 
 // Widget Config routes
-clientRouter.get("/widget-config", getPublicWidgetConfig);
+
 clientRouter.get("/:idOrSlug/widget-config", getWidgetConfig);
 clientRouter.put("/:idOrSlug/widget-config", upsertWidgetConfig);
 
