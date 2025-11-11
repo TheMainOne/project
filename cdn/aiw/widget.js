@@ -21,6 +21,21 @@ aiw widget (fixed)
   const USER_INTERACTED_KEY = `aiw:userInteracted:session:${SITE_ID}`;
   const PRESERVE_HISTORY   = CFG.preserveHistory !== false;   // по умолчанию true (сохранять историю)
 const RESET_HISTORY_ON_OPEN = CFG.resetHistoryOnOpen === true; // если true — чистим при каждом открытии
+// логотип для аватарки ассистента
+const LOGO = CFG.logo || null;
+
+// тема (тёмная) — цвета по умолчанию + из конфига
+const THEME = {
+  bg: CFG.backgroundColor || "#0b0c0f",
+  text: CFG.textColor || "#e5e7eb",
+  panel: "#0f1318",
+  border: CFG.borderColor || ACCENT,
+  accent: ACCENT,
+  bubbleAI: "rgba(255,255,255,.06)",
+  bubbleUser: "#2b2f36",
+  bubbleBorder: "rgba(255,255,255,.08)",
+  time: "rgba(229,231,235,.6)"
+};
 
 
   const AUTO_KEY_SESSION = `aiw:autoGreet:session:${SITE_ID}`;
@@ -141,79 +156,112 @@ if (PRESERVE_HISTORY === false) {
   // styles (Shadow DOM)
 const style = document.createElement("style");
 style.textContent = `
+:host { all: initial; }
 @keyframes aiw-bounce { 0%,80%,100%{transform:scale(.6);opacity:.45} 40%{transform:scale(1);opacity:1} }
+
+.aiw-wrap{ position:fixed; z-index:2147483000; bottom:20px; }
+.aiw-btn{ width:56px;height:56px;border-radius:50%;border:none;cursor:pointer;
+  box-shadow:0 8px 20px rgba(0,0,0,.2); background:${THEME.accent}; color:#fff;font-weight:700;font-size:16px; }
+.aiw-panel{
+  position:absolute; bottom:70px; width:360px; max-width:80vw; height:480px; max-height:70vh;
+  display:none; flex-direction:column; background:${THEME.panel}; color:${THEME.text};
+  border-radius:16px; overflow:hidden; box-shadow:0 14px 44px rgba(0,0,0,.25);
+  border:1px solid ${THEME.border}22;
+}
+.aiw-header{ padding:12px 16px; background:${THEME.accent}; color:#fff; font-weight:700;
+  display:flex; align-items:center; justify-content:space-between; }
+.aiw-header .aiw-actions{ display:flex; align-items:center; gap:8px; }
+.aiw-header button{ background:transparent; border:none; color:#fff; font-size:18px; cursor:pointer; }
+
+.aiw-body{
+  display:flex; flex-direction:column; flex:1; gap:8px; padding:12px; overflow:auto;
+  font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif; font-size:14px;
+  background:${THEME.panel};
+}
+.aiw-row{ display:flex; gap:8px; }
+.aiw-row.me{ justify-content:flex-end; }
+.aiw-ava{
+  width:26px; height:26px; flex:0 0 26px; border-radius:50%;
+  background:${THEME.bubbleUser}; border:1px solid ${THEME.bubbleBorder}; overflow:hidden;
+}
+.aiw-ava img{ width:100%; height:100%; object-fit:cover; display:block; }
+.aiw-bubble{
+  max-width:85%; padding:10px 12px; border-radius:12px; white-space:pre-wrap; word-break:break-word;
+  border:1px solid transparent; box-shadow:0 1px 0 rgba(0,0,0,.2);
+}
+.aiw-row.me .aiw-bubble{
+  background:${THEME.bubbleUser}; color:#fff; border-color:transparent;
+}
+.aiw-row.ai .aiw-bubble{
+  background:${THEME.bubbleAI}; color:${THEME.text}; border-color:${THEME.bubbleBorder};
+}
+.aiw-time{ font-size:11px; color:${THEME.time}; margin-top:4px; }
+
 .aiw-typing-bubble{
-  display:inline-block;          /* <= всегда пузырь */
-  visibility:hidden;             /* <= прячем без сдвига вёрстки */
-  align-self:flex-start;
-  max-width:85%;
-  margin:8px 0;
-  padding:10px 12px;
-  border-radius:12px;
-  background:#EEF2FF;
+  display:inline-block; visibility:hidden; align-self:flex-start; max-width:85%; margin:8px 34px; /* отступ под аватар */
+  padding:10px 12px; border-radius:12px; background:${THEME.bubbleAI}; color:${THEME.text};
 }
 .aiw-typing-dots{ display:inline-flex; gap:6px; align-items:center; }
 .aiw-typing-dot{ width:8px;height:8px;border-radius:50%;background:#9aa1b2; animation:aiw-bounce 1.2s infinite ease-in-out both; }
-.aiw-typing-dot:nth-child(2){ animation-delay:.15s }
-.aiw-typing-dot:nth-child(3){ animation-delay:.30s }
+.aiw-typing-dot:nth-child(2){ animation-delay:.15s } .aiw-typing-dot:nth-child(3){ animation-delay:.30s }
+
+.aiw-footer{ padding:10px; border-top:1px solid ${THEME.bubbleBorder}; display:flex; gap:8px; align-items:center; background:${THEME.panel}; }
+.aiw-input{
+  flex:1; resize:none; border:1px solid #3a3a42; background:#1b1c20; color:${THEME.text};
+  border-radius:12px; padding:10px 44px 10px 12px; outline:none; min-height:40px;
+}
+.aiw-send{
+  position:relative; margin-left:-44px; width:36px; height:36px; border:none; border-radius:9999px;
+  background:${THEME.accent}; color:#fff; cursor:pointer; flex:0 0 36px;
+}
+.aiw-send:disabled{ opacity:.6; cursor:default; }
 `;
+
 
   shadow.appendChild(style);
 
   const wrap = document.createElement("div");
-  wrap.style.position = "fixed";
-  wrap.style.zIndex = 2147483000;
-  wrap.style[POSITION === "br" ? "right" : "left"] = "20px";
-  wrap.style.bottom = "20px";
+  wrap.className = "aiw-wrap";
+wrap.style[POSITION === "br" ? "right" : "left"] = "20px";
+
   shadow.appendChild(wrap);
 
   const btn = document.createElement("button");
-  btn.style.cssText = `
-    width:56px;height:56px;border-radius:50%;border:none;cursor:pointer;
-    box-shadow:0 8px 20px rgba(0,0,0,.2);background:${ACCENT};color:#fff;
-    font-weight:700;font-size:16px;
-  `;
-  btn.textContent = "AI";
+btn.className = "aiw-btn";
+btn.textContent = "AI";
 
-  const panel = document.createElement("div");
-  panel.style.cssText = `
-    position:absolute;${POSITION === "br" ? "right:0" : "left:0"};bottom:70px;
-    width:360px;max-width:80vw;height:480px;max-height:70vh;display:none;flex-direction:column;
-    background:#fff;border-radius:16px;overflow:hidden;box-shadow:0 14px 44px rgba(0,0,0,.25);
-  `;
+const panel = document.createElement("div");
+panel.className = "aiw-panel";
+panel.style[POSITION === "br" ? "right" : "left"] = "0";
 
-  const header = document.createElement("div");
-  header.style.cssText = `padding:12px 16px;background:${ACCENT};color:#fff;font-weight:700;display:flex;align-items:center;justify-content:space-between`;
-  header.innerHTML = `<span>${TITLE}</span>`;
-  const close = document.createElement("button");
-  close.textContent = "×";
-  close.style.cssText = `background:transparent;border:none;color:#fff;font-size:20px;cursor:pointer`;
-  header.appendChild(close);
 
-  const resetBtn = document.createElement("button");
+const header = document.createElement("div");
+header.className = "aiw-header";
+header.innerHTML = `<span>${TITLE}</span>`;
+const close = document.createElement("button");
+close.textContent = "×";
+const resetBtn = document.createElement("button");
 resetBtn.title = LANG.startsWith("ru") ? "Сбросить диалог" : "Reset chat";
 resetBtn.textContent = "↺";
-resetBtn.style.cssText = `
-  background:transparent;border:none;color:#fff;font-size:18px;cursor:pointer;
-  margin-right: 8px;
-`;
+const actions = document.createElement("div");
+actions.className = "aiw-actions";
+actions.appendChild(resetBtn); actions.appendChild(close);
+header.appendChild(actions);
 
-// Порядок: [title] ... [Reset] [×]
-const rightWrap = document.createElement("div");
-rightWrap.style.display = "flex";
-rightWrap.style.alignItems = "center";
-rightWrap.appendChild(resetBtn);
-rightWrap.appendChild(close);
-header.innerHTML = `<span>${TITLE}</span>`;
-header.appendChild(rightWrap);
 
-  const body = document.createElement("div");
+const body = document.createElement("div");
+body.className = "aiw-body";
+const messagesWrap = document.createElement("div");
+messagesWrap.style.display = "flex";
+messagesWrap.style.flexDirection = "column";
+body.appendChild(messagesWrap);
 // пустой хинт (виден только когда нет сообщений)
 const emptyHint = document.createElement("div");
 emptyHint.style.cssText = `
   align-self:flex-start; max-width:85%; margin:8px 0; padding:10px 12px;
-  border-radius:12px; background:#EEF2FF; color:#334155; opacity:.7; display:none;
+  border-radius:12px; background:${THEME.bubbleAI}; color:${THEME.text}; opacity:.7; display:none;
 `;
+
 emptyHint.textContent = WELCOME;
 body.appendChild(emptyHint);
 
@@ -221,34 +269,23 @@ function updateEmptyHint(){
   emptyHint.style.display = history.length ? "none" : "block";
 }
 
-body.style.cssText = `
-  display:flex;
-  flex-direction:column;
-  flex:1;
-  padding:12px;
-  overflow:auto;
-  font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;
-  font-size:14px
-`;
-const messagesWrap = document.createElement("div");
-messagesWrap.style.display = "flex";
-messagesWrap.style.flexDirection = "column";
-body.appendChild(messagesWrap);
 
-  const footer = document.createElement("div");
-  footer.style.cssText = `padding:10px;border-top:1px solid #eee;display:flex;gap:8px`;
+const footer = document.createElement("div");
+footer.className = "aiw-footer";
 
-  const input = document.createElement("textarea");
-  input.rows = 1;
-  input.placeholder = LANG.startsWith("ru") ? "Спросите что-нибудь…" : "Ask me anything…";
-  input.style.cssText = `flex:1;resize:none;border:1px solid #ddd;border-radius:10px;padding:10px;outline:none`;
+const input = document.createElement("textarea");
+input.rows = 1;
+input.placeholder = LANG.startsWith("ru") ? "Спросите что-нибудь…" : "Ask me anything…";
+input.className = "aiw-input";
 
-  const sendBtn = document.createElement("button");
-  sendBtn.textContent = LANG.startsWith("ru") ? "Отправить" : "Send";
-  sendBtn.style.cssText = `background:${ACCENT};color:#fff;border:none;border-radius:10px;padding:0 14px;cursor:pointer`;
+const sendBtn = document.createElement("button");
+sendBtn.className = "aiw-send";
+sendBtn.innerHTML = `<svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true">
+  <path fill="currentColor" d="M2 21l20-9L2 3l5 8-5 10z"></path>
+</svg>`;
 
-  footer.appendChild(input);
-  footer.appendChild(sendBtn);
+footer.appendChild(input);
+footer.appendChild(sendBtn);
   panel.appendChild(header);
   panel.appendChild(body);
   panel.appendChild(footer);
@@ -296,27 +333,50 @@ function dedupeAutogreetAtTail() {
   // ---------- Chat logic ----------
 let history = readHistory();
 
+function fmtTime(ts){
+  try{
+    return new Date(ts).toLocaleTimeString(LANG.startsWith("ru") ? "ru-RU" : "en-US", { hour:"2-digit", minute:"2-digit" });
+  }catch{ return ""; }
+}
+
 function render() {
   while (messagesWrap.firstChild) messagesWrap.removeChild(messagesWrap.firstChild);
 
   for (const m of history) {
-    const bubble = document.createElement("div");
-    bubble.style.margin = "8px 0";
-    bubble.style.maxWidth = "85%";
-    bubble.style.whiteSpace = "pre-wrap";
-    bubble.style.wordBreak = "break-word";
     const isUser = m.role === "user";
-    bubble.style.alignSelf = isUser ? "flex-end" : "flex-start";
-    bubble.style.padding = "10px 12px";
-    bubble.style.borderRadius = "12px";
-    bubble.style.background = isUser ? "#F1F5F9" : "#EEF2FF";
-    bubble.textContent = m.content;
-    messagesWrap.appendChild(bubble);
+    const row = document.createElement("div");
+    row.className = "aiw-row " + (isUser ? "me" : "ai");
+
+    // avatar
+    const ava = document.createElement("div");
+    ava.className = "aiw-ava";
+    if (!isUser && LOGO) {
+      const img = document.createElement("img");
+      img.src = LOGO; img.alt = "logo"; ava.appendChild(img);
+    }
+    if (!isUser) row.appendChild(ava);
+
+    // bubble + time
+    const bubbleWrap = document.createElement("div");
+    const bubble = document.createElement("div");
+    bubble.className = "aiw-bubble";
+    bubble.textContent = m.content || "";
+    bubbleWrap.appendChild(bubble);
+
+    const time = document.createElement("div");
+    time.className = "aiw-time";
+    time.textContent = fmtTime(m.ts || Date.now());
+    bubbleWrap.appendChild(time);
+
+    row.appendChild(bubbleWrap);
+    if (isUser) row.appendChild(ava); // у пользователя — аватарка справа (пустой кружок)
+    messagesWrap.appendChild(row);
   }
 
   updateEmptyHint();
   body.scrollTop = body.scrollHeight;
 }
+
 
   render();
 
@@ -385,7 +445,7 @@ function showLocalGreeting() {
   setTimeout(() => {
     hideTyping();
     dedupeAutogreetAtTail();
-    history.push({ role: "assistant", content: AUTO_MSG, meta: { kind: "autogreet" }});
+    history.push({ role: "assistant", content: AUTO_MSG, meta: { kind: "autogreet" }, ts: Date.now()});
     writeHistory(history);
     render();
 
@@ -476,14 +536,14 @@ function renderSuggestions(suggestions) {
         let reply = "";
         try { reply = (JSON.parse(raw) || {}).reply || ""; } catch { reply = raw || ""; }
         dedupeAutogreetAtTail();
-        history.push({ role: "assistant", content: reply || (LANG.startsWith("ru") ? "…" : "…"), meta: { kind: "autogreet" }});
+        history.push({ role: "assistant", content: reply || (LANG.startsWith("ru") ? "…" : "…"), meta: { kind: "autogreet" }, ts: Date.now()});
         writeHistory(history);
         render();
         return;
       }
 
       // SSE
-      history.push({ role: "assistant", content: "" });
+      history.push({ role: "assistant", content: "",  ts: Date.now()});
       const idx = history.length - 1;
       writeHistory(history);
       render();
@@ -529,7 +589,7 @@ function renderSuggestions(suggestions) {
     const text = sanitize(input.value).trim();
     if (!text || inflight) return;
 
-    history.push({ role: "user", content: text });
+    history.push({ role: "user", content: text, ts: Date.now() });
     try { sessionStorage.setItem(USER_INTERACTED_KEY, "1"); } catch {}
     writeHistory(history);
     render();
@@ -596,7 +656,8 @@ const raw = await res.text();
 history.push({
   role: "assistant",
   content: reply || (LANG.startsWith("ru") ? "…" : "…"),
-  meta: { citations } // при желании сохраняем, но не рендерим
+  meta: { citations }, // при желании сохраняем, но не рендерим
+  ts: Date.now()
 });
 
         writeHistory(history);
@@ -605,7 +666,7 @@ history.push({
       }
 
       // SSE mode
-      history.push({ role: "assistant", content: "" });
+      history.push({ role: "assistant", content: "", ts: Date.now() });
       const assistantIndex = history.length - 1;
       writeHistory(history); render();
 
