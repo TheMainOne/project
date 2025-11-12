@@ -33,6 +33,9 @@ if (mode === "inline") {
   iframe.style.height = (isFinite(iHeight) ? iHeight : 600) + "px";
   iframe.style.border = "0";
   iframe.style.display = "block";
+  iframe.style.maxWidth = "100%";
+  iframe.style.boxSizing = "border-box";
+iframe.setAttribute("scrolling", "no"); // старый атрибут, но помогает некоторым браузерам
   iframe.allow = "clipboard-write";
   mount.appendChild(iframe);
 
