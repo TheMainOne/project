@@ -9,6 +9,7 @@ aiw widget (fixed)
 const MODE   = (CFG.mode || new URLSearchParams(location.search).get("mode") || "float").toLowerCase();
 const INLINE = MODE === "inline";
 const FIT_MODE = (new URLSearchParams(location.search).get("fit") || "container").toLowerCase();
+const FILL_CONTAINER = INLINE && FIT_MODE === "container";
 
   const ENDPOINT = CFG.endpoint;
   const SITE_ID  = CFG.siteId || (location.host + "::default");
@@ -181,15 +182,14 @@ if (PRESERVE_HISTORY === false) {
   // ---------- DOM ----------
   const root = document.createElement("div");
  // host должен уметь растянуться на высоту iframe
- root.style.cssText = "display:block;height:100%;";
+ root.style.cssText = "display:block;" + (FILL_CONTAINER ? "height:100%;" : "height:auto;");
   const shadow = root.attachShadow({ mode: "open" });
 
   // styles (Shadow DOM)
 const style = document.createElement("style");
 style.textContent = `
-:host { all: initial; display:block; height:100%; }
-html, body { height: 100%; margin: 0; }
-body { overflow: hidden; }
+ :host { all: initial; display:block; ${FILL_CONTAINER ? "height:100%;" : "height:auto;"} }
+ html, body { ${FILL_CONTAINER ? "height:100%;" : "height:auto;"} margin:0; }
 @keyframes aiw-bounce { 0%,80%,100%{transform:scale(.6);opacity:.45} 40%{transform:scale(1);opacity:1} }
 
 .aiw-wrap{ position:fixed; z-index:2147483000; bottom:20px; }
@@ -252,6 +252,11 @@ body { overflow: hidden; }
 
 
   shadow.appendChild(style);
+if (INLINE && FIT_MODE === "content") {
+  const fix = document.createElement("style");
+  fix.textContent = `:host, html, body { height: auto !important; }`;
+  shadow.appendChild(fix);
+}
 
 const wrap = document.createElement("div");
 wrap.className = "aiw-wrap";
@@ -264,7 +269,7 @@ if (INLINE) {
   wrap.style.right    = "auto";
   wrap.style.left     = "auto";
   wrap.style.width    = "100%";
-  wrap.style.height   = "100%";   // важно: 100% от host, который мы теперь растянули
+  wrap.style.height   = FILL_CONTAINER ? "100%" : "auto";
 } else {
   wrap.style.position = "fixed";
   wrap.style.bottom = "20px";
@@ -288,7 +293,7 @@ if (INLINE) {
   panel.style.left = "auto";
   panel.style.width = "100%";
   panel.style.maxWidth = "100%";
-  panel.style.height = "100%";
+  panel.style.height = FILL_CONTAINER ? "100%" : "auto";
   panel.style.maxHeight = "none";
   panel.style.display = "flex";   // сразу видимая
 } else {
@@ -298,6 +303,10 @@ if (INLINE) {
   panel.style.display = "none";   // открывается по кнопке
 }
 
+if (INLINE && FIT_MODE === "content") {
+  wrap.style.height  = "auto";
+  panel.style.height = "auto";
+}
 
 const header = document.createElement("div");
 header.className = "aiw-header";
