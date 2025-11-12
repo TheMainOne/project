@@ -61,7 +61,8 @@ function setHeightFromContainer() {
     window.addEventListener("message", (e) => {
       if (!e?.data || e.data.type !== "aiw:resize") return;
       if (e.source === iframe.contentWindow) {
-        const h = Math.max(200, parseInt(e.data.height || "0", 10) || 0);
+        const minH = Math.max(200, iHeight);                 // ← минимум берём из data-height
+     const h = Math.max(minH, parseInt(e.data.height || "0", 10) || 0);
         iframe.style.height = h + "px";
       }
     });
