@@ -452,6 +452,7 @@ function showLocalGreeting() {
     history.push({ role: "assistant", content: AUTO_MSG, meta: { kind: "autogreet" }, ts: Date.now()});
     writeHistory(history);
     render();
+    markAutoGreetUsed();
 
     // OPTIONAL: быстрые предложения
     renderSuggestions([
@@ -543,6 +544,7 @@ function renderSuggestions(suggestions) {
         history.push({ role: "assistant", content: reply || (LANG.startsWith("ru") ? "…" : "…"), meta: { kind: "autogreet" }, ts: Date.now()});
         writeHistory(history);
         render();
+        markAutoGreetUsed();
         return;
       }
 
@@ -558,6 +560,7 @@ function renderSuggestions(suggestions) {
         history[idx].content += data;
         render();
       });
+      markAutoGreetUsed();
     } catch (e) {
       history.push({ role: "assistant", content: LANG.startsWith("ru") ? "⚠️ Ошибка соединения" : "⚠️ Connection error" });
       writeHistory(history);
@@ -570,23 +573,24 @@ function renderSuggestions(suggestions) {
   function scheduleAutoGreet() {
     if (!shouldAutoGreetNow()) return;
     setTimeout(() => {
-      if (!shouldAutoGreetNow()) return; // повторная проверка (вкладка могла стать невидимой и т.п.)
-      markAutoGreetUsed();
+      if (!shouldAutoGreetNow()) return;
+-      markAutoGreetUsed();
       if (AUTO_MODE === "ai") {
         if (RESET_HISTORY_ON_OPEN) {
-  try { localStorage.removeItem(storeKey); } catch {}
-  history = []; writeHistory(history); render();
-}
+          try { localStorage.removeItem(storeKey); } catch {}
+          history = []; writeHistory(history); render();
+        }
         fetchAIGreeting();
       } else {
         if (RESET_HISTORY_ON_OPEN) {
-  try { localStorage.removeItem(storeKey); } catch {}
-  history = []; writeHistory(history); render();
-}
+          try { localStorage.removeItem(storeKey); } catch {}
+          history = []; writeHistory(history); render();
+        }
         showLocalGreeting();
       }
     }, AUTO_DELAY);
   }
+
 
 
   async function doSend() {

@@ -51,11 +51,11 @@
 ),
 
       autostart: !!(config && config.autostart),
-      autostartDelay: Number((config && config.autostartDelay) || 5000),
-      autostartMode: ((config && config.autostartMode) || "local").toLowerCase(),
+      autostartDelay: Number((config?.autostartDelay ?? 5000)),
+       autostartMode: ((config?.autostartMode ?? "local").toLowerCase()),
       autostartMessage: (config && config.autostartMessage) || "",
       autostartPrompt: (config && config.autostartPrompt) || "",
-      autostartCooldownHours: Number((config && config.autostartCooldownHours) || 12),
+      autostartCooldownHours: Number(config?.autostartCooldownHours ?? 12),
       preserveHistory: (config ? config.preserveHistory !== false : true),
       resetHistoryOnOpen: !!(config && config.resetHistoryOnOpen),
     };
