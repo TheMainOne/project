@@ -479,47 +479,9 @@ function showLocalGreeting() {
     render();
     log("showLocalGreeting: message pushed");
     markAutoGreetUsed();
-    renderSuggestions(["Pricing for 10 users", "What bundles do you have?", "Book a demo"]);
   }, 250);
 }
 
-function renderSuggestions(suggestions) {
-  if (!Array.isArray(suggestions) || !suggestions.length) return;
-
-  // убрать прежний блок подсказок, если был
-  const prev = messagesWrap.querySelector('[data-aiw-suggestions="1"]');
-  if (prev) prev.remove();
-
-  const row = document.createElement("div");
-  row.style.cssText = "display:flex; flex-wrap:wrap; gap:8px; margin-top:6px;";
-
-  suggestions.forEach(label => {
-    const b = document.createElement("button");
-    b.textContent = label;
-    b.style.cssText = `
-      padding:6px 10px; border:1px solid #e2e8f0; border-radius:9999px;
-      background:#fff; cursor:pointer; font-size:12px;
-    `;
-    b.addEventListener("click", () => {
-      input.value = label;
-      doSend();
-    });
-    row.appendChild(b);
-  });
-
-  const bubble = document.createElement("div");
-  bubble.setAttribute("data-aiw-suggestions", "1");
-  bubble.style.margin = "6px 0";
-  bubble.style.maxWidth = "85%";
-  bubble.style.alignSelf = "flex-start";
-  bubble.style.padding = "8px 10px";
-  bubble.style.borderRadius = "12px";
-  bubble.style.background = "#EEF2FF";
-  bubble.appendChild(row);
-
-  messagesWrap.appendChild(bubble);
-  body.scrollTop = body.scrollHeight;
-}
 
 
 
