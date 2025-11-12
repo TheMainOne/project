@@ -1,119 +1,112 @@
 // services/rag/index.js
-import mongoose from "mongoose"; // ← добавлено
+import mongoose from "mongoose";
 import ClientDocChunk from "../../models/ClientDocChunk.js";
 import ClientDocument from "../../models/ClientDocument.js";
-import { retrieveTopK } from "../web_crawler/core.js";
+// import { retrieveTopK } ... // не нужно здесь
 
-/**
- * Унифицированный ретрив: сначала клиентские документы (RAG),
- * затем (опционально) сайт-контент из краулера, и объединяем.
- */
 export async function retrieveUnified({
   clientId,
   siteId,
   query,
   kClient = 6,
-  kWeb = 3,
+  kWeb = 3,         // не используется здесь
   includeWeb = true,
   minTextLen = 25
 }) {
-  // коэрсим clientId к ObjectId, строку оставляем как есть
+  // 1) коэрсим clientId в ObjectId (если возможно)
   let cid = null;
-  if (clientId instanceof mongoose.Types.ObjectId) {
-    cid = clientId;
-  } else if (typeof clientId === "string" && mongoose.isValidObjectId(clientId)) {
+  if (clientId instanceof mongoose.Types.ObjectId) cid = clientId;
+  else if (typeof clientId === "string" && mongoose.isValidObjectId(clientId)) {
     cid = new mongoose.Types.ObjectId(clientId);
   }
 
-  // строим OR-фильтр: подойдут чанки с ИЛИ clientId, ИЛИ siteId
+  // 2) базовый фильтр: берём чанки клиента ИЛИ по siteId
   const or = [];
-  if (cid) or.push({ clientId: cid });
+  if (cid)  or.push({ clientId: cid });
   if (siteId) or.push({ siteId });
-
   if (!or.length) return { contexts: [] };
 
   const baseFilter = { $or: or };
 
-  const contexts = [];
+  // 3) запрос — сначала пробуем RegExp по content/title (НЕ $text)
+  //    $text нужен индекс, часто его нет → тишком отдаёт 0. Регексы надёжнее.
+  const rx = query ? new RegExp(escapeRegExp(query), "i") : null;
 
-  // -------- 1) Клиентские документы (MongoDB $text с фолбэком на RegExp) --------
   let chunks = [];
   try {
-    const findFilter = query ? { ...baseFilter, $text: { $search: query } } : baseFilter;
-    chunks = await ClientDocChunk.find(findFilter, { score: { $meta: "textScore" } })
-      .sort(query ? { score: { $meta: "textScore" } } : { createdAt: -1 })
+    chunks = await ClientDocChunk.find(
+      rx ? { ...baseFilter, $or: [{ content: rx }, { title: rx }] } : baseFilter
+    )
+      .sort(rx ? { updatedAt: -1 } : { createdAt: -1 })
       .limit(kClient * 2)
       .lean();
   } catch (e) {
-    const rx = new RegExp(escapeRegExp(query || ""), "i");
-    chunks = await ClientDocChunk.find({ ...baseFilter, content: rx })
+    console.warn("[RAG] chunks find error:", e?.message || e);
+    chunks = [];
+  }
+
+  // 4) если ничего — возьмём последние чанки клиента/сайта, чтобы хоть что-то было
+  if (!chunks.length) {
+    chunks = await ClientDocChunk.find(baseFilter)
       .sort({ createdAt: -1 })
       .limit(kClient * 2)
       .lean();
   }
 
+  // 5) подтянем документы для линков
   const docIds = [...new Set(chunks.map(c => c.documentId).filter(Boolean))];
   const docs = docIds.length
     ? await ClientDocument.find({ _id: { $in: docIds } })
-        .select("_id originalName publicUrl s3Key mimeType")
+        .select("_id originalName publicUrl s3Url s3Key mimeType")
         .lean()
     : [];
   const docMap = new Map(docs.map(d => [String(d._id), d]));
 
-  const normalizedClient = chunks
+  // 6) нормализация контекстов
+  const normalized = chunks
     .filter(c => (c.content || "").trim().length >= minTextLen)
     .slice(0, kClient)
     .map((c) => {
       const d = c.documentId ? docMap.get(String(c.documentId)) : null;
-      const url = d?.publicUrl
-        ? addAnchor(d.publicUrl, chunkAnchor(c))
-        : `/api/client-documents/${String(c.documentId)}?chunk=${c._id}`;
 
-      const title = d?.originalName || c.title || "Client Document";
-      const score = typeof c.score === "number" ? c.score : 0.5;
+      // URL: используем publicUrl, если есть; иначе s3Url; иначе API-путь
+      const baseUrl =
+        d?.publicUrl || d?.s3Url ||
+        (d?._id ? `/api/client-documents/${String(d._id)}` : "");
+
+      const url = baseUrl ? addAnchor(baseUrl, chunkAnchor(c)) : "";
 
       return {
         source: "client-doc",
         url,
-        title,
-        text: c.content,
-        snippet: c.content.slice(0, 500),
-        score
+        title: d?.originalName || c.title || "Client Document",
+        text: c.content || "",
+        snippet: (c.content || "").slice(0, 500),
+        score: typeof c.score === "number" ? c.score : (rx ? 0.6 : 0.4)
       };
     });
 
-  contexts.push(...normalizedClient);
-
-  // -------- 2) Веб-источники (краулер) — опционально --------
-  // (оставлено закомментированным — включишь при необходимости)
-  // if (includeWeb && siteId && siteId !== "unknown-site") {
-  //   try {
-  //     const web = await retrieveTopK(siteId, query, { k: kWeb, softLimit: 300, minScore: 0.18 });
-  //     const normalizedWeb = (web || []).map(w => ({
-  //       source: "web",
-  //       url: w.url,
-  //       title: w.title || "Page",
-  //       text: w.text || w.snippet || "",
-  //       snippet: w.snippet || (w.text || "").slice(0, 500),
-  //       score: w.score ?? 0.4
-  //     }));
-  //     contexts.push(...normalizedWeb);
-  //   } catch (e) {
-  //     console.error("[RAG] retrieveTopK error:", e?.message || e);
-  //   }
-  // }
-
-  const deduped = dedupeByUrl(contexts);
+  // 7) дедуп и сортировка
+  const deduped = dedupeByUrl(normalized);
   deduped.sort((a, b) => (b.score ?? 0) - (a.score ?? 0));
-  return { contexts: deduped.slice(0, kClient + (includeWeb ? kWeb : 0)) };
+
+  // 8) маленькая диагностика в лог (поможет, если снова будет 0)
+  try {
+    console.log("[RAG][unified] q:", JSON.stringify(query),
+      "| cid:", cid ? String(cid) : "-",
+      "| siteId:", siteId || "-",
+      "| rawChunks:", chunks.length,
+      "| out:", deduped.length
+    );
+  } catch {}
+
+  return { contexts: deduped.slice(0, kClient) };
 }
 
-
-// ====== helpers ======
+// ====== helpers (оставь как есть, только убедись что они в файле) ======
 function escapeRegExp(s) {
   return (s || "").replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
-
 function dedupeByUrl(items = []) {
   const seen = new Set();
   const out = [];
@@ -125,12 +118,10 @@ function dedupeByUrl(items = []) {
   }
   return out;
 }
-
 function chunkAnchor(c) {
   if (c.page != null) return `page=${c.page}`;
   return `chunk=${c._id}`;
 }
-
 function addAnchor(url, anchor) {
   try {
     const u = new URL(url);
