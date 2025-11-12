@@ -454,11 +454,17 @@ resetBtn.addEventListener("click", (e) => {
   let inflight = null;
 
 
-    function openPanelIfHidden() {
-    if (panel.style.display === "none") {
-      btn.click(); // использует твою логику открытия
-    }
-  }
+ function panelIsHidden() {
+   try { return getComputedStyle(panel).display === "none"; } catch { return false; }
+ }
+ function openPanelIfHidden() {
+   if (panelIsHidden()) {
+     // можно эмулировать клик...
+     // btn.click();
+     // ...или открыть гарантированно без зависимости от состояния:
+     panel.style.display = "flex";
+   }
+ }
 
 function showLocalGreeting() {
   if (!AUTO_MSG) { log("showLocalGreeting: no AUTO_MSG"); return; }
