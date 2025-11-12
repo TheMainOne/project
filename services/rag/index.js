@@ -8,10 +8,10 @@ export async function retrieveUnified({
   clientId,
   siteId,
   query,
-  kClient = 6,
-  kWeb = 3,         // не используется здесь
-  includeWeb = true,
-  minTextLen = 25
+  kClient = Number(process.env.AIW_KCLIENT || 8),
+  kWeb = 0,                 
+  includeWeb = false,      
+  minTextLen = 20
 }) {
   // 1) коэрсим clientId в ObjectId (если возможно)
   let cid = null;
@@ -38,7 +38,7 @@ export async function retrieveUnified({
       rx ? { ...baseFilter, $or: [{ content: rx }, { title: rx }] } : baseFilter
     )
       .sort(rx ? { updatedAt: -1 } : { createdAt: -1 })
-      .limit(kClient * 2)
+      .limit(kClient * 3)
       .lean();
   } catch (e) {
     console.warn("[RAG] chunks find error:", e?.message || e);
@@ -49,7 +49,7 @@ export async function retrieveUnified({
   if (!chunks.length) {
     chunks = await ClientDocChunk.find(baseFilter)
       .sort({ createdAt: -1 })
-      .limit(kClient * 2)
+      .limit(kClient * 3)
       .lean();
   }
 
@@ -65,7 +65,6 @@ export async function retrieveUnified({
   // 6) нормализация контекстов
   const normalized = chunks
     .filter(c => (c.content || "").trim().length >= minTextLen)
-    .slice(0, kClient)
     .map((c) => {
       const d = c.documentId ? docMap.get(String(c.documentId)) : null;
 
@@ -87,8 +86,8 @@ export async function retrieveUnified({
     });
 
   // 7) дедуп и сортировка
-  const deduped = dedupeByUrl(normalized);
-  deduped.sort((a, b) => (b.score ?? 0) - (a.score ?? 0));
+const deduped = dedupeByUrl(normalized);
+deduped.sort((a, b) => (b.score ?? 0) - (a.score ?? 0));
 
   // 8) маленькая диагностика в лог (поможет, если снова будет 0)
   try {
@@ -100,7 +99,7 @@ export async function retrieveUnified({
     );
   } catch {}
 
-  return { contexts: deduped.slice(0, kClient) };
+return { contexts: deduped.slice(0, kClient) };
 }
 
 // ====== helpers (оставь как есть, только убедись что они в файле) ======

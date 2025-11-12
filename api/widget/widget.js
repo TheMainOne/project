@@ -662,7 +662,9 @@ T.mark("entered"); // t=0
       "X-AIW-Build","X-AIW-Source","X-AIW-Citations-Count",
       "X-AIW-Handler","X-AIW-Resolved-Site","X-AIW-Resolved-Session",
       "X-AIW-Phase","X-AIW-DB","X-AIW-Timing","X-AIW-Good-Answer","X-AIW-Client",
-       "X-AIW-WidgetCfg"
+       "X-AIW-WidgetCfg",
+         "X-AIW-Contexts",           
+  "X-AIW-Retrieve-Mode"       
     ].join(", ");
     const existingExpose = res.getHeader("Access-Control-Expose-Headers");
     res.setHeader(
@@ -772,7 +774,15 @@ console.log("[AIW] clientId:", String(clientId), "query:", query);
 // ====== RAG retrieve ======
 const retrieveRes = await T.wrap("retrieve", async () => {
   try {
-    const r = await retrieveUnified({ clientId, siteId, query });
+    // const r = await retrieveUnified({ clientId, siteId, query });
+    // больше клиентских чанков, без web-фоллбэка (его оставим только в fallback)
+const r = await retrieveUnified({
+  clientId,
+  siteId,
+  query,
+  kClient: Number(process.env.AIW_KCLIENT || 8), // было по умолчанию 6
+  includeWeb: false
+});
     if (r?.contexts?.length) {
       res.setHeader("X-AIW-Retrieve-Mode", "unified");
       return r;
@@ -781,7 +791,7 @@ const retrieveRes = await T.wrap("retrieve", async () => {
     console.warn("[retrieveUnified]", e?.message || e);
   }
   // fallback на старый топ-K по сайту, если unified ничего не дал
-  const web = await retrieveTopK(siteId, query, { k: 5, softLimit: 300, minScore: 0.18 });
+  const web = await retrieveTopK(siteId, query, { k: 8, softLimit: 400, minScore: 0.15 });
   res.setHeader("X-AIW-Retrieve-Mode", "fallback-topK");
   return { contexts: (web || []).map(w => ({ source: "web", url: w.url, text: w.text || w.snippet || "", score: w.score ?? 0.4 })) };
 });
