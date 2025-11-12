@@ -28,6 +28,15 @@ const LOGO = (
     : (CFG.logo && CFG.logo.url) // поддержка { url: "..." }
 ) || null;
 
+const DEBUG = (CFG.debugAutostart === true) || /\baiwDebug=1\b/.test(location.search);
+const log = (...a) => { if (DEBUG) console.debug("[AIW]", ...a); };
+
+log("CFG", {
+  site: SITE_ID, AUTOSTART, AUTO_MODE, AUTO_DELAY, AUTO_COOLDOWN_HOURS,
+  AUTO_MSG_len: (AUTO_MSG||"").length, preserveHistory: CFG.preserveHistory,
+  resetHistoryOnOpen: RESET_HISTORY_ON_OPEN
+});
+
 // тема (тёмная) — цвета по умолчанию + из конфига
 const THEME = {
   bg: CFG.backgroundColor || "#0b0c0f",
@@ -108,23 +117,33 @@ function alreadyInteracted() {
 }
 
 
-  function shouldAutoGreetNow() {
-    if (!AUTOSTART) return false;
-    if (sessionStorage.getItem(AUTO_KEY_SESSION) === "1") return false;
-    if (!isTabVisible()) return false;
-    if (alreadyInteracted()) return false;
+function shouldAutoGreetNow() {
+  if (!AUTOSTART) { log("block: AUTOSTART=false"); return false; }
+  const sess = sessionStorage.getItem(AUTO_KEY_SESSION);
+  if (sess === "1") { log("block: session-flag set", { key: AUTO_KEY_SESSION }); return false; }
+  if (!isTabVisible()) { log("block: tab not visible"); return false; }
+  if (alreadyInteracted()) { log("block: alreadyInteracted (session)"); return false; }
 
-    const lastTs = +(localStorage.getItem(AUTO_KEY_LAST_TS) || 0);
-    const hoursPassed = (Date.now() - lastTs) / 36e5;
-    if (hoursPassed < AUTO_COOLDOWN_HOURS) return false;
-
-    return true;
+  const lastTs = +(localStorage.getItem(AUTO_KEY_LAST_TS) || 0);
+  const hoursPassed = (Date.now() - lastTs) / 36e5;
+  if (hoursPassed < AUTO_COOLDOWN_HOURS) {
+    log("block: cooldown", { lastTs, hoursPassed, AUTO_COOLDOWN_HOURS });
+    return false;
   }
 
-  function markAutoGreetUsed() {
-    sessionStorage.setItem(AUTO_KEY_SESSION, "1");
-    localStorage.setItem(AUTO_KEY_LAST_TS, String(Date.now()));
-  }
+  log("shouldAutoGreetNow = true");
+  return true;
+}
+
+
+function markAutoGreetUsed() {
+  sessionStorage.setItem(AUTO_KEY_SESSION, "1");
+  localStorage.setItem(AUTO_KEY_LAST_TS, String(Date.now()));
+  log("markAutoGreetUsed()", {
+    sessionKey: AUTO_KEY_SESSION,
+    lastKey: AUTO_KEY_LAST_TS
+  });
+}
 
 
 
@@ -442,10 +461,9 @@ resetBtn.addEventListener("click", (e) => {
   }
 
 function showLocalGreeting() {
-  if (!AUTO_MSG) return;
+  if (!AUTO_MSG) { log("showLocalGreeting: no AUTO_MSG"); return; }
+  log("showLocalGreeting: start");
   openPanelIfHidden();
-
-  // можно показать "typing" ради эффекта
   showTyping();
   setTimeout(() => {
     hideTyping();
@@ -453,15 +471,10 @@ function showLocalGreeting() {
     history.push({ role: "assistant", content: AUTO_MSG, meta: { kind: "autogreet" }, ts: Date.now()});
     writeHistory(history);
     render();
+    log("showLocalGreeting: message pushed");
     markAutoGreetUsed();
-
-    // OPTIONAL: быстрые предложения
-    renderSuggestions([
-      "Pricing for 10 users",
-      "What bundles do you have?",
-      "Book a demo"
-    ]);
-  }, 250); // делаем почти мгновенно
+    renderSuggestions(["Pricing for 10 users", "What bundles do you have?", "Book a demo"]);
+  }, 250);
 }
 
 function renderSuggestions(suggestions) {
@@ -545,8 +558,9 @@ function renderSuggestions(suggestions) {
         history.push({ role: "assistant", content: reply || (LANG.startsWith("ru") ? "…" : "…"), meta: { kind: "autogreet" }, ts: Date.now()});
         writeHistory(history);
         render();
-        markAutoGreetUsed();
-        return;
+         log("fetchAIGreeting(JSON): message pushed, length=", (reply||"").length);
+    markAutoGreetUsed();
+    return;
       }
 
       // SSE
@@ -561,7 +575,8 @@ function renderSuggestions(suggestions) {
         history[idx].content += data;
         render();
       });
-      markAutoGreetUsed();
+      log("fetchAIGreeting(SSE): stream ended, len=", (history[idx].content||"").length);
+  markAutoGreetUsed();
     } catch (e) {
       history.push({ role: "assistant", content: LANG.startsWith("ru") ? "⚠️ Ошибка соединения" : "⚠️ Connection error" });
       writeHistory(history);
@@ -571,25 +586,30 @@ function renderSuggestions(suggestions) {
     }
   }
 
-  function scheduleAutoGreet() {
-    if (!shouldAutoGreetNow()) return;
-    setTimeout(() => {
-      if (!shouldAutoGreetNow()) return;
-      if (AUTO_MODE === "ai") {
-        if (RESET_HISTORY_ON_OPEN) {
-          try { localStorage.removeItem(storeKey); } catch {}
-          history = []; writeHistory(history); render();
-        }
-        fetchAIGreeting();
-      } else {
-        if (RESET_HISTORY_ON_OPEN) {
-          try { localStorage.removeItem(storeKey); } catch {}
-          history = []; writeHistory(history); render();
-        }
-        showLocalGreeting();
+function scheduleAutoGreet() {
+  if (!shouldAutoGreetNow()) return;
+  log("scheduleAutoGreet: scheduled in", AUTO_DELAY, "ms");
+  setTimeout(() => {
+    log("scheduleAutoGreet: timer fired");
+    if (!shouldAutoGreetNow()) { log("scheduleAutoGreet: recheck blocked"); return; }
+    if (AUTO_MODE === "ai") {
+      log("autogreet -> AI mode");
+      if (RESET_HISTORY_ON_OPEN) {
+        try { localStorage.removeItem(storeKey); } catch {}
+        history = []; writeHistory(history); render();
       }
-    }, AUTO_DELAY);
-  }
+      fetchAIGreeting();
+    } else {
+      log("autogreet -> LOCAL mode");
+      if (RESET_HISTORY_ON_OPEN) {
+        try { localStorage.removeItem(storeKey); } catch {}
+        history = []; writeHistory(history); render();
+      }
+      showLocalGreeting();
+    }
+  }, AUTO_DELAY);
+}
+
 
 
 
@@ -706,10 +726,24 @@ history.push({
     // первичный запуск через AUTO_DELAY
     scheduleAutoGreet();
 
+     // Сразу логнем текущее состояние (до любых событий)
+ log("init", {
+   sessionFlag: sessionStorage.getItem(AUTO_KEY_SESSION),
+   userInteracted: sessionStorage.getItem(USER_INTERACTED_KEY),
+   lastTs: +localStorage.getItem(AUTO_KEY_LAST_TS) || 0,
+   historyLen: (Array.isArray(history) ? history.length : -1)
+ });
+
     // если вкладка стала видимой (вернулись на страницу) — пробуем ещё раз
     document.addEventListener("visibilitychange", () => {
       if (document.visibilityState === "visible") {
         scheduleAutoGreet();
+     log("visible: recheck", {
+       sessionFlag: sessionStorage.getItem(AUTO_KEY_SESSION),
+       userInteracted: sessionStorage.getItem(USER_INTERACTED_KEY),
+       lastTs: +localStorage.getItem(AUTO_KEY_LAST_TS) || 0,
+       historyLen: (Array.isArray(history) ? history.length : -1)
+     });
       }
     });
   } catch (e) {

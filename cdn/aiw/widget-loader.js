@@ -63,7 +63,7 @@
     window.__AIW_CONFIG__ = cfg;
 
     const js = document.createElement("script");
-    js.src = jsSrc;
+    js.src = jsSrc + (jsSrc.includes("?") ? "&" : "?") + "v=" + Date.now();
     js.async = true;
     js.crossOrigin = "anonymous";
     document.head.appendChild(js);
