@@ -574,7 +574,6 @@ function renderSuggestions(suggestions) {
     if (!shouldAutoGreetNow()) return;
     setTimeout(() => {
       if (!shouldAutoGreetNow()) return;
--      markAutoGreetUsed();
       if (AUTO_MODE === "ai") {
         if (RESET_HISTORY_ON_OPEN) {
           try { localStorage.removeItem(storeKey); } catch {}

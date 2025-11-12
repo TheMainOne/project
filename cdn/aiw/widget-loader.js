@@ -51,8 +51,8 @@
 ),
 
       autostart: !!(config && config.autostart),
-      autostartDelay: Number((config?.autostartDelay ?? 5000)),
-       autostartMode: ((config?.autostartMode ?? "local").toLowerCase()),
+      autostartDelay: Number(config?.autostartDelay ?? 5000),
+      autostartMode: (config?.autostartMode ?? "local").toLowerCase(),
       autostartMessage: (config && config.autostartMessage) || "",
       autostartPrompt: (config && config.autostartPrompt) || "",
       autostartCooldownHours: Number(config?.autostartCooldownHours ?? 12),
