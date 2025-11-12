@@ -8,6 +8,7 @@ aiw widget (fixed)
   // ▼ NEW: режим рендера
 const MODE   = (CFG.mode || new URLSearchParams(location.search).get("mode") || "float").toLowerCase();
 const INLINE = MODE === "inline";
+const FIT_MODE = (new URLSearchParams(location.search).get("fit") || "container").toLowerCase();
 
   const ENDPOINT = CFG.endpoint;
   const SITE_ID  = CFG.siteId || (location.host + "::default");
@@ -185,6 +186,8 @@ if (PRESERVE_HISTORY === false) {
 const style = document.createElement("style");
 style.textContent = `
 :host { all: initial; }
+html, body { height: 100%; margin: 0; }
+body { overflow: hidden; }
 @keyframes aiw-bounce { 0%,80%,100%{transform:scale(.6);opacity:.45} 40%{transform:scale(1);opacity:1} }
 
 .aiw-wrap{ position:fixed; z-index:2147483000; bottom:20px; }
@@ -256,9 +259,10 @@ if (INLINE) {
   // внутри iframe/inline — это обычный блочный контейнер
   wrap.style.position = "relative";
   wrap.style.bottom = "auto";
-  wrap.style.right = "auto";
-  wrap.style.left = "auto";
-  wrap.style.width = "100%";
+  wrap.style.right  = "auto";
+  wrap.style.left   = "auto";
+  wrap.style.width  = "100%";
+  wrap.style.height = "100%"; 
 } else {
   wrap.style.position = "fixed";
   wrap.style.bottom = "20px";
@@ -282,7 +286,7 @@ if (INLINE) {
   panel.style.left = "auto";
   panel.style.width = "100%";
   panel.style.maxWidth = "100%";
-  panel.style.height = "auto";
+  panel.style.height = "100%";
   panel.style.maxHeight = "none";
   panel.style.display = "flex";   // сразу видимая
 } else {
@@ -441,6 +445,7 @@ function render() {
 
 function postHeight() {
   try {
+    if (FIT_MODE === "container") return; // родитель сам управляет высотой
     if (window.parent && window.parent !== window) {
       const h = document.documentElement.scrollHeight;
       window.parent.postMessage({ type: "aiw:resize", height: h }, "*");

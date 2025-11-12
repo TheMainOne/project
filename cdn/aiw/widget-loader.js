@@ -14,6 +14,7 @@
 const mode   = (s.getAttribute("data-mode") || "float").toLowerCase(); // "inline" | "float"
 const target = s.getAttribute("data-target");   // CSS-селектор контейнера
 const iHeight = parseInt(s.getAttribute("data-height") || "600", 10);
+const fitMode = (s.getAttribute("data-fit") || "container").toLowerCase(); // "container" | "content"
 
 if (mode === "inline") {
   const base = host.replace(/\/$/,'');
@@ -27,27 +28,42 @@ if (mode === "inline") {
   qp.set("siteId", siteId);
   if (clientId) qp.set("clientId", clientId);
   qp.set("mode", "inline");
+   qp.set("fit", fitMode);
 
-  iframe.src   = `${base}/aiw/widget-frame.html?${qp.toString()}`;
+ iframe.src   = `${base}/aiw/widget-frame.html?${qp.toString()}`;
   iframe.style.width = "100%";
-  iframe.style.height = (isFinite(iHeight) ? iHeight : 600) + "px";
   iframe.style.border = "0";
   iframe.style.display = "block";
   iframe.style.maxWidth = "100%";
   iframe.style.boxSizing = "border-box";
-iframe.setAttribute("scrolling", "no"); // старый атрибут, но помогает некоторым браузерам
+  iframe.setAttribute("scrolling", "no");
   iframe.allow = "clipboard-write";
-  mount.appendChild(iframe);
 
-  // авто-ресайз по сообщениям из фрейма
-  window.addEventListener("message", (e) => {
-    if (!e?.data || e.data.type !== "aiw:resize") return;
-    // если хочешь — можешь проверить e.origin === base
-    if (e.source === iframe.contentWindow) {
-      const h = Math.max(300, parseInt(e.data.height || "0", 10) || 0);
-      iframe.style.height = h + "px";
-    }
-  });
+  // fit=container → высота равна высоте контейнера (наблюдаем за ним)
+  function setHeightFromContainer() {
+    const rect = mount.getBoundingClientRect();
+    const h = Math.round(rect.height || 0);
+    iframe.style.height = (h > 0 ? h : Math.max(200, iHeight)) + "px";
+  }
+
+  if (fitMode === "container") {
+    setHeightFromContainer();                     // стартовая
+    const ro = new ResizeObserver(setHeightFromContainer);
+    ro.observe(mount);                            // реакция на изменение контейнера
+    window.addEventListener("resize", setHeightFromContainer);
+  } else {
+    // fit=content → ребенок сам присылает высоту
+  iframe.style.height = Math.max(200, iHeight) + "px";
+    window.addEventListener("message", (e) => {
+      if (!e?.data || e.data.type !== "aiw:resize") return;
+      if (e.source === iframe.contentWindow) {
+        const h = Math.max(200, parseInt(e.data.height || "0", 10) || 0);
+        iframe.style.height = h + "px";
+      }
+    });
+  }
+
+  mount.appendChild(iframe);
 
   // важно: в inline-режиме ЗАВЕРШАЕМ загрузчик и ничего дальше не подгружаем
   return;
