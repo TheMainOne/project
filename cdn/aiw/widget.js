@@ -13,11 +13,11 @@ aiw widget (fixed)
   const WELCOME  = CFG.welcome || "Hi! How can I help?";
   const LANG     = CFG.lang || "en";
   const AUTOSTART   = CFG.autostart === true;
-  const AUTO_DELAY  = Math.max(0, CFG.autostartDelay || 5000);
-  const AUTO_MODE   = (CFG.autostartMode || "local").toLowerCase(); // "local"|"ai"
+  const AUTO_DELAY  = Math.max(0, (CFG.autostartDelay ?? 5000));
+  const AUTO_MODE   = (CFG.autostartMode ?? "local").toLowerCase();
   const AUTO_MSG    = CFG.autostartMessage || "";
   const AUTO_PROMPT = CFG.autostartPrompt || "";
-  const AUTO_COOLDOWN_HOURS = Math.max(0, CFG.autostartCooldownHours || 12);
+  const AUTO_COOLDOWN_HOURS = Math.max(0, (CFG.autostartCooldownHours ?? 12));
   const USER_INTERACTED_KEY = `aiw:userInteracted:session:${SITE_ID}`;
   const PRESERVE_HISTORY   = CFG.preserveHistory !== false;   // по умолчанию true (сохранять историю)
 const RESET_HISTORY_ON_OPEN = CFG.resetHistoryOnOpen === true; // если true — чистим при каждом открытии
@@ -41,6 +41,7 @@ const THEME = {
   time: "rgba(229,231,235,.6)"
 };
 
+console.debug("[AIW][cfg]", { AUTOSTART, AUTO_MODE, AUTO_DELAY, AUTO_COOLDOWN_HOURS, AUTO_MSG });
 
   const AUTO_KEY_SESSION = `aiw:autoGreet:session:${SITE_ID}`;
   const AUTO_KEY_LAST_TS = `aiw:autoGreet:lastTs:${SITE_ID}`;
