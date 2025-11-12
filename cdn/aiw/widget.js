@@ -180,12 +180,14 @@ if (PRESERVE_HISTORY === false) {
 
   // ---------- DOM ----------
   const root = document.createElement("div");
+ // host должен уметь растянуться на высоту iframe
+ root.style.cssText = "display:block;height:100%;";
   const shadow = root.attachShadow({ mode: "open" });
 
   // styles (Shadow DOM)
 const style = document.createElement("style");
 style.textContent = `
-:host { all: initial; }
+:host { all: initial; display:block; height:100%; }
 html, body { height: 100%; margin: 0; }
 body { overflow: hidden; }
 @keyframes aiw-bounce { 0%,80%,100%{transform:scale(.6);opacity:.45} 40%{transform:scale(1);opacity:1} }
@@ -258,11 +260,11 @@ wrap.className = "aiw-wrap";
 if (INLINE) {
   // внутри iframe/inline — это обычный блочный контейнер
   wrap.style.position = "relative";
-  wrap.style.bottom = "auto";
-  wrap.style.right  = "auto";
-  wrap.style.left   = "auto";
-  wrap.style.width  = "100%";
-  wrap.style.height = "100%"; 
+  wrap.style.bottom   = "auto";
+  wrap.style.right    = "auto";
+  wrap.style.left     = "auto";
+  wrap.style.width    = "100%";
+  wrap.style.height   = "100%";   // важно: 100% от host, который мы теперь растянули
 } else {
   wrap.style.position = "fixed";
   wrap.style.bottom = "20px";
