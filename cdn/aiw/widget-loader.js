@@ -40,11 +40,15 @@ if (mode === "inline") {
   iframe.allow = "clipboard-write";
 
   // fit=container → высота равна высоте контейнера (наблюдаем за ним)
-  function setHeightFromContainer() {
+function setHeightFromContainer() {
+  // сначала пробуем offsetHeight (учитывает css height), потом rect
+  let h = mount.offsetHeight;
+  if (!h) {
     const rect = mount.getBoundingClientRect();
-    const h = Math.round(rect.height || 0);
-    iframe.style.height = (h > 0 ? h : Math.max(200, iHeight)) + "px";
+    h = Math.round(rect.height || 0);
   }
+  iframe.style.height = (h > 0 ? h : Math.max(200, iHeight)) + "px";
+}
 
   if (fitMode === "container") {
     setHeightFromContainer();                     // стартовая
