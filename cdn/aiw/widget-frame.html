@@ -1,0 +1,83 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1"/>
+  <title>AIW Inline</title>
+  <style>
+    html,body { margin:0; padding:0; background:transparent; }
+  </style>
+</head>
+<body>
+<script>
+(function(){
+  // читаем query: siteId, clientId, mode
+  const p = new URLSearchParams(location.search);
+  const siteId   = p.get("siteId") || "";
+  const clientId = p.get("clientId") || "";
+  const mode     = (p.get("mode") || "inline").toLowerCase();
+
+  // адрес бэкенда берём из origin, если страница хостится на том же домене
+  // поменяй при необходимости на свой базовый URL:
+  const host = location.origin;
+
+  // тот же феч конфига, что и в loader
+  const base = host.replace(/\/$/,'');
+  const url  = new URL(base + "/api/clients/widget-config");
+  if (siteId)   url.searchParams.set("siteId", siteId);
+  if (clientId) url.searchParams.set("clientId", clientId);
+
+  (async () => {
+    let config = null;
+    try {
+      const r = await fetch(url.toString(), { method:"GET", credentials:"omit", mode:"cors" });
+      if (!r.ok) throw new Error("HTTP " + r.status);
+      const j = await r.json();
+      config = (j && (j.config || j)) || null;
+    } catch(e) {
+      console.warn("[AIW][frame] config fetch failed:", e);
+    }
+
+    const cfg = {
+      endpoint: base + "/api/aiw/chat",
+      siteId,
+      title: (config && (config.widgetTitle || config.title)) || "AI Assistant",
+      position: (config && config.position) || "br",
+      accent: (config && (config.primaryColor || config.accent)) || "#6D28D9",
+      welcome: (config && (config.welcomeMessage || config.welcome)) || "Hi! How can I help?",
+      lang: (config && config.lang) || "en",
+      backgroundColor: (config && config.backgroundColor) || "#0f0f0f",
+      textColor: (config && config.textColor) || "#ffffff",
+      borderColor: (config && (config.borderColor || config.primaryColor)) || "#6D28D9",
+      logo: (
+        config?.logo?.url ||
+        config?.logoUrl ||
+        (typeof config?.logo === "string" ? config.logo : null)
+      ),
+      autostart: !!(config && config.autostart),
+      autostartDelay: Number(config?.autostartDelay ?? 5000),
+      autostartMode: (config?.autostartMode ?? "local").toLowerCase(),
+      autostartMessage: (config && config.autostartMessage) || "",
+      autostartPrompt: (config && config.autostartPrompt) || "",
+      autostartCooldownHours: Number(config?.autostartCooldownHours ?? 12),
+      preserveHistory: (config ? config.preserveHistory !== false : true),
+      resetHistoryOnOpen: !!(config && config.resetHistoryOnOpen),
+
+      // ▼ NEW: подсказка виджету, что он рендерится внутри iframe как inline
+      mode
+    };
+
+    // отдаём конфиг виджету
+    window.__AIW_CONFIG__ = cfg;
+
+    // подключаем тот же widget.js
+    const js = document.createElement("script");
+    js.src = base + "/aiw/widget.js?v=" + Date.now();
+    js.async = true;
+    js.crossOrigin = "anonymous";
+    document.head.appendChild(js);
+  })();
+})();
+</script>
+</body>
+</html>

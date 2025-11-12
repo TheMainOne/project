@@ -5,6 +5,10 @@ aiw widget (fixed)
 */
 (function widget () {
   const CFG = (window.__AIW_CONFIG__ || {});
+  // ▼ NEW: режим рендера
+const MODE   = (CFG.mode || new URLSearchParams(location.search).get("mode") || "float").toLowerCase();
+const INLINE = MODE === "inline";
+
   const ENDPOINT = CFG.endpoint;
   const SITE_ID  = CFG.siteId || (location.host + "::default");
   const TITLE    = CFG.title || "AI Assistant";
@@ -244,19 +248,49 @@ style.textContent = `
 
   shadow.appendChild(style);
 
-  const wrap = document.createElement("div");
-  wrap.className = "aiw-wrap";
-wrap.style[POSITION === "br" ? "right" : "left"] = "20px";
+const wrap = document.createElement("div");
+wrap.className = "aiw-wrap";
 
-  shadow.appendChild(wrap);
+// ▼ NEW: позиционирование зависит от режима
+if (INLINE) {
+  // внутри iframe/inline — это обычный блочный контейнер
+  wrap.style.position = "relative";
+  wrap.style.bottom = "auto";
+  wrap.style.right = "auto";
+  wrap.style.left = "auto";
+  wrap.style.width = "100%";
+} else {
+  wrap.style.position = "fixed";
+  wrap.style.bottom = "20px";
+  wrap.style[POSITION === "br" ? "right" : "left"] = "20px";
+}
 
-  const btn = document.createElement("button");
+shadow.appendChild(wrap);
+
+ const btn = document.createElement("button");
 btn.className = "aiw-btn";
 btn.textContent = "AI";
 
 const panel = document.createElement("div");
 panel.className = "aiw-panel";
-panel.style[POSITION === "br" ? "right" : "left"] = "0";
+
+// ▼ NEW: размеры/позиция под inline
+if (INLINE) {
+  panel.style.position = "relative";
+  panel.style.bottom = "auto";
+  panel.style.right = "auto";
+  panel.style.left = "auto";
+  panel.style.width = "100%";
+  panel.style.maxWidth = "100%";
+  panel.style.height = "auto";
+  panel.style.maxHeight = "none";
+  panel.style.display = "flex";   // сразу видимая
+} else {
+  panel.style.position = "absolute";
+  panel.style.bottom = "70px";
+  panel.style[POSITION === "br" ? "right" : "left"] = "0";
+  panel.style.display = "none";   // открывается по кнопке
+}
 
 
 const header = document.createElement("div");
@@ -313,8 +347,9 @@ footer.appendChild(sendBtn);
   panel.appendChild(header);
   panel.appendChild(body);
   panel.appendChild(footer);
-  wrap.appendChild(btn);
-  wrap.appendChild(panel);
+// в inline кнопка не нужна
+if (!INLINE) wrap.appendChild(btn);
+wrap.appendChild(panel);
   document.body.appendChild(root);
 
   // typing bubble (created AFTER body exists)
@@ -332,9 +367,11 @@ function showTyping() {
   if (!typing.isConnected) messagesWrap.appendChild(typing);
   typing.style.visibility = "visible";
   body.scrollTop = body.scrollHeight;
+    postHeight(); 
 }
 function hideTyping() {
   typing.style.visibility = "hidden";
+    postHeight();
 }
 
 function dedupeAutogreetAtTail() {
@@ -399,29 +436,51 @@ function render() {
 
   updateEmptyHint();
   body.scrollTop = body.scrollHeight;
+    postHeight();
 }
+
+function postHeight() {
+  try {
+    if (window.parent && window.parent !== window) {
+      const h = document.documentElement.scrollHeight;
+      window.parent.postMessage({ type: "aiw:resize", height: h }, "*");
+    }
+  } catch {}
+}
+
 
 
   render();
 
-  let open = false;
+  try {
+  const ro = new ResizeObserver(() => postHeight());
+  ro.observe(document.documentElement);
+} catch {}
+
+let open = INLINE ? true : false;
+
+if (!INLINE) {
   btn.addEventListener("click", () => {
-  open = !open;
-  panel.style.display = open ? "flex" : "none";
-
-  if (open) {
-    if (RESET_HISTORY_ON_OPEN) {
-      try { localStorage.removeItem(storeKey); } catch {}
-      try { sessionStorage.removeItem(USER_INTERACTED_KEY); } catch {}
-      history = [];
-      writeHistory(history);
-      render();
+    open = !open;
+    panel.style.display = open ? "flex" : "none";
+    if (open) {
+      if (RESET_HISTORY_ON_OPEN) {
+        try { localStorage.removeItem(storeKey); } catch {}
+        try { sessionStorage.removeItem(USER_INTERACTED_KEY); } catch {}
+        history = [];
+        writeHistory(history);
+        render();
+      }
+      setTimeout(() => input.focus(), 0);
     }
-    setTimeout(() => input.focus(), 0);
-  }
-});
-
+  });
   close.addEventListener("click", () => { open = false; panel.style.display = "none"; });
+} else {
+  // в inline закрывашку можно спрятать или оставить — на твой вкус
+  close.style.display = "none";
+}
+
+
 resetBtn.addEventListener("click", (e) => {
   e.preventDefault();
 
@@ -454,17 +513,15 @@ resetBtn.addEventListener("click", (e) => {
   let inflight = null;
 
 
- function panelIsHidden() {
-   try { return getComputedStyle(panel).display === "none"; } catch { return false; }
- }
- function openPanelIfHidden() {
-   if (panelIsHidden()) {
-     // можно эмулировать клик...
-     // btn.click();
-     // ...или открыть гарантированно без зависимости от состояния:
-     panel.style.display = "flex";
-   }
- }
+function panelIsHidden() {
+  if (INLINE) return false;
+  try { return getComputedStyle(panel).display === "none"; } catch { return false; }
+}
+function openPanelIfHidden() {
+  if (INLINE) return; // в inline всегда открыт
+  if (panelIsHidden()) panel.style.display = "flex";
+}
+
 
 function showLocalGreeting() {
   if (!AUTO_MSG) { log("showLocalGreeting: no AUTO_MSG"); return; }

@@ -1,4 +1,4 @@
-// aiw/widget-loader.js
+// cdn/aiw/widget-loader.js
 (function () {
   const s = document.currentScript || (function () {
     const arr = document.getElementsByTagName("script");
@@ -9,6 +9,46 @@
   const siteId    = s.getAttribute("data-site-id");     // напр. ZORKA_SITE_001
   const clientId  = s.getAttribute("data-client-id");   // (опционально) ObjectId клиента
   const jsSrc     = s.getAttribute("data-src") || (host.replace(/\/$/,'') + "/aiw/widget.js");
+
+  // ▼ NEW: поддержка inline-режима через <iframe>
+const mode   = (s.getAttribute("data-mode") || "float").toLowerCase(); // "inline" | "float"
+const target = s.getAttribute("data-target");   // CSS-селектор контейнера
+const iHeight = parseInt(s.getAttribute("data-height") || "600", 10);
+
+if (mode === "inline") {
+  const base = host.replace(/\/$/,'');
+  const mount =
+    (target && document.querySelector(target)) ||
+    (() => { const d=document.createElement("div"); document.body.appendChild(d); return d; })();
+
+  const iframe = document.createElement("iframe");
+  // передаём siteId/clientId и флаг mode=inline в страницу фрейма
+  const qp = new URLSearchParams();
+  qp.set("siteId", siteId);
+  if (clientId) qp.set("clientId", clientId);
+  qp.set("mode", "inline");
+
+  iframe.src   = `${base}/aiw/widget-frame.html?${qp.toString()}`;
+  iframe.style.width = "100%";
+  iframe.style.height = (isFinite(iHeight) ? iHeight : 600) + "px";
+  iframe.style.border = "0";
+  iframe.style.display = "block";
+  iframe.allow = "clipboard-write";
+  mount.appendChild(iframe);
+
+  // авто-ресайз по сообщениям из фрейма
+  window.addEventListener("message", (e) => {
+    if (!e?.data || e.data.type !== "aiw:resize") return;
+    // если хочешь — можешь проверить e.origin === base
+    if (e.source === iframe.contentWindow) {
+      const h = Math.max(300, parseInt(e.data.height || "0", 10) || 0);
+      iframe.style.height = h + "px";
+    }
+  });
+
+  // важно: в inline-режиме ЗАВЕРШАЕМ загрузчик и ничего дальше не подгружаем
+  return;
+}
 
   if (!host || !siteId) { console.error("[AIW] missing data-host/site-id"); return; }
   if (window.__AIW_LOADED__) return;
