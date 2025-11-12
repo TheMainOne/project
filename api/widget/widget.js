@@ -769,16 +769,27 @@ console.log("[AIW][timings]", JSON.stringify({
     }
 console.log("[AIW] clientId:", String(clientId), "query:", query);
     // ====== RAG retrieve ======
-const { contexts: ragContexts = [] } = await T.wrap("retrieve", async () =>
-  retrieveUnified({ clientId, query })   
-);
-const contexts = ragContexts; // дальше твой код использует contexts
-console.log("[AIW] contexts:", contexts.length);
+// ====== RAG retrieve ======
+const retrieveRes = await T.wrap("retrieve", async () => {
+  try {
+    const r = await retrieveUnified({ clientId, siteId, query });
+    if (r?.contexts?.length) {
+      res.setHeader("X-AIW-Retrieve-Mode", "unified");
+      return r;
+    }
+  } catch (e) {
+    console.warn("[retrieveUnified]", e?.message || e);
+  }
+  // fallback на старый топ-K по сайту, если unified ничего не дал
+  const web = await retrieveTopK(siteId, query, { k: 5, softLimit: 300, minScore: 0.18 });
+  res.setHeader("X-AIW-Retrieve-Mode", "fallback-topK");
+  return { contexts: (web || []).map(w => ({ source: "web", url: w.url, text: w.text || w.snippet || "", score: w.score ?? 0.4 })) };
+});
 
-//     const contexts = await T.wrap("retrieve", async () =>
-//   retrieveTopK(siteId, query, { k: 5, softLimit: 300, minScore: 0.18 })
-// );
-timing.retrieve = T.get().retrieve; // чтобы дублировать в X-AIW-Timing как раньше
+const contexts = retrieveRes.contexts || [];
+res.setHeader("X-AIW-Contexts", String(contexts.length));
+console.log("[AIW] contexts:", contexts.length);
+timing.retrieve = T.get().retrieve;
 
     // ====== Fast extractive ======
     const fast = tryFastAnswer(query, contexts, lang);

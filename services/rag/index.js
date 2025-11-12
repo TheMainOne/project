@@ -17,28 +17,36 @@ export async function retrieveUnified({
   includeWeb = true,
   minTextLen = 25
 }) {
-  const cid =
-    clientId instanceof mongoose.Types.ObjectId
-      ? clientId
-      : (mongoose.isValidObjectId(clientId) ? new mongoose.Types.ObjectId(clientId) : null);
+  // коэрсим clientId к ObjectId, строку оставляем как есть
+  let cid = null;
+  if (clientId instanceof mongoose.Types.ObjectId) {
+    cid = clientId;
+  } else if (typeof clientId === "string" && mongoose.isValidObjectId(clientId)) {
+    cid = new mongoose.Types.ObjectId(clientId);
+  }
 
-  if (!cid) return { contexts: [] };
+  // строим OR-фильтр: подойдут чанки с ИЛИ clientId, ИЛИ siteId
+  const or = [];
+  if (cid) or.push({ clientId: cid });
+  if (siteId) or.push({ siteId });
+
+  if (!or.length) return { contexts: [] };
+
+  const baseFilter = { $or: or };
 
   const contexts = [];
 
-  // -------- 1) Клиентские документы (MongoDB $text) --------
+  // -------- 1) Клиентские документы (MongoDB $text с фолбэком на RegExp) --------
   let chunks = [];
   try {
-    chunks = await ClientDocChunk.find(
-      { clientId: cid, ...(query ? { $text: { $search: query } } : {}) },
-      { score: { $meta: "textScore" } }
-    )
+    const findFilter = query ? { ...baseFilter, $text: { $search: query } } : baseFilter;
+    chunks = await ClientDocChunk.find(findFilter, { score: { $meta: "textScore" } })
       .sort(query ? { score: { $meta: "textScore" } } : { createdAt: -1 })
       .limit(kClient * 2)
       .lean();
   } catch (e) {
     const rx = new RegExp(escapeRegExp(query || ""), "i");
-    chunks = await ClientDocChunk.find({ clientId: cid, content: rx })
+    chunks = await ClientDocChunk.find({ ...baseFilter, content: rx })
       .sort({ createdAt: -1 })
       .limit(kClient * 2)
       .lean();
@@ -57,10 +65,9 @@ export async function retrieveUnified({
     .slice(0, kClient)
     .map((c) => {
       const d = c.documentId ? docMap.get(String(c.documentId)) : null;
-      const url =
-        d?.publicUrl
-          ? addAnchor(d.publicUrl, chunkAnchor(c))
-          : `/api/client-documents/${String(c.documentId)}?chunk=${c._id}`;
+      const url = d?.publicUrl
+        ? addAnchor(d.publicUrl, chunkAnchor(c))
+        : `/api/client-documents/${String(c.documentId)}?chunk=${c._id}`;
 
       const title = d?.originalName || c.title || "Client Document";
       const score = typeof c.score === "number" ? c.score : 0.5;
@@ -78,7 +85,7 @@ export async function retrieveUnified({
   contexts.push(...normalizedClient);
 
   // -------- 2) Веб-источники (краулер) — опционально --------
-  // (оставляю закомментированным, как в твоем коде)
+  // (оставлено закомментированным — включишь при необходимости)
   // if (includeWeb && siteId && siteId !== "unknown-site") {
   //   try {
   //     const web = await retrieveTopK(siteId, query, { k: kWeb, softLimit: 300, minScore: 0.18 });
@@ -98,9 +105,9 @@ export async function retrieveUnified({
 
   const deduped = dedupeByUrl(contexts);
   deduped.sort((a, b) => (b.score ?? 0) - (a.score ?? 0));
-
   return { contexts: deduped.slice(0, kClient + (includeWeb ? kWeb : 0)) };
 }
+
 
 // ====== helpers ======
 function escapeRegExp(s) {
