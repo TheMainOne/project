@@ -4,6 +4,7 @@ import mongoose from "mongoose";
 import Client from "../models/Client.js";
 import User from "../models/user.js";
 import ClientDocument from "../models/ClientDocument.js";
+import s3 from "../services/amazon/s3Client.js";
 
 const isObjectId = (v) => /^[0-9a-fA-F]{24}$/.test(String(v));
 
@@ -364,6 +365,7 @@ export async function listClientDocuments(req, res) {
         fileSize: d.fileSize,
         isActive: d.isActive,
         createdAt: d.createdAt,
+        s3Url: d.s3Url,
       }))
     );
   } catch (e) {
