@@ -499,6 +499,30 @@ style.textContent = `
   color:${THEME.text};
   border-color:${THEME.bubbleBorder};
 }
+  .aiw-bubble-wrap{
+  display:flex;
+  flex-direction:column;
+  max-width:85%;
+}
+
+.aiw-time{
+  margin-top:4px;
+  font-size:11px;
+  color:${THEME.time};
+}
+
+/* для сообщений ассистента — время слева под пузырём */
+.aiw-row.ai .aiw-bubble-wrap{
+  align-items:flex-start;
+  text-align:left;
+}
+
+/* для сообщений пользователя — время справа под пузырём */
+.aiw-row.me .aiw-bubble-wrap{
+  align-items:flex-end;
+  text-align:right;
+}
+
 
 
 .aiw-input{
@@ -850,15 +874,23 @@ if (!isUser && LOGO) {
   ava.appendChild(img);
 } else if (isUser) {
   // красивая иконка для пользователя
-  ava.textContent = "👤";         // можешь заменить на 😊, 👤, или первую букву
+    ava.innerHTML = `
+    <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true">
+      <circle cx="12" cy="8" r="4" fill="currentColor"></circle>
+      <path d="M4 20c1.5-3 3.5-5 8-5s6.5 2 8 5" fill="currentColor"></path>
+    </svg>
+  `;
 }
 
 if (!isUser) row.appendChild(ava);
 
 // bubble + time
 const bubbleWrap = document.createElement("div");
+bubbleWrap.className = "aiw-bubble-wrap";
+
 const bubble = document.createElement("div");
 bubble.className = "aiw-bubble";
+
 bubble.textContent = m.content || "";
 bubbleWrap.appendChild(bubble);
 
