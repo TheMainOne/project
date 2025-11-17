@@ -108,12 +108,7 @@ function setHeightFromContainer() {
       backgroundColor: (config && config.backgroundColor) || "#0f0f0f",
       textColor: (config && config.textColor) || "#ffffff",
       borderColor: (config && (config.borderColor || config.primaryColor)) || "#6D28D9",
-     logo: (
-  config?.logo?.url ||
-  config?.logoUrl ||
-  (typeof config?.logo === "string" ? config.logo : null)
-),
-
+     logo: config?.logo?.url || null,
       autostart: !!(config && config.autostart),
       autostartDelay: Number(config?.autostartDelay ?? 5000),
       autostartMode: (config?.autostartMode ?? "local").toLowerCase(),

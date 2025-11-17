@@ -10,6 +10,7 @@ const MODE   = (CFG.mode || new URLSearchParams(location.search).get("mode") || 
 const INLINE = MODE === "inline";
 const FIT_MODE = (new URLSearchParams(location.search).get("fit") || "container").toLowerCase();
 const FILL_CONTAINER = INLINE && FIT_MODE === "container";
+const MAX_LEN = 1000;
 
 
   if (INLINE) {
@@ -55,11 +56,11 @@ const FILL_CONTAINER = INLINE && FIT_MODE === "container";
   const PRESERVE_HISTORY   = CFG.preserveHistory !== false;   // по умолчанию true (сохранять историю)
 const RESET_HISTORY_ON_OPEN = CFG.resetHistoryOnOpen === true; // если true — чистим при каждом открытии
 // логотип для аватарки ассистента
-const LOGO = (
-  typeof CFG.logo === "string"
-    ? CFG.logo
-    : (CFG.logo && CFG.logo.url) // поддержка { url: "..." }
-) || null;
+const LOGO =
+  CFG.logoUrl ||                              // из loader'а
+  (typeof CFG.logo === "string" ? CFG.logo :  // если положили строку
+   CFG.logo && CFG.logo.url) ||               // если положили объект { url }
+  null;
 
 const DEBUG = (CFG.debugAutostart === true) || /\baiwDebug=1\b/.test(location.search);
 const log = (...a) => { if (DEBUG) console.debug("[AIW]", ...a); };
@@ -264,7 +265,52 @@ style.textContent = `
    box-shadow:0 14px 44px rgba(0,0,0,.25);
    border:1px solid ${THEME.border}22;
  }
+.aiw-header{
+  padding:12px 16px;
+  background:${THEME.accent};
+  color:#fff;
+  font-weight:700;
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+}
 
+.aiw-header-brand{
+  display:flex;
+  align-items:center;
+  gap:8px;
+}
+
+.aiw-header-logo{
+  width:24px;
+  height:24px;
+  border-radius:9999px;
+  overflow:hidden;
+  background:rgba(0,0,0,.25);
+  border:1px solid rgba(255,255,255,.3);
+  flex:0 0 24px;
+}
+
+.aiw-header-logo img{
+  width:100%;
+  height:100%;
+  object-fit:cover;
+  display:block;
+}
+
+.aiw-header .aiw-actions{
+  display:flex;
+  align-items:center;
+  gap:8px;
+}
+
+.aiw-header button{
+  background:transparent;
+  border:none;
+  color:#fff;
+  font-size:18px;
+  cursor:pointer;
+}
 .aiw-header{
   padding:12px 16px;
   background:${THEME.accent};
@@ -286,7 +332,40 @@ style.textContent = `
   font-size:18px;
   cursor:pointer;
 }
+.aiw-footer{
+  padding:10px 16px 10px 10px;   /* немного правого паддинга */
+  border-top:1px solid ${THEME.bubbleBorder};
+  display:flex;
+  gap:8px;
+  align-items:center;
+  background:${THEME.panel};
+}
 
+.aiw-send{
+  position:relative;
+  margin-left:-40px;             /* чуть меньше, чтобы не уползала вправо */
+  width:36px;
+  height:36px;
+  border:none;
+  border-radius:9999px;
+  background:${THEME.accent};
+  color:#fff;
+  cursor:pointer;
+  flex:0 0 36px;
+}
+
+.aiw-footer-meta{
+  display:flex;
+  justify-content:space-between;
+  align-items:center;
+  padding:4px 16px 10px;
+  font-size:11px;
+  color:${THEME.time};
+}
+
+.aiw-char-counter{
+  flex:0 0 auto;
+}
 .aiw-body{
   display:flex;
   flex-direction:column;
@@ -507,17 +586,40 @@ if (INLINE && FIT_MODE === "content") {
 
 const header = document.createElement("div");
 header.className = "aiw-header";
-header.innerHTML = `<span>${TITLE}</span>`;
+
+// блок с брендом: логотип + текст
+const brand = document.createElement("div");
+brand.className = "aiw-header-brand";
+
+const brandLogo = document.createElement("div");
+brandLogo.className = "aiw-header-logo";
+if (LOGO) {
+  const img = document.createElement("img");
+  img.src = LOGO;
+  img.alt = "logo";
+  brandLogo.appendChild(img);
+}
+
+const brandTitle = document.createElement("span");
+brandTitle.textContent = TITLE;
+
+brand.appendChild(brandLogo);
+brand.appendChild(brandTitle);
+
 const close = document.createElement("button");
 close.textContent = "×";
 const resetBtn = document.createElement("button");
 resetBtn.title = LANG.startsWith("ru") ? "Сбросить диалог" : "Reset chat";
 resetBtn.textContent = "↺";
+
 const actions = document.createElement("div");
 actions.className = "aiw-actions";
-actions.appendChild(resetBtn); actions.appendChild(close);
-header.appendChild(actions);
+actions.appendChild(resetBtn);
+actions.appendChild(close);
 
+// собираем хедер
+header.appendChild(brand);
+header.appendChild(actions);
 
 const body = document.createElement("div");
 body.className = "aiw-body";
@@ -545,8 +647,9 @@ footer.className = "aiw-footer";
 
 const input = document.createElement("textarea");
 input.rows = 1;
-input.placeholder = LANG.startsWith("ru") ? "Спросите что-нибудь…" : "Ask me anything…";
+input.placeholder = LANG.startsWith("ru") ? "Спросите что-нибудь…" : "Type your message…";
 input.className = "aiw-input";
+input.maxLength = MAX_LEN;
 
 const sendBtn = document.createElement("button");
 sendBtn.className = "aiw-send";
@@ -559,6 +662,24 @@ footer.appendChild(sendBtn);
   panel.appendChild(header);
   panel.appendChild(body);
   panel.appendChild(footer);
+
+
+  const footerMeta = document.createElement("div");
+footerMeta.className = "aiw-footer-meta";
+
+const footerHint = document.createElement("div");
+footerHint.textContent = LANG.startsWith("ru")
+  ? "Enter — отправить, Shift+Enter — новая строка"
+  : "Press Enter to send, Shift+Enter for new line";
+
+const footerCounter = document.createElement("div");
+footerCounter.className = "aiw-char-counter";
+footerCounter.textContent = `0/${MAX_LEN}`;
+
+footerMeta.appendChild(footerHint);
+footerMeta.appendChild(footerCounter);
+
+panel.appendChild(footerMeta);
 // в inline кнопка не нужна
 if (!INLINE) wrap.appendChild(btn);
 wrap.appendChild(panel);
@@ -602,7 +723,13 @@ function dedupeAutogreetAtTail() {
   }
 }
 
+function updateCounter() {
+  const len = input.value.length;
+  footerCounter.textContent = `${len}/${MAX_LEN}`;
+}
 
+input.addEventListener("input", updateCounter);
+updateCounter(); // начальное значение
   // ---------- Chat logic ----------
 let history = readHistory();
 
