@@ -52,6 +52,7 @@ const ACCENT = CFG.primaryColor || CFG.accent || "#6D28D9";
   const AUTO_MSG    = CFG.autostartMessage || "";
   const AUTO_PROMPT = CFG.autostartPrompt || "";
   const AUTO_COOLDOWN_HOURS = Math.max(0, (CFG.autostartCooldownHours ?? 12));
+  const INLINE_AUTOSTART_CFG = CFG.inlineAutostart || null;
   const USER_INTERACTED_KEY = `aiw:userInteracted:session:${SITE_ID}`;
   const PRESERVE_HISTORY   = CFG.preserveHistory !== false;   // по умолчанию true (сохранять историю)
 const RESET_HISTORY_ON_OPEN = CFG.resetHistoryOnOpen === true; // если true — чистим при каждом открытии
@@ -846,6 +847,59 @@ updateCounter(); // начальное значение
   // ---------- Chat logic ----------
 let history = readHistory();
 
+// ===== INLINE AUTOSTART (сценарий из нескольких сообщений) =====
+const INLINE_AUTO_SESSION_KEY  = `aiw:inlineAutoGreet:session:${SITE_ID}`;
+const INLINE_AUTO_COOLDOWN_KEY = `aiw:inlineAutoGreet:lastTs:${SITE_ID}`;
+
+function runInlineAutostart(cfg) {
+  if (!INLINE) return;                               // только для inline
+  if (!cfg || cfg.enabled !== true) return;
+
+  const script = Array.isArray(cfg.script) ? cfg.script : [];
+  if (!script.length) return;
+
+  // если уже есть история – не спамим (приветствие только когда чат "чистый")
+  if (history && history.length > 0) return;
+
+  const mode = (cfg.mode || "always").toLowerCase();
+  const cooldownMinutes = Math.max(0, cfg.cooldownMinutes || 0);
+  const now = Date.now();
+
+  if (mode === "session") {
+    if (sessionStorage.getItem(INLINE_AUTO_SESSION_KEY) === "1") return;
+    sessionStorage.setItem(INLINE_AUTO_SESSION_KEY, "1");
+  } else if (mode === "cooldown" && cooldownMinutes > 0) {
+    const lastTs = +(localStorage.getItem(INLINE_AUTO_COOLDOWN_KEY) || 0);
+    const diffMin = (now - lastTs) / 60000;
+    if (diffMin < cooldownMinutes) return;
+    localStorage.setItem(INLINE_AUTO_COOLDOWN_KEY, String(now));
+  }
+  // mode === "always" — без ограничений
+
+  let totalDelay = 0;
+
+  script.forEach((stepRaw, idx) => {
+    const step = stepRaw || {};
+    const text = sanitize(step.text || "");
+    if (!text) return;
+
+    const delay = Math.max(0, step.delayMs || 0);
+    totalDelay += delay;
+
+    setTimeout(() => {
+      history.push({
+        role: "assistant",
+        content: text,
+        meta: { kind: "inlineAutostart", stepIndex: idx },
+        ts: Date.now()
+      });
+      writeHistory(history);
+      render();
+    }, totalDelay);
+  });
+}
+
+
 function fmtTime(ts){
   try{
     return new Date(ts).toLocaleTimeString(LANG.startsWith("ru") ? "ru-RU" : "en-US", { hour:"2-digit", minute:"2-digit" });
@@ -1221,31 +1275,39 @@ history.push({
   window.addEventListener("aiw:close", aiwClose);
   window.addEventListener("aiw:toggle", aiwToggle);
   window.__AIW__ = { open: aiwOpen, close: aiwClose, toggle: aiwToggle };
-     try {
-    // первичный запуск через AUTO_DELAY
-    scheduleAutoGreet();
 
-     // Сразу логнем текущее состояние (до любых событий)
- log("init", {
-   sessionFlag: sessionStorage.getItem(AUTO_KEY_SESSION),
-   userInteracted: sessionStorage.getItem(USER_INTERACTED_KEY),
-   lastTs: +localStorage.getItem(AUTO_KEY_LAST_TS) || 0,
-   historyLen: (Array.isArray(history) ? history.length : -1)
- });
+    try {
+    if (INLINE && INLINE_AUTOSTART_CFG && INLINE_AUTOSTART_CFG.enabled) {
+      // НОВАЯ логика для inline-сценария
+      log("init: inlineAutostart enabled");
+      runInlineAutostart(INLINE_AUTOSTART_CFG);
+    } else {
+      // старый автостарт (float-виджет и inline без сценария)
+      scheduleAutoGreet();
 
-    // если вкладка стала видимой (вернулись на страницу) — пробуем ещё раз
-    document.addEventListener("visibilitychange", () => {
-      if (document.visibilityState === "visible") {
-        scheduleAutoGreet();
-     log("visible: recheck", {
-       sessionFlag: sessionStorage.getItem(AUTO_KEY_SESSION),
-       userInteracted: sessionStorage.getItem(USER_INTERACTED_KEY),
-       lastTs: +localStorage.getItem(AUTO_KEY_LAST_TS) || 0,
-       historyLen: (Array.isArray(history) ? history.length : -1)
-     });
-      }
-    });
+      // Сразу логнем текущее состояние (до любых событий)
+      log("init", {
+        sessionFlag: sessionStorage.getItem(AUTO_KEY_SESSION),
+        userInteracted: sessionStorage.getItem(USER_INTERACTED_KEY),
+        lastTs: +localStorage.getItem(AUTO_KEY_LAST_TS) || 0,
+        historyLen: (Array.isArray(history) ? history.length : -1)
+      });
+
+      // если вкладка стала видимой (вернулись на страницу) — пробуем ещё раз
+      document.addEventListener("visibilitychange", () => {
+        if (document.visibilityState === "visible") {
+          scheduleAutoGreet();
+          log("visible: recheck", {
+            sessionFlag: sessionStorage.getItem(AUTO_KEY_SESSION),
+            userInteracted: sessionStorage.getItem(USER_INTERACTED_KEY),
+            lastTs: +localStorage.getItem(AUTO_KEY_LAST_TS) || 0,
+            historyLen: (Array.isArray(history) ? history.length : -1)
+          });
+        }
+      });
+    }
   } catch (e) {
     console.debug("[AIW][autogreet] trigger error:", e);
   }
 })();
+

@@ -117,6 +117,7 @@ function setHeightFromContainer() {
       autostartCooldownHours: Number(config?.autostartCooldownHours ?? 12),
       preserveHistory: (config ? config.preserveHistory !== false : true),
       resetHistoryOnOpen: !!(config && config.resetHistoryOnOpen),
+      inlineAutostart: config?.inlineAutostart || null,
     };
 
     window.__AIW_CONFIG__ = cfg;

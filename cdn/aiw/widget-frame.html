@@ -77,6 +77,7 @@
       preserveHistory: (config ? config.preserveHistory !== false : true),
       resetHistoryOnOpen: !!(config && config.resetHistoryOnOpen),
 
+       inlineAutostart: config?.inlineAutostart || null,   // ← вот это добавляем
       // ▼ NEW: подсказка виджету, что он рендерится внутри iframe как inline
       mode
     };

@@ -1,5 +1,25 @@
 import mongoose from "mongoose";
 
+
+// ПЕРЕД WidgetConfigSchema:
+const InlineGreetingStepSchema = new mongoose.Schema(
+  {
+    text:    { type: String, required: true },
+    delayMs: { type: Number, default: 0, min: 0 },  // задержка от предыдущего сообщения
+  },
+  { _id: false }
+);
+
+const InlineAutostartSchema = new mongoose.Schema(
+  {
+    enabled:         { type: Boolean, default: false },                     // включить сценарий
+    mode:            { type: String, enum: ["always","session","cooldown"], default: "always" },
+    cooldownMinutes: { type: Number, default: 0, min: 0 },                  // для mode = cooldown
+    script:          { type: [InlineGreetingStepSchema], default: [] },     // массив шагов
+  },
+  { _id: false }
+);
+
 const LogoSchema = new mongoose.Schema(
   {
     s3Key:        { type: String, required: true },   // напр. "documents/uuid.png"
@@ -40,6 +60,8 @@ logo:               { type: LogoSchema, default: null },
 
   preserveHistory:        { type: Boolean, default: true },      // хранить историю диалога в localStorage
   resetHistoryOnOpen:     { type: Boolean, default: false },     // чистить историю при каждом открытии
+
+    inlineAutostart:        { type: InlineAutostartSchema, default: () => ({}) },
 
   // ===== LLM / системный промпт =====
   customSystemPrompt:     { type: String, default: "" },
