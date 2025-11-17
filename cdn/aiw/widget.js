@@ -514,13 +514,11 @@ style.textContent = `
 /* для сообщений ассистента — время слева под пузырём */
 .aiw-row.ai .aiw-bubble-wrap{
   align-items:flex-start;
-  text-align:left;
 }
 
 /* для сообщений пользователя — время справа под пузырём */
 .aiw-row.me .aiw-bubble-wrap{
   align-items:flex-end;
-  text-align:right;
 }
 
 
