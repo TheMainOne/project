@@ -56,6 +56,15 @@ const ACCENT = CFG.primaryColor || CFG.accent || "#6D28D9";
   const USER_INTERACTED_KEY = `aiw:userInteracted:session:${SITE_ID}`;
 const PRESERVE_HISTORY   = INLINE ? true : (CFG.preserveHistory !== false);
 const RESET_HISTORY_ON_OPEN = !INLINE && CFG.resetHistoryOnOpen === true;
+
+const STORAGE = (() => {
+  try {
+    if (INLINE && typeof sessionStorage !== "undefined") return sessionStorage;
+    if (typeof localStorage !== "undefined") return localStorage;
+  } catch {}
+  return null;
+})();
+
 // логотип для аватарки ассистента
 const LOGO =
   CFG.logoUrl ||                              // из loader'а
@@ -202,18 +211,25 @@ function markAutoGreetUsed() {
 const storeKey = `aiw_hist_${SITE_ID}`;
 
 const readHistory = () => {
-  if (PRESERVE_HISTORY === false) return [];
-  try { return JSON.parse(localStorage.getItem(storeKey) || "[]"); } catch { return []; }
+  if (PRESERVE_HISTORY === false || !STORAGE) return [];
+  try {
+    return JSON.parse(STORAGE.getItem(storeKey) || "[]");
+  } catch {
+    return [];
+  }
 };
 
 const writeHistory = (arr) => {
-  if (PRESERVE_HISTORY === false) return; // no-op
-  try { localStorage.setItem(storeKey, JSON.stringify(arr.slice(-30))); } catch {}
+  if (PRESERVE_HISTORY === false || !STORAGE) return; // no-op
+  try {
+    STORAGE.setItem(storeKey, JSON.stringify(arr.slice(-30)));
+  } catch {}
 };
 
-if (PRESERVE_HISTORY === false) {
-  try { localStorage.removeItem(storeKey); } catch {}
+if (PRESERVE_HISTORY === false && STORAGE) {
+  try { STORAGE.removeItem(storeKey); } catch {}
 }
+
 const sanitize = (s) => (s || "").toString().slice(0, MAX_LEN);
 
   function parseSSEChunk(buf, onData) {
@@ -1009,15 +1025,19 @@ if (!INLINE) {
 resetBtn.addEventListener("click", (e) => {
   e.preventDefault();
 
-  try { localStorage.removeItem(storeKey); } catch {}
+  try {
+    if (STORAGE) STORAGE.removeItem(storeKey);
+  } catch {}
   try { sessionStorage.removeItem(USER_INTERACTED_KEY); } catch {}
+
   history = [];
   writeHistory(history);
   SESSION_ID = newSessionId();
-   input.value = "";
-    updateCounter(); 
+  input.value = "";
+  updateCounter();
   render();
 });
+
   input.addEventListener("keydown", (e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); doSend(); } });
   sendBtn.addEventListener("click", doSend);
 
