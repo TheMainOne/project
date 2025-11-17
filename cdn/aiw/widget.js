@@ -54,8 +54,8 @@ const ACCENT = CFG.primaryColor || CFG.accent || "#6D28D9";
   const AUTO_COOLDOWN_HOURS = Math.max(0, (CFG.autostartCooldownHours ?? 12));
   const INLINE_AUTOSTART_CFG = CFG.inlineAutostart || null;
   const USER_INTERACTED_KEY = `aiw:userInteracted:session:${SITE_ID}`;
-  const PRESERVE_HISTORY   = CFG.preserveHistory !== false;   // по умолчанию true (сохранять историю)
-const RESET_HISTORY_ON_OPEN = CFG.resetHistoryOnOpen === true; // если true — чистим при каждом открытии
+const PRESERVE_HISTORY   = INLINE ? true : (CFG.preserveHistory !== false);
+const RESET_HISTORY_ON_OPEN = !INLINE && CFG.resetHistoryOnOpen === true;
 // логотип для аватарки ассистента
 const LOGO =
   CFG.logoUrl ||                              // из loader'а
