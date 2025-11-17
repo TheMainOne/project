@@ -324,10 +324,10 @@ style.textContent = `
   cursor:pointer;
 }
 .aiw-footer{
+  position:relative;                     /* нужно для абсолютной кнопки */
   padding:10px 16px;
   border-top:1px solid ${THEME.bubbleBorder};
   display:flex;
-  gap:8px;
   align-items:center;
   background:${THEME.panel};
 }
@@ -355,7 +355,63 @@ style.textContent = `
   font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;
   font-size:14px;
   background:${THEME.panel};
+
+  scrollbar-width:thin;
+  scrollbar-color:${THEME.bubbleBorder} transparent;
 }
+
+.aiw-body::-webkit-scrollbar{
+  width:8px;
+}
+
+.aiw-body::-webkit-scrollbar-track{
+  background:transparent;
+}
+
+.aiw-body::-webkit-scrollbar-thumb{
+  background:${THEME.bubbleBorder};
+  border-radius:4px;
+}
+
+.aiw-typing-bubble{
+  align-self:flex-start;
+  margin-top:8px;
+  padding:6px 10px;
+  border-radius:9999px;
+  background:${THEME.bubbleAI};
+  color:${THEME.text};
+  display:flex;
+  align-items:center;
+  opacity:.8;
+}
+
+.aiw-typing-dots{
+  display:flex;
+  gap:4px;
+}
+
+.aiw-typing-dot{
+  width:6px;
+  height:6px;
+  border-radius:50%;
+  background:${THEME.text};
+  opacity:.4;
+  animation: aiw-dot 1s infinite ease-in-out;
+}
+
+/* анимация точек */
+@keyframes aiw-dot{
+  0%, 80%, 100%{
+    transform:scale(.6);
+    opacity:.3;
+  }
+  40%{
+    transform:scale(1);
+    opacity:1;
+  }
+}
+
+
 .aiw-row{
   display:flex;
   gap:8px;
@@ -372,17 +428,39 @@ style.textContent = `
 .aiw-row.me{ justify-content:flex-end; }
 
 .aiw-ava{
-  width:26px; height:26px;
+  width:26px;
+  height:26px;
   flex:0 0 26px;
   border-radius:50%;
-  background:${THEME.bubbleUser};
   border:1px solid ${THEME.bubbleBorder};
   overflow:hidden;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  font-size:12px;
+  font-weight:600;
+  font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;
 }
+
+/* аватар ассистента */
+.aiw-ava.ai{
+  background:${THEME.bubbleAI};
+  color:${THEME.text};
+}
+
+/* аватар пользователя */
+.aiw-ava.me{
+  background:${THEME.bubbleUser};
+  color:#fff;
+}
+
 .aiw-ava img{
-  width:100%; height:100%;
-  object-fit:cover; display:block;
+  width:100%;
+  height:100%;
+  object-fit:cover;
+  display:block;
 }
+
 
 .aiw-bubble{
   max-width:85%;
@@ -412,23 +490,28 @@ style.textContent = `
   background:${THEME.panel};
   color:${THEME.text};
   border-radius:12px;
-  padding:10px 12px;
+  padding:10px 44px 10px 12px;           
   outline:none;
   min-height:40px;
+  box-sizing:border-box;
 }
 
 .aiw-send{
-  width:40px;
-  height:40px;
+  position:absolute;
+  right:24px;                           
+  top:50%;
+  transform:translateY(-50%);            
+  width:32px;
+  height:32px;
   border:none;
   border-radius:9999px;
   background:${THEME.accent};
   color:#fff;
   cursor:pointer;
-  flex:0 0 40px;
   display:flex;
   align-items:center;
   justify-content:center;
+  flex:none;                             
 }
 
 .aiw-send:disabled{
@@ -738,28 +821,38 @@ function render() {
     row.className = "aiw-row " + (isUser ? "me" : "ai");
 
     // avatar
-    const ava = document.createElement("div");
-    ava.className = "aiw-ava";
-    if (!isUser && LOGO) {
-      const img = document.createElement("img");
-      img.src = LOGO; img.alt = "logo"; ava.appendChild(img);
-    }
-    if (!isUser) row.appendChild(ava);
+const ava = document.createElement("div");
+ava.className = "aiw-ava " + (isUser ? "me" : "ai");
 
-    // bubble + time
-    const bubbleWrap = document.createElement("div");
-    const bubble = document.createElement("div");
-    bubble.className = "aiw-bubble";
-    bubble.textContent = m.content || "";
-    bubbleWrap.appendChild(bubble);
+if (!isUser && LOGO) {
+  // логотип клиента для ассистента
+  const img = document.createElement("img");
+  img.src = LOGO;
+  img.alt = "logo";
+  ava.appendChild(img);
+} else if (isUser) {
+  // красивая иконка для пользователя
+  ava.textContent = "🧑";         // можешь заменить на 😊, 👤, или первую букву
+}
 
-    const time = document.createElement("div");
-    time.className = "aiw-time";
-    time.textContent = fmtTime(m.ts || Date.now());
-    bubbleWrap.appendChild(time);
+if (!isUser) row.appendChild(ava);
 
-    row.appendChild(bubbleWrap);
-    if (isUser) row.appendChild(ava); // у пользователя — аватарка справа (пустой кружок)
+// bubble + time
+const bubbleWrap = document.createElement("div");
+const bubble = document.createElement("div");
+bubble.className = "aiw-bubble";
+bubble.textContent = m.content || "";
+bubbleWrap.appendChild(bubble);
+
+const time = document.createElement("div");
+time.className = "aiw-time";
+time.textContent = fmtTime(m.ts || Date.now());
+bubbleWrap.appendChild(time);
+
+row.appendChild(bubbleWrap);
+
+// у пользователя аватар справа
+if (isUser) row.appendChild(ava);
     messagesWrap.appendChild(row);
   }
 
