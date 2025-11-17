@@ -207,7 +207,7 @@ style.textContent = `
 .aiw-header button{ background:transparent; border:none; color:#fff; font-size:18px; cursor:pointer; }
 
 .aiw-body{
-  display:flex; flex-direction:column; flex:1; gap:8px; padding:12px; overflow:auto;
+  display:flex; flex-direction:column; flex:1; gap:8px; padding:12px; overflow:auto; min-height:0;
   font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif; font-size:14px;
   background:${THEME.panel};
 }
@@ -248,6 +248,31 @@ style.textContent = `
   background:${THEME.accent}; color:#fff; cursor:pointer; flex:0 0 36px;
 }
 .aiw-send:disabled{ opacity:.6; cursor:default; }
+${FILL_CONTAINER ? `
+.aiw-wrap {
+  position: relative;
+  top: auto;
+  right: auto;
+  bottom: auto;
+  left: auto;
+  width: 100%;
+  height: 100%;
+}
+.aiw-panel {
+  position: relative;
+  top: auto;
+  right: auto;
+  bottom: auto;
+  left: auto;
+  width: 100%;
+  max-width: 100%;
+  height: 100%;
+  max-height: 100%;
+  display: flex;
+}
+.aiw-body { flex: 1 1 auto; }
+.aiw-footer { flex: 0 0 auto; }
+` : ""}
 `;
 
 
@@ -283,7 +308,7 @@ if (INLINE) {
   wrap.style.right    = "auto";
   wrap.style.left     = "auto";
   wrap.style.width    = "100%";
-  wrap.style.height   = "auto";
+  wrap.style.height   = FILL_CONTAINER ? "100%" : "auto";
 } else {
   wrap.style.position = "fixed";
   wrap.style.bottom = "20px";
@@ -307,8 +332,8 @@ if (INLINE) {
   panel.style.left = "auto";
   panel.style.width = "100%";
   panel.style.maxWidth = "100%";
-  panel.style.height = "auto";
-  panel.style.maxHeight = "none";
+  panel.style.height = FILL_CONTAINER ? "100%" : "auto";
+  panel.style.maxHeight = FILL_CONTAINER ? "100%" : "none";
   panel.style.display = "flex";   // сразу видимая
 } else {
   panel.style.position = "absolute";
