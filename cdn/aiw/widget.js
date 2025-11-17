@@ -197,7 +197,7 @@ const writeHistory = (arr) => {
 if (PRESERVE_HISTORY === false) {
   try { localStorage.removeItem(storeKey); } catch {}
 }
-  const sanitize = (s) => (s || "").toString().slice(0, 4000);
+const sanitize = (s) => (s || "").toString().slice(0, MAX_LEN);
 
   function parseSSEChunk(buf, onData) {
     for (const block of buf.split(/\r?\n\r?\n/)) {
@@ -265,15 +265,6 @@ style.textContent = `
    box-shadow:0 14px 44px rgba(0,0,0,.25);
    border:1px solid ${THEME.border}22;
  }
-.aiw-header{
-  padding:12px 16px;
-  background:${THEME.accent};
-  color:#fff;
-  font-weight:700;
-  display:flex;
-  align-items:center;
-  justify-content:space-between;
-}
 
 .aiw-header-brand{
   display:flex;
@@ -333,25 +324,12 @@ style.textContent = `
   cursor:pointer;
 }
 .aiw-footer{
-  padding:10px 16px 10px 10px;   /* немного правого паддинга */
+  padding:10px 16px;
   border-top:1px solid ${THEME.bubbleBorder};
   display:flex;
   gap:8px;
   align-items:center;
   background:${THEME.panel};
-}
-
-.aiw-send{
-  position:relative;
-  margin-left:-40px;             /* чуть меньше, чтобы не уползала вправо */
-  width:36px;
-  height:36px;
-  border:none;
-  border-radius:9999px;
-  background:${THEME.accent};
-  color:#fff;
-  cursor:pointer;
-  flex:0 0 36px;
 }
 
 .aiw-footer-meta{
@@ -378,7 +356,19 @@ style.textContent = `
   font-size:14px;
   background:${THEME.panel};
 }
-.aiw-row{ display:flex; gap:8px; }
+.aiw-row{
+  display:flex;
+  gap:8px;
+}
+  .aiw-row + .aiw-row{
+  margin-top:12px;
+}
+
+.aiw-row.me + .aiw-row.ai,
+.aiw-row.ai + .aiw-row.me{
+  margin-top:16px;
+}
+
 .aiw-row.me{ justify-content:flex-end; }
 
 .aiw-ava{
@@ -414,37 +404,37 @@ style.textContent = `
   border-color:${THEME.bubbleBorder};
 }
 
-.aiw-footer{
-  padding:10px;
-  border-top:1px solid ${THEME.bubbleBorder};
-  display:flex;
-  gap:8px;
-  align-items:center;
-  background:${THEME.panel};
-}
+
 .aiw-input{
-  flex:1;
+  flex:1 1 auto;
   resize:none;
-  border:1px solid #3a3a42;
-  background:#1b1c20;
+  border:1px solid ${THEME.bubbleBorder};
+  background:${THEME.panel};
   color:${THEME.text};
   border-radius:12px;
-  padding:10px 44px 10px 12px;
+  padding:10px 12px;
   outline:none;
   min-height:40px;
 }
+
 .aiw-send{
-  position:relative;
-  margin-left:-44px;
-  width:36px; height:36px;
+  width:40px;
+  height:40px;
   border:none;
   border-radius:9999px;
   background:${THEME.accent};
   color:#fff;
   cursor:pointer;
-  flex:0 0 36px;
+  flex:0 0 40px;
+  display:flex;
+  align-items:center;
+  justify-content:center;
 }
-.aiw-send:disabled{ opacity:.6; cursor:default; }
+
+.aiw-send:disabled{
+  opacity:.6;
+  cursor:default;
+}
 
 
  ${FILL_CONTAINER ? `
