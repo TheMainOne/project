@@ -42,7 +42,7 @@ const MAX_LEN = 1000;
   const ENDPOINT = CFG.endpoint;
   const SITE_ID  = CFG.siteId || (location.host + "::default");
   const TITLE    = CFG.title || "AI Assistant";
-  const ACCENT   = CFG.accent || "#6D28D9";
+const ACCENT = CFG.primaryColor || CFG.accent || "#6D28D9";
   const POSITION = CFG.position === "bl" ? "bl" : "br";
   const WELCOME  = CFG.welcome || "Hi! How can I help?";
   const LANG     = CFG.lang || "en";
@@ -71,18 +71,34 @@ log("CFG", {
   resetHistoryOnOpen: RESET_HISTORY_ON_OPEN
 });
 
-// тема (тёмная) — цвета по умолчанию + из конфига
+// тема (тёмная) — всё, что можно, берём из уже существующих полей конфига
 const THEME = {
+  // фон всего inline-виджета / панели
   bg: CFG.backgroundColor || "#0b0c0f",
+  // основной цвет текста (сообщения, подписи, подсказки)
   text: CFG.textColor || "#e5e7eb",
-  panel: "#0f1318",
+  // фон панели и инпута — по умолчанию такой же, как backgroundColor
+  panel: CFG.backgroundColor || "#0f1318",
+  // цвет границ — сначала borderColor, иначе акцент
   border: CFG.borderColor || ACCENT,
+  // акцент (хедер, кнопка send, плавающая кнопка)
   accent: ACCENT,
+  // цвет текста на акцентном фоне (хедер, иконка send, launcher)
+  // НОВЫХ полей в конфиге не нужно — берём textColor
+  accentText: CFG.textColor || "#ffffff",
+  // фон пузыря ассистента (оставляем нейтральным, чтобы всегда читалось)
   bubbleAI: "rgba(255,255,255,.06)",
-  bubbleUser: "#2b2f36",
-  bubbleBorder: "rgba(255,255,255,.08)",
+  // фон пузыря пользователя — привязываем к primaryColor
+  bubbleUser: CFG.primaryColor || "#2b2f36",
+  // граница пузырей — если есть borderColor, используем его, иначе дефолт
+  bubbleBorder: CFG.borderColor || "rgba(255,255,255,.08)",
+  // цвет текста в пузыре пользователя
+  userText: CFG.textColor || "#ffffff",
+  // цвет для времени и подсказок
   time: "rgba(229,231,235,.6)"
 };
+
+
 
 console.debug("[AIW][cfg]", { AUTOSTART, AUTO_MODE, AUTO_DELAY, AUTO_COOLDOWN_HOURS, AUTO_MSG });
 
@@ -243,11 +259,13 @@ style.textContent = `
    bottom:20px;
  }
 
- .aiw-btn{
-   width:56px;height:56px;border-radius:50%;border:none;cursor:pointer;
-   box-shadow:0 8px 20px rgba(0,0,0,.2); background:${THEME.accent};
-   color:#fff;font-weight:700;font-size:16px;
- }
+.aiw-btn{
+  width:56px;height:56px;border-radius:50%;border:none;cursor:pointer;
+  box-shadow:0 8px 20px rgba(0,0,0,.2);
+  background:${THEME.accent};
+  color:${THEME.accentText};
+  font-weight:700;font-size:16px;
+}
 
  .aiw-panel{
    position:absolute;
@@ -305,7 +323,7 @@ style.textContent = `
 .aiw-header{
   padding:12px 16px;
   background:${THEME.accent};
-  color:#fff;
+  color:${THEME.accentText};
   font-weight:700;
   display:flex;
   align-items:center;
@@ -319,7 +337,7 @@ style.textContent = `
 .aiw-header button{
   background:transparent;
   border:none;
-  color:#fff;
+  color:${THEME.accentText};
   font-size:18px;
   cursor:pointer;
 }
@@ -411,7 +429,6 @@ style.textContent = `
   }
 }
 
-
 .aiw-row{
   display:flex;
   gap:8px;
@@ -451,7 +468,7 @@ style.textContent = `
 /* аватар пользователя */
 .aiw-ava.me{
   background:${THEME.bubbleUser};
-  color:#fff;
+  color:${THEME.userText};
 }
 
 .aiw-ava img{
@@ -473,9 +490,10 @@ style.textContent = `
 }
 .aiw-row.me .aiw-bubble{
   background:${THEME.bubbleUser};
-  color:#fff;
+  color:${THEME.userText};
   border-color:transparent;
 }
+
 .aiw-row.ai .aiw-bubble{
   background:${THEME.bubbleAI};
   color:${THEME.text};
@@ -506,7 +524,7 @@ style.textContent = `
   border:none;
   border-radius:9999px;
   background:${THEME.accent};
-  color:#fff;
+  color:${THEME.accentText};
   cursor:pointer;
   display:flex;
   align-items:center;
@@ -832,7 +850,7 @@ if (!isUser && LOGO) {
   ava.appendChild(img);
 } else if (isUser) {
   // красивая иконка для пользователя
-  ava.textContent = "🧑";         // можешь заменить на 😊, 👤, или первую букву
+  ava.textContent = "👤";         // можешь заменить на 😊, 👤, или первую букву
 }
 
 if (!isUser) row.appendChild(ava);
