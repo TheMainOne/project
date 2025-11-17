@@ -11,6 +11,33 @@ const INLINE = MODE === "inline";
 const FIT_MODE = (new URLSearchParams(location.search).get("fit") || "container").toLowerCase();
 const FILL_CONTAINER = INLINE && FIT_MODE === "container";
 
+
+  if (INLINE) {
+    const bodyEl = document.body;
+    if (bodyEl) {
+      bodyEl.style.margin = "0";
+      bodyEl.style.background = bodyEl.style.background || "transparent";
+      bodyEl.style.boxSizing = bodyEl.style.boxSizing || "border-box";
+    }
+  }
+
+  if (INLINE && FILL_CONTAINER) {
+    const docEl = document.documentElement;
+    if (docEl) {
+      docEl.style.height = "100%";
+      docEl.style.minHeight = "100%";
+    }
+    const bodyEl = document.body;
+    if (bodyEl) {
+      bodyEl.style.height = "100%";
+      bodyEl.style.minHeight = "100%";
+      bodyEl.style.display = "flex";
+      bodyEl.style.flexDirection = "column";
+      bodyEl.style.alignItems = "stretch";
+      bodyEl.style.justifyContent = "flex-start";
+    }
+  }
+
   const ENDPOINT = CFG.endpoint;
   const SITE_ID  = CFG.siteId || (location.host + "::default");
   const TITLE    = CFG.title || "AI Assistant";
@@ -182,19 +209,27 @@ if (PRESERVE_HISTORY === false) {
   // ---------- DOM ----------
   const root = document.createElement("div");
  // host должен уметь растянуться на высоту iframe
-root.style.cssText = "display:block;";
+ root.style.cssText = "display:block;";
+  if (INLINE) {
+    root.style.width = "100%";
+    root.style.maxWidth = "100%";
+  }
+  if (FILL_CONTAINER) {
+    root.style.height = "100%";
+    root.style.minHeight = "0";
+    root.style.flex = "1 1 auto";
+  }
   const shadow = root.attachShadow({ mode: "open" });
 
   // styles (Shadow DOM)
 const style = document.createElement("style");
-style.textContent = `
- :host { all: initial; display:block; ${FILL_CONTAINER ? "height:100%;" : "height:auto;"} }
- html, body { ${FILL_CONTAINER ? "height:100%;" : "height:auto;"} margin:0; }
-@keyframes aiw-bounce { 0%,80%,100%{transform:scale(.6);opacity:.45} 40%{transform:scale(1);opacity:1} }
+  style.textContent = `
+ :host { all: initial; display:block; ${INLINE ? "width:100%;" : ""} ${FILL_CONTAINER ? "height:100%; min-height:0;" : "height:auto;"} }
+ @keyframes aiw-bounce { 0%,80%,100%{transform:scale(.6);opacity:.45} 40%{transform:scale(1);opacity:1} }
 
-.aiw-wrap{ position:fixed; z-index:2147483000; bottom:20px; }
-.aiw-btn{ width:56px;height:56px;border-radius:50%;border:none;cursor:pointer;
-  box-shadow:0 8px 20px rgba(0,0,0,.2); background:${THEME.accent}; color:#fff;font-weight:700;font-size:16px; }
+ .aiw-wrap{ position:fixed; z-index:2147483000; bottom:20px; }
+ .aiw-btn{ width:56px;height:56px;border-radius:50%;border:none;cursor:pointer;
+   box-shadow:0 8px 20px rgba(0,0,0,.2); background:${THEME.accent}; color:#fff;font-weight:700;font-size:16px; }
 .aiw-panel{
   position:absolute; bottom:70px; width:360px; max-width:80vw; height:480px; max-height:70vh;
   display:none; flex-direction:column; background:${THEME.panel}; color:${THEME.text};
@@ -257,6 +292,9 @@ ${FILL_CONTAINER ? `
   left: auto;
   width: 100%;
   height: 100%;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
 }
 .aiw-panel {
   position: relative;
@@ -269,8 +307,10 @@ ${FILL_CONTAINER ? `
   height: 100%;
   max-height: 100%;
   display: flex;
+  flex: 1 1 auto;
+  min-height: 0;
 }
-.aiw-body { flex: 1 1 auto; }
+.aiw-body { flex: 1 1 auto; min-height: 0; }
 .aiw-footer { flex: 0 0 auto; }
 ` : ""}
 `;
@@ -309,6 +349,11 @@ if (INLINE) {
   wrap.style.left     = "auto";
   wrap.style.width    = "100%";
   wrap.style.height   = FILL_CONTAINER ? "100%" : "auto";
+  wrap.style.display = "flex";
+  wrap.style.flexDirection = "column";
+  wrap.style.alignItems = "stretch";
+  wrap.style.flex = "1 1 auto";
+  wrap.style.minHeight = FILL_CONTAINER ? "0" : "";
 } else {
   wrap.style.position = "fixed";
   wrap.style.bottom = "20px";
@@ -335,6 +380,8 @@ if (INLINE) {
   panel.style.height = FILL_CONTAINER ? "100%" : "auto";
   panel.style.maxHeight = FILL_CONTAINER ? "100%" : "none";
   panel.style.display = "flex";   // сразу видимая
+  panel.style.flex = "1 1 auto";
+  panel.style.minHeight = "0";
 } else {
   panel.style.position = "absolute";
   panel.style.bottom = "70px";
