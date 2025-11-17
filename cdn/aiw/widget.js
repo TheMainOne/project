@@ -960,6 +960,8 @@ resetBtn.addEventListener("click", (e) => {
   history = [];
   writeHistory(history);
   SESSION_ID = newSessionId();
+   input.value = "";
+    updateCounter(); 
   render();
 });
   input.addEventListener("keydown", (e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); doSend(); } });
@@ -1118,6 +1120,7 @@ function scheduleAutoGreet() {
     writeHistory(history);
     render();
     input.value = "";
+    updateCounter(); 
 
     const safeMsgs = history.map(({ role, content }) => ({ role, content })).slice(-30);
     const controller = new AbortController();
