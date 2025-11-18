@@ -103,6 +103,8 @@ function quickHeuristicGood({ phase, contexts, reply }) {
   return null; // пусть решит модель
 }
 
+const EXPLICIT_NOINFO_RE = /(в контексте нет информации|в базе нет информации|в справке не указано|в (предоставленной|загруженн(?:ой|ых)) (базе знаний|документах) нет информации|нет информации о\b|нет данных о\b|no information (in|about) (the )?(knowledge base|docs|documentation)|not available in (our )?(database|documents))/i;
+
 async function assessGoodAnswer({ oai, model, question, reply, contexts, lang }) {
   // 1) эвристика до модели
   const pre = quickHeuristicGood({ phase: null, contexts, reply });
@@ -580,44 +582,6 @@ function pickSystemPrompt(cfg, lang = "ru") {
 }
 
 
-function buildSystemPrompt() {
-  const plans = loadPlans();
-  const plansText = plans.length
-    ? plans
-        .map(
-          (p) =>
-            `• ${p.name} — ${p.users || "n/a"} users — ${p.price} ${CURRENCY}/month`
-        )
-        .join("\n")
-    : "• Growth Plan — 10 users — 299 USD/month\n• Annual discount — 20%";
-
-  return [
-    "You are a friendly, concise sales assistant for our website widget.",
-    "Answer about pricing, product bundles, demos, and FAQs.",
-    "Use the pricing context below if relevant. If information is missing, say so briefly.",
-    "",
-    "Pricing Context:",
-    plansText,
-    "",
-    `Always use ${CURRENCY}. Keep answers short and skimmable.`,
-  ].join("\n");
-}
-
-// Нормализуем входные сообщения (безопасность, длина)
-function sanitizeMessages(messages = []) {
-  const allowedRoles = new Set(["system", "user", "assistant"]);
-  const trimmed = ("" + (messages?.length ? "" : "")).length; // noop, просто защитный трюк от undefined
-  const arr = Array.isArray(messages) ? messages : [];
-  const safe = arr
-    .filter((m) => m && allowedRoles.has(m.role) && typeof m.content === "string")
-    .map((m) => ({
-      role: m.role,
-      content: m.content.slice(0, 4000), // ограничим длину
-    }));
-  // ограничим историю до последних 30
-  return safe.slice(-30);
-}
-
 // Фолбэк-ответ, если нет ключа
 function fallbackReply(messages = []) {
   const lastUser = [...messages].reverse().find((m) => m.role === "user");
@@ -932,10 +896,10 @@ try {
   });
   const THRESH = Number(process.env.AIW_JUDGE_THRESHOLD || 0.60);
   const hasSupport = false; // нет контекста и нет цитат
+  
 
   const ans = reply || "";
-  const explicitNoInfo = /(в контексте нет информации|в базе нет информации|в справке не указано|не (указан|приведён|сообщено|известно)|указано только контактн)/i.test(ans);
-
+  const explicitNoInfo = EXPLICIT_NOINFO_RE.test(ans);
   const finalBad = explicitNoInfo || (judge?.goodAnswer === false) || (!hasSupport && (judge?.confidence ?? 0) < THRESH);
 
   const reason =
@@ -1078,33 +1042,58 @@ console.log("[AIW][timings]", JSON.stringify({
         res.end();
       }
 
-      defer(async () => {
+defer(async () => {
   const judge = await assessGoodAnswer({
-    oai, model: "gpt-5-nano",
-    question: query, reply: buffer, contexts, lang
+    oai,
+    model: "gpt-5-nano",
+    question: query,
+    reply: buffer,
+    contexts,
+    lang,
   });
-const THRESH = Number(process.env.AIW_JUDGE_THRESHOLD || 0.60);
- const hasSupport = (citations?.length || 0) > 0 || (contexts?.length || 0) > 0;
- // Плохо только если судья явно сказал false ИЛИ если нет опоры и низкая уверенность
 
-const ans = buffer || "";
-const explicitNoInfo = /(в контексте нет информации|в базе нет информации|в справке не указано|не (указан|приведён|сообщено|известно)|указано только контактн)/i.test(ans);
+  const THRESH = Number(process.env.AIW_JUDGE_THRESHOLD || 0.60);
 
-const finalBad = explicitNoInfo || (judge?.goodAnswer === false) || (!hasSupport && (judge?.confidence ?? 0) < THRESH);
+  const ans = buffer || "";
+  const explicitNoInfo = EXPLICIT_NOINFO_RE.test(ans);
 
- const reason =
-   explicitNoInfo ? "no-data-in-kb" :
-   (judge?.goodAnswer === false ? (judge?.reason || "judge-false") :
-   (!hasSupport && (judge?.confidence ?? 0) < THRESH ? "low-confidence" : "ok"));
+  let hasSupport =
+    (citations?.length || 0) > 0 ||
+    (contexts?.length || 0) > 0;
 
+  // если явно сказано, что в базе/документах нет информации — считаем, что опоры нет
+  if (explicitNoInfo) {
+    hasSupport = false;
+  }
 
- await logGapIfBad({
-   goodAnswer: !finalBad,
-   confidence: judge.confidence,
-   reason,
-   siteId, sessionId, clientId, question: query, reply: buffer, phase, citations
- });
+  const finalBad =
+    explicitNoInfo ||
+    (judge?.goodAnswer === false) ||
+    (!hasSupport && (judge?.confidence ?? 0) < THRESH);
+
+  const reason =
+    explicitNoInfo
+      ? "no-data-in-kb"
+      : (judge?.goodAnswer === false
+          ? (judge?.reason || "judge-false")
+          : (!hasSupport && (judge?.confidence ?? 0) < THRESH
+              ? "low-confidence"
+              : "ok"));
+
+  await logGapIfBad({
+    goodAnswer: !finalBad,
+    confidence: judge.confidence,
+    reason,
+    siteId,
+    sessionId,
+    clientId,
+    question: query,
+    reply: buffer,
+    phase,
+    citations,
+  });
 });
+
 
       return;
     } else {
@@ -1155,31 +1144,56 @@ console.log("[AIW][timings]", JSON.stringify({
  res.setHeader("X-AIW-Good-Answer", String(quick.goodAnswer));
 
  defer(async () => {
-   const judge = await assessGoodAnswer({
-     oai, model: "gpt-5-nano",
-     question: query, reply, contexts, lang
-   });
-const THRESH = Number(process.env.AIW_JUDGE_THRESHOLD || 0.60);
- const hasSupport = (citations?.length || 0) > 0 || (contexts?.length || 0) > 0;
- // Плохо только если судья явно сказал false ИЛИ если нет опоры и низкая уверенность
+  const judge = await assessGoodAnswer({
+    oai,
+    model: "gpt-5-nano",
+    question: query,
+    reply,
+    contexts,
+    lang,
+  });
 
-const ans = reply || "";
-const explicitNoInfo = /(в контексте нет информации|в базе нет информации|в справке не указано|не (указан|приведён|сообщено|известно)|указано только контактн)/i.test(ans);
+  const THRESH = Number(process.env.AIW_JUDGE_THRESHOLD || 0.60);
 
-const finalBad = explicitNoInfo || (judge?.goodAnswer === false) || (!hasSupport && (judge?.confidence ?? 0) < THRESH);
+  const ans = reply || "";
+  const explicitNoInfo = EXPLICIT_NOINFO_RE.test(ans);
 
- const reason =
-   explicitNoInfo ? "no-data-in-kb" :
-   (judge?.goodAnswer === false ? (judge?.reason || "judge-false") :
-   (!hasSupport && (judge?.confidence ?? 0) < THRESH ? "low-confidence" : "ok"));
+  let hasSupport =
+    (citations?.length || 0) > 0 ||
+    (contexts?.length || 0) > 0;
 
- await logGapIfBad({
-   goodAnswer: !finalBad ? true : false,
-   confidence: judge.confidence,
-   reason,
-   siteId, sessionId, clientId, question: query, reply, phase, citations
- });
- });
+  if (explicitNoInfo) {
+    hasSupport = false;
+  }
+
+  const finalBad =
+    explicitNoInfo ||
+    (judge?.goodAnswer === false) ||
+    (!hasSupport && (judge?.confidence ?? 0) < THRESH);
+
+  const reason =
+    explicitNoInfo
+      ? "no-data-in-kb"
+      : (judge?.goodAnswer === false
+          ? (judge?.reason || "judge-false")
+          : (!hasSupport && (judge?.confidence ?? 0) < THRESH
+              ? "low-confidence"
+              : "ok"));
+
+  await logGapIfBad({
+    goodAnswer: !finalBad ? true : false,
+    confidence: judge.confidence,
+    reason,
+    siteId,
+    sessionId,
+    clientId,
+    question: query,
+    reply,
+    phase,
+    citations,
+  });
+});
+
 
  return sendJSON(req, res, {
    reply, source: "rag", citations,
