@@ -233,13 +233,14 @@ if (PRESERVE_HISTORY === false && STORAGE) {
 
 const sanitize = (s) => (s || "").toString().slice(0, MAX_LEN);
 
-  function parseSSEChunk(buf, onData) {
-    for (const block of buf.split(/\r?\n\r?\n/)) {
-      for (const ln of block.split(/\r?\n/)) {
-        if (ln.startsWith("data:")) onData(ln.slice(5).trimStart());
-      }
+function parseSSEChunk(buf, onData) {
+  for (const block of buf.split(/\r?\n\r?\n/)) {
+    for (const ln of block.split(/\r?\n/)) {
+      if (ln.startsWith("data:")) onData(ln.slice(5));  
     }
   }
+}
+
 
   // ---------- DOM ----------
   const root = document.createElement("div");
@@ -1042,21 +1043,29 @@ resetBtn.addEventListener("click", (e) => {
   input.addEventListener("keydown", (e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); doSend(); } });
   sendBtn.addEventListener("click", doSend);
 
-  function pumpSSE(reader, onData) {
-    const decoder = new TextDecoder();
-    let buffer = "";
-    return (async () => {
-      while (true) {
-        const { value, done } = await reader.read();
-        if (done) break;
-        buffer += decoder.decode(value, { stream: true });
-        const parts = buffer.split(/\r?\n\r?\n/);
-        buffer = parts.pop() || "";
-        parts.forEach(block => block.split(/\r?\n/).forEach(ln => { if (ln.startsWith("data:")) onData(ln.slice(5).trimStart()); }));
-      }
-      if (buffer) buffer.split(/\r?\n/).forEach(ln => { if (ln.startsWith("data:")) onData(ln.slice(5).trimStart()); });
-    })();
-  }
+function pumpSSE(reader, onData) {
+  const decoder = new TextDecoder();
+  let buffer = "";
+  return (async () => {
+    while (true) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      const parts = buffer.split(/\r?\n\r?\n/);
+      buffer = parts.pop() || "";
+      parts.forEach(block =>
+        block.split(/\r?\n/).forEach(ln => {
+          if (ln.startsWith("data:")) onData(ln.slice(5));   
+        })
+      );
+    }
+    if (buffer)
+      buffer.split(/\r?\n/).forEach(ln => {
+        if (ln.startsWith("data:")) onData(ln.slice(5));     
+      });
+  })();
+}
+
 
   let inflight = null;
 
@@ -1144,7 +1153,7 @@ function showLocalGreeting() {
 
       const reader = res.body.getReader();
       await pumpSSE(reader, (data) => {
-        if (data === "[DONE]") return;
+if (data.trim() === "[DONE]") return;
         history[idx].content += data;
         render();
       });
@@ -1274,7 +1283,7 @@ history.push({
 
       const reader = res.body.getReader();
       await pumpSSE(reader, (data) => {
-        if (data === "[DONE]") return;
+       if (data.trim() === "[DONE]") return;
         history[assistantIndex].content += data;
         render();
       });
