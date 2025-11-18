@@ -69,15 +69,26 @@ function quickHeuristicGood({ phase, contexts, reply }) {
 
  // Явное сообщение, что в базе/контексте нет нужных данных — считаем gap
  const noInfoPatterns = [
+   // RU
    /в контексте нет информации/i,
-  /в базе(?: знаний)? нет информации/i,
+   /в базе(?: знаний)? нет информации/i,
    /в справке не указано/i,
    /в документаци[иия] не указано/i,
    /не наш[её]л[аи]? (сведени|информац)/i,
    /не (указан[оаы]?|приведён[оаы]?|сообщен[оаы]?|известн[оаы]?)/i,
    /нет (информации|данных) (об|по)/i,
-   /указано только контактн[оеыя] лицо/i
+   /указано только контактн[оеыя] лицо/i,
+
+   // EN
+   /no (information|info) (in|about|on) (our )?(knowledge base|docs?|documentation|database|records)/i,
+   /there (is|are) no (information|data) (available )?(on|about)/i,
+   /we (do not|don't) have (any )?(information|data) (on|about)/i,
+   /no data (on|about)/i,
+   /not (listed|specified|documented) (in|within) (the )?(knowledge base|docs?|documentation|database)/i,
+   /not available in (our )?(database|documents|docs|knowledge base)/i,
  ];
+
+
  if (noInfoPatterns.some(rx => rx.test(r))) {
    return { goodAnswer: false, confidence: 0.9, reason: "no-data-in-kb" };
  }
