@@ -912,7 +912,7 @@ function runInlineAutostart(cfg) {
         ts: Date.now()
       });
       writeHistory(history);
-      render();
+      renderAll();
     }, totalDelay);
   });
 }
@@ -924,62 +924,68 @@ function fmtTime(ts){
   }catch{ return ""; }
 }
 
-function render() {
-  while (messagesWrap.firstChild) messagesWrap.removeChild(messagesWrap.firstChild);
+// создаём DOM для одного сообщения и сразу добавляем его в messagesWrap
+function appendMessageDOM(m) {
+  const isUser = m.role === "user";
 
-  for (const m of history) {
-    const isUser = m.role === "user";
-    const row = document.createElement("div");
-    row.className = "aiw-row " + (isUser ? "me" : "ai");
+  const row = document.createElement("div");
+  row.className = "aiw-row " + (isUser ? "me" : "ai");
 
-    // avatar
-const ava = document.createElement("div");
-ava.className = "aiw-ava " + (isUser ? "me" : "ai");
+  // аватар
+  const ava = document.createElement("div");
+  ava.className = "aiw-ava " + (isUser ? "me" : "ai");
 
-if (!isUser && LOGO) {
-  // логотип клиента для ассистента
-  const img = document.createElement("img");
-  img.src = LOGO;
-  img.alt = "logo";
-  ava.appendChild(img);
-} else if (isUser) {
-  // красивая иконка для пользователя
+  if (!isUser && LOGO) {
+    // один логотип — одна загрузка, браузер потом закэширует
+    const img = document.createElement("img");
+    img.src = LOGO;
+    img.alt = "logo";
+    ava.appendChild(img);
+  } else if (isUser) {
     ava.innerHTML = `
-    <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true">
-      <circle cx="12" cy="8" r="4" fill="currentColor"></circle>
-      <path d="M4 20c1.5-3 3.5-5 8-5s6.5 2 8 5" fill="currentColor"></path>
-    </svg>
-  `;
-}
-
-if (!isUser) row.appendChild(ava);
-
-// bubble + time
-const bubbleWrap = document.createElement("div");
-bubbleWrap.className = "aiw-bubble-wrap";
-
-const bubble = document.createElement("div");
-bubble.className = "aiw-bubble";
-
-bubble.textContent = m.content || "";
-bubbleWrap.appendChild(bubble);
-
-const time = document.createElement("div");
-time.className = "aiw-time";
-time.textContent = fmtTime(m.ts || Date.now());
-bubbleWrap.appendChild(time);
-
-row.appendChild(bubbleWrap);
-
-// у пользователя аватар справа
-if (isUser) row.appendChild(ava);
-    messagesWrap.appendChild(row);
+      <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true">
+        <circle cx="12" cy="8" r="4" fill="currentColor"></circle>
+        <path d="M4 20c1.5-3 3.5-5 8-5s6.5 2 8 5" fill="currentColor"></path>
+      </svg>
+    `;
   }
 
+  if (!isUser) row.appendChild(ava);
+
+  // пузырь + время
+  const bubbleWrap = document.createElement("div");
+  bubbleWrap.className = "aiw-bubble-wrap";
+
+  const bubble = document.createElement("div");
+  bubble.className = "aiw-bubble";
+  bubble.textContent = m.content || "";
+  bubbleWrap.appendChild(bubble);
+
+  const time = document.createElement("div");
+  time.className = "aiw-time";
+  time.textContent = fmtTime(m.ts || Date.now());
+  bubbleWrap.appendChild(time);
+
+  row.appendChild(bubbleWrap);
+
+  if (isUser) row.appendChild(ava);
+
+  messagesWrap.appendChild(row);
+
+  return { row, bubble, time };
+}
+
+// полный рендер — используем только когда реально нужно всё перерисовать
+function renderAll() {
+  while (messagesWrap.firstChild) messagesWrap.removeChild(messagesWrap.firstChild);
+  for (const m of history) {
+    appendMessageDOM(m);
+  }
   updateEmptyHint();
   body.scrollTop = body.scrollHeight;
-    postHeight();
+  postHeight();
 }
+
 
 function postHeight() {
   try {
@@ -993,7 +999,7 @@ function postHeight() {
 
 
 
-  render();
+  renderAll();
 
   try {
   const ro = new ResizeObserver(() => postHeight());
@@ -1012,7 +1018,7 @@ if (!INLINE) {
         try { sessionStorage.removeItem(USER_INTERACTED_KEY); } catch {}
         history = [];
         writeHistory(history);
-        render();
+        renderAll();
       }
       setTimeout(() => input.focus(), 0);
     }
@@ -1037,7 +1043,7 @@ resetBtn.addEventListener("click", (e) => {
   SESSION_ID = newSessionId();
   input.value = "";
   updateCounter();
-  render();
+  renderAll();
 });
 
   input.addEventListener("keydown", (e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); doSend(); } });
@@ -1090,7 +1096,7 @@ function showLocalGreeting() {
     dedupeAutogreetAtTail();
     history.push({ role: "assistant", content: AUTO_MSG, meta: { kind: "autogreet" }, ts: Date.now()});
     writeHistory(history);
-    render();
+    renderAll();
     log("showLocalGreeting: message pushed");
     markAutoGreetUsed();
   }, 250);
@@ -1139,30 +1145,42 @@ function showLocalGreeting() {
         dedupeAutogreetAtTail();
         history.push({ role: "assistant", content: reply || (LANG.startsWith("ru") ? "…" : "…"), meta: { kind: "autogreet" }, ts: Date.now()});
         writeHistory(history);
-        render();
+        renderAll();
          log("fetchAIGreeting(JSON): message pushed, length=", (reply||"").length);
     markAutoGreetUsed();
     return;
       }
 
       // SSE
-      history.push({ role: "assistant", content: "",  ts: Date.now()});
-      const idx = history.length - 1;
-      writeHistory(history);
-      render();
+// SSE
+const msg = { role: "assistant", content: "", ts: Date.now() };
+history.push(msg);
+writeHistory(history);
 
-      const reader = res.body.getReader();
-      await pumpSSE(reader, (data) => {
-if (data.trim() === "[DONE]") return;
-        history[idx].content += data;
-        render();
-      });
+// создаём DOM только для этого сообщения
+const { bubble } = appendMessageDOM(msg);
+updateEmptyHint();
+body.scrollTop = body.scrollHeight;
+postHeight();
+
+const reader = res.body.getReader();
+await pumpSSE(reader, (data) => {
+  if (data.trim() === "[DONE]") return;
+  msg.content += data;
+  bubble.textContent = msg.content;
+  body.scrollTop = body.scrollHeight;
+  postHeight();
+});
+
+log("fetchAIGreeting(SSE): stream ended, len=", (msg.content || "").length);
+markAutoGreetUsed();
+
       log("fetchAIGreeting(SSE): stream ended, len=", (history[idx].content||"").length);
   markAutoGreetUsed();
     } catch (e) {
       history.push({ role: "assistant", content: LANG.startsWith("ru") ? "⚠️ Ошибка соединения" : "⚠️ Connection error" });
       writeHistory(history);
-      render();
+      renderAll();
     } finally {
       hideTyping();
     }
@@ -1178,14 +1196,14 @@ function scheduleAutoGreet() {
       log("autogreet -> AI mode");
       if (RESET_HISTORY_ON_OPEN) {
         try { localStorage.removeItem(storeKey); } catch {}
-        history = []; writeHistory(history); render();
+        history = []; writeHistory(history); renderAll();
       }
       fetchAIGreeting();
     } else {
       log("autogreet -> LOCAL mode");
       if (RESET_HISTORY_ON_OPEN) {
         try { localStorage.removeItem(storeKey); } catch {}
-        history = []; writeHistory(history); render();
+        history = []; writeHistory(history); renderAll();
       }
       showLocalGreeting();
     }
@@ -1202,7 +1220,7 @@ function scheduleAutoGreet() {
     history.push({ role: "user", content: text, ts: Date.now() });
     try { sessionStorage.setItem(USER_INTERACTED_KEY, "1"); } catch {}
     writeHistory(history);
-    render();
+    renderAll();
     input.value = "";
     updateCounter(); 
 
@@ -1272,25 +1290,35 @@ history.push({
 });
 
         writeHistory(history);
-        render();
+        renderAll();
         return;
       }
 
       // SSE mode
-      history.push({ role: "assistant", content: "", ts: Date.now() });
-      const assistantIndex = history.length - 1;
-      writeHistory(history); render();
+// SSE mode
+const msg = { role: "assistant", content: "", ts: Date.now() };
+history.push(msg);
+writeHistory(history);
 
-      const reader = res.body.getReader();
-      await pumpSSE(reader, (data) => {
-       if (data.trim() === "[DONE]") return;
-        history[assistantIndex].content += data;
-        render();
-      });
+// создаём DOM только для НОВОГО сообщения
+const { bubble } = appendMessageDOM(msg);
+updateEmptyHint();
+body.scrollTop = body.scrollHeight;
+postHeight();
+
+const reader = res.body.getReader();
+await pumpSSE(reader, (data) => {
+   if (data.trim() === "[DONE]") return;
+  msg.content += data;
+  bubble.textContent = msg.content;   // обновляем только текст в одном пузыре
+  body.scrollTop = body.scrollHeight;
+  postHeight();
+});
+
 
     } catch (err) {
       history.push({ role: "assistant", content: LANG.startsWith("ru") ? "⚠️ Ошибка соединения" : "⚠️ Connection error" });
-      writeHistory(history); render();
+      writeHistory(history); renderAll();
     } finally {
       hideTyping();
       inflight = null;

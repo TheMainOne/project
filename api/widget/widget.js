@@ -964,7 +964,7 @@ try {
     setSSEHeaders(req, res);
     res.write(": heartbeat\n\n");
     T.mark("firstByteToClient");
-    res.write(`data: ${reply}\n\n`);
+    res.write(`data:${reply}\n\n`);
     res.write("data: [DONE]\n\n");
     return res.end();
   }
@@ -1033,7 +1033,7 @@ if (stream) {
         buffer += piece;                // копим полный текст для логов/гапов
 
         if (!clientClosed) {
-          res.write(`data: ${piece}\n\n`);
+          res.write(`data:${piece}\n\n`);
 
           if (!firstChunkSent) {
             firstChunkSent = true;
@@ -1282,7 +1282,7 @@ console.log("[AIW][timings]", JSON.stringify({
     console.error("AIW /chat error after headers sent:", e);
 
     try {
-      res.write(`data: ⚠️ Internal error\n\n`);
+     res.write(`data:⚠️ Internal error\n\n`);
       res.write("data: [DONE]\n\n");
       res.end();
     } catch {
@@ -1320,7 +1320,7 @@ router.get("/sse-test", async (req, res) => {
   let i = 0;
   const timer = setInterval(() => {
     i += 1;
-    res.write(`data: tick ${i}\n\n`);
+    res.write(`data:tick ${i}\n\n`);
     if (i >= 5) {
       clearInterval(timer);
       res.write("data: [DONE]\n\n");
