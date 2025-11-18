@@ -541,6 +541,9 @@ function putToCache(key, payload) { cache.set(key, { ...payload, ts: Date.now() 
 // === Headers helpers (NEW) ===
 
 function setSSEHeaders(req, res) {
+  // если заголовки уже ушли — ничего не делаем
+  if (res.headersSent) return;
+
   res.setHeader("Access-Control-Allow-Origin", req.headers.origin || "*");
   res.setHeader("Vary", "Origin");
   res.setHeader("Content-Type", "text/event-stream; charset=utf-8");
@@ -549,12 +552,17 @@ function setSSEHeaders(req, res) {
   res.setHeader("X-Accel-Buffering", "no");
   res.flushHeaders?.();
 }
+
 function setJSONHeaders(req, res) {
+  // защита от повторного вызова после отправки SSE/JSON
+  if (res.headersSent) return;
+
   res.setHeader("Access-Control-Allow-Origin", req.headers.origin || "*");
   res.setHeader("Vary", "Origin");
   res.setHeader("Content-Type", "application/json; charset=utf-8");
   res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate");
 }
+
 
 // ставим служебные заголовки, чтобы фронт мог понять тип ответа и источники в SSE
 function setSourceHeaders(res, source, citations = []) {
@@ -1217,42 +1225,48 @@ console.log("[AIW][timings]", JSON.stringify({
  });
 
     }
-  } catch (e) {
+ } catch (e) {
+    const alreadySent = res.headersSent;
     phase = "error";
-    res.setHeader("X-AIW-Phase", phase);
-    res.setHeader("X-AIW-DB", dbMark);
+
     const timings = T.get();
-// добавим производные: buildPromptDur, llmWait, ttfb (time-to-first-byte), firstChunk
-const derived = {
-  buildPromptDur: (timings.buildPrompt ?? 0) - (timings.prePrompt ?? 0),
-  llmWait: (timings.afterLLM ?? 0) - (timings.beforeLLM ?? 0),
-  ttfb: timings.firstByteToClient ?? undefined,
-  firstChunk: (timings.firstChunkFlushed ?? 0) - (timings.firstByteToClient ?? 0),
-};
+    const derived = {
+      buildPromptDur: (timings.buildPrompt ?? 0) - (timings.prePrompt ?? 0),
+      llmWait: (timings.afterLLM ?? 0) - (timings.beforeLLM ?? 0),
+      ttfb: timings.firstByteToClient ?? undefined,
+      firstChunk: (timings.firstChunkFlushed ?? 0) - (timings.firstByteToClient ?? 0),
+    };
 
+    if (!alreadySent) {
+      // заголовки ещё НЕ отправлены → можно безопасно их ставить и вернуть JSON
+      res.setHeader("X-AIW-Phase", phase);
+      res.setHeader("X-AIW-DB", dbMark);
+      res.setHeader("X-AIW-Timing", JSON.stringify({
+        ...timing,
+        ...timings,
+        ...derived,
+        total: timings.total
+      }));
 
+      console.log("[AIW][timings]", JSON.stringify({
+        siteId, sessionId, phase,
+        timings: { ...timings, ...derived }
+      }));
+      console.error("AIW /chat error:", e);
 
-res.setHeader("X-AIW-Timing", JSON.stringify({
-  ...timing,          // твои старые поля для совместимости
-  ...timings,         // подробные метки
-  ...derived,
-  total: timings.total
-}));
-
-// опционально красивый серверный лог
-console.log("[AIW][timings]", JSON.stringify({
-  siteId, sessionId, phase,
-  timings: { ...timings, ...derived }
-}));
-    console.error("AIW /chat error:", e);
-    if (!res.headersSent) {
       return res.status(500).json({ ok: false, error: String(e) });
     }
+
+    // сюда попадаем, если уже начался SSE-стрим (мы уже делали setSSEHeaders + write)
+    console.error("AIW /chat error after headers sent:", e);
+
     try {
       res.write(`data: ⚠️ Internal error\n\n`);
       res.write("data: [DONE]\n\n");
       res.end();
-    } catch {}
+    } catch {
+      // тут уже вообще ничего не делаем
+    }
   }
 });
 

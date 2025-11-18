@@ -118,6 +118,7 @@ function setHeightFromContainer() {
       preserveHistory: (config ? config.preserveHistory !== false : true),
       resetHistoryOnOpen: !!(config && config.resetHistoryOnOpen),
       inlineAutostart: config?.inlineAutostart || null,
+      stream: config.stream || false,
     };
 
     window.__AIW_CONFIG__ = cfg;
