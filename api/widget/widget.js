@@ -13,8 +13,7 @@ import AiwMessage from "../../models/AiwMessage.js";
 import AiwGap from "../../models/AiwGap.js"; 
 import Client from "../../models/Client.js";
 import { hashIp, classifyTopics } from "../../utils/telemetry.js";
-import { retrieveTopK, buildPrompt } from "../../services/web_crawler/core.js";
-import { tryFastAnswer } from '../../services/web_crawler/fastAnswer.js';
+import { buildPrompt } from "../../services/web_crawler/core.js";
 import { retrieveUnified } from "../../services/rag/index.js";
 import { getWidgetConfigCached } from '../../services/widgetConfig/cache.js';
 
@@ -770,122 +769,123 @@ console.log("[AIW][timings]", JSON.stringify({
       }
     }
 console.log("[AIW] clientId:", String(clientId), "query:", query);
-    // ====== RAG retrieve ======
+
 // ====== RAG retrieve ======
 const retrieveRes = await T.wrap("retrieve", async () => {
   try {
-    // const r = await retrieveUnified({ clientId, siteId, query });
-    // больше клиентских чанков, без web-фоллбэка (его оставим только в fallback)
-const r = await retrieveUnified({
-  clientId,
-  siteId,
-  query,
-  kClient: Number(process.env.AIW_KCLIENT || 8), // было по умолчанию 6
-  includeWeb: false
-});
+    const r = await retrieveUnified({
+      clientId,
+      siteId,
+      query,
+      kClient: Number(process.env.AIW_KCLIENT || 8),
+      includeWeb: false,          // только клиентские/локальные источники
+    });
+
     if (r?.contexts?.length) {
       res.setHeader("X-AIW-Retrieve-Mode", "unified");
       return r;
+    } else {
+      res.setHeader("X-AIW-Retrieve-Mode", "unified-empty");
+      return { contexts: [] };
     }
   } catch (e) {
     console.warn("[retrieveUnified]", e?.message || e);
+    res.setHeader("X-AIW-Retrieve-Mode", "unified-error");
+    return { contexts: [] }; // вообще ничего не нашли / ошибка — пусть будет no-context
   }
-  // fallback на старый топ-K по сайту, если unified ничего не дал
-  const web = await retrieveTopK(siteId, query, { k: 8, softLimit: 400, minScore: 0.15 });
-  res.setHeader("X-AIW-Retrieve-Mode", "fallback-topK");
-  return { contexts: (web || []).map(w => ({ source: "web", url: w.url, text: w.text || w.snippet || "", score: w.score ?? 0.4 })) };
 });
+
 
 const contexts = retrieveRes.contexts || [];
 res.setHeader("X-AIW-Contexts", String(contexts.length));
 console.log("[AIW] contexts:", contexts.length);
 timing.retrieve = T.get().retrieve;
 
-    // ====== Fast extractive ======
-    const fast = tryFastAnswer(query, contexts, lang);
-    if (fast) {
-      phase = "rag-extractive";
-      setSourceHeaders(res, "rag-extractive", fast.citations || []);
-      res.setHeader("X-AIW-Phase", phase);
+//     // ====== Fast extractive ======
+//     const fast = tryFastAnswer(query, contexts, lang);
+//     if (fast) {
+//       phase = "rag-extractive";
+//       setSourceHeaders(res, "rag-extractive", fast.citations || []);
+//       res.setHeader("X-AIW-Phase", phase);
 
-      const payload = { reply: fast.reply, citations: fast.citations || [] };
-      await logAssistantMessage({ siteId, sessionId, content: payload.reply, latencyMs: Date.now() - started, clientId });
-      dbMark = "user:+ assistant:+";
-      // === judge & optional gap log (NEW) ===
-const quick = quickFlag({ phase, contexts, reply: payload.reply });
-res.setHeader("X-AIW-Good-Answer", String(quick.goodAnswer)); // быстрый флаг
+//       const payload = { reply: fast.reply, citations: fast.citations || [] };
+//       await logAssistantMessage({ siteId, sessionId, content: payload.reply, latencyMs: Date.now() - started, clientId });
+//       dbMark = "user:+ assistant:+";
+//       // === judge & optional gap log (NEW) ===
+// const quick = quickFlag({ phase, contexts, reply: payload.reply });
+// res.setHeader("X-AIW-Good-Answer", String(quick.goodAnswer)); // быстрый флаг
 
-defer(async () => {
-  const judge = await assessGoodAnswer({
-    oai, model: "gpt-5-nano",
-    question: query, reply: payload.reply, contexts, lang
-  });
-const THRESH = Number(process.env.AIW_JUDGE_THRESHOLD || 0.60);
- const hasSupport = ((payload.citations?.length || 0) > 0) || ((contexts?.length || 0) > 0);
- // Плохо только если судья явно сказал false ИЛИ если нет опоры и низкая уверенность
+// defer(async () => {
+//   const judge = await assessGoodAnswer({
+//     oai, model: "gpt-5-nano",
+//     question: query, reply: payload.reply, contexts, lang
+//   });
+// const THRESH = Number(process.env.AIW_JUDGE_THRESHOLD || 0.60);
+//  const hasSupport = ((payload.citations?.length || 0) > 0) || ((contexts?.length || 0) > 0);
+//  // Плохо только если судья явно сказал false ИЛИ если нет опоры и низкая уверенность
  
- const ans = payload.reply || "";
-const explicitNoInfo = /(в контексте нет информации|в базе нет информации|в справке не указано|не (указан|приведён|сообщено|известно)|указано только контактн)/i.test(ans);
+//  const ans = payload.reply || "";
+// const explicitNoInfo = /(в контексте нет информации|в базе нет информации|в справке не указано|не (указан|приведён|сообщено|известно)|указано только контактн)/i.test(ans);
 
-const finalBad = explicitNoInfo || (judge?.goodAnswer === false) || (!hasSupport && (judge?.confidence ?? 0) < THRESH);
+// const finalBad = explicitNoInfo || (judge?.goodAnswer === false) || (!hasSupport && (judge?.confidence ?? 0) < THRESH);
 
- const reason =
-   explicitNoInfo ? "no-data-in-kb" :
-   (judge?.goodAnswer === false ? (judge?.reason || "judge-false") :
-   (!hasSupport && (judge?.confidence ?? 0) < THRESH ? "low-confidence" : "ok"));
-
-
- await logGapIfBad({
-   goodAnswer: !finalBad,
-   confidence: judge.confidence,
-   reason,
-   siteId, sessionId, clientId, question: query, reply: payload.reply, phase, citations: payload.citations
- });
-});
-
-      res.setHeader("X-AIW-DB", dbMark);
-      const timings = T.get();
-// добавим производные: buildPromptDur, llmWait, ttfb (time-to-first-byte), firstChunk
-const derived = {
-  buildPromptDur: (timings.buildPrompt ?? 0) - (timings.prePrompt ?? 0),
-  llmWait: (timings.afterLLM ?? 0) - (timings.beforeLLM ?? 0),
-  ttfb: timings.firstByteToClient ?? undefined,
-  firstChunk: (timings.firstChunkFlushed ?? 0) - (timings.firstByteToClient ?? 0),
-};
+//  const reason =
+//    explicitNoInfo ? "no-data-in-kb" :
+//    (judge?.goodAnswer === false ? (judge?.reason || "judge-false") :
+//    (!hasSupport && (judge?.confidence ?? 0) < THRESH ? "low-confidence" : "ok"));
 
 
+//  await logGapIfBad({
+//    goodAnswer: !finalBad,
+//    confidence: judge.confidence,
+//    reason,
+//    siteId, sessionId, clientId, question: query, reply: payload.reply, phase, citations: payload.citations
+//  });
+// });
 
-res.setHeader("X-AIW-Timing", JSON.stringify({
-  ...timing,          // твои старые поля для совместимости
-  ...timings,         // подробные метки
-  ...derived,
-  total: timings.total
-}));
+//       res.setHeader("X-AIW-DB", dbMark);
+//       const timings = T.get();
+// // добавим производные: buildPromptDur, llmWait, ttfb (time-to-first-byte), firstChunk
+// const derived = {
+//   buildPromptDur: (timings.buildPrompt ?? 0) - (timings.prePrompt ?? 0),
+//   llmWait: (timings.afterLLM ?? 0) - (timings.beforeLLM ?? 0),
+//   ttfb: timings.firstByteToClient ?? undefined,
+//   firstChunk: (timings.firstChunkFlushed ?? 0) - (timings.firstByteToClient ?? 0),
+// };
 
-// опционально красивый серверный лог
-console.log("[AIW][timings]", JSON.stringify({
-  siteId, sessionId, phase,
-  timings: { ...timings, ...derived }
-}));
 
-      if (!stream) {
-        setJSONHeaders(req, res);
-return sendJSON(req, res, { 
-  reply: payload.reply, source: "rag-extractive", citations: payload.citations,
-  goodAnswer: quick.goodAnswer, confidence: quick.confidence
-});
-      } else {
-        setSSEHeaders(req, res);
-        res.write(": heartbeat\n\n");
-          T.mark("firstByteToClient");   
-        const CH = 24;
-        for (let i = 0; i < payload.reply.length; i += CH) {
-          res.write(`data: ${payload.reply.slice(i, i + CH)}\n\n`);
-        }
-        res.write("data: [DONE]\n\n");
-        return res.end();
-      }
-    }
+
+// res.setHeader("X-AIW-Timing", JSON.stringify({
+//   ...timing,          // твои старые поля для совместимости
+//   ...timings,         // подробные метки
+//   ...derived,
+//   total: timings.total
+// }));
+
+// // опционально красивый серверный лог
+// console.log("[AIW][timings]", JSON.stringify({
+//   siteId, sessionId, phase,
+//   timings: { ...timings, ...derived }
+// }));
+
+//       if (!stream) {
+//         setJSONHeaders(req, res);
+// return sendJSON(req, res, { 
+//   reply: payload.reply, source: "rag-extractive", citations: payload.citations,
+//   goodAnswer: quick.goodAnswer, confidence: quick.confidence
+// });
+//       } else {
+//         setSSEHeaders(req, res);
+//         res.write(": heartbeat\n\n");
+//           T.mark("firstByteToClient");   
+//         const CH = 24;
+//         for (let i = 0; i < payload.reply.length; i += CH) {
+//           res.write(`data: ${payload.reply.slice(i, i + CH)}\n\n`);
+//         }
+//         res.write("data: [DONE]\n\n");
+//         return res.end();
+//       }
+//     }
 
     // ====== Нет контекста ======
 if (!contexts.length) {
