@@ -1015,21 +1015,34 @@ if (stream) {
         }
       } else {
         try {
- T.mark("beforeLLM");
-    const completion = await oai.chat.completions.create({ model: MODEL, messages: prompt });
-    T.mark("afterLLM");
-    const reply = completion.choices?.[0]?.message?.content?.trim() || "";
-    buffer = reply;
+       T.mark("beforeLLM");
 
-    // первая полезная часть ушла клиенту
-    res.write(`data: ${reply.slice(0, 24)}\n\n`);
-    T.mark("firstChunkFlushed");
+      // 🔥 СТРИМ ИЗ OPENAI
+      const completion = await oai.chat.completions.create({
+        model: MODEL,
+        messages: prompt,
+        stream: true,
+      });
 
-    // остаток
-    const CH = 24;
-    for (let i = 24; i < reply.length && !clientClosed; i += CH) {
-      res.write(`data: ${reply.slice(i, i + CH)}\n\n`);
+      let firstChunkSent = false;
+
+      for await (const chunk of completion) {
+        const piece = chunk.choices?.[0]?.delta?.content || "";
+        if (!piece) continue;
+
+        buffer += piece;                // копим полный текст для логов/гапов
+
+        if (!clientClosed) {
+          res.write(`data: ${piece}\n\n`);
+
+          if (!firstChunkSent) {
+            firstChunkSent = true;
+            T.mark("firstChunkFlushed");
           }
+        }
+      }
+
+      T.mark("afterLLM");
         } catch (e) {
           const msg = `⚠️ ${e?.message || "LLM error"}`;
           buffer = msg;
