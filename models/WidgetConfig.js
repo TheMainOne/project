@@ -62,6 +62,7 @@ logo:               { type: LogoSchema, default: null },
   resetHistoryOnOpen:     { type: Boolean, default: false },     // чистить историю при каждом открытии
 
     inlineAutostart:        { type: InlineAutostartSchema, default: () => ({}) },
+    stream:                 { type: Boolean, default: true },
 
   // ===== LLM / системный промпт =====
   customSystemPrompt:     { type: String, default: "" },

@@ -646,26 +646,32 @@ T.mark("entered"); // t=0
     );
 
     // ====== Чтение входа (как в твоём коде) ======
-    const { messages = [], stream = true, meta = {} } = req.body || {};
-    const allowedRoles = new Set(["system", "user", "assistant"]);
-    const safeMsgs = (Array.isArray(messages) ? messages : [])
-      .filter((m) => m && allowedRoles.has(m.role) && typeof m.content === "string")
-      .map((m) => ({ role: m.role, content: m.content.slice(0, 4000) }))
-      .slice(-30);
+let { messages = [], stream, meta = {} } = req.body || {};
+//          ^^^^^  ← убрали дефолт true здесь
 
-    const lang = String(meta.lang || "ru");
-    // const siteId = String(req.header("x-aiw-site") || meta.siteId || "demo");
-    // const sessionId = String(req.header("x-aiw-session") || meta.sessionId || "");
-    // const visitorId = String(req.header("x-aiw-visitor") || meta.visitorId || "");
-    const { siteId, sessionId, visitorId } = resolveIds(req, meta);
+const allowedRoles = new Set(["system", "user", "assistant"]);
+const safeMsgs = (Array.isArray(messages) ? messages : [])
+  .filter((m) => m && allowedRoles.has(m.role) && typeof m.content === "string")
+  .map((m) => ({ role: m.role, content: m.content.slice(0, 4000) }))
+  .slice(-30);
 
+const lang = String(meta.lang || "ru");
+const { siteId, sessionId, visitorId } = resolveIds(req, meta);
 
-    const clientId = await resolveClientIdStrict(req, meta, siteId);
+const clientId = await resolveClientIdStrict(req, meta, siteId);
 if (clientId) res.setHeader("X-AIW-Client", String(clientId));
-    const cfg = await getWidgetConfigCached({ clientId, siteId });
+const cfg = await getWidgetConfigCached({ clientId, siteId });
 
-// пригодится для фронта:
+// 👇 НОВОЕ: приоритет за cfg.stream
+if (cfg && typeof cfg.stream === "boolean") {
+  stream = cfg.stream;
+} else if (typeof stream !== "boolean") {
+  // если фронт ничего не прислал — по умолчанию true
+  stream = true;
+}
+
 if (cfg?._id) res.setHeader("X-AIW-WidgetCfg", String(cfg._id));
+
 
     res.setHeader("X-AIW-Resolved-Site", siteId);
     res.setHeader("X-AIW-Resolved-Session", sessionId || "(empty)");

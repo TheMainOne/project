@@ -5,6 +5,7 @@ aiw widget (fixed)
 */
 (function widget () {
   const CFG = (window.__AIW_CONFIG__ || {});
+  const STREAM = (typeof CFG.stream === "boolean") ? CFG.stream : true;
   // ▼ NEW: режим рендера
 const MODE   = (CFG.mode || new URLSearchParams(location.search).get("mode") || "float").toLowerCase();
 const INLINE = MODE === "inline";
@@ -1113,7 +1114,7 @@ function showLocalGreeting() {
         },
         body: JSON.stringify({
           messages: safeMsgs,
-          stream: false,
+            stream: STREAM,  
           meta: { ...meta, startedBy: "system", startedReason: "autogreet" }
         }),
         signal: controller.signal,
@@ -1215,7 +1216,7 @@ const res = await fetch(ENDPOINT, {
   },
   body: JSON.stringify({
     messages: safeMsgs,
-    stream: false,
+      stream: STREAM, 
     meta // <- отправляем всю мету
   }),
   signal: controller.signal,

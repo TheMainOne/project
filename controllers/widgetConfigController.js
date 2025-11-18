@@ -110,6 +110,7 @@ export async function upsertWidgetConfig(req, res) {
       autostartCooldownHours:  req.body.autostartCooldownHours,
       preserveHistory:         req.body.preserveHistory,
       resetHistoryOnOpen:      req.body.resetHistoryOnOpen,
+       stream:                  req.body.stream,
 
       isActive:           req.body.isActive ?? true,
     };
@@ -191,7 +192,8 @@ export async function getPublicWidgetConfig(req, res) {
       autostartCooldownHours: 1,
       preserveHistory: 1,
       resetHistoryOnOpen: 1,
-      inlineAutostart: 1,          
+      inlineAutostart: 1,   
+      stream: 1,       
 
       siteId: 1,
       clientId: 1,
@@ -215,6 +217,7 @@ export async function getPublicWidgetConfig(req, res) {
 
       lang:               cfg.lang            ?? "en",
       position:           cfg.position        ?? "br",
+       stream:             cfg.stream ?? false,
 
       autostart:          !!cfg.autostart,
       autostartDelay:     Number(cfg.autostartDelay ?? 5000),
