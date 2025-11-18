@@ -986,16 +986,20 @@ try {
 
     T.mark("buildPrompt"); // длительность = (buildPrompt - prePrompt)
 
-    if (stream) {
-      // ---- STREAM (SSE) ----
-      phase = "rag";
-      res.setHeader("X-AIW-Phase", phase);
-      setSourceHeaders(res, "rag", citations);
-      setSSEHeaders(req, res);
-      res.write(": heartbeat\n\n");
-      T.mark("firstByteToClient");  
-      const quick = quickFlag({ phase, contexts, reply: "" });
-res.setHeader("X-AIW-Good-Answer", String(quick.goodAnswer));
+if (stream) {
+  // ---- STREAM (SSE) ----
+  phase = "rag";
+  res.setHeader("X-AIW-Phase", phase);
+  setSourceHeaders(res, "rag", citations);
+
+  // ✅ ставим флаг качества ДО начала SSE
+  const quick = quickFlag({ phase, contexts, reply: "" });
+  res.setHeader("X-AIW-Good-Answer", String(quick.goodAnswer));
+
+  // только после этого открываем SSE-поток
+  setSSEHeaders(req, res);
+  res.write(": heartbeat\n\n");
+  T.mark("firstByteToClient");
 
       let clientClosed = false;
       req.on("close", () => { clientClosed = true; });
