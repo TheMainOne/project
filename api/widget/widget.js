@@ -1037,7 +1037,6 @@ res.setHeader("X-AIW-Good-Answer", String(quick.goodAnswer));
       await logAssistantMessage({ siteId, sessionId, content: buffer, latencyMs: Date.now() - started, clientId });
       T.mark("logAssistantMessage");
       dbMark = "user:+ assistant:+";
-      res.setHeader("X-AIW-DB", dbMark);
       const timings = T.get();
 // добавим производные: buildPromptDur, llmWait, ttfb (time-to-first-byte), firstChunk
 const derived = {
@@ -1048,12 +1047,17 @@ const derived = {
 };
 
 
-res.setHeader("X-AIW-Timing", JSON.stringify({
-  ...timing,          // твои старые поля для совместимости
-  ...timings,         // подробные метки
-  ...derived,
-  total: timings.total
-}));
+      // ⚠️ ВАЖНО: заголовки ставим только если они ещё не отправлены
+      if (!res.headersSent) {
+        res.setHeader("X-AIW-DB", dbMark);
+        res.setHeader("X-AIW-Timing", JSON.stringify({
+          ...timing,
+          ...timings,
+          ...derived,
+          total: timings.total
+        }));
+      }
+
 
 // опционально красивый серверный лог
 console.log("[AIW][timings]", JSON.stringify({
