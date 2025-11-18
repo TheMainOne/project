@@ -70,7 +70,7 @@ function quickHeuristicGood({ phase, contexts, reply }) {
  // Явное сообщение, что в базе/контексте нет нужных данных — считаем gap
  const noInfoPatterns = [
    /в контексте нет информации/i,
-   /в базе нет информации/i,
+  /в базе(?: знаний)? нет информации/i,
    /в справке не указано/i,
    /в документаци[иия] не указано/i,
    /не наш[её]л[аи]? (сведени|информац)/i,
@@ -103,8 +103,7 @@ function quickHeuristicGood({ phase, contexts, reply }) {
   return null; // пусть решит модель
 }
 
-const EXPLICIT_NOINFO_RE = /(в контексте нет информации|в базе нет информации|в справке не указано|в (предоставленной|загруженн(?:ой|ых)) (базе знаний|документах) нет информации|нет информации о\b|нет данных о\b|no information (in|about) (the )?(knowledge base|docs|documentation)|not available in (our )?(database|documents))/i;
-
+const EXPLICIT_NOINFO_RE = /(в контексте нет информации|в базе(?: знаний)? нет информации|в справке не указано|в (предоставленной|загруженн(?:ой|ых)) (базе знаний|документах) нет информации|нет информации о\b|нет данных о\b|no (information|info) (in|about|on) (our )?(knowledge base|docs?|documentation|database|records)|there (is|are) no (information|data) (available )?(on|about)|not (listed|specified|documented) (in|within) (the )?(knowledge base|docs?|documentation|database)|we (do not|don't) have (any )?(information|data) (on|about)|no data (on|about)|not available in (our )?(database|documents|docs|knowledge base))/i;
 async function assessGoodAnswer({ oai, model, question, reply, contexts, lang }) {
   // 1) эвристика до модели
   const pre = quickHeuristicGood({ phase: null, contexts, reply });
