@@ -42,34 +42,24 @@ export async function retrieveTopK(siteId, query, { k=5, softLimit=300, minScore
   return scored.filter(x => x.score >= minScore).slice(0, k);
 }
 
-// services/web_crawler/core.js
+export function buildPrompt({ query, contexts, lang='ru' }) {
+  const intro = lang.startsWith('ru')
+    ? 'Ты ассистент сайта. Отвечай кратко и строго по данному контексту.'
+    : 'You are the site assistant. Answer concisely and stick to the provided context.';
+  const rules = lang.startsWith('ru')
+    ? 'Правила:\n- Используй только факты из контекста. Не выдумывай.\n- Если инфы нет — честно скажи, чего не хватает.\n- При необходимости ссылайся на кусочки как [#N].'
+    : 'Rules:\n- Use only facts from the context. Do not invent.\n- If info is missing, state what is missing.\n- Cite snippets as [#N] if helpful.';
+  // const ctx = contexts.map((c,i)=>`[#${i+1}] ${c.text}`).join('\n\n');
 
-const MAX_CTX_CHUNKS = Number(process.env.AIW_CTX_MAX_CHUNKS || 4);
-const MAX_CTX_CHARS  = Number(process.env.AIW_CTX_MAX_CHARS  || 400);
+  const ctx = contexts.map((c,i)=> {
+  const short = c.text.slice(0, 200);
+  return `[#${i+1}] ${short}`;
+}).join('\n\n');
 
-export function buildPrompt({ query, contexts, lang = "ru" }) {
-  const safeContexts = (contexts || [])
-    .slice(0, MAX_CTX_CHUNKS)
-    .map((c, i) => {
-      const text = (c.text || "").replace(/\s+/g, " ").trim();
-      const trimmed = text.slice(0, MAX_CTX_CHARS);
-      return `[#${i + 1}] ${trimmed}`;
-    });
 
-  const ctxBlock = safeContexts.length
-    ? safeContexts.join("\n\n")
-    : (lang.startsWith("ru")
-        ? "Контекст пуст."
-        : "Context is empty.");
-
+  
   return [
-    {
-      role: "user",
-      content:
-        (lang.startsWith("ru")
-          ? `Вопрос: ${query}\n\nКонтекст:\n${ctxBlock}\n`
-          : `Question: ${query}\n\nContext:\n${ctxBlock}\n`)
-    }
+    { role:'system', content:`${intro}\n\n${rules}` },
+    { role:'user',   content:`Question: ${query}\n\nContext:\n${ctx}\n` }
   ];
 }
-
