@@ -299,7 +299,7 @@ const oai = process.env.OPENAI_API_KEY
   : null;
 
 
-const MODEL = process.env.OPENAI_MODEL || "gpt-4-mini"; // самая быстрая по скорости ответа gpt-4-mini
+const MODEL = process.env.OPENAI_MODEL || "gpt-4o-mini"; // самая быстрая по скорости ответа gpt-4o-mini
 const COMPLETION_OPTS = {
   // max_completion_tokens: 1000, //for gpt-5-mini
   max_tokens: 1000,
