@@ -4,8 +4,6 @@ import ClientDocChunk from "../../models/ClientDocChunk.js";
 import ClientDocument from "../../models/ClientDocument.js";
 // import { retrieveTopK } ... // не нужно здесь
 
-
-
 export async function retrieveUnified({
   clientId,
   siteId,
@@ -22,8 +20,6 @@ export async function retrieveUnified({
     cid = new mongoose.Types.ObjectId(clientId);
   }
 
-  const MAX_CTX_CHARS = 3000; // чтобы не слать в промпт огромные тексты
-  
   // 2) базовый фильтр: берём чанки клиента ИЛИ по siteId
   const or = [];
   if (cid)  or.push({ clientId: cid });
@@ -67,29 +63,27 @@ export async function retrieveUnified({
   const docMap = new Map(docs.map(d => [String(d._id), d]));
 
   // 6) нормализация контекстов
- const normalized = chunks
-  .filter(c => (c.content || "").trim().length >= minTextLen)
-  .map((c) => {
-    const d = c.documentId ? docMap.get(String(c.documentId)) : null;
+  const normalized = chunks
+    .filter(c => (c.content || "").trim().length >= minTextLen)
+    .map((c) => {
+      const d = c.documentId ? docMap.get(String(c.documentId)) : null;
 
-    const baseUrl =
-      d?.publicUrl || d?.s3Url ||
-      (d?._id ? `/api/client-documents/${String(d._id)}` : "");
+      // URL: используем publicUrl, если есть; иначе s3Url; иначе API-путь
+      const baseUrl =
+        d?.publicUrl || d?.s3Url ||
+        (d?._id ? `/api/client-documents/${String(d._id)}` : "");
 
-    const url = baseUrl ? addAnchor(baseUrl, chunkAnchor(c)) : "";
+      const url = baseUrl ? addAnchor(baseUrl, chunkAnchor(c)) : "";
 
-    const fullText   = c.content || "";
-    const trimmedText = fullText.slice(0, MAX_CTX_CHARS); // <-- ограничиваем размер
-
-    return {
-      source: "client-doc",
-      url,
-      title: d?.originalName || c.title || "Client Document",
-      text: trimmedText,                    // в промпт уйдёт уже обрезанный текст
-      snippet: trimmedText.slice(0, 500),
-      score: typeof c.score === "number" ? c.score : (rx ? 0.6 : 0.4)
-    };
-  });
+      return {
+        source: "client-doc",
+        url,
+        title: d?.originalName || c.title || "Client Document",
+        text: c.content || "",
+        snippet: (c.content || "").slice(0, 500),
+        score: typeof c.score === "number" ? c.score : (rx ? 0.6 : 0.4)
+      };
+    });
 
   // 7) дедуп и сортировка
 const deduped = dedupeByUrl(normalized);
