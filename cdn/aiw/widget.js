@@ -1,11 +1,21 @@
 /*
 ====================================================
-aiw widget (fixed)
+aiw widget
 ====================================================
 */
 (function widget () {
   const CFG = (window.__AIW_CONFIG__ || {});
   const STREAM = (typeof CFG.stream === "boolean") ? CFG.stream : true;
+const RAW_FONT_FAMILY = (CFG.fontFamily || "").trim();       // может быть ""
+const FONT_FILE_URL   = (CFG.fontFileUrl || "").trim() || null;
+const FONT_CSS_URL    = (CFG.fontCssUrl || "").trim() || null;
+
+// имя, под которым мы реально используем шрифт
+const EFFECTIVE_FONT_NAME = RAW_FONT_FAMILY || (FONT_FILE_URL ? "__aiw_custom" : null);
+
+const BASE_FONT_STACK = EFFECTIVE_FONT_NAME
+  ? `'${EFFECTIVE_FONT_NAME}', system-ui,-apple-system,Segoe UI,Roboto,sans-serif`
+  : 'system-ui,-apple-system,Segoe UI,Roboto,sans-serif';
   // ▼ NEW: режим рендера
 const MODE   = (CFG.mode || new URLSearchParams(location.search).get("mode") || "float").toLowerCase();
 const INLINE = MODE === "inline";
@@ -259,7 +269,25 @@ function parseSSEChunk(buf, onData) {
 
   // styles (Shadow DOM)
 const style = document.createElement("style");
+
+  if (FONT_CSS_URL) {
+    const link = document.createElement("link");
+    link.rel = "stylesheet";
+    link.href = FONT_CSS_URL;
+    shadow.appendChild(link);
+  }
+
 style.textContent = `
+ ${FONT_FILE_URL && EFFECTIVE_FONT_NAME ? `
+ @font-face {
+   font-family: '${EFFECTIVE_FONT_NAME}';
+   src: url('${FONT_FILE_URL}') format('truetype');
+   font-weight: 400;
+   font-style: normal;
+   font-display: swap;
+ }
+ ` : ""}
+ 
  :host {
    all: initial;
    display:block;
@@ -284,6 +312,7 @@ style.textContent = `
   background:${THEME.accent};
   color:${THEME.accentText};
   font-weight:700;font-size:16px;
+    font-family:${BASE_FONT_STACK};
 }
 
  .aiw-panel{
@@ -347,6 +376,7 @@ style.textContent = `
   display:flex;
   align-items:center;
   justify-content:space-between;
+    font-family:${BASE_FONT_STACK};
 }
 .aiw-header .aiw-actions{
   display:flex;
@@ -389,7 +419,7 @@ style.textContent = `
   padding:12px;
   overflow:auto;
   min-height:0;
-  font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;
+  font-family:${BASE_FONT_STACK};
   font-size:14px;
   background:${THEME.panel};
 
@@ -475,7 +505,7 @@ style.textContent = `
   justify-content:center;
   font-size:12px;
   font-weight:600;
-  font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;
+    font-family:${BASE_FONT_STACK};
 }
 
 /* аватар ассистента */
@@ -553,6 +583,7 @@ style.textContent = `
   outline:none;
   min-height:40px;
   box-sizing:border-box;
+    font-family:${BASE_FONT_STACK};
 }
 
 .aiw-send{
@@ -570,7 +601,8 @@ style.textContent = `
   display:flex;
   align-items:center;
   justify-content:center;
-  flex:none;                             
+  flex:none;     
+    font-family:${BASE_FONT_STACK};                        
 }
 
 .aiw-send:disabled{

@@ -78,6 +78,9 @@
       resetHistoryOnOpen: !!(config && config.resetHistoryOnOpen),
 
        inlineAutostart: config?.inlineAutostart || null,   // ← вот это добавляем
+        fontFamily:  config?.fontFamily  || "",
+      fontCssUrl:  config?.fontCssUrl  || "",
+      fontFileUrl: config?.fontFileUrl || "",
       // ▼ NEW: подсказка виджету, что он рендерится внутри iframe как inline
       mode
     };
