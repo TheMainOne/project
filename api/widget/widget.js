@@ -800,7 +800,7 @@ const retrieveRes = await T.wrap("retrieve", async () => {
       clientId,
       siteId,
       query,
-      kClient: 3,
+      kClient: Number(process.env.AIW_KCLIENT || 8),
       includeWeb: false,          // только клиентские/локальные источники
     });
 
@@ -820,13 +820,8 @@ const retrieveRes = await T.wrap("retrieve", async () => {
 
 
 const contexts = retrieveRes.contexts || [];
-const totalChars = contexts.reduce((sum, c) => sum + (c.text?.length || 0), 0);
-console.log("[AIW] ctx stats:", {
-  count: contexts.length,
-  totalChars,
-  avgChars: contexts.length ? Math.round(totalChars / contexts.length) : 0,
-});
 res.setHeader("X-AIW-Contexts", String(contexts.length));
+console.log("[AIW] contexts:", contexts.length);
 timing.retrieve = T.get().retrieve;
 
 //     // ====== Fast extractive ======
