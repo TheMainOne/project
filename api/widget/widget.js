@@ -800,7 +800,7 @@ const retrieveRes = await T.wrap("retrieve", async () => {
       clientId,
       siteId,
       query,
-      kClient: Number(process.env.AIW_KCLIENT || 8),
+      kClient: 3,
       includeWeb: false,          // только клиентские/локальные источники
     });
 
