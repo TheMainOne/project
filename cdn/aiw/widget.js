@@ -1151,26 +1151,37 @@ function showLocalGreeting() {
     return;
       }
 
-      // SSE
+// SSE
 // SSE
 const msg = { role: "assistant", content: "", ts: Date.now() };
 history.push(msg);
 writeHistory(history);
 
-// создаём DOM только для этого сообщения
-const { bubble } = appendMessageDOM(msg);
-updateEmptyHint();
-body.scrollTop = body.scrollHeight;
-postHeight();
+// пузырь создаём только, когда придёт первый chunk
+let rendered = false;
+let bubble;
 
 const reader = res.body.getReader();
 await pumpSSE(reader, (data) => {
   if (data.trim() === "[DONE]") return;
   msg.content += data;
-  bubble.textContent = msg.content;
-  body.scrollTop = body.scrollHeight;
-  postHeight();
+
+  if (!rendered) {
+    // первый кусок — убираем точки и рисуем пузырь
+    hideTyping();
+    const dom = appendMessageDOM(msg);
+    bubble = dom.bubble;
+    updateEmptyHint();
+    rendered = true;
+  }
+
+  if (bubble) {
+    bubble.textContent = msg.content;
+    body.scrollTop = body.scrollHeight;
+    postHeight();
+  }
 });
+
 
 log("fetchAIGreeting(SSE): stream ended, len=", (msg.content || "").length);
 markAutoGreetUsed();
@@ -1296,25 +1307,35 @@ history.push({
 
       // SSE mode
 // SSE mode
+// SSE mode
 const msg = { role: "assistant", content: "", ts: Date.now() };
 history.push(msg);
 writeHistory(history);
 
-// создаём DOM только для НОВОГО сообщения
-const { bubble } = appendMessageDOM(msg);
-updateEmptyHint();
-body.scrollTop = body.scrollHeight;
-postHeight();
+// пузырь создаём только при первом чанке
+let rendered = false;
+let bubble;
 
 const reader = res.body.getReader();
 await pumpSSE(reader, (data) => {
-   if (data.trim() === "[DONE]") return;
+  if (data.trim() === "[DONE]") return;
   msg.content += data;
-  bubble.textContent = msg.content;   // обновляем только текст в одном пузыре
-  body.scrollTop = body.scrollHeight;
-  postHeight();
-});
 
+  if (!rendered) {
+    // первый кусок — скрываем индикатор набора и добавляем пузырь
+    hideTyping();
+    const dom = appendMessageDOM(msg);
+    bubble = dom.bubble;
+    updateEmptyHint();
+    rendered = true;
+  }
+
+  if (bubble) {
+    bubble.textContent = msg.content;
+    body.scrollTop = body.scrollHeight;
+    postHeight();
+  }
+});
 
     } catch (err) {
       history.push({ role: "assistant", content: LANG.startsWith("ru") ? "⚠️ Ошибка соединения" : "⚠️ Connection error" });

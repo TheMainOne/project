@@ -151,7 +151,7 @@ Return JSON only.`}
 
   try {
     const r = await oai.chat.completions.create({
-      model: "gpt-5-1",                 // дешёвая/быстрая - можно протестировать другие модели gpt-5-nano
+      model: "gpt-5-nano",                 // дешёвая/быстрая - можно протестировать другие модели gpt-5-nano
       messages: prompt,
       response_format: { type: "json_object" },
       temperature: 0
