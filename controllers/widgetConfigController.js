@@ -309,3 +309,74 @@ export async function getPublicWidgetConfig(req, res) {
     res.status(500).json({ ok: false, error: String(e) });
   }
 }
+
+
+
+// upload widget font file controller
+
+export async function uploadWidgetFont(req, res) {
+  try {
+    const { idOrSlug } = req.params;
+    const siteId =
+      req.body.siteId || req.query.siteId || req.header("x-aiw-site") || null;
+
+    const rawClientId =
+      req.body.clientId || req.query.clientId || req.header("x-aiw-client") || null;
+    const clientIdFromReq =
+      rawClientId && mongoose.isValidObjectId(rawClientId)
+        ? new mongoose.Types.ObjectId(rawClientId)
+        : null;
+
+    let client = null;
+    if (idOrSlug) {
+      client = await Client.findOne(resolveClientFilter(idOrSlug))
+        .select("_id")
+        .lean();
+    }
+
+    const filter = {
+      ...(clientIdFromReq ? { clientId: clientIdFromReq } : {}),
+      ...(client?._id ? { clientId: client._id } : {}),
+      ...(siteId ? { siteId } : {}),
+    };
+
+    if (!filter.clientId && !filter.siteId) {
+      return res
+        .status(400)
+        .json({ ok: false, error: "Provide client or siteId" });
+    }
+
+    if (!req.file) {
+      return res
+        .status(400)
+        .json({ ok: false, error: "font file is required (field 'font')" });
+    }
+
+    const payload = {
+      fontFileUrl: req.file.location,
+    };
+
+    const cfg = await WidgetConfig.findOneAndUpdate(
+      filter,
+      { $set: payload, $setOnInsert: { ...filter } },
+      { new: true, upsert: true }
+    );
+
+    if (global.__WIDGET_CFG_CACHE) {
+      const key = JSON.stringify(filter);
+      global.__WIDGET_CFG_CACHE.delete(key);
+    }
+
+    return res.json({
+      ok: true,
+      url: req.file.location,
+      s3Key: req.file.key,
+      contentType: req.file.mimetype,
+      size: req.file.size,
+      config: cfg,
+    });
+  } catch (e) {
+    console.error("uploadWidgetFont", e);
+    res.status(500).json({ ok: false, error: String(e) });
+  }
+}

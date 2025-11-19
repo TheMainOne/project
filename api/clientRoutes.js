@@ -10,7 +10,7 @@ import {
   listClientDocuments,
   listClientUsers
 } from "../controllers/clientController.js";
-import { getWidgetConfig, upsertWidgetConfig, getPublicWidgetConfig } from "../controllers/widgetConfigController.js";
+import { getWidgetConfig, upsertWidgetConfig, getPublicWidgetConfig, uploadWidgetFont } from "../controllers/widgetConfigController.js";
 
 const clientRouter = express.Router();
 
@@ -31,5 +31,6 @@ clientRouter.get("/documents/count", countAllClientDocuments); // count all docu
 
 clientRouter.get("/:idOrSlug/widget-config", getWidgetConfig);
 clientRouter.put("/:idOrSlug/widget-config", upload.single("logo"), upsertWidgetConfig);
+clientRouter.post("/:idOrSlug/widget-font", upload.single("font"), uploadWidgetFont);
 
 export default clientRouter;
