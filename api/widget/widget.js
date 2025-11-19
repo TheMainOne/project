@@ -299,7 +299,11 @@ const oai = process.env.OPENAI_API_KEY
   : null;
 
 
-const MODEL = process.env.OPENAI_MODEL || "gpt-5-nano"; // можно сменить в .env
+const MODEL = process.env.OPENAI_MODEL || "gpt-4o-mini"; // можно сменить в .env
+const COMPLETION_OPTS = {
+  max_tokens: 500,
+  temperature: 0.7,
+};
 const CURRENCY = process.env.AIW_CURRENCY || "USD";
 
 const MODEL_PRICES = {
@@ -931,10 +935,11 @@ const baseMessages = [
 ];
 
 try {
-  const r = await oai.chat.completions.create({
-    model: MODEL,
-    messages: baseMessages,
-  });
+const r = await oai.chat.completions.create({
+  model: MODEL,
+  messages: baseMessages,
+  ...COMPLETION_OPTS,
+});
 
   // ЛОГИ ТОКЕНОВ
  if (r.usage) {
@@ -1086,12 +1091,14 @@ if (stream) {
        T.mark("beforeLLM");
 
       // 🔥 СТРИМ ИЗ OPENAI
-      const completion = await oai.chat.completions.create({
-        model: MODEL,
-        messages: prompt,
-        stream: true,
-         stream_options: { include_usage: true }, 
-      });
+const completion = await oai.chat.completions.create({
+  model: MODEL,
+  messages: prompt,
+  stream: true,
+  stream_options: { include_usage: true },
+  ...COMPLETION_OPTS,
+});
+
 
       let firstChunkSent = false;
 
@@ -1258,7 +1265,11 @@ let usageOutput = null;
 let usageTotal  = null;
 
 if (oai) {
-  const completion = await oai.chat.completions.create({ model: MODEL, messages: prompt });
+const completion = await oai.chat.completions.create({
+  model: MODEL,
+  messages: prompt,
+  ...COMPLETION_OPTS,
+});
 
   // ЛОГИ ТОКЕНОВ
  if (completion.usage) {
