@@ -49,7 +49,15 @@ export function buildPrompt({ query, contexts, lang='ru' }) {
   const rules = lang.startsWith('ru')
     ? 'Правила:\n- Используй только факты из контекста. Не выдумывай.\n- Если инфы нет — честно скажи, чего не хватает.\n- При необходимости ссылайся на кусочки как [#N].'
     : 'Rules:\n- Use only facts from the context. Do not invent.\n- If info is missing, state what is missing.\n- Cite snippets as [#N] if helpful.';
-  const ctx = contexts.map((c,i)=>`[#${i+1}] ${c.text}`).join('\n\n');
+  // const ctx = contexts.map((c,i)=>`[#${i+1}] ${c.text}`).join('\n\n');
+
+  const ctx = contexts.map((c,i)=> {
+  const short = c.text.slice(0, 200);
+  return `[#${i+1}] ${short}`;
+}).join('\n\n');
+
+
+  
   return [
     { role:'system', content:`${intro}\n\n${rules}` },
     { role:'user',   content:`Question: ${query}\n\nContext:\n${ctx}\n` }
