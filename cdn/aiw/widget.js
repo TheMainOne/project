@@ -611,6 +611,7 @@ style.textContent = `
  ` : ""}
 
  /* INLINE overrides — чтобы инлайн выглядел как на втором скрине */
+  /* INLINE overrides — другой стиль для встраиваемого виджета */
  ${INLINE ? `
  .aiw-wrap {
    position: relative !important;
@@ -622,6 +623,7 @@ style.textContent = `
    box-shadow: none !important;
    background:${THEME.bg};
  }
+
  .aiw-panel {
    position: relative !important;
    inset: auto !important;
@@ -632,7 +634,91 @@ style.textContent = `
    border-radius: 0 !important;
    box-shadow: none !important;
    border: none !important;
+   display:flex !important;
+   flex-direction:column;
  }
+
+ /* ЧАТ-ОБЛАСТЬ — чуть больше отступы как на скрине */
+ .aiw-body {
+   padding: 32px 40px 16px;
+ }
+
+ /* Убираем аватарки и время для inline */
+ .aiw-ava {
+   display: none !important;
+ }
+
+ .aiw-time {
+   display: none !important;
+ }
+
+ /* Ряды сообщений без лишних гэпов слева/справа */
+ .aiw-row {
+   gap: 0;
+ }
+
+ .aiw-bubble-wrap {
+   max-width: 75%;
+ }
+
+ /* Ассистент — тёмный пузырь слева */
+ .aiw-row.ai .aiw-bubble {
+   background: rgba(255,255,255,0.06);
+   color: ${THEME.text};
+   border-radius: 16px;
+   border-color: rgba(255,255,255,0.12);
+ }
+
+ /* Пользователь — светлый пузырь справа */
+ .aiw-row.me .aiw-bubble {
+   background: #ffffff;
+   color: #111827;
+   border-radius: 16px;
+   border-color: transparent;
+ }
+
+ .aiw-row.me {
+   justify-content: flex-end;
+ }
+
+ /* Подсказка-приветствие — такой же стиль, как у ассистента */
+ .aiw-body > div[style*="emptyHint"] {
+   border-radius: 16px !important;
+ }
+
+ /* Футер + инпут как на скрине */
+ .aiw-footer {
+   position: relative;
+   padding: 16px 40px;
+   border-top: 1px solid rgba(255,255,255,0.12);
+   background: ${THEME.bg};
+ }
+
+ /* Убираем снизу текст "Enter — отправить" для inline */
+ .aiw-footer-meta {
+   display: none !important;
+ }
+
+ .aiw-input {
+   border-radius: 9999px;
+   background: rgba(255,255,255,0.04);
+   border: 1px solid rgba(255,255,255,0.30);
+   padding: 12px 56px 12px 18px;
+   font-size: 15px;
+ }
+
+ .aiw-input::placeholder {
+   color: rgba(249,250,251,0.75);
+ }
+
+ .aiw-send {
+   right: 48px;              /* выровнять по внутреннему пэддингу */
+   width: 40px;
+   height: 40px;
+   border-radius: 9999px;
+   box-shadow: 0 6px 20px rgba(0,0,0,0.45);
+ }
+
  ` : ""}
 `;
 
