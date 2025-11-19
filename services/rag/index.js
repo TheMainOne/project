@@ -8,7 +8,7 @@ export async function retrieveUnified({
   clientId,
   siteId,
   query,
-  kClient = Number(process.env.AIW_KCLIENT || 8),
+  kClient = Number(process.env.AIW_KCLIENT || 4),
   kWeb = 0,                 
   includeWeb = false,      
   minTextLen = 20
