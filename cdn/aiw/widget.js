@@ -610,116 +610,133 @@ style.textContent = `
  .aiw-footer { flex: 0 0 auto; }
  ` : ""}
 
- /* INLINE overrides — чтобы инлайн выглядел как на втором скрине */
-  /* INLINE overrides — другой стиль для встраиваемого виджета */
- ${INLINE ? `
- .aiw-wrap {
-   position: relative !important;
-   inset: auto !important;
-   width: 100% !important;
-   height: 100% !important;
-   margin: 0 !important;
-   border-radius: 0 !important;
-   box-shadow: none !important;
-   background:${THEME.bg};
- }
+ /* INLINE overrides — стиль как на макете, но цвета из THEME */
+${INLINE ? `
+  .aiw-wrap {
+    position: relative !important;
+    inset: auto !important;
+    width: 100% !important;
+    height: 100% !important;
+    margin: 0 !important;
+    border-radius: 0 !important;
+    box-shadow: none !important;
+    background: ${THEME.bg};
+    display:flex;
+  }
 
- .aiw-panel {
-   position: relative !important;
-   inset: auto !important;
-   width: 100% !important;
-   max-width: 100% !important;
-   height: 100% !important;
-   max-height: 100% !important;
-   border-radius: 0 !important;
-   box-shadow: none !important;
-   border: none !important;
-   display:flex !important;
-   flex-direction:column;
- }
+  .aiw-panel {
+    position: relative !important;
+    inset: auto !important;
+    width: 100% !important;
+    max-width: 100% !important;
+    height: 100% !important;
+    max-height: 100% !important;
 
- /* ЧАТ-ОБЛАСТЬ — чуть больше отступы как на скрине */
- .aiw-body {
-   padding: 32px 40px 16px;
- }
+    display:flex !important;
+    flex-direction:column;
 
- /* Убираем аватарки и время для inline */
- .aiw-ava {
-   display: none !important;
- }
+    /* рамка виджета = borderColor */
+    border: 1px solid ${THEME.border} !important;
+    border-radius: 24px !important;
+    overflow:hidden;
+    box-shadow: none !important;
+    background:${THEME.bg};
+  }
 
- .aiw-time {
-   display: none !important;
- }
+  /* HEADER + полоска под тайтлом = borderColor */
+  .aiw-header {
+    background: ${THEME.bg} !important;
+    color: ${THEME.accentText} !important;
+    border-bottom: 1px solid ${THEME.border};
+    padding: 12px 24px;
+  }
 
- /* Ряды сообщений без лишних гэпов слева/справа */
- .aiw-row {
-   gap: 0;
- }
+  .aiw-header-brand {
+    gap: 10px;
+  }
 
- .aiw-bubble-wrap {
-   max-width: 75%;
- }
+  /* ЧАТ-ОБЛАСТЬ */
+  .aiw-body {
+    padding: 32px 40px 16px;
+  }
 
- /* Ассистент — тёмный пузырь слева */
- .aiw-row.ai .aiw-bubble {
-   background: rgba(255,255,255,0.06);
-   color: ${THEME.text};
-   border-radius: 16px;
-   border-color: rgba(255,255,255,0.12);
- }
+  /* без аватарок и времени */
+  .aiw-ava {
+    display: none !important;
+  }
 
- /* Пользователь — светлый пузырь справа */
- .aiw-row.me .aiw-bubble {
-   background: #ffffff;
-   color: #111827;
-   border-radius: 16px;
-   border-color: transparent;
- }
+  .aiw-time {
+    display: none !important;
+  }
 
- .aiw-row.me {
-   justify-content: flex-end;
- }
+  .aiw-row {
+    gap: 0;
+  }
 
- /* Подсказка-приветствие — такой же стиль, как у ассистента */
- .aiw-body > div[style*="emptyHint"] {
-   border-radius: 16px !important;
- }
+  .aiw-bubble-wrap {
+    max-width: 75%;
+  }
 
- /* Футер + инпут как на скрине */
- .aiw-footer {
-   position: relative;
-   padding: 16px 40px;
-   border-top: 1px solid rgba(255,255,255,0.12);
-   background: ${THEME.bg};
- }
+  /* ассистент — тёмный пузырь слева */
+  .aiw-row.ai .aiw-bubble {
+    background: ${THEME.bubbleAI};
+    color: ${THEME.text};
+    border-radius: 16px;
+    border-color: ${THEME.bubbleBorder};
+  }
 
- /* Убираем снизу текст "Enter — отправить" для inline */
- .aiw-footer-meta {
-   display: none !important;
- }
+  /* пользователь — светлый пузырь справа */
+  .aiw-row.me {
+    justify-content:flex-end;
+  }
+  .aiw-row.me .aiw-bubble {
+    background: #ffffff;
+    color: #111827;
+    border-radius: 16px;
+    border-color: transparent;
+  }
 
- .aiw-input {
-   border-radius: 9999px;
-   background: rgba(255,255,255,0.04);
-   border: 1px solid rgba(255,255,255,0.30);
-   padding: 12px 56px 12px 18px;
-   font-size: 15px;
- }
+  /* FOOTER — граница берём из bubbleBorder, чтобы было тоньше */
+  .aiw-footer {
+    position: relative;
+    padding: 20px 32px 20px;
+    border-top: 1px solid ${THEME.bubbleBorder};
+    background:${THEME.bg};
+    display:flex;
+    align-items:center;
+    gap:16px;
+  }
 
- .aiw-input::placeholder {
-   color: rgba(249,250,251,0.75);
- }
+  .aiw-footer-meta {
+    display:none !important;
+  }
 
- .aiw-send {
-   right: 48px;              /* выровнять по внутреннему пэддингу */
-   width: 40px;
-   height: 40px;
-   border-radius: 9999px;
-   box-shadow: 0 6px 20px rgba(0,0,0,0.45);
- }
+  /* инпут: рамка = borderColor */
+  .aiw-input {
+    flex:1 1 auto;
+    border-radius: 9999px;
+    background: rgba(255,255,255,0.04);
+    border: 1px solid ${THEME.border};
+    padding: 12px 18px;
+    font-size: 15px;
+    min-height: 44px;
+  }
 
- ` : ""}
+  .aiw-input::placeholder {
+    color: rgba(249,250,251,0.75);
+  }
+
+  /* кнопка справа от инпута */
+  .aiw-send {
+    position: static;
+    transform: none;
+    width: 44px;
+    height: 44px;
+    border-radius: 9999px;
+    box-shadow: 0 6px 20px rgba(0,0,0,0.45);
+    flex:0 0 auto;
+  }
+` : ""}
 `;
 
 
