@@ -1298,6 +1298,7 @@ function showLocalGreeting() {
 
 // SSE
 // SSE
+// SSE
 const msg = { role: "assistant", content: "", ts: Date.now() };
 history.push(msg);
 writeHistory(history);
@@ -1327,12 +1328,11 @@ await pumpSSE(reader, (data) => {
   }
 });
 
+writeHistory(history);
 
 log("fetchAIGreeting(SSE): stream ended, len=", (msg.content || "").length);
 markAutoGreetUsed();
 
-      log("fetchAIGreeting(SSE): stream ended, len=", (history[idx].content||"").length);
-  markAutoGreetUsed();
     } catch (e) {
       history.push({ role: "assistant", content: LANG.startsWith("ru") ? "⚠️ Ошибка соединения" : "⚠️ Connection error" });
       writeHistory(history);
@@ -1481,6 +1481,8 @@ await pumpSSE(reader, (data) => {
     postHeight();
   }
 });
+
+writeHistory(history);
 
     } catch (err) {
       history.push({ role: "assistant", content: LANG.startsWith("ru") ? "⚠️ Ошибка соединения" : "⚠️ Connection error" });
