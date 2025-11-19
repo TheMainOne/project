@@ -620,8 +620,12 @@ ${INLINE ? `
     margin: 0 !important;
     border-radius: 0 !important;
     box-shadow: none !important;
-    background: ${THEME.bg};
+
+    /* чтобы не было «второго» прямоугольника вокруг панели */
+    background: transparent !important;
+
     display:flex;
+    align-items:stretch;
   }
 
   .aiw-panel {
@@ -696,11 +700,14 @@ ${INLINE ? `
     border-color: transparent;
   }
 
-  /* FOOTER — граница берём из bubbleBorder, чтобы было тоньше */
+  /* FOOTER: без белой полоски сверху */
   .aiw-footer {
     position: relative;
     padding: 20px 32px 20px;
-    border-top: 1px solid ${THEME.bubbleBorder};
+
+    /* убираем линию над инпутом */
+    border-top: none !important;
+
     background:${THEME.bg};
     display:flex;
     align-items:center;
@@ -726,15 +733,18 @@ ${INLINE ? `
     color: rgba(249,250,251,0.75);
   }
 
-  /* кнопка справа от инпута */
+  /* кнопка: белый круг с чёрной стрелкой */
   .aiw-send {
     position: static;
     transform: none;
     width: 44px;
     height: 44px;
     border-radius: 9999px;
-    box-shadow: 0 6px 20px rgba(0,0,0,0.45);
     flex:0 0 auto;
+
+    background: ${THEME.border};
+    color: #000000;
+    box-shadow: 0 6px 20px rgba(0,0,0,0.45);
   }
 ` : ""}
 `;
