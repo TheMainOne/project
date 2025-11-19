@@ -63,6 +63,26 @@ logo:               { type: LogoSchema, default: null },
 
     inlineAutostart:        { type: InlineAutostartSchema, default: () => ({}) },
     stream:                 { type: Boolean, default: true },
+    inputPlaceholder:      { type: String, default: "" },  // если пусто — используется дефолт по языку
+    headerBackgroundColor: { type: String, default: null }, // если null — берём backgroundColor
+headerTextColor:       { type: String, default: null }, // если null — берём textColor
+assistantBubbleColor:      { type: String, default: null }, // фон пузыря бота
+assistantBubbleTextColor:  { type: String, default: null },
+
+userBubbleColor:           { type: String, default: null }, // фон пузыря пользователя
+userBubbleTextColor:       { type: String, default: null },
+
+bubbleBorderColor:         { type: String, default: null }, // если хочешь отдельно от borderColor
+inputBackgroundColor:      { type: String, default: null },
+inputTextColor:            { type: String, default: null },
+inputBorderColor:          { type: String, default: null },
+
+sendButtonBackgroundColor: { type: String, default: null },
+sendButtonIconColor:       { type: String, default: null },
+showAvatars:     { type: Boolean, default: true },
+showTimestamps:  { type: Boolean, default: true },
+
+
 
   // ===== LLM / системный промпт =====
   customSystemPrompt:     { type: String, default: "" },

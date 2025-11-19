@@ -29,7 +29,6 @@ function parseInlineAutostart(raw) {
   return undefined;
 }
 
-
 // GET /api/clients/:idOrSlug/widget-config  (или /api/widget-config?siteId= | ?clientId=)
 export async function getWidgetConfig(req, res) {
   try {
@@ -43,13 +42,18 @@ export async function getWidgetConfig(req, res) {
         : null;
 
     let client = null;
-    if (idOrSlug) client = await Client.findOne(resolveClientFilter(idOrSlug)).select("_id").lean();
+    if (idOrSlug) {
+      client = await Client.findOne(resolveClientFilter(idOrSlug))
+        .select("_id")
+        .lean();
+    }
 
     const filter = {
       ...(clientIdFromQuery ? { clientId: clientIdFromQuery } : {}),
       ...(client?._id ? { clientId: client._id } : {}),
       ...(siteId ? { siteId } : {})
     };
+
     if (!filter.clientId && !filter.siteId) {
       return res.status(400).json({ error: "Provide client or siteId" });
     }
@@ -66,7 +70,8 @@ export async function getWidgetConfig(req, res) {
 export async function upsertWidgetConfig(req, res) {
   try {
     const { idOrSlug } = req.params;
-    const siteId = req.body.siteId || req.query.siteId || req.header("x-aiw-site") || null;
+    const siteId =
+      req.body.siteId || req.query.siteId || req.header("x-aiw-site") || null;
 
     const rawClientId =
       req.body.clientId || req.query.clientId || req.header("x-aiw-client") || null;
@@ -76,29 +81,52 @@ export async function upsertWidgetConfig(req, res) {
         : null;
 
     let client = null;
-    if (idOrSlug) client = await Client.findOne(resolveClientFilter(idOrSlug)).select("_id").lean();
+    if (idOrSlug) {
+      client = await Client.findOne(resolveClientFilter(idOrSlug))
+        .select("_id")
+        .lean();
+    }
 
     const filter = {
       ...(clientIdFromReq ? { clientId: clientIdFromReq } : {}),
       ...(client?._id ? { clientId: client._id } : {}),
       ...(siteId ? { siteId } : {})
     };
+
     if (!filter.clientId && !filter.siteId) {
       return res.status(400).json({ error: "Provide client or siteId" });
     }
 
     // соберём payload из body
     const payload = {
+      // базовые UI
       widgetTitle:        req.body.widgetTitle,
       welcomeMessage:     req.body.welcomeMessage,
       primaryColor:       req.body.primaryColor,
       borderColor:        req.body.borderColor,
       backgroundColor:    req.body.backgroundColor,
       textColor:          req.body.textColor,
-
       lang:               req.body.lang,
       position:           req.body.position,
 
+      // стили инпута / пузырей / хедера (НОВЫЕ)
+      inputPlaceholder:         req.body.inputPlaceholder,
+      headerBackgroundColor:    req.body.headerBackgroundColor,
+      headerTextColor:          req.body.headerTextColor,
+      assistantBubbleColor:     req.body.assistantBubbleColor,
+      assistantBubbleTextColor: req.body.assistantBubbleTextColor,
+      userBubbleColor:          req.body.userBubbleColor,
+      userBubbleTextColor:      req.body.userBubbleTextColor,
+      bubbleBorderColor:        req.body.bubbleBorderColor,
+      inputBackgroundColor:     req.body.inputBackgroundColor,
+      inputTextColor:           req.body.inputTextColor,
+      inputBorderColor:         req.body.inputBorderColor,
+      sendButtonBackgroundColor: req.body.sendButtonBackgroundColor,
+      sendButtonIconColor:       req.body.sendButtonIconColor,
+      showAvatars:              req.body.showAvatars,
+      showTimestamps:           req.body.showTimestamps,
+
+      // LLM / системный промпт
       customSystemPrompt: req.body.customSystemPrompt,
 
       // поведение
@@ -110,12 +138,12 @@ export async function upsertWidgetConfig(req, res) {
       autostartCooldownHours:  req.body.autostartCooldownHours,
       preserveHistory:         req.body.preserveHistory,
       resetHistoryOnOpen:      req.body.resetHistoryOnOpen,
-       stream:                  req.body.stream,
+      stream:                  req.body.stream,
 
       isActive:           req.body.isActive ?? true,
     };
 
-       // ▼ NEW: inlineAutostart (можно прислать JSON-строкой в form-data)
+    // inlineAutostart можно прислать JSON-строкой в form-data
     const inlineAutostart = parseInlineAutostart(req.body.inlineAutostart);
     if (inlineAutostart) {
       payload.inlineAutostart = inlineAutostart;
@@ -124,12 +152,12 @@ export async function upsertWidgetConfig(req, res) {
     // если пришёл файл лого — добавим объект logo
     if (req.file) {
       payload.logo = {
-        s3Key: req.file.key,
-        url: req.file.location, // добавляет multer-s3
+        s3Key:        req.file.key,
+        url:          req.file.location, // добавляет multer-s3
         originalName: req.file.uploadedOriginalName || req.file.originalname,
-        contentType: req.file.uploadedMimeType || req.file.mimetype,
-        size: req.file.size,
-        uploadedAt: new Date(),
+        contentType:  req.file.uploadedMimeType || req.file.mimetype,
+        size:         req.file.size,
+        uploadedAt:   new Date(),
       };
     }
 
@@ -151,6 +179,7 @@ export async function upsertWidgetConfig(req, res) {
   }
 }
 
+// Публичный конфиг для виджета (loader / widget.js)
 export async function getPublicWidgetConfig(req, res) {
   try {
     const siteId  = req.query.siteId || req.header("x-aiw-site") || null;
@@ -179,9 +208,26 @@ export async function getPublicWidgetConfig(req, res) {
       backgroundColor: 1,
       textColor: 1,
       borderColor: 1,
-      logo: 1,        // <-- только объект logo
+      logo: 1,
       lang: 1,
       position: 1,
+
+      // новые UI-поля
+      inputPlaceholder: 1,
+      headerBackgroundColor: 1,
+      headerTextColor: 1,
+      assistantBubbleColor: 1,
+      assistantBubbleTextColor: 1,
+      userBubbleColor: 1,
+      userBubbleTextColor: 1,
+      bubbleBorderColor: 1,
+      inputBackgroundColor: 1,
+      inputTextColor: 1,
+      inputBorderColor: 1,
+      sendButtonBackgroundColor: 1,
+      sendButtonIconColor: 1,
+      showAvatars: 1,
+      showTimestamps: 1,
 
       // behavior...
       autostart: 1,
@@ -192,8 +238,8 @@ export async function getPublicWidgetConfig(req, res) {
       autostartCooldownHours: 1,
       preserveHistory: 1,
       resetHistoryOnOpen: 1,
-      inlineAutostart: 1,   
-      stream: 1,       
+      inlineAutostart: 1,
+      stream: 1,
 
       siteId: 1,
       clientId: 1,
@@ -202,22 +248,38 @@ export async function getPublicWidgetConfig(req, res) {
 
     const cfg = await WidgetConfig.findOne(filter, projection).lean();
 
-    // плоский публичный объект (logo остаётся объектом)
     const out = cfg ? {
-      siteId: cfg.siteId || null,
+      siteId:   cfg.siteId   || null,
       clientId: cfg.clientId || null,
-      widgetTitle:        cfg.widgetTitle        ?? "AI Assistant",
-      welcomeMessage:     cfg.welcomeMessage     ?? "Hi! How can I help?",
-      primaryColor:       cfg.primaryColor       ?? "#6D28D9",
-      backgroundColor:    cfg.backgroundColor    ?? "#0f0f0f",
-      textColor:          cfg.textColor          ?? "#ffffff",
-      borderColor:        cfg.borderColor        ?? (cfg.primaryColor || "#6D28D9"),
 
-      logo:               cfg.logo || null,  // <-- единственная истина
+      widgetTitle:    cfg.widgetTitle    ?? "AI Assistant",
+      welcomeMessage: cfg.welcomeMessage ?? "Hi! How can I help?",
+      primaryColor:   cfg.primaryColor   ?? "#6D28D9",
+      backgroundColor: cfg.backgroundColor ?? "#0f0f0f",
+      textColor:        cfg.textColor      ?? "#ffffff",
+      borderColor:      cfg.borderColor    ?? (cfg.primaryColor || "#6D28D9"),
 
-      lang:               cfg.lang            ?? "en",
-      position:           cfg.position        ?? "br",
-       stream:             cfg.stream ?? false,
+      logo:         cfg.logo || null,
+      lang:         cfg.lang      ?? "en",
+      position:     cfg.position  ?? "br",
+      stream:       cfg.stream    ?? false,
+
+      // стили (как есть, без жёстких дефолтов — виджет сам добьёт)
+      inputPlaceholder:         cfg.inputPlaceholder ?? "",
+      headerBackgroundColor:    cfg.headerBackgroundColor ?? null,
+      headerTextColor:          cfg.headerTextColor ?? null,
+      assistantBubbleColor:     cfg.assistantBubbleColor ?? null,
+      assistantBubbleTextColor: cfg.assistantBubbleTextColor ?? null,
+      userBubbleColor:          cfg.userBubbleColor ?? null,
+      userBubbleTextColor:      cfg.userBubbleTextColor ?? null,
+      bubbleBorderColor:        cfg.bubbleBorderColor ?? null,
+      inputBackgroundColor:     cfg.inputBackgroundColor ?? null,
+      inputTextColor:           cfg.inputTextColor ?? null,
+      inputBorderColor:         cfg.inputBorderColor ?? null,
+      sendButtonBackgroundColor: cfg.sendButtonBackgroundColor ?? null,
+      sendButtonIconColor:       cfg.sendButtonIconColor ?? null,
+      showAvatars:              cfg.showAvatars !== false,
+      showTimestamps:           cfg.showTimestamps !== false,
 
       autostart:          !!cfg.autostart,
       autostartDelay:     Number(cfg.autostartDelay ?? 5000),
@@ -227,7 +289,7 @@ export async function getPublicWidgetConfig(req, res) {
       autostartCooldownHours: Number(cfg.autostartCooldownHours ?? 12),
       preserveHistory:    cfg.preserveHistory !== false,
       resetHistoryOnOpen: !!cfg.resetHistoryOnOpen,
-       inlineAutostart:    cfg.inlineAutostart || null,   // ← НОВОЕ
+      inlineAutostart:    cfg.inlineAutostart || null,
     } : null;
 
     return res.json({ ok: true, config: out });
