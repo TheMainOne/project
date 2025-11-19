@@ -892,7 +892,7 @@ footer.className = "aiw-footer";
 
 const input = document.createElement("textarea");
 input.rows = 1;
-input.placeholder = LANG.startsWith("ru") ? "Спросите что-нибудь…" : "Type your message…";
+input.placeholder = LANG.startsWith("ru") ? "Спросите что-нибудь…" : "Ask anything…";
 input.className = "aiw-input";
 input.maxLength = MAX_LEN;
 
