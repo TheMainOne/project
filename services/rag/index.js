@@ -105,8 +105,7 @@ deduped.sort((a, b) => (b.score ?? 0) - (a.score ?? 0));
     );
   } catch {}
 
-// return { contexts: deduped.slice(0, kClient) };
-return { contexts: deduped.slice(0, 1) };
+return { contexts: deduped.slice(0, kClient) };
 }
 
 // ====== helpers (оставь как есть, только убедись что они в файле) ======
