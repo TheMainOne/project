@@ -7,7 +7,7 @@ import { v4 as uuidv4 } from "uuid";
 
 const bucketName = process.env.AWS_BUCKET_NAME;
 
-// Разрешённые MIME-типы
+// Разрешённые MIME-типы для документов / картинок
 const allowedMimeTypes = [
   "application/pdf",
   "application/msword",
@@ -19,18 +19,42 @@ const allowedMimeTypes = [
   "text/plain",
 ];
 
+// Разрешённые MIME-типы для шрифтов
+const allowedFontMimeTypes = [
+  "font/woff",
+  "font/woff2",
+  "application/font-woff",
+  "application/x-font-woff",
+  "application/x-font-truetype",
+  "application/x-font-ttf",
+  "application/x-font-opentype",
+  "font/ttf",
+  "font/otf",
+];
+
 const upload = multer({
   limits: {
     fileSize: 20 * 1024 * 1024, // Максимум 20 МБ
   },
   fileFilter: (req, file, cb) => {
-    if (allowedMimeTypes.includes(file.mimetype)) {
+    const mimetype = file.mimetype;
+    const originalName = file.originalname || "";
+
+    const isDocOrImage = allowedMimeTypes.includes(mimetype);
+    const isFontMime   = allowedFontMimeTypes.includes(mimetype);
+
+    // Иногда браузеры шлют шрифты как application/octet-stream — проверим по расширению
+    const isFontByExt =
+      /\.(woff2?|ttf|otf)$/i.test(originalName) &&
+      (mimetype === "application/octet-stream" || mimetype === "binary/octet-stream");
+
+    if (isDocOrImage || isFontMime || isFontByExt) {
       cb(null, true);
     } else {
       cb(
         HttpError(
           400,
-          "Allowed files are PDF, Word, Excel, images and .txt files. Maximum allowed size is 20 MB"
+          "Allowed files are PDF, Word, Excel, images, .txt and font files (.woff, .woff2, .ttf, .otf). Maximum allowed size is 20 MB"
         )
       );
     }
@@ -47,8 +71,17 @@ const upload = multer({
       });
     },
     key: (req, file, cb) => {
-      const fileExtension = file.originalname.split(".").pop();
-      const filename = `documents/${uuidv4()}.${fileExtension}`;
+      const fileExtension = (file.originalname.split(".").pop() || "").toLowerCase();
+
+      // Разные папки в бакете по типу поля
+      const baseFolder =
+        file.fieldname === "font"
+          ? "fonts"
+          : file.fieldname === "logo"
+          ? "logos"
+          : "documents";
+
+      const filename = `${baseFolder}/${uuidv4()}.${fileExtension}`;
 
       // сохраняем originalname и mimetype в объект file явно:
       file.uploadedOriginalName = file.originalname;
