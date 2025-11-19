@@ -22,7 +22,7 @@ export async function retrieveUnified({
     cid = new mongoose.Types.ObjectId(clientId);
   }
 
-  const MAX_CTX_CHARS = 300; // чтобы не слать в промпт огромные тексты
+  const MAX_CTX_CHARS = 3000; // чтобы не слать в промпт огромные тексты
 
   // 2) базовый фильтр: берём чанки клиента ИЛИ по siteId
   const or = [];
