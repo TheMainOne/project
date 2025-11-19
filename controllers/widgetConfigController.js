@@ -126,6 +126,11 @@ export async function upsertWidgetConfig(req, res) {
       showAvatars:              req.body.showAvatars,
       showTimestamps:           req.body.showTimestamps,
 
+      //  шрифты
+        fontFamily:  req.body.fontFamily,
+  fontCssUrl:  req.body.fontCssUrl,
+  fontFileUrl: req.body.fontFileUrl,
+
       // LLM / системный промпт
       customSystemPrompt: req.body.customSystemPrompt,
 
@@ -228,6 +233,9 @@ export async function getPublicWidgetConfig(req, res) {
       sendButtonIconColor: 1,
       showAvatars: 1,
       showTimestamps: 1,
+        fontFamily: 1,
+  fontCssUrl: 1,
+  fontFileUrl: 1,
 
       // behavior...
       autostart: 1,
@@ -280,6 +288,9 @@ export async function getPublicWidgetConfig(req, res) {
       sendButtonIconColor:       cfg.sendButtonIconColor ?? null,
       showAvatars:              cfg.showAvatars !== false,
       showTimestamps:           cfg.showTimestamps !== false,
+       fontFamily:  cfg.fontFamily  || "",
+  fontCssUrl:  cfg.fontCssUrl  || "",
+  fontFileUrl: cfg.fontFileUrl || "",
 
       autostart:          !!cfg.autostart,
       autostartDelay:     Number(cfg.autostartDelay ?? 5000),

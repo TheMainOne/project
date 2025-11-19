@@ -81,6 +81,9 @@ sendButtonBackgroundColor: { type: String, default: null },
 sendButtonIconColor:       { type: String, default: null },
 showAvatars:     { type: Boolean, default: true },
 showTimestamps:  { type: Boolean, default: true },
+fontFamily:        { type: String, default: "" },  // кастомный font-family
+fontCssUrl:        { type: String, default: "" },  // ссылка на CSS (Google Fonts / свой)
+fontFileUrl:       { type: String, default: "" },  // прямая ссылка на woff2/woff с S3
 
 
 
