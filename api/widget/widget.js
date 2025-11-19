@@ -1095,7 +1095,6 @@ if (stream) {
         model: MODEL,
         messages: prompt,
         stream: true,
-         stream_options: { include_usage: true }, 
       });
 
       let firstChunkSent = false;
