@@ -6,6 +6,10 @@ const AiwMessageSchema = new mongoose.Schema({
 
   role: { type: String, enum: ["user", "assistant", "system"], index: true },
   content: { type: String, required: true },
+    tokensInput:  { type: Number, default: null },
+  tokensOutput: { type: Number, default: null },
+  tokensTotal:  { type: Number, default: null },
+  costUsd:      { type: Number, default: null },
 
   latencyMs: Number,
   promptTokens: Number,

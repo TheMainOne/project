@@ -302,6 +302,22 @@ const oai = process.env.OPENAI_API_KEY
 const MODEL = process.env.OPENAI_MODEL || "gpt-5-nano"; // можно сменить в .env
 const CURRENCY = process.env.AIW_CURRENCY || "USD";
 
+const MODEL_PRICES = {
+  "gpt-5-nano": {
+    in: 0.05 / 1_000_000,   // $0.05 за 1M input
+    out: 0.40 / 1_000_000,  // $0.40 за 1M output
+  },
+  // сюда потом можно добавить другие модели
+};
+
+function estimateCostUsd(model, inputTokens = 0, outputTokens = 0) {
+  const price = MODEL_PRICES[model];
+  if (!price) return null;
+  const costIn  = inputTokens  * price.in;
+  const costOut = outputTokens * price.out;
+  return Number((costIn + costOut).toFixed(6));  // до 6 знаков после запятой
+}
+
 const DEFAULT_SYS_RU = `Ты — бот-ассистент этого сайта. Отвечай кратко и дружелюбно.
 - Помогаешь с вопросами о компании, услугах, тарифах, документах и контактах.
 - Если информации не хватает, вежливо уточни 1–2 вопроса.
@@ -497,19 +513,37 @@ async function logUserMessage({ siteId, sessionId, content, clientId }) {
   }
 }
 
-async function logAssistantMessage({ siteId, sessionId, content, latencyMs, clientId }) {
+
+async function logAssistantMessage({
+  siteId,
+  sessionId,
+  content,
+  latencyMs,
+  clientId,
+  tokensInput,
+  tokensOutput,
+  tokensTotal,
+  costUsd,
+}) {
   try {
     if (content == null) return;
     const topics = classifyTopics(content);
     const doc = await AiwMessage.create({
       siteId: siteId || "unknown-site",
-      clientId: clientId || null,        // <— NEW
+      clientId: clientId || null,
       sessionId,
       role: "assistant",
       content: String(content).slice(0, 200_000),
       topic: topics[0],
       latencyMs,
+
+      // 👇 новые поля
+      tokensInput:  tokensInput  ?? null,
+      tokensOutput: tokensOutput ?? null,
+      tokensTotal:  tokensTotal  ?? null,
+      costUsd:      costUsd      ?? null,
     });
+
     await AiwSession.updateOne(
       { sessionId },
       {
@@ -523,6 +557,7 @@ async function logAssistantMessage({ siteId, sessionId, content, latencyMs, clie
     console.error("[AIW] logAssistantMessage error", e);
   }
 }
+
 
 
 
@@ -883,6 +918,10 @@ setSourceHeaders(res, "no-context-llm", []);
 
   // <-- добавлено: если есть модель — отвечаем без RAG
   let reply;
+  let usageInput  = null;
+let usageOutput = null;
+let usageTotal  = null;
+
   if (oai) {
     // cfg вы уже получаете раньше через getWidgetConfigCached({ clientId })
 const sys = pickSystemPrompt(cfg, lang);
@@ -896,6 +935,21 @@ try {
     model: MODEL,
     messages: baseMessages,
   });
+
+  // ЛОГИ ТОКЕНОВ
+ if (r.usage) {
+    usageInput  = r.usage.prompt_tokens     ?? r.usage.input_tokens;
+    usageOutput = r.usage.completion_tokens ?? r.usage.output_tokens;
+    usageTotal  = r.usage.total_tokens;
+
+    console.log("[AIW][tokens][no-context]", {
+      model: MODEL,
+      input:  usageInput,
+      output: usageOutput,
+      total:  usageTotal,
+    });
+  }
+
   reply = (r.choices?.[0]?.message?.content || "").trim();
   if (!reply) reply = defaultNoContextReply(lang, cfg);
 } catch (e) {
@@ -906,7 +960,20 @@ try {
     reply = lang.startsWith("ru") ? "Демо-ответ (нет OPENAI_API_KEY)." : "Demo reply (no OPENAI_API_KEY).";
   }
 
-  await logAssistantMessage({ siteId, sessionId, content: reply, latencyMs: Date.now() - started, clientId });
+const costUsd = estimateCostUsd(MODEL, usageInput, usageOutput);
+
+await logAssistantMessage({
+  siteId,
+  sessionId,
+  content: reply,
+  latencyMs: Date.now() - started,
+  clientId,
+  tokensInput:  usageInput,
+  tokensOutput: usageOutput,
+  tokensTotal:  usageTotal,
+  costUsd,
+});
+
  
   // для no-context теперь не помечаем «плохо» — пусть решит судья
   const quick = quickFlag({ phase, contexts: [], reply });
@@ -1006,6 +1073,7 @@ if (stream) {
       req.on("aborted", () => { clientClosed = true; });
 
       let buffer = "";
+            let usage = null; // 
       if (!oai) {
         const demo = lang.startsWith("ru") ? "Демо-ответ (нет OPENAI_API_KEY)." : "Demo reply (no OPENAI_API_KEY).";
         buffer = demo;
@@ -1026,23 +1094,42 @@ if (stream) {
 
       let firstChunkSent = false;
 
-      for await (const chunk of completion) {
-        const piece = chunk.choices?.[0]?.delta?.content || "";
-        if (!piece) continue;
 
-        buffer += piece;                // копим полный текст для логов/гапов
 
-        if (!clientClosed) {
-          res.write(`data:${piece}\n\n`);
+for await (const chunk of completion) {
+  // 👇 если в чанке есть usage — сохраняем
+  if (chunk.usage) {
+    usage = {
+      input:  chunk.usage.prompt_tokens ?? chunk.usage.input_tokens,
+      output: chunk.usage.completion_tokens ?? chunk.usage.output_tokens,
+      total:  chunk.usage.total_tokens,
+    };
+  }
 
-          if (!firstChunkSent) {
-            firstChunkSent = true;
-            T.mark("firstChunkFlushed");
-          }
-        }
-      }
+  const piece = chunk.choices?.[0]?.delta?.content || "";
+  if (!piece) continue;
 
-      T.mark("afterLLM");
+  buffer += piece;
+
+  if (!clientClosed) {
+    res.write(`data:${piece}\n\n`);
+
+    if (!firstChunkSent) {
+      firstChunkSent = true;
+      T.mark("firstChunkFlushed");
+    }
+  }
+}
+
+T.mark("afterLLM");
+
+// 👇 Логируем токены после завершения стрима
+if (usage) {
+  console.log("[AIW][tokens][rag-stream]", {
+    model: MODEL,
+    ...usage,
+  });
+}
         } catch (e) {
           const msg = `⚠️ ${e?.message || "LLM error"}`;
           buffer = msg;
@@ -1051,7 +1138,23 @@ if (stream) {
       }
 
       // лог ассистента и финальные заголовки
-      await logAssistantMessage({ siteId, sessionId, content: buffer, latencyMs: Date.now() - started, clientId });
+      let tokensInput  = usage?.input  ?? null;
+let tokensOutput = usage?.output ?? null;
+let tokensTotal  = usage?.total  ?? null;
+const costUsd    = estimateCostUsd(MODEL, tokensInput, tokensOutput);
+
+await logAssistantMessage({
+  siteId,
+  sessionId,
+  content: buffer,
+  latencyMs: Date.now() - started,
+  clientId,
+  tokensInput,
+  tokensOutput,
+  tokensTotal,
+  costUsd,
+});
+
       T.mark("logAssistantMessage");
       dbMark = "user:+ assistant:+";
       const timings = T.get();
@@ -1147,16 +1250,48 @@ defer(async () => {
       res.setHeader("X-AIW-Phase", phase);
       setSourceHeaders(res, "rag", citations);
 T.mark("beforeLLM");
+
 let reply = lang.startsWith("ru") ? "Демо-ответ (нет OPENAI_API_KEY)." : "Demo reply (no OPENAI_API_KEY).";
+let usageInput  = null;
+let usageOutput = null;
+let usageTotal  = null;
+
 if (oai) {
   const completion = await oai.chat.completions.create({ model: MODEL, messages: prompt });
+
+  // ЛОГИ ТОКЕНОВ
+ if (completion.usage) {
+    usageInput  = completion.usage.prompt_tokens     ?? completion.usage.input_tokens;
+    usageOutput = completion.usage.completion_tokens ?? completion.usage.output_tokens;
+    usageTotal  = completion.usage.total_tokens;
+
+    console.log("[AIW][tokens][rag-json]", {
+      model: MODEL,
+      input:  usageInput,
+      output: usageOutput,
+      total:  usageTotal,
+    });
+  }
+
   reply = completion.choices?.[0]?.message?.content?.trim() || reply;
 }
 T.mark("afterLLM");
 timing.llm = T.get().afterLLM - T.get().beforeLLM;
 
+const costUsd = estimateCostUsd(MODEL, usageInput, usageOutput);
 
-      await logAssistantMessage({ siteId, sessionId, content: reply, latencyMs: Date.now() - started, clientId });
+await logAssistantMessage({
+  siteId,
+  sessionId,
+  content: reply,
+  latencyMs: Date.now() - started,
+  clientId,
+  tokensInput:  usageInput,
+  tokensOutput: usageOutput,
+  tokensTotal:  usageTotal,
+  costUsd,
+});
+
       dbMark = "user:+ assistant:+";
 
       res.setHeader("X-AIW-DB", dbMark);
