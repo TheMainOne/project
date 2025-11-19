@@ -301,7 +301,7 @@ const oai = process.env.OPENAI_API_KEY
 
 const MODEL = process.env.OPENAI_MODEL || "gpt-4o-mini"; // можно сменить в .env
 const COMPLETION_OPTS = {
-  max_tokens: 500,
+  max_tokens: 1000,
   temperature: 0.7,
 };
 const CURRENCY = process.env.AIW_CURRENCY || "USD";
