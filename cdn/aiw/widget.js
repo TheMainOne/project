@@ -672,9 +672,10 @@ ${INLINE ? `
     flex-direction:column;
 
     /* рамка виджета = borderColor */
+       box-sizing: border-box;        
     border: 1px solid ${THEME.border} !important;
     border-radius: 24px !important;
-    overflow:hidden;
+    overflow: visible;
     box-shadow: none !important;
     background:${THEME.bg};
   }
