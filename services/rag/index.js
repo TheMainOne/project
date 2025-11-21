@@ -97,6 +97,16 @@ deduped.sort((a, b) => (b.score ?? 0) - (a.score ?? 0));
       "| rawChunks:", chunks.length,
       "| out:", deduped.length
     );
+
+       console.log(
+      "[RAG][preview]",
+      deduped.slice(0, kClient).map(c => ({
+        title: c.title,
+        url: c.url,
+        score: c.score,
+        text: (c.text || "").slice(0, 300),
+      }))
+    );
   } catch {}
 
 return { contexts: deduped.slice(0, kClient) };
