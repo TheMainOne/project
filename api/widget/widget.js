@@ -309,10 +309,13 @@ const CURRENCY = process.env.AIW_CURRENCY || "USD";
 
 const MODEL_PRICES = {
   "gpt-5-nano": {
-    in: 0.05 / 1_000_000,   // $0.05 за 1M input
-    out: 0.40 / 1_000_000,  // $0.40 за 1M output
+    in: 0.05 / 1_000_000,
+    out: 0.40 / 1_000_000,
   },
-  // сюда потом можно добавить другие модели
+  "gpt-4o-mini": {
+    in: 0.15 / 1_000_000,   // $0.15 за 1M input
+    out: 0.60 / 1_000_000,  // $0.60 за 1M output
+  },
 };
 
 function estimateCostUsd(model, inputTokens = 0, outputTokens = 0) {
