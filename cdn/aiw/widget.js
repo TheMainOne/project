@@ -675,7 +675,7 @@ ${INLINE ? `
        box-sizing: border-box;        
     border: 1px solid ${THEME.border} !important;
     border-radius: 24px !important;
-    overflow: visible;
+    overflow: hidden;
     box-shadow: none !important;
     background:${THEME.bg};
   }
