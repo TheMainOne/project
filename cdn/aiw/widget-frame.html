@@ -78,6 +78,9 @@
       resetHistoryOnOpen: !!(config && config.resetHistoryOnOpen),
 
        inlineAutostart: config?.inlineAutostart || null,   // ← вот это добавляем
+          baseFontSize: (typeof config?.baseFontSize !== "undefined"
+                       ? Number(config.baseFontSize)
+                       : 15),
         fontFamily:  config?.fontFamily  || "",
       fontCssUrl:  config?.fontCssUrl  || "",
       fontFileUrl: config?.fontFileUrl || "",
