@@ -112,6 +112,9 @@ function setHeightFromContainer() {
       fontFamily:   config?.fontFamily   || "",
       fontCssUrl:   config?.fontCssUrl   || "",
       fontFileUrl:  config?.fontFileUrl  || "",
+      baseFontSize: (config && typeof config.baseFontSize !== "undefined")
+    ? Number(config.baseFontSize)
+    : 15,
       baseFontSize: Number(config?.baseFontSize ?? 14),
       autostart: !!(config && config.autostart),
       autostartDelay: Number(config?.autostartDelay ?? 5000),
