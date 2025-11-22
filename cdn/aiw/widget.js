@@ -119,6 +119,11 @@ const THEME = {
   time: "rgba(229,231,235,.6)"
 };
 
+const BASE_FONT_SIZE = Math.max(
+  10,
+  Math.min(24, Number(CFG.baseFontSize || 14))
+);
+
 
 
 console.debug("[AIW][cfg]", { AUTOSTART, AUTO_MODE, AUTO_DELAY, AUTO_COOLDOWN_HOURS, AUTO_MSG });
