@@ -579,12 +579,23 @@ style.textContent = `
   background:${THEME.panel};
   color:${THEME.text};
   border-radius:12px;
-  padding:10px 44px 10px 12px;           
+  /* побольше вертикальные отступы, чтобы текст был по центру */
+  padding:20px 52px 20px 16px;
   outline:none;
-  min-height:40px;
+
+  /* фиксированная «высокая» зона ввода */
+  min-height:65px;
+  max-height:65px;
+
   box-sizing:border-box;
-    font-family:${BASE_FONT_STACK};
+  font-family:${BASE_FONT_STACK};
+  font-size:14px;
+  line-height:1.4;
+
+  /* убираем вертикальный скролл */
+  overflow-y:hidden;
 }
+
 
 .aiw-send{
   position:absolute;
@@ -738,14 +749,14 @@ ${INLINE ? `
     position: relative;
     padding: 20px 32px 20px;
 
-    /* убираем линию над инпутом */
     border-top: none !important;
 
     background:${THEME.bg};
     display:flex;
-    align-items:center;
+    align-items:stretch;   /* инпут и кнопка одинаковой высоты */
     gap:16px;
   }
+
 
   .aiw-footer-meta {
     display:none !important;
@@ -757,10 +768,21 @@ ${INLINE ? `
     border-radius: 9999px;
     background: rgba(255,255,255,0.04);
     border: 1px solid ${THEME.border};
-    padding: 12px 18px;
-    font-size: 15px;
-    min-height: 44px;
+
+    /* ровно 65px высотой */
+    height:65px;
+    min-height:65px;
+    max-height:65px;
+
+    /* симметричные отступы – placeholder по центру вертикально */
+    padding:20px 22px;
+
+    font-size:15px;
+    line-height:1.4;
+
+    overflow-y:hidden;    /* без вертикального скролла */
   }
+
 
   .aiw-input::placeholder {
     color: rgba(249,250,251,0.75);
@@ -770,15 +792,22 @@ ${INLINE ? `
   .aiw-send {
     position: static;
     transform: none;
-    width: 44px;
-    height: 44px;
-    border-radius: 9999px;
+
+    /* такая же высота, как у инпута */
+    width:65px;
+    height:65px;
+    border-radius:9999px;
     flex:0 0 auto;
 
-    background: ${THEME.border};
-    color: #000000;
-    box-shadow: 0 6px 20px rgba(0,0,0,0.45);
+    background:${THEME.border};
+    color:#000000;
+    box-shadow:0 6px 20px rgba(0,0,0,0.45);
+
+    display:flex;
+    align-items:center;
+    justify-content:center;
   }
+
 ` : ""}
 `;
 
