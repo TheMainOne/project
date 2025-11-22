@@ -377,6 +377,7 @@ style.textContent = `
   align-items:center;
   justify-content:space-between;
     font-family:${BASE_FONT_STACK};
+  font-size:${BASE_FONT_SIZE + 1}px;
 }
 .aiw-header .aiw-actions{
   display:flex;
@@ -419,8 +420,8 @@ style.textContent = `
   padding:12px;
   overflow:auto;
   min-height:0;
-  font-family:${BASE_FONT_STACK};
-  font-size:14px;
+    font-family:${BASE_FONT_STACK};
+  font-size:${BASE_FONT_SIZE}px;
   background:${THEME.panel};
 
   scrollbar-width:thin;
@@ -588,8 +589,8 @@ style.textContent = `
   max-height:65px;
 
   box-sizing:border-box;
-  font-family:${BASE_FONT_STACK};
-  font-size:14px;
+    font-family:${BASE_FONT_STACK};
+  font-size:${BASE_FONT_SIZE}px;
   line-height:1.4;
 
   /* убираем вертикальный скролл */
@@ -777,7 +778,7 @@ ${INLINE ? `
     /* симметричные отступы – placeholder по центру вертикально */
     padding:20px 22px;
 
-    font-size:15px;
+    font-size:${BASE_FONT_SIZE}px;
     line-height:1.4;
 
     overflow-y:hidden;    /* без вертикального скролла */

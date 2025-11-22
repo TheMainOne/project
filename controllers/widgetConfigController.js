@@ -131,6 +131,8 @@ export async function upsertWidgetConfig(req, res) {
   fontCssUrl:  req.body.fontCssUrl,
   fontFileUrl: req.body.fontFileUrl,
 
+  
+
       // LLM / системный промпт
       customSystemPrompt: req.body.customSystemPrompt,
 
@@ -147,6 +149,13 @@ export async function upsertWidgetConfig(req, res) {
 
       isActive:           req.body.isActive ?? true,
     };
+
+        if (req.body.baseFontSize !== undefined) {
+      const n = Number(req.body.baseFontSize);
+      if (!Number.isNaN(n)) {
+        payload.baseFontSize = Math.max(10, Math.min(24, n));
+      }
+    }
 
     // inlineAutostart можно прислать JSON-строкой в form-data
     const inlineAutostart = parseInlineAutostart(req.body.inlineAutostart);
@@ -236,6 +245,7 @@ export async function getPublicWidgetConfig(req, res) {
         fontFamily: 1,
   fontCssUrl: 1,
   fontFileUrl: 1,
+   baseFontSize: 1,
 
       // behavior...
       autostart: 1,
@@ -291,6 +301,7 @@ export async function getPublicWidgetConfig(req, res) {
        fontFamily:  cfg.fontFamily  || "",
   fontCssUrl:  cfg.fontCssUrl  || "",
   fontFileUrl: cfg.fontFileUrl || "",
+   baseFontSize:      cfg.baseFontSize ?? 14, 
 
       autostart:          !!cfg.autostart,
       autostartDelay:     Number(cfg.autostartDelay ?? 5000),
