@@ -67,7 +67,7 @@ const ACCENT = CFG.primaryColor || CFG.accent || "#6D28D9";
   const AUTO_COOLDOWN_HOURS = Math.max(0, (CFG.autostartCooldownHours ?? 12));
   const INLINE_AUTOSTART_CFG = CFG.inlineAutostart || null;
   const USER_INTERACTED_KEY = `aiw:userInteracted:session:${SITE_ID}`;
-  let showWelcomeHint = !(INLINE && INLINE_AUTOSTART_CFG && INLINE_AUTOSTART_CFG.enabled === true);
+let showWelcomeHint = true;
 const PRESERVE_HISTORY   = INLINE ? true : (CFG.preserveHistory !== false);
 const RESET_HISTORY_ON_OPEN = !INLINE && CFG.resetHistoryOnOpen === true;
 
@@ -1109,16 +1109,36 @@ function runInlineAutostart(cfg) {
   const cooldownMinutes = Math.max(0, cfg.cooldownMinutes || 0);
   const now = Date.now();
 
+  // если сценарий не запустится (session/cooldown), а чат пустой —
+  // хотим вернуться к обычному приветственному пузырю
+  function fallbackToWelcome() {
+    if (!history || !history.length) {
+      showWelcomeHint = true;
+      updateEmptyHint();
+    }
+  }
+
   if (mode === "session") {
-    if (sessionStorage.getItem(INLINE_AUTO_SESSION_KEY) === "1") return;
+    if (sessionStorage.getItem(INLINE_AUTO_SESSION_KEY) === "1") {
+      // автопривет уже был в этой вкладке → включаем плейсхолдер
+      fallbackToWelcome();
+      return;
+    }
     sessionStorage.setItem(INLINE_AUTO_SESSION_KEY, "1");
   } else if (mode === "cooldown" && cooldownMinutes > 0) {
     const lastTs = +(localStorage.getItem(INLINE_AUTO_COOLDOWN_KEY) || 0);
     const diffMin = (now - lastTs) / 60000;
-    if (diffMin < cooldownMinutes) return;
+    if (diffMin < cooldownMinutes) {
+      fallbackToWelcome();
+      return;
+    }
     localStorage.setItem(INLINE_AUTO_COOLDOWN_KEY, String(now));
   }
   // mode === "always" — без ограничений
+
+  // Если дошли сюда — сценарий действительно будет выполняться → плейсхолдер убираем
+  showWelcomeHint = false;
+  updateEmptyHint();
 
   let totalDelay = 0;
 
@@ -1131,7 +1151,7 @@ function runInlineAutostart(cfg) {
     totalDelay += delay;
 
     const tid = setTimeout(() => {
-      // если пользователь уже успел что-то отправить — просто выходим
+      // если пользователь уже успел что-то отправить — не спамим
       if (alreadyInteracted()) return;
 
       history.push({
@@ -1147,6 +1167,7 @@ function runInlineAutostart(cfg) {
     INLINE_AUTO_TIMEOUTS.push(tid);
   });
 }
+
 
 
 
@@ -1306,6 +1327,7 @@ resetBtn.addEventListener("click", (e) => {
   updateCounter();
   renderAll();
 });
+
 
 
   input.addEventListener("keydown", (e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); doSend(); } });
