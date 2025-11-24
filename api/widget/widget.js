@@ -770,37 +770,43 @@ if (ragQuery.length < 20 && lastAssistant) {
 const rawQuery = query;   // то, что реально написал пользователь
 let llmQuery = query;     // то, что пойдёт в buildPrompt / no-context LLM
 
-function isShortConfirmation(text, lang) {
+function isShortConfirmation(text) {
   const q = (text || "").trim().toLowerCase();
   if (!q) return false;
 
-  const en = [
+  const variants = [
+    // EN
     "yes", "yep", "yeah", "sure",
     "ok", "okay",
-    "go", "let's go", "let's do it"
-  ];
-  const ru = [
+    "go", "let's go", "let's do it",
+
+    // RU
     "да", "ага", "угу",
     "ок", "окей",
     "давай", "поехали", "го"
   ];
 
-  const list = lang.startsWith("ru") ? ru : en;
-  return list.some(w => q === w || q.startsWith(w + "!") || q.startsWith(w + "."));
+  return variants.some(w =>
+    q === w ||
+    q.startsWith(w + "!") ||
+    q.startsWith(w + ".") ||
+    q.startsWith(w + ",")
+  );
 }
 
-if (isShortConfirmation(query, lang) && lastAssistant) {
-  // пользователь подтвердил предыдущее предложение ассистента
+if (isShortConfirmation(query) && lastAssistant) {
+  llmQuery =
+    `The user replied "${rawQuery}" as a confirmation and wants you to proceed ` +
+    `with your previous suggestion.\n\n` +
+    `Your previous message was:\n"""${lastAssistant.content}"""\n\n` +
+    `Using the retrieved context, take the next logical step and do exactly ` +
+    `what you offered (for example, show niche-specific cases if you offered that).`;
+
+  // просим отвечать на нужном языке
   if (lang.startsWith("ru")) {
-    llmQuery =
-      `Пользователь ответил "${rawQuery}" как подтверждение и хочет продолжить твоё предыдущее предложение.\n` +
-      `Твоё предыдущее сообщение:\n"""${lastAssistant.content}"""\n\n` +
-      `Сделай следующий логичный шаг (например, покажи нишевые кейсы, если ты это предлагал), используя предоставленный контекст.`;
+    llmQuery += `\n\nAnswer the user in Russian.`;
   } else {
-    llmQuery =
-      `The user replied "${rawQuery}" as a confirmation and wants to proceed with your previous suggestion.\n` +
-      `Your previous message:\n"""${lastAssistant.content}"""\n\n` +
-      `Take the next logical step (for example, show niche-specific cases if you offered that), using the provided context.`;
+    llmQuery += `\n\nAnswer the user in English.`;
   }
 }
 
