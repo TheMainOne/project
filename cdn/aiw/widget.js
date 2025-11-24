@@ -320,6 +320,15 @@ style.textContent = `
     font-family:${BASE_FONT_STACK};
 }
 
+.aiw-send-icon {
+  width: 22px;
+  height: 22px;
+  display: block;
+
+  /* картинка сейчас чёрная – инвертируем до белой */
+  filter: invert(1);
+}
+
  .aiw-panel{
    position:absolute;
    bottom:70px;
@@ -961,15 +970,16 @@ input.placeholder = LANG.startsWith("ru") ? "Спросите что-нибуд�
 input.className = "aiw-input";
 input.maxLength = MAX_LEN;
 
+const SEND_ICON_URL = new URL("/aiw/assets/arrow-right.png", location.origin).href;
+
 const sendBtn = document.createElement("button");
 sendBtn.className = "aiw-send";
 sendBtn.innerHTML = `
-  <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true">
-    <path
-      fill="currentColor"
-      d="M3.2 3.6c-.8.5-1.2 1.3-1.2 2.3v12.2c0 1 .4 1.8 1.2 2.3.8.5 1.8.4 2.6-.1l12-6.1c.8-.4 1.2-1.2 1.2-2s-.5-1.6-1.2-2l-12-6.1c-.8-.5-1.8-.6-2.6-.1z"
-    ></path>
-  </svg>
+  <img
+    src="${SEND_ICON_URL}"
+    alt=""
+    class="aiw-send-icon"
+  />
 `;
 
 footer.appendChild(input);
