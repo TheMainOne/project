@@ -324,9 +324,6 @@ style.textContent = `
   width: 22px;
   height: 22px;
   display: block;
-
-  /* картинка сейчас чёрная – инвертируем до белой */
-  filter: invert(1);
 }
 
  .aiw-panel{
