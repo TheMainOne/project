@@ -249,14 +249,6 @@ if (PRESERVE_HISTORY === false && STORAGE) {
 
 const sanitize = (s) => (s || "").toString().slice(0, MAX_LEN);
 
-function parseSSEChunk(buf, onData) {
-  for (const block of buf.split(/\r?\n\r?\n/)) {
-    for (const ln of block.split(/\r?\n/)) {
-      if (ln.startsWith("data:")) onData(ln.slice(5));  
-    }
-  }
-}
-
 
   // ---------- DOM ----------
   const root = document.createElement("div");
@@ -1393,7 +1385,8 @@ let bubble;
 const reader = res.body.getReader();
 await pumpSSE(reader, (data) => {
   if (data.trim() === "[DONE]") return;
-  msg.content += data;
+    const chunk = data.replace(/\\n/g, "\n");
+  msg.content += chunk;
 
   if (!rendered) {
     // первый кусок — убираем точки и рисуем пузырь
@@ -1547,7 +1540,8 @@ let bubble;
 const reader = res.body.getReader();
 await pumpSSE(reader, (data) => {
   if (data.trim() === "[DONE]") return;
-  msg.content += data;
+  const chunk = data.replace(/\\n/g, "\n");
+  msg.content += chunk;
 
   if (!rendered) {
     // первый кусок — скрываем индикатор набора и добавляем пузырь
@@ -1558,11 +1552,11 @@ await pumpSSE(reader, (data) => {
     rendered = true;
   }
 
-  if (bubble) {
-    bubble.textContent = msg.content;
-    body.scrollTop = body.scrollHeight;
-    postHeight();
-  }
+if (bubble) {
+  bubble.innerHTML = renderMarkdownBasic(msg.content);
+  body.scrollTop = body.scrollHeight;
+  postHeight();
+}
 });
 
 writeHistory(history);

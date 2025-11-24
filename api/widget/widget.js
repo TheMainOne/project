@@ -114,6 +114,12 @@ function quickHeuristicGood({ phase, contexts, reply }) {
   return null; // пусть решит модель
 }
 
+function sseEncode(str = "") {
+  return String(str)
+    .replace(/\r/g, "")   // убираем \r
+    .replace(/\n/g, "\\n"); // \n → \n (двойной бэкслеш)
+}
+
 const EXPLICIT_NOINFO_RE = /(в контексте нет информации|в базе(?: знаний)? нет информации|в справке не указано|в (предоставленной|загруженн(?:ой|ых)) (базе знаний|документах) нет информации|нет информации о\b|нет данных о\b|no (information|info) (in|about|on) (our )?(knowledge base|docs?|documentation|database|records)|there (is|are) no (information|data) (available )?(on|about)|not (listed|specified|documented) (in|within) (the )?(knowledge base|docs?|documentation|database)|we (do not|don't) have (any )?(information|data) (on|about)|no data (on|about)|not available in (our )?(database|documents|docs|knowledge base))/i;
 async function assessGoodAnswer({ oai, model, question, reply, contexts, lang }) {
   // 1) эвристика до модели
@@ -1040,7 +1046,7 @@ await logAssistantMessage({
     setSSEHeaders(req, res);
     res.write(": heartbeat\n\n");
     T.mark("firstByteToClient");
-    res.write(`data:${reply}\n\n`);
+    res.write(`data:${sseEncode(reply)}\n\n`);
     res.write("data: [DONE]\n\n");
     return res.end();
   }
@@ -1124,7 +1130,7 @@ for await (const chunk of completion) {
   buffer += piece;
 
   if (!clientClosed) {
-    res.write(`data:${piece}\n\n`);
+    res.write(`data:${sseEncode(piece)}\n\n`);
 
     if (!firstChunkSent) {
       firstChunkSent = true;
@@ -1145,7 +1151,7 @@ if (usage) {
         } catch (e) {
           const msg = `⚠️ ${e?.message || "LLM error"}`;
           buffer = msg;
-          if (!clientClosed) res.write(`data: ${msg}\n\n`);
+            if (!clientClosed) res.write(`data:${sseEncode(msg)}\n\n`);
         }
       }
 
