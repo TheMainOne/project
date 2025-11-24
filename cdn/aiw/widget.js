@@ -539,10 +539,11 @@ style.textContent = `
   max-width:85%;
   padding:10px 12px;
   border-radius:12px;
-  white-space:pre-wrap;
+   white-space:normal;
   word-break:break-word;
   border:1px solid transparent;
   box-shadow:0 1px 0 rgba(0,0,0,.2);
+    line-height:1.5; 
 }
 .aiw-row.me .aiw-bubble{
   background:${THEME.bubbleUser};
@@ -1125,6 +1126,32 @@ function fmtTime(ts){
   }catch{ return ""; }
 }
 
+function escapeHtml(str) {
+  return (str || "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
+function renderMarkdownBasic(text) {
+  let html = escapeHtml(text || "");
+
+  // **bold**
+  html = html.replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>");
+
+  // `code`
+  html = html.replace(/`([^`]+)`/g, "<code>$1</code>");
+
+  // переносы строк
+  html = html.replace(/\n/g, "<br>");
+
+  return html;
+}
+
+
+
 // создаём DOM для одного сообщения и сразу добавляем его в messagesWrap
 function appendMessageDOM(m) {
   const isUser = m.role === "user";
@@ -1159,7 +1186,7 @@ function appendMessageDOM(m) {
 
   const bubble = document.createElement("div");
   bubble.className = "aiw-bubble";
-  bubble.textContent = m.content || "";
+bubble.innerHTML = renderMarkdownBasic(m.content);
   bubbleWrap.appendChild(bubble);
 
   const time = document.createElement("div");
@@ -1378,7 +1405,7 @@ await pumpSSE(reader, (data) => {
   }
 
   if (bubble) {
-    bubble.textContent = msg.content;
+      bubble.innerHTML = renderMarkdownBasic(msg.content);
     body.scrollTop = body.scrollHeight;
     postHeight();
   }
