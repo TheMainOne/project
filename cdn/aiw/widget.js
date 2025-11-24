@@ -51,6 +51,7 @@ const MAX_LEN = 1000;
   }
 
   const ENDPOINT = CFG.endpoint;
+  const API_ORIGIN = ENDPOINT ? new URL(ENDPOINT).origin : location.origin;
   const SITE_ID  = CFG.siteId || (location.host + "::default");
   const TITLE    = CFG.title || "AI Assistant";
 const ACCENT = CFG.primaryColor || CFG.accent || "#6D28D9";
@@ -967,7 +968,7 @@ input.placeholder = LANG.startsWith("ru") ? "Спросите что-нибуд�
 input.className = "aiw-input";
 input.maxLength = MAX_LEN;
 
-const SEND_ICON_URL = new URL("/aiw/assets/arrow-right.png", location.origin).href;
+const SEND_ICON_URL = new URL("/aiw/assets/arrow-right.png", API_ORIGIN).href;
 
 const sendBtn = document.createElement("button");
 sendBtn.className = "aiw-send";
