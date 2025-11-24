@@ -22,6 +22,7 @@ const INLINE = MODE === "inline";
 const FIT_MODE = (new URLSearchParams(location.search).get("fit") || "container").toLowerCase();
 const FILL_CONTAINER = INLINE && FIT_MODE === "container";
 const MAX_LEN = 1000;
+let FIRST_BOOT = true; // первый старт виджета за эту загрузку страницы
 
 
   if (INLINE) {
@@ -66,6 +67,7 @@ const ACCENT = CFG.primaryColor || CFG.accent || "#6D28D9";
   const AUTO_COOLDOWN_HOURS = Math.max(0, (CFG.autostartCooldownHours ?? 12));
   const INLINE_AUTOSTART_CFG = CFG.inlineAutostart || null;
   const USER_INTERACTED_KEY = `aiw:userInteracted:session:${SITE_ID}`;
+  let showWelcomeHint = !(INLINE && INLINE_AUTOSTART_CFG && INLINE_AUTOSTART_CFG.enabled === true);
 const PRESERVE_HISTORY   = INLINE ? true : (CFG.preserveHistory !== false);
 const RESET_HISTORY_ON_OPEN = !INLINE && CFG.resetHistoryOnOpen === true;
 
@@ -961,9 +963,12 @@ emptyHint.style.cssText = `
 emptyHint.textContent = WELCOME;
 body.appendChild(emptyHint);
 
-function updateEmptyHint(){
-  emptyHint.style.display = history.length ? "none" : "block";
+function updateEmptyHint() {
+  const hasHistory = Array.isArray(history) && history.length > 0;
+  const shouldShow = showWelcomeHint && !hasHistory;
+  emptyHint.style.display = shouldShow ? "block" : "none";
 }
+
 
 
 const footer = document.createElement("div");
@@ -1291,6 +1296,9 @@ resetBtn.addEventListener("click", (e) => {
   } catch {}
   try { sessionStorage.removeItem(USER_INTERACTED_KEY); } catch {}
 
+  // после ресета хотим видеть приветственный пузырь
+  showWelcomeHint = true;
+
   history = [];
   writeHistory(history);
   SESSION_ID = newSessionId();
@@ -1298,6 +1306,7 @@ resetBtn.addEventListener("click", (e) => {
   updateCounter();
   renderAll();
 });
+
 
   input.addEventListener("keydown", (e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); doSend(); } });
   sendBtn.addEventListener("click", doSend);
