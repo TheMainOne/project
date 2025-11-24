@@ -578,28 +578,32 @@ style.textContent = `
 
 
 
-.aiw-input{
+.aiw-input {
   flex:1 1 auto;
   resize:none;
   border:1px solid ${THEME.bubbleBorder};
   background:${THEME.panel};
   color:${THEME.text};
   border-radius:12px;
-  /* побольше вертикальные отступы, чтобы текст был по центру */
-  padding:20px 52px 20px 16px;
-  outline:none;
-
-  /* фиксированная «высокая» зона ввода */
-  min-height:65px;
-  max-height:65px;
-
   box-sizing:border-box;
-    font-family:${BASE_FONT_STACK};
+  outline:none;
+  font-family:${BASE_FONT_STACK};
   font-size:${BASE_FONT_SIZE}px;
-  line-height:1.4;
 
-  /* убираем вертикальный скролл */
-  overflow-y:hidden;
+  /* универсальная высота инпута */
+  --aiw-input-h: 65px;
+  height: var(--aiw-input-h);
+  min-height: var(--aiw-input-h);
+  max-height: var(--aiw-input-h);
+
+  /* только горизонтальные отступы */
+  padding: 0 52px 0 16px;
+
+  /* одна строка растянута на всю высоту → текст и placeholder по центру */
+  line-height: var(--aiw-input-h);
+
+  /* без вертикального скролла */
+  overflow-y: hidden;
 }
 
 
@@ -770,24 +774,17 @@ ${INLINE ? `
 
   /* инпут: рамка = borderColor */
   .aiw-input {
-    flex:1 1 auto;
     border-radius: 9999px;
     background: rgba(255,255,255,0.04);
     border: 1px solid ${THEME.border};
 
-    /* ровно 65px высотой */
-    height:65px;
-    min-height:65px;
-    max-height:65px;
+    /* при желании меняешь только это значение — центр останется идеальным */
+    --aiw-input-h: 65px;
 
-    /* симметричные отступы – placeholder по центру вертикально */
-    padding:20px 22px;
-
-    font-size:${BASE_FONT_SIZE}px;
-    line-height:1.4;
-
-    overflow-y:hidden;    /* без вертикального скролла */
+    /* только по бокам, вертикальные = 0 (центр за счёт line-height) */
+    padding: 0 22px;
   }
+
 
 
   .aiw-input::placeholder {
