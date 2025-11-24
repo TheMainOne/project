@@ -766,6 +766,45 @@ if (ragQuery.length < 20 && lastAssistant) {
   ragQuery = `${lastAssistant.content}\n\nUser follow-up: ${query}`;
 }
 
+// ---- NEW: нормализация коротких подтверждений ("yes", "да", "ок" и т.п.) ----
+const rawQuery = query;   // то, что реально написал пользователь
+let llmQuery = query;     // то, что пойдёт в buildPrompt / no-context LLM
+
+function isShortConfirmation(text, lang) {
+  const q = (text || "").trim().toLowerCase();
+  if (!q) return false;
+
+  const en = [
+    "yes", "yep", "yeah", "sure",
+    "ok", "okay",
+    "go", "let's go", "let's do it"
+  ];
+  const ru = [
+    "да", "ага", "угу",
+    "ок", "окей",
+    "давай", "поехали", "го"
+  ];
+
+  const list = lang.startsWith("ru") ? ru : en;
+  return list.some(w => q === w || q.startsWith(w + "!") || q.startsWith(w + "."));
+}
+
+if (isShortConfirmation(query, lang) && lastAssistant) {
+  // пользователь подтвердил предыдущее предложение ассистента
+  if (lang.startsWith("ru")) {
+    llmQuery =
+      `Пользователь ответил "${rawQuery}" как подтверждение и хочет продолжить твоё предыдущее предложение.\n` +
+      `Твоё предыдущее сообщение:\n"""${lastAssistant.content}"""\n\n` +
+      `Сделай следующий логичный шаг (например, покажи нишевые кейсы, если ты это предлагал), используя предоставленный контекст.`;
+  } else {
+    llmQuery =
+      `The user replied "${rawQuery}" as a confirmation and wants to proceed with your previous suggestion.\n` +
+      `Your previous message:\n"""${lastAssistant.content}"""\n\n` +
+      `Take the next logical step (for example, show niche-specific cases if you offered that), using the provided context.`;
+  }
+}
+
+
     // логируем юзера (не пишем пустоту)
     if (query) {
       await logUserMessage({ siteId, sessionId, content: query, clientId });
@@ -951,7 +990,7 @@ let usageTotal  = null;
 const sys = pickSystemPrompt(cfg, lang);
 const baseMessages = [
   { role: "system", content: sys },
-  { role: "user",   content: query }
+  { role: "user",   content: llmQuery }
 ];
 
 try {
@@ -1066,7 +1105,7 @@ await logAssistantMessage({
     const citations = contexts.map((c, i) => ({ idx: i + 1, url: c.url }));
     T.mark("prePrompt");
     // const prompt = buildPrompt({ query, contexts, lang });
-    let prompt = buildPrompt({ query, contexts, lang });
+    let prompt = buildPrompt({ query: llmQuery, contexts, lang });
 
 // если есть кастомный системный промпт — добавим его первым сообщением
 
