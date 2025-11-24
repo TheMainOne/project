@@ -798,12 +798,17 @@ const metaAll = {
 };
 
 if (isShortConfirmation(query) && lastAssistant) {
-  llmQuery =
-    `The user replied "${rawQuery}" as a confirmation and wants you to proceed ` +
-    `with your previous suggestion.\n\n` +
-    `Your previous message was:\n"""${lastAssistant.content}"""\n\n` +
-    `Using the retrieved context, take the next logical step and do exactly ` +
-    `what you offered (for example, show niche-specific cases if you offered that).`;
+llmQuery =
+  `The user replied "${rawQuery}" as a short confirmation and wants you to PROCEED ` +
+  `with your previous suggestion.\n\n` +
+  `Your previous message was:\n"""${lastAssistant.content}"""\n\n` +
+  `IMPORTANT:
+  - Do NOT repeat the same campaign descriptions again.
+  - Assume the user already knows what you wrote before.
+  - Take the NEXT logical step of that suggestion.
+  - Either ask 1–2 clarifying questions about their goals/budget/niche,
+    or propose a concrete next action (e.g. "let's estimate a test campaign for your game").`;
+
 
   // просим отвечать на нужном языке
   if (lang.startsWith("ru")) {
