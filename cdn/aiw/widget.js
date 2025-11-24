@@ -321,12 +321,6 @@ style.textContent = `
     font-family:${BASE_FONT_STACK};
 }
 
-.aiw-send-icon {
-  width: 22px;
-  height: 22px;
-  display: block;
-}
-
  .aiw-panel{
    position:absolute;
    bottom:70px;
@@ -614,24 +608,35 @@ style.textContent = `
 }
 
 
-.aiw-send{
+.aiw-send {
   position:absolute;
-  right:24px;                           
+  right:24px;
   top:50%;
-  transform:translateY(-50%);            
+  transform:translateY(-50%);
   width:32px;
   height:32px;
   border:none;
   border-radius:9999px;
-  background:${THEME.accent};
-  color:${THEME.accentText};
+
+  /* белый круг для FLOAT-режима */
+  background:#ffffff;
+  color:#000000;
+
   cursor:pointer;
   display:flex;
   align-items:center;
   justify-content:center;
-  flex:none;     
-    font-family:${BASE_FONT_STACK};                        
+  flex:none;
+  font-family:${BASE_FONT_STACK};
+  box-shadow:0 4px 12px rgba(0,0,0,.35);
 }
+
+.aiw-send-icon {
+  width: 18px;
+  height: 18px;
+  display: block;
+}
+
 
 .aiw-send:disabled{
   opacity:.6;
