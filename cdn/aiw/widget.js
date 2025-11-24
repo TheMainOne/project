@@ -632,8 +632,8 @@ style.textContent = `
 }
 
 .aiw-send-icon {
-  width: 18px;
-  height: 18px;
+  width: 16px;
+  height: 16px;
   display: block;
 }
 
@@ -822,6 +822,11 @@ ${INLINE ? `
     align-items:center;
     justify-content:center;
   }
+
+  .aiw-send-icon {
+  width: 22px;
+  height: 22px;
+}
 
 ` : ""}
 `;
