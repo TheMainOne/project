@@ -714,7 +714,6 @@ const safeMsgs = (Array.isArray(messages) ? messages : [])
   .map((m) => ({ role: m.role, content: m.content.slice(0, 4000) }))
   .slice(-30);
 
-const lang = String(meta.lang || "ru");
 const { siteId, sessionId, visitorId } = resolveIds(req, meta);
 
 const clientId = await resolveClientIdStrict(req, meta, siteId);
@@ -735,25 +734,6 @@ if (cfg?._id) res.setHeader("X-AIW-WidgetCfg", String(cfg._id));
     res.setHeader("X-AIW-Resolved-Site", siteId);
     res.setHeader("X-AIW-Resolved-Session", sessionId || "(empty)");
 
-    const metaAll = {
-      siteId,
-      sessionId,
-      visitorId,
-        clientId,    
-      pageUrl: meta.pageUrl || meta.referrer || req.headers.referer || null,
-      referrer: meta.referrer || null,
-      utm: meta.utm || {},
-      tz: meta.tz || null,
-      lang,
-    };
-
-    // ====== ensureSession ======
-    const tEnsure = Date.now();
-    await ensureSession(metaAll, req);
-    timing.ensure = Date.now() - tEnsure;
-    T.mark("ensureSession");
-
-
     // ====== извлекаем пользовательский вопрос ======
 const lastUser = [...safeMsgs].reverse().find((m) => m.role === "user");
 const lastAssistant = [...safeMsgs].reverse().find((m) => m.role === "assistant");
@@ -769,6 +749,16 @@ if (ragQuery.length < 20 && lastAssistant) {
 // ---- NEW: нормализация коротких подтверждений ("yes", "да", "ок" и т.п.) ----
 const rawQuery = query;   // то, что реально написал пользователь
 let llmQuery = query;     // то, что пойдёт в buildPrompt / no-context LLM
+
+function detectLangFromText(text, fallback = "ru") {
+  const t = (text || "").toLowerCase();
+  if (/[а-яё]/i.test(t)) return "ru";   // есть кириллица
+  if (/[a-z]/i.test(t)) return "en";   // есть латиница
+  return fallback;                     // иначе доверяем fallback (из меты/конфига)
+}
+
+const uiLang = String(meta.lang || "ru");
+const lang   = detectLangFromText(query, uiLang);
 
 function isShortConfirmation(text) {
   const q = (text || "").trim().toLowerCase();
@@ -794,6 +784,19 @@ function isShortConfirmation(text) {
   );
 }
 
+
+const metaAll = {
+  siteId,
+  sessionId,
+  visitorId,
+  clientId,    
+  pageUrl: meta.pageUrl || meta.referrer || req.headers.referer || null,
+  referrer: meta.referrer || null,
+  utm: meta.utm || {},
+  tz: meta.tz || null,
+  lang,
+};
+
 if (isShortConfirmation(query) && lastAssistant) {
   llmQuery =
     `The user replied "${rawQuery}" as a confirmation and wants you to proceed ` +
@@ -809,6 +812,13 @@ if (isShortConfirmation(query) && lastAssistant) {
     llmQuery += `\n\nAnswer the user in English.`;
   }
 }
+
+    // ====== ensureSession ======
+    const tEnsure = Date.now();
+    await ensureSession(metaAll, req);
+    timing.ensure = Date.now() - tEnsure;
+    T.mark("ensureSession");
+
 
 
     // логируем юзера (не пишем пустоту)
