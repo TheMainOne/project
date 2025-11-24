@@ -335,12 +335,14 @@ function estimateCostUsd(model, inputTokens = 0, outputTokens = 0) {
 const DEFAULT_SYS_RU = `Ты — бот-ассистент этого сайта. Отвечай кратко и дружелюбно.
 - Помогаешь с вопросами о компании, услугах, тарифах, документах и контактах.
 - Если информации не хватает, вежливо уточни 1–2 вопроса.
+- Если пользователь отвечает коротко вроде "да", "давай", "ок", "go", "let's do it" на твоё предложение (например, подготовить быстрый расчёт цены), считай это согласием и продолжай именно эту инициативу: задай уточняющие вопросы, чтобы выполнить предложенное действие.
 - Формат: 2–4 коротких предложения.`;
 
-const DEFAULT_SYS_EN = `You are this website's bot assistant. Be brief and friendly.
-- Help with info about the company, services, pricing, docs and contacts.
-- If info is missing, politely ask 1–2 clarifying questions.
-- Keep answers to 2–4 short sentences.`;
+const DEFAULT_SYS_EN = `You are this site's assistant bot. Respond briefly and friendly.
+- Help with questions about the company, services, rates, documents, and contacts.
+- If information is missing, politely ask 1-2 questions to clarify.
+- If the user responds briefly to your suggestion (e.g., prepare a quick price quote) with a simple "yes," "ok," "go," or "let's do it," consider it consent and continue with that specific initiative: ask clarifying questions to complete the suggested action.
+- Format: 2-4 short sentences.`;
 
 function defaultNoContextReply(lang = "ru", cfg = {}) {
   const title = (cfg?.widgetTitle || (lang.startsWith("ru") ? "AI-ассистент" : "AI Assistant")).trim();
@@ -753,8 +755,16 @@ if (cfg?._id) res.setHeader("X-AIW-WidgetCfg", String(cfg._id));
 
 
     // ====== извлекаем пользовательский вопрос ======
-    const lastUser = [...safeMsgs].reverse().find((m) => m.role === "user");
-    const query = (lastUser?.content || "").trim();
+const lastUser = [...safeMsgs].reverse().find((m) => m.role === "user");
+const lastAssistant = [...safeMsgs].reverse().find((m) => m.role === "assistant");
+
+let query = (lastUser?.content || "").trim();   // это для логов / judge
+let ragQuery = query;                           // это будем слать в retrieve
+
+// если пользовательский ответ очень короткий, подмешиваем предыдущий ассистентский текст
+if (ragQuery.length < 20 && lastAssistant) {
+  ragQuery = `${lastAssistant.content}\n\nUser follow-up: ${query}`;
+}
 
     // логируем юзера (не пишем пустоту)
     if (query) {
@@ -813,7 +823,7 @@ const retrieveRes = await T.wrap("retrieve", async () => {
     const r = await retrieveUnified({
       clientId,
       siteId,
-      query,
+      query: ragQuery,   
       kClient: Number(process.env.AIW_KCLIENT || 8),
       includeWeb: false,          // только клиентские/локальные источники
     });

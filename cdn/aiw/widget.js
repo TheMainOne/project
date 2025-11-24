@@ -190,7 +190,11 @@ function collectMeta() {
   // }
 
 function alreadyInteracted() {
-  return sessionStorage.getItem(USER_INTERACTED_KEY) === "1";
+  try {
+    return sessionStorage.getItem(USER_INTERACTED_KEY) === "1";
+  } catch {
+    return false;
+  }
 }
 
 
@@ -1054,7 +1058,11 @@ function updateCounter() {
   footerCounter.textContent = `${len}/${MAX_LEN}`;
 }
 
-input.addEventListener("input", updateCounter);
+input.addEventListener("input", () => {
+  cancelAllAutogreetTimers();
+  try { sessionStorage.setItem(USER_INTERACTED_KEY, "1"); } catch {}
+  updateCounter();
+});
 updateCounter(); // начальное значение
   // ---------- Chat logic ----------
 let history = readHistory();
@@ -1062,6 +1070,25 @@ let history = readHistory();
 // ===== INLINE AUTOSTART (сценарий из нескольких сообщений) =====
 const INLINE_AUTO_SESSION_KEY  = `aiw:inlineAutoGreet:session:${SITE_ID}`;
 const INLINE_AUTO_COOLDOWN_KEY = `aiw:inlineAutoGreet:lastTs:${SITE_ID}`;
+
+// таймеры автогрита (float + inline)
+let AUTO_TIMER_ID = null;          // одиночный таймер scheduleAutoGreet
+const INLINE_AUTO_TIMEOUTS = [];   // массив таймеров для inline-скрипта
+
+function cancelAllAutogreetTimers() {
+  // общий стоп для всех приветствий
+  try {
+    if (AUTO_TIMER_ID !== null) {
+      clearTimeout(AUTO_TIMER_ID);
+      AUTO_TIMER_ID = null;
+    }
+    if (INLINE_AUTO_TIMEOUTS.length) {
+      INLINE_AUTO_TIMEOUTS.forEach(id => clearTimeout(id));
+      INLINE_AUTO_TIMEOUTS.length = 0;
+    }
+  } catch {}
+}
+
 
 function runInlineAutostart(cfg) {
   if (!INLINE) return;                               // только для inline
@@ -1098,7 +1125,10 @@ function runInlineAutostart(cfg) {
     const delay = Math.max(0, step.delayMs || 0);
     totalDelay += delay;
 
-    setTimeout(() => {
+    const tid = setTimeout(() => {
+      // если пользователь уже успел что-то отправить — просто выходим
+      if (alreadyInteracted()) return;
+
       history.push({
         role: "assistant",
         content: text,
@@ -1108,8 +1138,11 @@ function runInlineAutostart(cfg) {
       writeHistory(history);
       renderAll();
     }, totalDelay);
+
+    INLINE_AUTO_TIMEOUTS.push(tid);
   });
 }
+
 
 
 function fmtTime(ts){
@@ -1419,11 +1452,26 @@ markAutoGreetUsed();
   }
 
 function scheduleAutoGreet() {
+  if (!AUTOSTART) return;
   if (!shouldAutoGreetNow()) return;
+
   log("scheduleAutoGreet: scheduled in", AUTO_DELAY, "ms");
-  setTimeout(() => {
+
+  AUTO_TIMER_ID = setTimeout(() => {
+    AUTO_TIMER_ID = null; // таймер отработал
+
+    // если пользователь уже что-то отправил — не показываем приветствие
+    if (alreadyInteracted()) {
+      log("scheduleAutoGreet: cancelled because user already interacted");
+      return;
+    }
+
     log("scheduleAutoGreet: timer fired");
-    if (!shouldAutoGreetNow()) { log("scheduleAutoGreet: recheck blocked"); return; }
+    if (!shouldAutoGreetNow()) {
+      log("scheduleAutoGreet: recheck blocked");
+      return;
+    }
+
     if (AUTO_MODE === "ai") {
       log("autogreet -> AI mode");
       if (RESET_HISTORY_ON_OPEN) {
@@ -1449,8 +1497,13 @@ function scheduleAutoGreet() {
     const text = sanitize(input.value).trim();
     if (!text || inflight) return;
 
+      try {
+    sessionStorage.setItem(USER_INTERACTED_KEY, "1");
+  } catch {}
+  cancelAllAutogreetTimers();
+
+
     history.push({ role: "user", content: text, ts: Date.now() });
-    try { sessionStorage.setItem(USER_INTERACTED_KEY, "1"); } catch {}
     writeHistory(history);
     renderAll();
     input.value = "";
