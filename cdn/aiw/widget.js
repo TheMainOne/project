@@ -963,9 +963,14 @@ input.maxLength = MAX_LEN;
 
 const sendBtn = document.createElement("button");
 sendBtn.className = "aiw-send";
-sendBtn.innerHTML = `<svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true">
-  <path fill="currentColor" d="M2 21l20-9L2 3l5 8-5 10z"></path>
-</svg>`;
+sendBtn.innerHTML = `
+  <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true">
+    <path
+      fill="currentColor"
+      d="M3.2 3.6c-.8.5-1.2 1.3-1.2 2.3v12.2c0 1 .4 1.8 1.2 2.3.8.5 1.8.4 2.6-.1l12-6.1c.8-.4 1.2-1.2 1.2-2s-.5-1.6-1.2-2l-12-6.1c-.8-.5-1.8-.6-2.6-.1z"
+    ></path>
+  </svg>
+`;
 
 footer.appendChild(input);
 footer.appendChild(sendBtn);
