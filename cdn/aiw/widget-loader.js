@@ -235,11 +235,8 @@
       iframe.style.height = (h > 0 ? h : Math.max(200, iHeight)) + "px";
     }
 
-    if (fitMode === "container") {
-      setHeightFromContainer();
-      const ro = new ResizeObserver(setHeightFromContainer);
-      ro.observe(mount);
-      window.addEventListener("resize", setHeightFromContainer);
+  if (fitMode === "container") {
+      iframe.style.height = "100%";
     } else {
       // fit=content → фрейм сам сообщит высоту
       iframe.style.height = Math.max(200, iHeight) + "px";
