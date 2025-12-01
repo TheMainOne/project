@@ -704,12 +704,10 @@ ${INLINE ? `
   flex-direction:column;
 
   box-sizing: border-box;
-  border: none !important;                 /* бордер убираем */
+  border: 1px solid ${THEME.border} !important;
   border-radius: 24px !important;
   overflow: hidden;
-
-  /* Рамка через box-shadow — одинаковая со всех сторон */
-  box-shadow: 0 0 0 1px ${THEME.border};
+  box-shadow: none !important;
   background:${THEME.bg};
 }
 
