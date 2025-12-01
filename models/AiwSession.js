@@ -1,5 +1,24 @@
 import mongoose from "mongoose";
 
+const LeadStateSchema = new mongoose.Schema({
+  status: {
+    type: String,
+    enum: ["idle", "soft_prompted", "capturing", "suppressed", "completed"],
+    default: "idle",
+  },
+  userMessageCount: { type: Number, default: 0 },
+
+  softPromptCount: { type: Number, default: 0 },
+  lastSoftPromptAt: { type: Date, default: null },
+
+  currentStepIndex: { type: Number, default: 0 },
+  answers: {
+    type: Map,
+    of: String, // можно усложнить позже
+    default: {},
+  },
+}, { _id: false });
+
 const AiwSessionSchema = new mongoose.Schema({
   siteId: { type: String, index: true, required: true },
   sessionId: { type: String, index: true, required: true, unique: true },
@@ -26,6 +45,10 @@ const AiwSessionSchema = new mongoose.Schema({
   topics: [{ type: String, index: true }],
   tags:   [{ type: String }],
   lastUserQuestion: String,
+    leadState: {
+    type: LeadStateSchema,
+    default: () => ({}),
+  },
 
   // expiresAt: { type: Date, index: { expireAfterSeconds: 0 } }
 }, { timestamps: true, versionKey: false  });

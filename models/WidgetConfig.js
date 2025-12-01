@@ -1,7 +1,46 @@
 import mongoose from "mongoose";
 
+const LeadStepSchema = new mongoose.Schema({
+  id:       { type: String, required: true },           // "fullName", "email"
+  type:     { type: String, enum: ["text", "email", "phone", "select", "textarea"], default: "text" },
+  required: { type: Boolean, default: true },
+  label: {
+    en: { type: String, required: true },
+    ru: { type: String },
+  },
+  placeholder: {
+    en: { type: String },
+    ru: { type: String },
+  },
+  // для select
+  options: [{
+    value: { type: String },
+    label: {
+      en: { type: String },
+      ru: { type: String },
+    },
+  }],
+}, { _id: false });
 
-// ПЕРЕД WidgetConfigSchema:
+const LeadTriggersSchema = new mongoose.Schema({
+  llm: {
+    enabled:          { type: Boolean, default: true },
+    strongThreshold:  { type: Number, default: 0.75 },
+  },
+  afterN: {
+    enabled:             { type: Boolean, default: true },
+    minUserMessages:     { type: Number, default: 6 },
+    cooldownMinutes:     { type: Number, default: 60 },
+    maxPromptsPerSession:{ type: Number, default: 1 },
+  },
+}, { _id: false });
+
+const LeadCaptureSchema = new mongoose.Schema({
+  enabled:  { type: Boolean, default: false },
+  steps:    { type: [LeadStepSchema], default: [] },
+  triggers: { type: LeadTriggersSchema, default: () => ({}) },
+}, { _id: false });
+
 const InlineGreetingStepSchema = new mongoose.Schema(
   {
     text:    { type: String, required: true },
@@ -89,6 +128,7 @@ baseFontSize:      { type: Number, default: 14, min: 10, max: 24 },
 
   // ===== LLM / системный промпт =====
   customSystemPrompt:     { type: String, default: "" },
+  leadCapture: { type: LeadCaptureSchema, default: () => ({}) },
 
   // ===== флаги/метаданные =====
   isActive:   { type: Boolean, default: true },
