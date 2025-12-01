@@ -705,11 +705,21 @@ ${INLINE ? `
 
     /* рамка виджета = borderColor */
        box-sizing: border-box;        
- border: 2px solid ${THEME.border} !important;  /* было 1px */
+    border: none !important;     
     border-radius: 24px !important;
     overflow: hidden;
     box-shadow: none !important;
     background:${THEME.bg};
+  }
+
+    .aiw-panel::before {
+    content: "";
+    position: absolute;
+    inset: 0.5px;                      /* чуть внутрь, чтобы не висеть на краю */
+    border-radius: 24px;
+    border: 1px solid ${THEME.border};
+    pointer-events: none;
+    box-sizing: border-box;
   }
 
   /* HEADER + полоска под тайтлом = borderColor */
