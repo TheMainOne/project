@@ -705,7 +705,7 @@ ${INLINE ? `
 
     /* рамка виджета = borderColor */
        box-sizing: border-box;        
-    border: 1px solid ${THEME.border} !important;
+ border: 2px solid ${THEME.border} !important;  /* было 1px */
     border-radius: 24px !important;
     overflow: hidden;
     box-shadow: none !important;
