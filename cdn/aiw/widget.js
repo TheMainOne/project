@@ -692,35 +692,28 @@ ${INLINE ? `
     align-items:stretch;
   }
 
-  .aiw-panel {
-    position: relative !important;
-    inset: auto !important;
-    width: 100% !important;
-    max-width: 100% !important;
-    height: 100% !important;
-    max-height: 100% !important;
+.aiw-panel {
+  position: relative !important;
+  inset: auto !important;
+  width: 100% !important;
+  max-width: 100% !important;
+  height: 100% !important;
+  max-height: 100% !important;
 
-    display:flex !important;
-    flex-direction:column;
+  display:flex !important;
+  flex-direction:column;
 
-    /* рамка виджета = borderColor */
-       box-sizing: border-box;        
-    border: none !important;     
-    border-radius: 24px !important;
-    overflow: hidden;
-    box-shadow: none !important;
-    background:${THEME.bg};
-  }
+  box-sizing: border-box;
+  border: none !important;                 /* бордер убираем */
+  border-radius: 24px !important;
+  overflow: hidden;
 
-    .aiw-panel::before {
-    content: "";
-    position: absolute;
-    inset: 0.5px;                      /* чуть внутрь, чтобы не висеть на краю */
-    border-radius: 24px;
-    border: 1px solid ${THEME.border};
-    pointer-events: none;
-    box-sizing: border-box;
-  }
+  /* Рамка через box-shadow — одинаковая со всех сторон */
+  box-shadow: 0 0 0 1px ${THEME.border};
+  background:${THEME.bg};
+}
+
+
 
   /* HEADER + полоска под тайтлом = borderColor */
   .aiw-header {
