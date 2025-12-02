@@ -1,9 +1,4 @@
 // основной код для виджета. Вся логика обработки запросов лежит здесь
-
-
-// !!!! если изменения вносятся в этот файл, нужно через PuTTY выполнить команду pm2 restart aiw чтобы подхватить изменения!!!!!
-
-
 import 'dotenv/config';     
 import mongoose from "mongoose";
 import express from "express";
@@ -16,6 +11,7 @@ import { hashIp, classifyTopics } from "../../utils/telemetry.js";
 import { buildPrompt } from "../../services/web_crawler/core.js";
 import { retrieveUnified } from "../../services/rag/index.js";
 import { getWidgetConfigCached } from '../../services/widgetConfig/cache.js';
+import { franc } from 'franc';
 
 
 const router = express.Router();
@@ -335,14 +331,19 @@ function estimateCostUsd(model, inputTokens = 0, outputTokens = 0) {
 const DEFAULT_SYS_RU = `Ты — бот-ассистент этого сайта. Отвечай кратко и дружелюбно.
 - Помогаешь с вопросами о компании, услугах, тарифах, документах и контактах.
 - Если информации не хватает, вежливо уточни 1–2 вопроса.
-- Если пользователь отвечает коротко вроде "да", "давай", "ок", "go", "let's do it" на твоё предложение (например, подготовить быстрый расчёт цены), считай это согласием и продолжай именно эту инициативу: задай уточняющие вопросы, чтобы выполнить предложенное действие.
+- Всегда отвечай на том же языке, на котором написано последнее сообщение пользователя.
+- Если пользователь переключает язык, тоже переключайся.
+- Если пользователь отвечает коротко вроде "да", "давай", "ок", "go", "let's do it" на твоё предложение, считай это согласием и продолжай именно эту инициативу: задай уточняющие вопросы, чтобы выполнить предложенное действие.
 - Формат: 2–4 коротких предложения.`;
 
-const DEFAULT_SYS_EN = `You are this site's assistant bot. Respond briefly and friendly.
+const DEFAULT_SYS_EN = `You are this site's assistant bot. Respond briefly and in a friendly tone.
 - Help with questions about the company, services, rates, documents, and contacts.
-- If information is missing, politely ask 1-2 questions to clarify.
-- If the user responds briefly to your suggestion (e.g., prepare a quick price quote) with a simple "yes," "ok," "go," or "let's do it," consider it consent and continue with that specific initiative: ask clarifying questions to complete the suggested action.
-- Format: 2-4 short sentences.`;
+- If information is missing, politely ask 1–2 clarifying questions.
+- Always respond in the same language as the user's last message.
+- If the user switches language, you should switch to that language as well.
+- If the user briefly answers "yes", "ok", "go", "let's do it" to your suggestion, treat it as consent and continue that specific initiative: ask clarifying questions to complete the suggested action.
+- Format: 2–4 short sentences.`;
+
 
 function defaultNoContextReply(lang = "ru", cfg = {}) {
   const title = (cfg?.widgetTitle || (lang.startsWith("ru") ? "AI-ассистент" : "AI Assistant")).trim();
@@ -643,25 +644,29 @@ function sendJSON(req, res, { reply, source, citations = [], goodAnswer, confide
   return res.status(200).json(body);
 }
 
+// вот этот код решил проблему с перепрыгиванием языка в беседе
 function pickSystemPrompt(cfg, lang = "ru") {
   const fromDb = (cfg?.customSystemPrompt || "").trim();
-  if (fromDb) return fromDb;                       // 1) из БД, если задан
-  return lang.startsWith("ru") ? DEFAULT_SYS_RU    // 2) иначе дефолт
-                               : DEFAULT_SYS_EN;
+  const base = fromDb || (lang.startsWith("ru") ? DEFAULT_SYS_RU : DEFAULT_SYS_EN);
+
+  // 🔒 Жёсткий язык для этой конкретной беседы
+  const langHeader = lang.startsWith("ru")
+    ? `IMPORTANT: For this conversation you MUST answer ONLY in Russian.
+- The user interface language is Russian.
+- Even if the system prompt or examples contain English or other languages, you MUST respond in Russian only.
+- Never reply in English unless explicitly asked to translate.`
+    : `IMPORTANT: For this conversation you MUST answer ONLY in English.
+- The user interface language is English.
+- Even if the system prompt or examples contain Russian or other languages, you MUST respond in English only.
+- Never reply in Russian unless explicitly asked to translate.`;
+
+  return `${langHeader}\n\n${base}`;
 }
 
 
-// Фолбэк-ответ, если нет ключа
-function fallbackReply(messages = []) {
-  const lastUser = [...messages].reverse().find((m) => m.role === "user");
-  const q = lastUser?.content || "—";
-  return [
-    `You asked: "${q}"`,
-    "",
-    "Demo reply (no OPENAI_API_KEY configured).",
-    "For 10 users: Growth Plan — $299/month. Annual discount — 20%.",
-  ].join("\n");
-}
+
+
+
 const BUILD_TAG = "aiw-widget@rag-1.0.3";
 
 router.use((req, res, next) => {
@@ -750,15 +755,45 @@ if (ragQuery.length < 20 && lastAssistant) {
 const rawQuery = query;   // то, что реально написал пользователь
 let llmQuery = query;     // то, что пойдёт в buildPrompt / no-context LLM
 
-function detectLangFromText(text, fallback = "ru") {
-  const t = (text || "").toLowerCase();
-  if (/[а-яё]/i.test(t)) return "ru";   // есть кириллица
-  if (/[a-z]/i.test(t)) return "en";   // есть латиница
-  return fallback;                     // иначе доверяем fallback (из меты/конфига)
+
+function getConversationLang(messages, fallback = "en") {
+  const lastUser = [...messages]
+    .reverse()
+    .find(m => m.role === "user" && m.content && m.content.trim());
+
+  if (!lastUser?.content) return fallback;
+
+  const content = lastUser.content.trim();
+
+  const hasCyr = /[А-Яа-яЁё]/.test(content);
+  const hasLat = /[A-Za-z]/.test(content);
+
+  // 1. Если текст явно только кириллица → русский
+  if (hasCyr && !hasLat) return "ru";
+
+  // 2. Если текст явно только латиница → английский
+  if (hasLat && !hasCyr) return "en";
+
+  // 3. Всё остальное — через franc
+  const langCode = franc(content, { minLength: 3 }); // 'rus', 'eng', 'spa', 'und', ...
+
+  if (langCode === "rus") return "ru";
+
+  if (langCode === "und") {
+    // совсем непонятно — падаем в fallback (uiLang)
+    return fallback;
+  }
+
+  // Любой другой язык (eng, spa, deu, fra и т.д.) ведём как английский
+  return "en";
 }
 
-const uiLang = String(meta.lang || "ru");
-const lang   = detectLangFromText(query, uiLang);
+
+
+
+const uiLang = String(meta.lang || "en");   // 'en' или 'ru' из виджета
+const lang = getConversationLang(safeMsgs, uiLang);
+console.log("[AIW] lang:", lang, "uiLang:", uiLang, "lastUser:", safeMsgs.at(-1)?.content);
 
 function isShortConfirmation(text) {
   const q = (text || "").trim().toLowerCase();
@@ -798,24 +833,17 @@ const metaAll = {
 };
 
 if (isShortConfirmation(query) && lastAssistant) {
-llmQuery =
-  `The user replied "${rawQuery}" as a short confirmation and wants you to PROCEED ` +
-  `with your previous suggestion.\n\n` +
-  `Your previous message was:\n"""${lastAssistant.content}"""\n\n` +
-  `IMPORTANT:
+  llmQuery =
+    `The user replied "${rawQuery}" as a short confirmation and wants you to PROCEED ` +
+    `with your previous suggestion.\n\n` +
+    `Your previous message was:\n"""${lastAssistant.content}"""\n\n` +
+    `IMPORTANT:
   - Do NOT repeat the same campaign descriptions again.
   - Assume the user already knows what you wrote before.
   - Take the NEXT logical step of that suggestion.
   - Either ask 1–2 clarifying questions about their goals/budget/niche,
-    or propose a concrete next action (e.g. "let's estimate a test campaign for your game").`;
-
-
-  // просим отвечать на нужном языке
-  if (lang.startsWith("ru")) {
-    llmQuery += `\n\nAnswer the user in Russian.`;
-  } else {
-    llmQuery += `\n\nAnswer the user in English.`;
-  }
+    or propose a concrete next action (e.g. "let's estimate a test campaign for your game").\n\n` +
+    `Answer in the same language you used in your previous message.`;
 }
 
     // ====== ensureSession ======
@@ -876,6 +904,7 @@ console.log("[AIW][timings]", JSON.stringify({
       }
     }
 console.log("[AIW] clientId:", String(clientId), "query:", query);
+console.log("[AIW] language:", lang, "uiLang:", uiLang, "lastUser:", lastUser?.content);
 
 // ====== RAG retrieve ======
 const retrieveRes = await T.wrap("retrieve", async () => {
@@ -908,91 +937,6 @@ res.setHeader("X-AIW-Contexts", String(contexts.length));
 console.log("[AIW] contexts:", contexts.length);
 timing.retrieve = T.get().retrieve;
 
-//     // ====== Fast extractive ======
-//     const fast = tryFastAnswer(query, contexts, lang);
-//     if (fast) {
-//       phase = "rag-extractive";
-//       setSourceHeaders(res, "rag-extractive", fast.citations || []);
-//       res.setHeader("X-AIW-Phase", phase);
-
-//       const payload = { reply: fast.reply, citations: fast.citations || [] };
-//       await logAssistantMessage({ siteId, sessionId, content: payload.reply, latencyMs: Date.now() - started, clientId });
-//       dbMark = "user:+ assistant:+";
-//       // === judge & optional gap log (NEW) ===
-// const quick = quickFlag({ phase, contexts, reply: payload.reply });
-// res.setHeader("X-AIW-Good-Answer", String(quick.goodAnswer)); // быстрый флаг
-
-// defer(async () => {
-//   const judge = await assessGoodAnswer({
-//     oai, model: "gpt-5-nano",
-//     question: query, reply: payload.reply, contexts, lang
-//   });
-// const THRESH = Number(process.env.AIW_JUDGE_THRESHOLD || 0.60);
-//  const hasSupport = ((payload.citations?.length || 0) > 0) || ((contexts?.length || 0) > 0);
-//  // Плохо только если судья явно сказал false ИЛИ если нет опоры и низкая уверенность
- 
-//  const ans = payload.reply || "";
-// const explicitNoInfo = /(в контексте нет информации|в базе нет информации|в справке не указано|не (указан|приведён|сообщено|известно)|указано только контактн)/i.test(ans);
-
-// const finalBad = explicitNoInfo || (judge?.goodAnswer === false) || (!hasSupport && (judge?.confidence ?? 0) < THRESH);
-
-//  const reason =
-//    explicitNoInfo ? "no-data-in-kb" :
-//    (judge?.goodAnswer === false ? (judge?.reason || "judge-false") :
-//    (!hasSupport && (judge?.confidence ?? 0) < THRESH ? "low-confidence" : "ok"));
-
-
-//  await logGapIfBad({
-//    goodAnswer: !finalBad,
-//    confidence: judge.confidence,
-//    reason,
-//    siteId, sessionId, clientId, question: query, reply: payload.reply, phase, citations: payload.citations
-//  });
-// });
-
-//       res.setHeader("X-AIW-DB", dbMark);
-//       const timings = T.get();
-// // добавим производные: buildPromptDur, llmWait, ttfb (time-to-first-byte), firstChunk
-// const derived = {
-//   buildPromptDur: (timings.buildPrompt ?? 0) - (timings.prePrompt ?? 0),
-//   llmWait: (timings.afterLLM ?? 0) - (timings.beforeLLM ?? 0),
-//   ttfb: timings.firstByteToClient ?? undefined,
-//   firstChunk: (timings.firstChunkFlushed ?? 0) - (timings.firstByteToClient ?? 0),
-// };
-
-
-
-// res.setHeader("X-AIW-Timing", JSON.stringify({
-//   ...timing,          // твои старые поля для совместимости
-//   ...timings,         // подробные метки
-//   ...derived,
-//   total: timings.total
-// }));
-
-// // опционально красивый серверный лог
-// console.log("[AIW][timings]", JSON.stringify({
-//   siteId, sessionId, phase,
-//   timings: { ...timings, ...derived }
-// }));
-
-//       if (!stream) {
-//         setJSONHeaders(req, res);
-// return sendJSON(req, res, { 
-//   reply: payload.reply, source: "rag-extractive", citations: payload.citations,
-//   goodAnswer: quick.goodAnswer, confidence: quick.confidence
-// });
-//       } else {
-//         setSSEHeaders(req, res);
-//         res.write(": heartbeat\n\n");
-//           T.mark("firstByteToClient");   
-//         const CH = 24;
-//         for (let i = 0; i < payload.reply.length; i += CH) {
-//           res.write(`data: ${payload.reply.slice(i, i + CH)}\n\n`);
-//         }
-//         res.write("data: [DONE]\n\n");
-//         return res.end();
-//       }
-//     }
 
     // ====== Нет контекста ======
 if (!contexts.length) {
