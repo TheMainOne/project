@@ -22,8 +22,6 @@ const INLINE = MODE === "inline";
 const FIT_MODE = (new URLSearchParams(location.search).get("fit") || "container").toLowerCase();
 const FILL_CONTAINER = INLINE && FIT_MODE === "container";
 const MAX_LEN = 1000;
-let FIRST_BOOT = true; // первый старт виджета за эту загрузку страницы
-
 
   if (INLINE) {
     const bodyEl = document.body;
@@ -54,6 +52,7 @@ let FIRST_BOOT = true; // первый старт виджета за эту з�
   const ENDPOINT = CFG.endpoint;
   const API_ORIGIN = ENDPOINT ? new URL(ENDPOINT).origin : location.origin;
   const SITE_ID  = CFG.siteId || (location.host + "::default");
+  const CLIENT_ID = CFG.clientId || null;  
   const TITLE    = CFG.title || "AI Assistant";
 const ACCENT = CFG.primaryColor || CFG.accent || "#6D28D9";
   const POSITION = CFG.position === "bl" ? "bl" : "br";
@@ -175,7 +174,8 @@ function collectMeta() {
     referrer: document.referrer || null,
     tz: Intl.DateTimeFormat().resolvedOptions().timeZone,
     lang: LANG,
-    utm
+    utm,
+     clientId: CLIENT_ID || undefined,
   };
 }
 
@@ -1387,10 +1387,6 @@ function showLocalGreeting() {
   }, 250);
 }
 
-
-
-
-
   async function fetchAIGreeting() {
     openPanelIfHidden();
     const safeMsgs = [
@@ -1404,14 +1400,22 @@ function showLocalGreeting() {
 
       const meta = collectMeta();
       // помечаем автогрит для аналитики на бэке
+
+const headers = {
+  "Content-Type": "application/json",
+  "x-aiw-site": SITE_ID,
+  "x-aiw-visitor": VISITOR_ID,
+  "x-aiw-session": SESSION_ID,
+};
+
+if (CLIENT_ID) {
+  headers["x-aiw-client"] = CLIENT_ID;
+}
+
+
       const res = await fetch(ENDPOINT, {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "x-aiw-site": SITE_ID,
-          "x-aiw-visitor": VISITOR_ID,
-          "x-aiw-session": SESSION_ID
-        },
+        headers,
         body: JSON.stringify({
           messages: safeMsgs,
             stream: STREAM,  
@@ -1550,14 +1554,21 @@ function scheduleAutoGreet() {
 
       const meta = collectMeta();
 
+      const headers = {
+  "Content-Type": "application/json",
+  "x-aiw-site": SITE_ID,
+  "x-aiw-visitor": VISITOR_ID,
+  "x-aiw-session": SESSION_ID,
+};
+
+if (CLIENT_ID) {
+  headers["x-aiw-client"] = CLIENT_ID;
+}
+
+
 const res = await fetch(ENDPOINT, {
   method: "POST",
-  headers: {
-    "Content-Type": "application/json",
-    "x-aiw-site": SITE_ID,
-    "x-aiw-visitor": VISITOR_ID,
-    "x-aiw-session": SESSION_ID
-  },
+  headers,
   body: JSON.stringify({
     messages: safeMsgs,
       stream: STREAM, 
