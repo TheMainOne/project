@@ -1,9 +1,6 @@
 // основной код для виджета. Вся логика обработки запросов лежит здесь
 
 
-// !!!! если изменения вносятся в этот файл, нужно через PuTTY выполнить команду pm2 restart aiw чтобы подхватить изменения!!!!!
-
-
 import 'dotenv/config';     
 import mongoose from "mongoose";
 import express from "express";
@@ -645,23 +642,22 @@ function sendJSON(req, res, { reply, source, citations = [], goodAnswer, confide
 
 function pickSystemPrompt(cfg, lang = "ru") {
   const fromDb = (cfg?.customSystemPrompt || "").trim();
-  if (fromDb) return fromDb;                       // 1) из БД, если задан
-  return lang.startsWith("ru") ? DEFAULT_SYS_RU    // 2) иначе дефолт
-                               : DEFAULT_SYS_EN;
+  const base = fromDb || (lang.startsWith("ru") ? DEFAULT_SYS_RU : DEFAULT_SYS_EN);
+
+  // 🔒 Жёсткий язык для этой конкретной беседы
+  const langHeader = lang.startsWith("ru")
+    ? `IMPORTANT: For this conversation you MUST answer ONLY in Russian.
+- The user interface language is Russian.
+- Even if the system prompt or examples contain English or other languages, you MUST respond in Russian only.
+- Never reply in English unless explicitly asked to translate.`
+    : `IMPORTANT: For this conversation you MUST answer ONLY in English.
+- The user interface language is English.
+- Even if the system prompt or examples contain Russian or other languages, you MUST respond in English only.
+- Never reply in Russian unless explicitly asked to translate.`;
+
+  return `${langHeader}\n\n${base}`;
 }
 
-
-// Фолбэк-ответ, если нет ключа
-function fallbackReply(messages = []) {
-  const lastUser = [...messages].reverse().find((m) => m.role === "user");
-  const q = lastUser?.content || "—";
-  return [
-    `You asked: "${q}"`,
-    "",
-    "Demo reply (no OPENAI_API_KEY configured).",
-    "For 10 users: Growth Plan — $299/month. Annual discount — 20%.",
-  ].join("\n");
-}
 const BUILD_TAG = "aiw-widget@rag-1.0.3";
 
 router.use((req, res, next) => {
