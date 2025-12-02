@@ -98,17 +98,8 @@ mongoose
     app.use("/api/statistic", aiwStatsRouter);
 
         // AIW-роуты (из server-aiw.js)
-    // app.get("/ping", (req, res) => res.json({ ok: true, t: Date.now() }));
-    app.get("/ping", (req, res) => {
-  res.json({
-    ok: true,
-    t: Date.now(),
-    from: "app.js:3000",
-  });
-});
-
-    app.use("/cdn/aiw", express.static(path.join(__dirname, "cdn/aiw")));
-app.use("/aiw", express.static(path.join(__dirname, "aiw")));
+    app.get("/ping", (req, res) => res.json({ ok: true, t: Date.now() }));
+    app.use("/aiw", express.static(path.join(__dirname, "cdn/aiw")));
     app.use("/api/aiw", chatRouter);  // если тебе нужно дублировать
     app.use("/aiw", retrieveRouter);  // /aiw/search и т.п.
     app.use("/aiw", widgetRouter);    // /aiw/widget-config и т.п.
