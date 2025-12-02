@@ -66,6 +66,20 @@ app.use((req, res, next) => {
 
 
 // Явная обработка preflight для всех путей
+app.use(
+  cors({
+    origin: true, // эхо Origin — подойдёт и для localhost:5173, и для прода
+    methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+    allowedHeaders: [
+      "Content-Type",
+      "Authorization",
+      "X-Requested-With",
+      "Origin",
+      "Accept",
+    ],
+    credentials: false,
+  })
+);
 app.options("*", cors());
 app.use(express.json({ limit: '1mb' }));
 
@@ -90,6 +104,7 @@ mongoose
 
     // статические файлы
     app.use("/uploads", express.static("uploads"));
+    
 
     //  API роуты
     app.use("/api/auth", authRouter);
@@ -97,12 +112,23 @@ mongoose
     app.use("/api/users", adminUsersRouter);
     app.use("/api/statistic", aiwStatsRouter);
 
+const aiwRouter = express.Router();
+
+aiwRouter.use(chatRouter);     // /chat
+aiwRouter.use(retrieveRouter); // /search, ...
+aiwRouter.use(widgetRouter);   // /widget-config и т.п.
+
+
+app.use("/aiw", express.static(path.join(__dirname, "cdn/aiw")));
+app.use("/aiw", aiwRouter);
+app.use("/api/aiw", aiwRouter);
+    
         // AIW-роуты (из server-aiw.js)
-    app.get("/ping", (req, res) => res.json({ ok: true, t: Date.now() }));
-    app.use("/aiw", express.static(path.join(__dirname, "cdn/aiw")));
-    app.use("/api/aiw", chatRouter);  // если тебе нужно дублировать
-    app.use("/aiw", retrieveRouter);  // /aiw/search и т.п.
-    app.use("/aiw", widgetRouter);    // /aiw/widget-config и т.п.
+    // app.get("/ping", (req, res) => res.json({ ok: true, t: Date.now() }));
+    // app.use("/aiw", express.static(path.join(__dirname, "cdn/aiw")));
+    // app.use("/api/aiw", chatRouter);  // если тебе нужно дублировать
+    // app.use("/aiw", retrieveRouter);  // /aiw/search и т.п.
+    // app.use("/aiw", widgetRouter);    // /aiw/widget-config и т.п.
 
     // error handlers
     app.use(errorHandler);
