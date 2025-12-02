@@ -9,15 +9,19 @@ import clientRouter from "./api/clientRoutes.js";
 import adminUsersRouter from "./api/adminUsers.js";
 import aiwStatsRouter from "./api/aiwStats.js";
 import sendTelegramMessage from "./services/telegramNotify.js";
-import { webhookCallback } from "grammy";
+import widgetRouter from "./api/widget/widget.js";
+import retrieveRouter from "./api/widget/aiwSearch.js";
+import chatRouter from "./api/widget/aiwChat.js";
 import createBot from "./src/bot.js";
+import { randomUUID } from "crypto";
+import { webhookCallback } from "grammy";
 
+mongoose.set("debug", true);
 
 /* ======================
    Bot env/config
 ====================== */
 const BOT_TOKEN = process.env.AD_BOT_TOKEN;
-const WEBHOOK_SECRET = process.env.WEBHOOK_SECRET || "dev-secret";
 const BASE_URL = process.env.BASE_URL || "";
 const PUBLIC_IP = process.env.PUBLIC_IP || "";
 if (!BOT_TOKEN) {
@@ -29,18 +33,36 @@ if (!BOT_TOKEN) {
 const app = express();
 const PORT = process.env.PORT || 3000;
 
+app.set('trust proxy', true);
 app.use(morgan("tiny"));
-// app.use(cors());
-// app.use(cors({
-//   origin: true,                     // echo Origin
-//   methods: ["GET", "POST", "OPTIONS"],
-//   allowedHeaders: ["Content-Type", "Authorization"],
-//   credentials: false
-// }));
+
+app.use((req, res, next) => {
+  // Уникальный traceId для запроса
+  const traceId = randomUUID();
+  const t0 = Date.now();
+
+  // Сохраним немного контекста
+  req.__trace = {
+    id: traceId,
+    start: t0,
+    baseUrl: req.baseUrl,
+    originalUrl: req.originalUrl,
+    pid: process.pid,
+    port: process.env.PORT || "unknown",
+  };
+
+  // Когда ответ уходит — поставим системные заголовки
+  res.on("finish", () => {
+    // ничего — всё проставим прямо в хендлере
+  });
+
+  next();
+});
+
 
 // Явная обработка preflight для всех путей
 app.options("*", cors());
-app.use(express.json());
+app.use(express.json({ limit: '1mb' }));
 
 /* ======================
    Mongo + Bot + Webhook
@@ -64,11 +86,18 @@ mongoose
     // статические файлы
     app.use("/uploads", express.static("uploads"));
 
-    // твои API роуты
+    //  API роуты
     app.use("/api/auth", authRouter);
     app.use("/api/clients", clientRouter);
     app.use("/api/users", adminUsersRouter);
     app.use("/api/statistic", aiwStatsRouter);
+
+        // AIW-роуты (из server-aiw.js)
+    app.get("/ping", (req, res) => res.json({ ok: true, t: Date.now() }));
+    app.use("/aiw", chatRouter);      // => /aiw/chat
+    app.use("/api/aiw", chatRouter);  // если тебе нужно дублировать
+    app.use("/aiw", retrieveRouter);  // /aiw/search и т.п.
+    app.use("/aiw", widgetRouter);    // /aiw/widget-config и т.п.
 
     // error handlers
     app.use(errorHandler);
@@ -124,102 +153,3 @@ process.on("unhandledRejection", (reason, promise) => {
   console.error("Unhandled Rejection at:", promise, "reason:", reason);
   sendTelegramMessage(`⚠️ Unhandled Rejection: ${reason}`);
 });
-
-// const PORT = process.env.PORT || 3000;
-// const uriDB = process.env.DATABASE_URL;
-
-// const connection = mongoose
-//   .connect(uriDB, { dbName: "materials_reader" })
-//   .then(() => {
-//     const bot = createBot(BOT_TOKEN);
-
-//     bot
-//       .start({ drop_pending_updates: true })
-//       .catch((e) => console.error("Bot start error:", e));
-//     console.log("Bot started in long-polling mode");
-
-//     // // повесить вебхук-роут
-//     // app.post(`/webhook/${WEBHOOK_SECRET}`, (req, res, next) => {
-//     //   const token = req.get("X-Telegram-Bot-Api-Secret-Token");
-//     //   if (token && token !== WEBHOOK_SECRET) return res.sendStatus(401);
-//     //   return webhookCallback(bot, "express")(req, res, next);
-//     // });
-
-//     app.listen(PORT, function () {
-//       console.log(
-//         `Database connection successful. Use our API on port: ${PORT}`
-//       );
-
-//       if (BASE_URL) {
-//         // bot.api
-//         //   .setWebhook(`${BASE_URL}/webhook/${WEBHOOK_SECRET}`, {
-//         //     secret_token: WEBHOOK_SECRET,
-//         //     drop_pending_updates: true,
-//         //     // allowed_updates: ["message","callback_query"],
-//         //   })
-//         //   .then(() => console.log("Telegram webhook set"))
-//         //   .catch((e) => console.error("Webhook setup error:", e));
-//       } else {
-//         console.warn(
-//           "BASE_URL not set — skipping webhook (see Variant B for long polling)."
-//         );
-//       }
-//     });
-//   })
-//   .catch((err) => {
-//     console.log(`Server not running. Error message: ${err.message}`);
-//     process.exit(1);
-//   });
-
-// // const connection = mongoose
-// //   .connect(uriDB, {
-// //     dbName: "materials_reader",
-// //   })
-// //   .then(() => {
-// //     app.listen(PORT, function () {
-// //       console.log(
-// //         `Database connection successful. Use our API on port: ${PORT}`
-// //       );
-// //     });
-// //   })
-// // .catch((err) => {
-// //   console.log(`Server not running. Error message: ${err.message}`);
-// //   process.exit(1);
-// // });
-
-// const app = express();
-
-// app.use(morgan("tiny"));
-// app.use(cors());
-// app.use(express.json());
-
-// // Настройка папки для статической раздачи файлов
-// app.use("/uploads", express.static("uploads"));
-
-// // connecting api routes
-
-// app.use("/", authRouter);
-
-// // error handlers
-// app.use(errorHandler);
-
-// app.use((_, res, __) => {
-//   res.status(404).json({
-//     status: "error",
-//     code: 404,
-//     message: "Use api on routes: /api/materials",
-//     data: "Not found",
-//   });
-// });
-
-// // global error handlers
-// process.on("uncaughtException", (err) => {
-//   console.error("Uncaught Exception:", err);
-//   sendTelegramMessage(`❗️ Uncaught Exception: ${err.message}`);
-//   process.exit(1); // reboots the app
-// });
-
-// process.on("unhandledRejection", (reason, promise) => {
-//   console.error("Unhandled Rejection at:", promise, "reason:", reason);
-//   sendTelegramMessage(`⚠️ Unhandled Rejection: ${reason}`);
-// });

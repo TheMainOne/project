@@ -1,4 +1,4 @@
-// server.js
+// server-aiw.js
 import 'dotenv/config';
 import express from 'express';
 import mongoose from 'mongoose';
