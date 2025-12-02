@@ -13,10 +13,15 @@ import widgetRouter from "./api/widget/widget.js";
 import retrieveRouter from "./api/widget/aiwSearch.js";
 import chatRouter from "./api/widget/aiwChat.js";
 import createBot from "./src/bot.js";
+import path from "path";
 import { randomUUID } from "crypto";
 import { webhookCallback } from "grammy";
+import { fileURLToPath } from "url";
 
 mongoose.set("debug", true);
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 /* ======================
    Bot env/config
@@ -101,7 +106,9 @@ mongoose
     from: "app.js:3000",
   });
 });
-    app.use("/aiw", chatRouter);      // => /aiw/chat
+
+    app.use("/cdn/aiw", express.static(path.join(__dirname, "cdn/aiw")));
+app.use("/aiw", express.static(path.join(__dirname, "aiw")));
     app.use("/api/aiw", chatRouter);  // если тебе нужно дублировать
     app.use("/aiw", retrieveRouter);  // /aiw/search и т.п.
     app.use("/aiw", widgetRouter);    // /aiw/widget-config и т.п.
