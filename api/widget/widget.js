@@ -12,104 +12,13 @@ import AiwSession from "../../models/AiwSession.js";
 import AiwMessage from "../../models/AiwMessage.js";
 import AiwGap from "../../models/AiwGap.js"; 
 import Client from "../../models/Client.js";
-import langs from "langs";
 import { hashIp, classifyTopics } from "../../utils/telemetry.js";
 import { buildPrompt } from "../../services/web_crawler/core.js";
 import { retrieveUnified } from "../../services/rag/index.js";
 import { getWidgetConfigCached } from '../../services/widgetConfig/cache.js';
-import { franc } from "franc";
 
 
 const router = express.Router();
-
-// ===== ЯЗЫК: УМНЫЙ ДЕТЕКТОР  =====
-
-// 1) Детект по franc + резерв по алфавиту
-function detectLanguageCodeSmart(text, fallbackLangCode = null) {
-  const cleaned = (text || "").replace(/\s+/g, " ").trim();
-  if (!cleaned) return fallbackLangCode;
-
-  // очень короткие сообщения — НЕ ломаем язык, только грубо по алфавиту
-  if (cleaned.length < 5) {
-    if (/[А-Яа-яЁё]/.test(cleaned)) return "ru";
-    if (/[A-Za-z]/.test(cleaned)) return "en";
-    // для других алфавитов сюда можно добавить проверки
-    return fallbackLangCode;
-  }
-
-  // нормальная длина — используем franc
-  const code3 = franc(cleaned, { minLength: 5 });
-  if (code3 === "und") {
-    // если franc не смог определить — пробуем по алфавиту
-    if (/[А-Яа-яЁё]/.test(cleaned)) return "ru";
-    if (/[A-Za-z]/.test(cleaned)) return "en";
-    return fallbackLangCode;
-  }
-
-  const lang = langs.where("3", code3);
-  if (!lang) return fallbackLangCode;
-
-  // возвращаем двухбуквенный ISO-код (en, ru, es, de, fr, ...)
-  return lang["1"] || lang["2T"] || lang["2B"] || fallbackLangCode;
-}
-
-// 2) Выбор стабильного языка для текущего запроса
-function getStableLangForRequest(messages, meta = {}) {
-  const uiLang = (meta.lang && String(meta.lang)) || "en";
-
-  const userMessages = (messages || []).filter(m => m && m.role === "user");
-
-  const lastUser = userMessages[userMessages.length - 1] || null;
-  const lastUserText = (lastUser?.content || "").trim();
-
-  const lastUserLang = detectLanguageCodeSmart(lastUserText, null);
-
-  // если фраза достаточно внятная и язык определился — берём его
-  if (lastUserText.length >= 5 && lastUserLang) {
-    return { lang: lastUserLang, lastUserText };
-  }
-
-  // иначе ищем предыдущие "осмысленные" юзерские сообщения
-  for (let i = userMessages.length - 2; i >= 0; i--) {
-    const txt = (userMessages[i].content || "").trim();
-    if (!txt) continue;
-
-    const l = detectLanguageCodeSmart(txt, null);
-    if (l) {
-      return { lang: l, lastUserText };
-    }
-  }
-
-  // если ничего не нашли — падаем в uiLang (из конфига/меты)
-  return { lang: uiLang, lastUserText };
-}
-
-// 3) Инструкция для модели: всегда отвечать на языке последнего сообщения
-function buildLanguageLockedSystemPrompt(cfg, lang) {
-  const fromDb = (cfg?.customSystemPrompt || "").trim();
-
-  const basePrompt = fromDb || (
-    lang?.startsWith("ru") ? DEFAULT_SYS_RU : DEFAULT_SYS_EN
-  );
-
-  const langInstr =
-    `IMPORTANT LANGUAGE RULE:\n` +
-    `The user's last message is written in language with ISO 639-1 code "${lang}".\n` +
-    `You MUST respond strictly in the same language as the user's last message.\n` +
-    `Do NOT switch to any other language, even if the CONTEXT or previous messages are in a different language.\n` +
-    `You may switch language ONLY if the user later sends a message in a different language.`;
-
-  return `${basePrompt.trim()}\n\n${langInstr}`;
-}
-
-// 4) Хвост к user-запросу, чтобы дополнительно зафиксировать язык
-function appendLanguageHint(text) {
-  return (
-    (text || "") +
-    `\n\n[Language instruction for the assistant: respond strictly in the same language as this message. Do not change the language.]`
-  );
-}
-
 
 // === Judge helpers (NEW) ===
 function topCitations(contexts = []) {
@@ -155,8 +64,8 @@ router.use((req, _res, next) => {
 
 // Быстрая эвристика на случай отсутствия ключа или ошибок LLM
 function quickHeuristicGood({ phase, contexts, reply }) {
-   if (!contexts?.length) return null;  
-   const r = (reply || "").toLowerCase();
+  if (!contexts?.length) return { goodAnswer: false, confidence: 0.9, reason: "no-context" };
+  const r = (reply || "").toLowerCase();
 
  // Явное сообщение, что в базе/контексте нет нужных данных — считаем gap
  const noInfoPatterns = [
@@ -734,6 +643,13 @@ function sendJSON(req, res, { reply, source, citations = [], goodAnswer, confide
   return res.status(200).json(body);
 }
 
+function pickSystemPrompt(cfg, lang = "ru") {
+  const fromDb = (cfg?.customSystemPrompt || "").trim();
+  if (fromDb) return fromDb;                       // 1) из БД, если задан
+  return lang.startsWith("ru") ? DEFAULT_SYS_RU    // 2) иначе дефолт
+                               : DEFAULT_SYS_EN;
+}
+
 
 // Фолбэк-ответ, если нет ключа
 function fallbackReply(messages = []) {
@@ -789,8 +705,8 @@ T.mark("entered"); // t=0
     );
 
     // ====== Чтение входа (как в твоём коде) ======
-// ====== Чтение входа ======
 let { messages = [], stream, meta = {} } = req.body || {};
+//          ^^^^^  ← убрали дефолт true здесь
 
 const allowedRoles = new Set(["system", "user", "assistant"]);
 const safeMsgs = (Array.isArray(messages) ? messages : [])
@@ -802,41 +718,48 @@ const { siteId, sessionId, visitorId } = resolveIds(req, meta);
 
 const clientId = await resolveClientIdStrict(req, meta, siteId);
 if (clientId) res.setHeader("X-AIW-Client", String(clientId));
-
 const cfg = await getWidgetConfigCached({ clientId, siteId });
 
-// приоритет за cfg.stream
+// 👇 НОВОЕ: приоритет за cfg.stream
 if (cfg && typeof cfg.stream === "boolean") {
   stream = cfg.stream;
 } else if (typeof stream !== "boolean") {
-  stream = true; // дефолт — стрим
+  // если фронт ничего не прислал — по умолчанию true
+  stream = true;
 }
 
 if (cfg?._id) res.setHeader("X-AIW-WidgetCfg", String(cfg._id));
 
-res.setHeader("X-AIW-Resolved-Site", siteId);
-res.setHeader("X-AIW-Resolved-Session", sessionId || "(empty)");
 
-// ====== ЯЗЫК + ТЕКСТ ПОЛЬЗОВАТЕЛЯ ======
-const { lang, lastUserText } = getStableLangForRequest(safeMsgs, meta);
-const query = (lastUserText || "").trim();
+    res.setHeader("X-AIW-Resolved-Site", siteId);
+    res.setHeader("X-AIW-Resolved-Session", sessionId || "(empty)");
 
-// последний ответ ассистента (для follow-up & short confirmations)
+    // ====== извлекаем пользовательский вопрос ======
+const lastUser = [...safeMsgs].reverse().find((m) => m.role === "user");
 const lastAssistant = [...safeMsgs].reverse().find((m) => m.role === "assistant");
 
-// что пойдёт в retrieve (RAG)
-let ragQuery = query;
+let query = (lastUser?.content || "").trim();   // это для логов / judge
+let ragQuery = query;                           // это будем слать в retrieve
+
+// если пользовательский ответ очень короткий, подмешиваем предыдущий ассистентский текст
 if (ragQuery.length < 20 && lastAssistant) {
   ragQuery = `${lastAssistant.content}\n\nUser follow-up: ${query}`;
 }
 
-// то, что реально написал пользователь
-const rawQuery = query;
+// ---- NEW: нормализация коротких подтверждений ("yes", "да", "ок" и т.п.) ----
+const rawQuery = query;   // то, что реально написал пользователь
+let llmQuery = query;     // то, что пойдёт в buildPrompt / no-context LLM
 
-// то, что пойдёт в LLM (buildPrompt / no-context)
-let llmQuery = query;
+function detectLangFromText(text, fallback = "ru") {
+  const t = (text || "").toLowerCase();
+  if (/[а-яё]/i.test(t)) return "ru";   // есть кириллица
+  if (/[a-z]/i.test(t)) return "en";   // есть латиница
+  return fallback;                     // иначе доверяем fallback (из меты/конфига)
+}
 
-// ===== КОРОТКИЕ ПОДТВЕРЖДЕНИЯ =====
+const uiLang = String(meta.lang || "ru");
+const lang   = detectLangFromText(query, uiLang);
+
 function isShortConfirmation(text) {
   const q = (text || "").trim().toLowerCase();
   if (!q) return false;
@@ -861,34 +784,39 @@ function isShortConfirmation(text) {
   );
 }
 
-if (isShortConfirmation(query) && lastAssistant) {
-  llmQuery =
-    `The user replied "${rawQuery}" as a short confirmation and wants you to PROCEED ` +
-    `with your previous suggestion.\n\n` +
-    `Your previous message was:\n"""${lastAssistant.content}"""\n\n` +
-    `IMPORTANT:\n` +
-    `- Do NOT repeat the same campaign descriptions again.\n` +
-    `- Assume the user already knows what you wrote before.\n` +
-    `- Take the NEXT logical step of that suggestion.\n` +
-    `- Either ask 1–2 clarifying questions about their goals/budget/niche,\n` +
-    `  or propose a concrete next action (e.g. "let's estimate a test campaign for your game").`;
-}
 
-// 🔐 ВСЕГДА добавляем языковой хинт
-llmQuery = appendLanguageHint(llmQuery);
-
-// ===== Метаданные сессии =====
 const metaAll = {
   siteId,
   sessionId,
   visitorId,
-  clientId,
+  clientId,    
   pageUrl: meta.pageUrl || meta.referrer || req.headers.referer || null,
   referrer: meta.referrer || null,
   utm: meta.utm || {},
   tz: meta.tz || null,
-  lang,       // фиксируем в сессии текущий язык
+  lang,
 };
+
+if (isShortConfirmation(query) && lastAssistant) {
+llmQuery =
+  `The user replied "${rawQuery}" as a short confirmation and wants you to PROCEED ` +
+  `with your previous suggestion.\n\n` +
+  `Your previous message was:\n"""${lastAssistant.content}"""\n\n` +
+  `IMPORTANT:
+  - Do NOT repeat the same campaign descriptions again.
+  - Assume the user already knows what you wrote before.
+  - Take the NEXT logical step of that suggestion.
+  - Either ask 1–2 clarifying questions about their goals/budget/niche,
+    or propose a concrete next action (e.g. "let's estimate a test campaign for your game").`;
+
+
+  // просим отвечать на нужном языке
+  if (lang.startsWith("ru")) {
+    llmQuery += `\n\nAnswer the user in Russian.`;
+  } else {
+    llmQuery += `\n\nAnswer the user in English.`;
+  }
+}
 
     // ====== ensureSession ======
     const tEnsure = Date.now();
@@ -1079,12 +1007,12 @@ let usageOutput = null;
 let usageTotal  = null;
 
   if (oai) {
-    // cfg мы уже получаем раньше через getWidgetConfigCached({ clientId })
-  const sys = buildLanguageLockedSystemPrompt(cfg, lang);
-    const baseMessages = [
-      { role: "system", content: sys },
-      { role: "user",   content: llmQuery }
-    ];
+    // cfg вы уже получаете раньше через getWidgetConfigCached({ clientId })
+const sys = pickSystemPrompt(cfg, lang);
+const baseMessages = [
+  { role: "system", content: sys },
+  { role: "user",   content: llmQuery }
+];
 
 try {
 const r = await oai.chat.completions.create({
@@ -1198,11 +1126,13 @@ await logAssistantMessage({
     const citations = contexts.map((c, i) => ({ idx: i + 1, url: c.url }));
     T.mark("prePrompt");
     // const prompt = buildPrompt({ query, contexts, lang });
-let prompt = buildPrompt({ query: llmQuery, contexts, lang });
+    let prompt = buildPrompt({ query: llmQuery, contexts, lang });
 
-const sys = buildLanguageLockedSystemPrompt(cfg, lang);
-// если buildPrompt где-то добавляет свой system — наш будет иметь приоритет
-prompt = [{ role: "system", content: sys }, ...prompt.filter(m => m.role !== "system")];
+// если есть кастомный системный промпт — добавим его первым сообщением
+
+  const sys = pickSystemPrompt(cfg, lang);
+  // если buildPrompt где-то добавляет свой system — наш будет иметь приоритет
+  prompt = [{ role: "system", content: sys }, ...prompt.filter(m => m.role !== "system")];
 
 
 
