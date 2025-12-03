@@ -6,7 +6,7 @@ const LeadSchema = new mongoose.Schema({
   sessionId: { type: String, index: true },
   visitorId: { type: String, index: true },
 
-  answers:   { type: Object, default: {} }, // { fullName: "...", email: "..." }
+  answers:   { type: Object, default: {} },
   meta:      { type: Object, default: {} },
 
   status:    { type: String, enum: ["new", "processed"], default: "new" },

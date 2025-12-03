@@ -38,7 +38,6 @@ const ClientSchema = new mongoose.Schema(
   { timestamps: true, versionKey: false }
 );
 
-ClientSchema.index({ slug: 1 }, { unique: true });
 ClientSchema.index({ siteId: 1, isActive: 1 });
 
 export default mongoose.model("Client", ClientSchema);

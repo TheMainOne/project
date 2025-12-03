@@ -1,4 +1,4 @@
-// основной код для виджета. Вся логика обработки запросов лежит здесь
+// The main code for the widget. All request processing logic is located here.
 
 
 import 'dotenv/config';     
@@ -8,11 +8,20 @@ import OpenAI from "openai";
 import AiwSession from "../../models/AiwSession.js";
 import AiwMessage from "../../models/AiwMessage.js";
 import AiwGap from "../../models/AiwGap.js"; 
+import Lead from "../../models/Lead.js";
 import Client from "../../models/Client.js";
 import { hashIp, classifyTopics } from "../../utils/telemetry.js";
 import { buildPrompt } from "../../services/web_crawler/core.js";
 import { retrieveUnified } from "../../services/rag/index.js";
 import { getWidgetConfigCached } from '../../services/widgetConfig/cache.js';
+import {
+  hasLeadActions,
+  leadStateMachine,
+  normalizeLeadState,
+  normalizeAnswers,
+  shouldSuppressLead,
+} from "../../services/lead/stateMachine.js";
+import { detectLeadIntent } from "../../services/lead/intent.js";
 
 
 const router = express.Router();
@@ -401,43 +410,6 @@ function resolveIds(req, meta = {}) {
   return { siteId, sessionId, visitorId, serverGenerated };
 }
 
-async function resolveClientId(req, meta, siteId) {
-  // 1) приоритет: явный clientId из заголовка/боди/меты
-  const explicit =
-    req.header("x-aiw-client") ||
-    meta?.clientId ||
-    req.body?.clientId ||
-    null;
-  if (explicit) return String(explicit);
-
-  // 2) clientSlug (если фронт шлёт слаг)
-  const slug =
-    req.header("x-aiw-client-slug") ||
-    meta?.clientSlug ||
-    req.body?.clientSlug ||
-    null;
-  if (slug) {
-    const c = await Client.findOne({ slug }).select("_id").lean();
-    if (c?._id) return String(c._id);
-  }
-
-  // 3) попытка найти по siteId (гибкий OR под разные варианты схемы)
-  if (siteId && siteId !== "unknown-site") {
-    const c = await Client.findOne({
-      $or: [
-        { siteId },                     // если поле единичное
-        { "sites.siteId": siteId },     // если массив сайтов
-        { domains: siteId },            // если храните домены
-      ]
-    }).select("_id").lean();
-    if (c?._id) return String(c._id);
-  }
-
-  return null;
-}
-
-
-
 async function ensureSession(meta, req) {
   try {
     const { siteId, sessionId, visitorId, pageUrl, referrer, utm, tz, lang, clientId } = meta || {};
@@ -467,7 +439,7 @@ async function ensureSession(meta, req) {
         },
         $set: { endedAt: now, ...(clientId ? { clientId } : {}) }, // <— обновляем, если появился
       },
-      { upsert: true }
+       { upsert: true, setDefaultsOnInsert: true }
     );
     return { sessionId };
   } catch (e) {
@@ -640,6 +612,100 @@ function sendJSON(req, res, { reply, source, citations = [], goodAnswer, confide
   return res.status(200).json(body);
 }
 
+function leadCopy(lang = "ru") {
+  const isRu = lang?.startsWith("ru");
+  return {
+    softPrompt: isRu
+      ? "Если хотите, я могу передать ваши контакты нашей команде. Оставите имя и email?"
+      : "If you’d like, I can pass your contact details to our team. Would you like to leave your name and email?",
+    startCapture: isRu
+      ? "Отлично! Давайте соберём пару деталей, чтобы мы могли с вами связаться."
+      : "Great! Let me collect a couple of details so our team can reach out to you.",
+    thankYou: isRu
+      ? "Спасибо! Мы получили ваши данные и скоро свяжемся."
+      : "Thank you! We’ve received your details and will contact you soon.",
+    askFallback: isRu ? "Уточните, пожалуйста:" : "Please specify:",
+  };
+}
+
+function pickLeadQuestion(step = {}, lang = "ru") {
+  if (!step) return null;
+  const isRu = lang?.startsWith("ru");
+  return (
+    (isRu && (step.label?.ru || step.placeholder?.ru)) ||
+    step.label?.en ||
+    step.placeholder?.en ||
+    (isRu ? "Уточните, пожалуйста:" : "Please specify:")
+  );
+}
+
+async function processLeadActions({
+  actions = [],
+  leadCfg = {},
+  leadState = {},
+  lang = "ru",
+  siteId,
+  sessionId,
+  visitorId,
+  clientId,
+}) {
+  const copy = leadCopy(lang);
+  const steps = leadCfg?.steps || [];
+  const messages = [];
+  let captureReason = null;
+
+  for (const act of actions) {
+    switch (act.type) {
+      case "show_soft_prompt":
+        messages.push(copy.softPrompt);
+        break;
+      case "start_capture":
+        captureReason = act.reason || captureReason;
+        messages.push(copy.startCapture);
+        break;
+      case "ask_next_question": {
+        const step = steps[leadState.currentStepIndex] || null;
+        const q = pickLeadQuestion(step, lang) || copy.askFallback;
+        messages.push(q);
+        break;
+      }
+      case "finish_capture": {
+        messages.push(copy.thankYou);
+        await Lead.create({
+          clientId: clientId || null,
+          siteId: siteId || null,
+          sessionId: sessionId || null,
+          visitorId: visitorId || null,
+          answers: normalizeAnswers(leadState.answers),
+          meta: { lang, trigger: leadState.trigger || null, },
+        });
+        break;
+      }
+         case "suppress": {
+        // 🔽 новый кейс для отрицательного ответа
+        if (lang.startsWith("ru")) {
+          messages.push("Хорошо, не буду передавать ваши контакты. Если передумаете — просто напишите, что хотите оставить имя и email.");
+        } else {
+          messages.push("Got it, I won’t pass your contact details. If you change your mind, just let me know you’d like to leave your name and email.");
+        }
+        break;
+      }
+      default:
+        break;
+    }
+  }
+
+  return messages;
+}
+
+function combineReplies(base, extras = []) {
+  return [base, ...(extras || [])].filter(Boolean).join("\n\n");
+}
+
+
+
+// !!This code successfully stopped the responses from randomly switching between languages!!
+
 function pickSystemPrompt(cfg, lang = "ru") {
   const fromDb = (cfg?.customSystemPrompt || "").trim();
   const base = fromDb || (lang.startsWith("ru") ? DEFAULT_SYS_RU : DEFAULT_SYS_EN);
@@ -657,6 +723,8 @@ function pickSystemPrompt(cfg, lang = "ru") {
 
   return `${langHeader}\n\n${base}`;
 }
+
+// !!This code successfully stopped the responses from randomly switching between languages!! END
 
 const BUILD_TAG = "aiw-widget@rag-1.0.3";
 
@@ -715,6 +783,8 @@ const { siteId, sessionId, visitorId } = resolveIds(req, meta);
 const clientId = await resolveClientIdStrict(req, meta, siteId);
 if (clientId) res.setHeader("X-AIW-Client", String(clientId));
 const cfg = await getWidgetConfigCached({ clientId, siteId });
+const leadCfg = cfg?.leadCapture || {};
+const leadEnabled = Boolean(leadCfg?.enabled);
 
 // 👇 НОВОЕ: приоритет за cfg.stream
 if (cfg && typeof cfg.stream === "boolean") {
@@ -723,6 +793,12 @@ if (cfg && typeof cfg.stream === "boolean") {
   // если фронт ничего не прислал — по умолчанию true
   stream = true;
 }
+
+// if (leadEnabled) {
+//   // lead-вставки сложнее стримить; отдаём JSON
+//   stream = false;
+// }
+
 
 if (cfg?._id) res.setHeader("X-AIW-WidgetCfg", String(cfg._id));
 
@@ -820,9 +896,50 @@ llmQuery =
     timing.ensure = Date.now() - tEnsure;
     T.mark("ensureSession");
 
+// ====== Lead state ======
+let leadState = normalizeLeadState();
+let leadActions = [];
+let leadStateChanged = false;
 
+// важно: запоминаем состояние ДО обработки текущего сообщения
+let leadSuppressedBefore = false;
 
-    // логируем юзера (не пишем пустоту)
+if (leadEnabled) {
+  const sessionDoc = await AiwSession.findOne({ sessionId }).lean();
+  leadState = normalizeLeadState(sessionDoc?.leadState);
+
+  leadSuppressedBefore = shouldSuppressLead(leadState);
+  const forceProcess = leadState.status === "capturing";
+
+  // если лида ещё не «задушили» ИЛИ уже идёт захват — обрабатываем сообщение
+  if ((forceProcess || !leadSuppressedBefore) && query) {
+    const userSm = leadStateMachine({
+      leadState,
+      leadCfg,
+      event: { type: "user_message", userText: query },
+    });
+    leadState = userSm.nextState;
+    leadActions.push(...userSm.actions);
+    leadStateChanged = true;
+  }
+}
+
+// состояние ПОСЛЕ обработки текущего сообщения
+const leadSuppressed = shouldSuppressLead(leadState);
+
+// действия, относящиеся к самой форме лида (а не просто мягкому предложению)
+// const leadCaptureActions = (leadActions || []).filter((a) =>
+//   ["start_capture", "ask_next_question", "finish_capture"].includes(a.type)
+// );
+const leadFlowActions = (leadActions || []).filter((a) =>
+  ["start_capture", "ask_next_question", "finish_capture", "suppress"].includes(a.type)
+);
+
+// есть ли сейчас «жёсткий» лид-флоу (форма) для этой реплики
+  const hasLeadFlow =
+  leadEnabled && !leadSuppressedBefore && hasLeadActions(leadFlowActions);
+
+    // ====== logUserMessage ======
     if (query) {
       await logUserMessage({ siteId, sessionId, content: query, clientId });
       T.mark("logUserMessage");
@@ -871,7 +988,83 @@ console.log("[AIW][timings]", JSON.stringify({
         return res.end();
       }
     }
-console.log("[AIW] clientId:", String(clientId), "query:", query);
+
+    // ====== Lead capture short-circuit ======
+if (hasLeadFlow) {
+  const leadMessages = await processLeadActions({
+    // передаём ВСЕ действия этого шага:
+    // start_capture / ask_next_question / finish_capture
+    // (show_soft_prompt сюда никогда не попадёт)
+    actions: leadActions,
+    leadCfg,
+    leadState,
+    lang,
+    siteId,
+    sessionId,
+    visitorId,
+    clientId,
+  });
+
+  const leadReply =
+    combineReplies("", leadMessages) || leadCopy(lang).askFallback;
+
+  phase = "lead-capture";
+  res.setHeader("X-AIW-Phase", phase);
+  setSourceHeaders(res, "lead-capture", []);
+
+  if (leadEnabled && leadStateChanged) {
+    await AiwSession.updateOne({ sessionId }, { $set: { leadState } });
+  }
+
+  await logAssistantMessage({
+    siteId,
+    sessionId,
+    content: leadReply,
+    latencyMs: Date.now() - started,
+    clientId,
+  });
+
+  dbMark = "user:+ assistant:+";
+  res.setHeader("X-AIW-DB", dbMark);
+
+  const timings = T.get();
+  const derived = {
+    buildPromptDur: (timings.buildPrompt ?? 0) - (timings.prePrompt ?? 0),
+    llmWait: (timings.afterLLM ?? 0) - (timings.beforeLLM ?? 0),
+    ttfb: timings.firstByteToClient ?? undefined,
+    firstChunk:
+      (timings.firstChunkFlushed ?? 0) - (timings.firstByteToClient ?? 0),
+  };
+  res.setHeader(
+    "X-AIW-Timing",
+    JSON.stringify({ ...timing, ...timings, ...derived, total: timings.total })
+  );
+
+  // уважаем stream, как и раньше
+  if (!stream) {
+    setJSONHeaders(req, res);
+    return sendJSON(req, res, {
+      reply: leadReply,
+      source: "lead-capture",
+      citations: [],
+    });
+  } else {
+    setSSEHeaders(req, res);
+    res.write(": heartbeat\n\n");
+    T.mark("firstByteToClient");
+
+    const CH = 12; // длина одного «токена» для эффекта печати
+    for (let i = 0; i < leadReply.length; i += CH) {
+      const chunk = leadReply.slice(i, i + CH);
+      res.write(`data:${sseEncode(chunk)}\n\n`);
+    }
+
+    res.write("data: [DONE]\n\n");
+    return res.end();
+  }
+}
+
+
 
 // ====== RAG retrieve ======
 const retrieveRes = await T.wrap("retrieve", async () => {
@@ -1040,6 +1233,39 @@ const r = await oai.chat.completions.create({
   } else {
     reply = lang.startsWith("ru") ? "Демо-ответ (нет OPENAI_API_KEY)." : "Demo reply (no OPENAI_API_KEY).";
   }
+
+  if (leadEnabled && !leadSuppressed) {
+  const intent = await detectLeadIntent({ oai, messages: safeMsgs.slice(-8), lang });
+  const llmSm = leadStateMachine({
+    leadState,
+    leadCfg,
+    event: { type: "llm_signal", leadIntent: intent.leadIntent, confidence: intent.confidence },
+  });
+  leadState = llmSm.nextState;
+  leadActions.push(...llmSm.actions);
+  leadStateChanged = true;
+
+  if (hasLeadActions(leadActions)) {
+    const leadMessages = await processLeadActions({
+      actions: leadActions,
+      leadCfg,
+      leadState,
+      lang,
+      siteId,
+      sessionId,
+      visitorId,
+      clientId,
+    });
+
+    reply = combineReplies(reply, leadMessages);
+  }
+}
+if (leadEnabled && leadStateChanged) {
+  await AiwSession.updateOne(
+    { sessionId },
+    { $set: { leadState } }
+  );
+}
 
 const costUsd = estimateCostUsd(MODEL, usageInput, usageOutput);
 
@@ -1227,6 +1453,68 @@ let tokensOutput = usage?.output ?? null;
 let tokensTotal  = usage?.total  ?? null;
 const costUsd    = estimateCostUsd(MODEL, tokensInput, tokensOutput);
 
+
+
+
+ // 🔥 LEAD: llm_signal + обработка действий прямо в SSE-ветке
+  let extraLeadMessages = [];
+  if (leadEnabled && !leadSuppressed) {
+    try {
+      const intent = await detectLeadIntent({
+        oai,
+        messages: safeMsgs.slice(-8),
+        lang,
+      });
+
+      const llmSm = leadStateMachine({
+        leadState,
+        leadCfg,
+        event: {
+          type: "llm_signal",
+          leadIntent: intent.leadIntent,
+          confidence: intent.confidence,
+        },
+      });
+
+      leadState = llmSm.nextState;
+      leadActions.push(...llmSm.actions);
+      leadStateChanged = true;
+
+      if (hasLeadActions(leadActions)) {
+        extraLeadMessages = await processLeadActions({
+          actions: leadActions,
+          leadCfg,
+          leadState,
+          lang,
+          siteId,
+          sessionId,
+          visitorId,
+          clientId,
+        });
+
+        const extraText =
+          combineReplies("", extraLeadMessages) || leadCopy(lang).askFallback;
+
+        // добавим лид-хвост к ответу (для логов)
+        buffer = combineReplies(buffer, extraLeadMessages);
+
+        // и досольём его в SSE как отдельный chunk
+        if (!clientClosed && extraText) {
+          res.write(`data:${sseEncode("\n\n" + extraText)}\n\n`);
+        }
+      }
+
+      if (leadEnabled && leadStateChanged) {
+        await AiwSession.updateOne(
+          { sessionId },
+          { $set: { leadState } }
+        );
+      }
+    } catch (e) {
+      console.error("[AIW][lead][stream] error:", e?.message || e);
+    }
+  }
+
 await logAssistantMessage({
   siteId,
   sessionId,
@@ -1366,6 +1654,34 @@ const completion = await oai.chat.completions.create({
 T.mark("afterLLM");
 timing.llm = T.get().afterLLM - T.get().beforeLLM;
 
+if (leadEnabled && !leadSuppressed) {
+  const intent = await detectLeadIntent({ oai, messages: safeMsgs.slice(-8), lang });
+  const llmSm = leadStateMachine({
+    leadState,
+    leadCfg,
+    event: { type: "llm_signal", leadIntent: intent.leadIntent, confidence: intent.confidence },
+  });
+  leadState = llmSm.nextState;
+  leadActions.push(...llmSm.actions);
+  leadStateChanged = true;
+
+  if (hasLeadActions(leadActions)) {
+    const leadMessages = await processLeadActions({
+      actions: leadActions,
+      leadCfg,
+      leadState,
+      lang,
+      siteId,
+      sessionId,
+      visitorId,
+      clientId,
+    });
+
+    reply = combineReplies(reply, leadMessages);
+  }
+}
+
+
 const costUsd = estimateCostUsd(MODEL, usageInput, usageOutput);
 
 await logAssistantMessage({
@@ -1379,6 +1695,11 @@ await logAssistantMessage({
   tokensTotal:  usageTotal,
   costUsd,
 });
+
+  if (leadEnabled && leadStateChanged) {
+        await AiwSession.updateOne({ sessionId }, { $set: { leadState } });
+      }
+
 
       dbMark = "user:+ assistant:+";
 

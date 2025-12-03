@@ -17,6 +17,7 @@ const LeadStateSchema = new mongoose.Schema({
     of: String, // можно усложнить позже
     default: {},
   },
+   trigger: { type: String, default: null },
 }, { _id: false });
 
 const AiwSessionSchema = new mongoose.Schema({

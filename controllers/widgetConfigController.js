@@ -29,6 +29,29 @@ function parseInlineAutostart(raw) {
   return undefined;
 }
 
+function parseLeadCapture(raw) {
+  if (!raw) return undefined;
+
+  // если прилетает JSON-строкой (например, из form-data)
+  if (typeof raw === "string") {
+    try {
+      const obj = JSON.parse(raw);
+      if (obj && typeof obj === "object") return obj;
+    } catch (e) {
+      console.warn("leadCapture JSON parse error:", e);
+      return undefined;
+    }
+  }
+
+  // если уже объект (application/json)
+  if (typeof raw === "object") {
+    return raw;
+  }
+
+  return undefined;
+}
+
+
 // GET /api/clients/:idOrSlug/widget-config  (или /api/widget-config?siteId= | ?clientId=)
 export async function getWidgetConfig(req, res) {
   try {
@@ -163,6 +186,12 @@ export async function upsertWidgetConfig(req, res) {
       payload.inlineAutostart = inlineAutostart;
     }
 
+    // leadCapture — тоже как сырой JSON (объект или строка)
+const leadCapture = parseLeadCapture(req.body.leadCapture);
+if (leadCapture) {
+  payload.leadCapture = leadCapture;
+}
+
     // если пришёл файл лого — добавим объект logo
     if (req.file) {
       payload.logo = {
@@ -258,6 +287,7 @@ export async function getPublicWidgetConfig(req, res) {
       resetHistoryOnOpen: 1,
       inlineAutostart: 1,
       stream: 1,
+      leadCapture: 1,
 
       siteId: 1,
       clientId: 1,
@@ -266,53 +296,86 @@ export async function getPublicWidgetConfig(req, res) {
 
     const cfg = await WidgetConfig.findOne(filter, projection).lean();
 
-    const out = cfg ? {
-      siteId:   cfg.siteId   || null,
-      clientId: cfg.clientId || null,
+const out = cfg ? {
+  siteId:   cfg.siteId   || null,
+  clientId: cfg.clientId || null,
 
-      widgetTitle:    cfg.widgetTitle    ?? "AI Assistant",
-      welcomeMessage: cfg.welcomeMessage ?? "Hi! How can I help?",
-      primaryColor:   cfg.primaryColor   ?? "#6D28D9",
-      backgroundColor: cfg.backgroundColor ?? "#0f0f0f",
-      textColor:        cfg.textColor      ?? "#ffffff",
-      borderColor:      cfg.borderColor    ?? (cfg.primaryColor || "#6D28D9"),
+  widgetTitle:    cfg.widgetTitle    ?? "AI Assistant",
+  welcomeMessage: cfg.welcomeMessage ?? "Hi! How can I help?",
+  primaryColor:   cfg.primaryColor   ?? "#6D28D9",
+  backgroundColor: cfg.backgroundColor ?? "#0f0f0f",
+  textColor:        cfg.textColor      ?? "#ffffff",
+  borderColor:      cfg.borderColor    ?? (cfg.primaryColor || "#6D28D9"),
 
-      logo:         cfg.logo || null,
-      lang:         cfg.lang      ?? "en",
-      position:     cfg.position  ?? "br",
-      stream:       cfg.stream    ?? false,
+  logo:         cfg.logo || null,
+  lang:         cfg.lang      ?? "en",
+  position:     cfg.position  ?? "br",
+  stream:       cfg.stream    ?? false,
 
-      // стили (как есть, без жёстких дефолтов — виджет сам добьёт)
-      inputPlaceholder:         cfg.inputPlaceholder ?? "",
-      headerBackgroundColor:    cfg.headerBackgroundColor ?? null,
-      headerTextColor:          cfg.headerTextColor ?? null,
-      assistantBubbleColor:     cfg.assistantBubbleColor ?? null,
-      assistantBubbleTextColor: cfg.assistantBubbleTextColor ?? null,
-      userBubbleColor:          cfg.userBubbleColor ?? null,
-      userBubbleTextColor:      cfg.userBubbleTextColor ?? null,
-      bubbleBorderColor:        cfg.bubbleBorderColor ?? null,
-      inputBackgroundColor:     cfg.inputBackgroundColor ?? null,
-      inputTextColor:           cfg.inputTextColor ?? null,
-      inputBorderColor:         cfg.inputBorderColor ?? null,
-      sendButtonBackgroundColor: cfg.sendButtonBackgroundColor ?? null,
-      sendButtonIconColor:       cfg.sendButtonIconColor ?? null,
-      showAvatars:              cfg.showAvatars !== false,
-      showTimestamps:           cfg.showTimestamps !== false,
-       fontFamily:  cfg.fontFamily  || "",
+  inputPlaceholder:         cfg.inputPlaceholder ?? "",
+  headerBackgroundColor:    cfg.headerBackgroundColor ?? null,
+  headerTextColor:          cfg.headerTextColor ?? null,
+  assistantBubbleColor:     cfg.assistantBubbleColor ?? null,
+  assistantBubbleTextColor: cfg.assistantBubbleTextColor ?? null,
+  userBubbleColor:          cfg.userBubbleColor ?? null,
+  userBubbleTextColor:      cfg.userBubbleTextColor ?? null,
+  bubbleBorderColor:        cfg.bubbleBorderColor ?? null,
+  inputBackgroundColor:     cfg.inputBackgroundColor ?? null,
+  inputTextColor:           cfg.inputTextColor ?? null,
+  inputBorderColor:         cfg.inputBorderColor ?? null,
+  sendButtonBackgroundColor: cfg.sendButtonBackgroundColor ?? null,
+  sendButtonIconColor:       cfg.sendButtonIconColor ?? null,
+  showAvatars:              cfg.showAvatars !== false,
+  showTimestamps:           cfg.showTimestamps !== false,
+  fontFamily:  cfg.fontFamily  || "",
   fontCssUrl:  cfg.fontCssUrl  || "",
   fontFileUrl: cfg.fontFileUrl || "",
-   baseFontSize:      cfg.baseFontSize ?? 14, 
+  baseFontSize: cfg.baseFontSize ?? 14,
 
-      autostart:          !!cfg.autostart,
-      autostartDelay:     Number(cfg.autostartDelay ?? 5000),
-      autostartMode:     (cfg.autostartMode || "local").toLowerCase(),
-      autostartMessage:   cfg.autostartMessage   ?? "",
-      autostartPrompt:    cfg.autostartPrompt    ?? "",
-      autostartCooldownHours: Number(cfg.autostartCooldownHours ?? 12),
-      preserveHistory:    cfg.preserveHistory !== false,
-      resetHistoryOnOpen: !!cfg.resetHistoryOnOpen,
-      inlineAutostart:    cfg.inlineAutostart || null,
-    } : null;
+  autostart:          !!cfg.autostart,
+  autostartDelay:     Number(cfg.autostartDelay ?? 5000),
+  autostartMode:     (cfg.autostartMode || "local").toLowerCase(),
+  autostartMessage:   cfg.autostartMessage   ?? "",
+  autostartPrompt:    cfg.autostartPrompt    ?? "",
+  autostartCooldownHours: Number(cfg.autostartCooldownHours ?? 12),
+  preserveHistory:    cfg.preserveHistory !== false,
+  resetHistoryOnOpen: !!cfg.resetHistoryOnOpen,
+  inlineAutostart:    cfg.inlineAutostart || null,
+
+  // NEW: leadCapture в нормализованном виде
+leadCapture: (() => {
+  const raw = cfg.leadCapture || {};
+  const triggers = raw.triggers || {};
+
+  const llm = triggers.llm || {};
+  const afterN = triggers.afterN || {};
+
+  const defaultTriggers = {
+    llm: {
+      enabled: llm.enabled ?? true,
+      strongThreshold:
+        typeof llm.strongThreshold === "number" ? llm.strongThreshold : 0.75,
+    },
+    afterN: {
+      enabled: afterN.enabled ?? true,
+      minUserMessages:
+        typeof afterN.minUserMessages === "number" ? afterN.minUserMessages : 6,
+      cooldownMinutes:
+        typeof afterN.cooldownMinutes === "number" ? afterN.cooldownMinutes : 60,
+      maxPromptsPerSession:
+        typeof afterN.maxPromptsPerSession === "number"
+          ? afterN.maxPromptsPerSession
+          : 1,
+    },
+  };
+
+  return {
+    enabled: !!raw.enabled,
+    steps: Array.isArray(raw.steps) ? raw.steps : [],
+    triggers: defaultTriggers,
+  };
+})(),
+} : null;
 
     return res.json({ ok: true, config: out });
   } catch (e) {
@@ -363,6 +426,7 @@ export async function uploadWidgetFont(req, res) {
         .json({ ok: false, error: "font file is required (field 'font')" });
     }
 
+    console.log("BODY.leadCapture =", req.body.leadCapture);
     const payload = {
       fontFileUrl: req.file.location,
     };

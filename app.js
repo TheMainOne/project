@@ -18,7 +18,8 @@ import { randomUUID } from "crypto";
 import { webhookCallback } from "grammy";
 import { fileURLToPath } from "url";
 
-mongoose.set("debug", true);
+// mongoose query logging (for debugging)
+mongoose.set("debug", false);
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);

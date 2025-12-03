@@ -3,7 +3,7 @@ import bcrypt from "bcryptjs";
 
 const SiteAccessSchema = new mongoose.Schema(
   {
-    siteId: { type: String, required: true, index: true },
+    siteId: { type: String, required: true },
     clientId: { type: mongoose.Schema.Types.ObjectId, ref: "Client" },
     role: {
       type: String,
@@ -31,7 +31,7 @@ const UserSchema = new mongoose.Schema(
     defaultSiteId: { type: String },
 
     // 🔗 ССЫЛКА НА КЛИЕНТОВ (новое)
-    clientIds: [{ type: mongoose.Schema.Types.ObjectId, ref: "Client", index: true }],
+    clientIds: [{ type: mongoose.Schema.Types.ObjectId, ref: "Client"}],
 
     tokenVersion: { type: Number, default: 0 },
     emailVerified: { type: Boolean, default: false },
@@ -47,7 +47,6 @@ const UserSchema = new mongoose.Schema(
 );
 
 // ——— Индексы ———
-UserSchema.index({ email: 1 }, { unique: true });
 UserSchema.index({ "sites.siteId": 1 });
 UserSchema.index({ "sites.siteId": 1, _id: 1 });
 UserSchema.index({ clientIds: 1 }); // быстрый поиск по клиентам
