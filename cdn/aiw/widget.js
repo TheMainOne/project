@@ -341,6 +341,52 @@ style.textContent = `
   align-items:center;
   gap:8px;
 }
+  .aiw-header-title{
+    display:flex;
+    align-items:center;
+    gap:8px;
+  }
+
+  .aiw-header-title-text{
+    font-weight:700;
+  }
+
+  .aiw-beta-badge{
+    display:inline-flex;
+    align-items:center;
+
+    /* чуть меньше вертикальные отступы, чтобы выровнять по тексту */
+    padding:2px 6px 2px;
+    border-radius:9999px;
+    border:1px solid rgba(255,255,255,0.28);
+    background:rgba(255,255,255,0.08);
+
+    font-size:10px;
+    letter-spacing:0.08em;
+    text-transform:uppercase;
+    color:${THEME.accentText};
+    white-space:nowrap;
+    line-height:1;
+
+    opacity:0;
+    /* медленнее и с чуть большей задержкой */
+    animation: aiw-badge-fade 1.1s ease-out .35s forwards;
+
+    /* микросмещение вниз для визуального выравнивания */
+    transform:translateY(1px);
+  }
+
+  @keyframes aiw-badge-fade{
+    from{
+      opacity:0;
+      transform:translateY(-2px);
+    }
+    to{
+      opacity:1;
+      transform:translateY(1px);
+    }
+  }
+
 
 .aiw-header-logo{
   width:24px;
@@ -927,11 +973,25 @@ if (LOGO) {
   brandLogo.appendChild(img);
 }
 
+// обёртка для текста + бейджа
+const titleWrap = document.createElement("div");
+titleWrap.className = "aiw-header-title";
+
 const brandTitle = document.createElement("span");
+brandTitle.className = "aiw-header-title-text";
 brandTitle.textContent = TITLE;
 
+// сам бейдж
+const betaBadge = document.createElement("span");
+betaBadge.className = "aiw-beta-badge";
+betaBadge.textContent = "Beta";
+
+titleWrap.appendChild(brandTitle);
+titleWrap.appendChild(betaBadge);
+
 brand.appendChild(brandLogo);
-brand.appendChild(brandTitle);
+brand.appendChild(titleWrap);
+
 
 const close = document.createElement("button");
 close.textContent = "×";
