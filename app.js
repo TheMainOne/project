@@ -114,6 +114,7 @@ mongoose
     app.use("/api/statistic", aiwStatsRouter);
 
 const aiwRouter = express.Router();
+aiwRouter.use("/auth", authRouter);  // теперь будет /api/aiw/auth/...
 
 aiwRouter.use(chatRouter);     // /chat
 aiwRouter.use(retrieveRouter); // /search, ...
