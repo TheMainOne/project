@@ -350,18 +350,19 @@ style.textContent = `
   .aiw-header-title-text{
     font-weight:700;
   }
-
+    
   .aiw-beta-badge{
     display:inline-flex;
     align-items:center;
 
-    /* чуть меньше вертикальные отступы, чтобы выровнять по тексту */
-    padding:2px 6px 2px;
+    /* меньше бейдж */
+    padding:1px 5px;
     border-radius:9999px;
     border:1px solid rgba(255,255,255,0.28);
     background:rgba(255,255,255,0.08);
 
-    font-size:10px;
+    /* меньше шрифт, как в референсе */
+    font-size:8px;
     letter-spacing:0.08em;
     text-transform:uppercase;
     color:${THEME.accentText};
@@ -369,23 +370,24 @@ style.textContent = `
     line-height:1;
 
     opacity:0;
-    /* медленнее и с чуть большей задержкой */
+    /* чуть более медленное появление */
     animation: aiw-badge-fade 1.1s ease-out .35s forwards;
 
-    /* микросмещение вниз для визуального выравнивания */
-    transform:translateY(1px);
+    /* немного ПОВЫШЕ относительно текста */
+    transform:translateY(-1px);
   }
 
   @keyframes aiw-badge-fade{
     from{
       opacity:0;
-      transform:translateY(-2px);
+      transform:translateY(-4px);
     }
     to{
       opacity:1;
-      transform:translateY(1px);
+      transform:translateY(-1px);
     }
   }
+
 
 
 .aiw-header-logo{
