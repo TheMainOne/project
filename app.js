@@ -67,22 +67,22 @@ app.use((req, res, next) => {
 
 
 // Явная обработка preflight для всех путей
-app.use(
-  cors({
-    origin: true, // эхо Origin — подойдёт и для localhost:5173, и для прода
-    methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-    allowedHeaders: [
-      "Content-Type",
-      "Authorization",
-      "X-Requested-With",
-      "Origin",
-      "Accept",
-    ],
-    credentials: false,
-  })
-);
-app.options("*", cors());
+const corsOptions = {
+  origin: true, // эхо Origin
+  methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+  allowedHeaders: [
+    "Content-Type",
+    "Authorization",
+    "X-Requested-With",
+    "Origin",
+    "Accept",
+  ],
+  credentials: false,
+};
+
+app.use(cors(corsOptions));
 app.use(express.json({ limit: '1mb' }));
+app.options("*", cors(corsOptions));
 
 /* ======================
    Mongo + Bot + Webhook
