@@ -318,6 +318,7 @@ const COMPLETION_OPTS = {
   temperature: 0.7,
 };
 const CURRENCY = process.env.AIW_CURRENCY || "USD";
+const MAX_HISTORY_FOR_LLM = 25;
 
 const MODEL_PRICES = {
   "gpt-5-nano": {
@@ -794,12 +795,6 @@ if (cfg && typeof cfg.stream === "boolean") {
   stream = true;
 }
 
-// if (leadEnabled) {
-//   // lead-вставки сложнее стримить; отдаём JSON
-//   stream = false;
-// }
-
-
 if (cfg?._id) res.setHeader("X-AIW-WidgetCfg", String(cfg._id));
 
 
@@ -856,6 +851,70 @@ function isShortConfirmation(text) {
   );
 }
 
+function isExampleFollowup(text = "") {
+  const t = text.trim().toLowerCase();
+  if (!t) return false;
+
+  // 1) Точные однословные запросы типа "пример", "examples"
+  const singleWords = [
+    "пример",
+    "примеры",
+    "примерчик",
+    "example",
+    "examples",
+    "use case",
+    "use cases",
+  ];
+  if (singleWords.includes(t)) return true;
+
+  // 2) Типичные фразы RU/EN
+  const phrases = [
+    // RU
+    "дай пример",
+    "дай примеры",
+    "можно пример",
+    "можно примеры",
+    "приведи пример",
+    "приведи примеры",
+    "какие примеры",
+    "несколько примеров",
+    "типичные примеры",
+    "типичные кейсы",
+    "реальные кейсы",
+    "реальные примеры",
+    "примеры кейсов",
+    "примеры случаев",
+    "в каких случаях",
+    "в каких ситуациях",
+
+    // EN
+    "give me an example",
+    "give me some examples",
+    "give examples",
+    "any examples",
+    "some examples",
+    "for example",
+    "for instance",
+    "show me an example",
+    "show me examples",
+    "use case",
+    "use cases",
+    "typical cases",
+    "typical scenarios",
+    "real cases",
+    "real examples",
+    "sample campaign",
+    "sample scenario",
+  ];
+  if (phrases.some(p => t.includes(p))) return true;
+
+  // 3) Короткие вопросы, где явно фигрутируют "пример/примеры/examples/cases"
+  if (t.length <= 80 && /пример|примеры|примеров|examples?|use cases?|cases?|scenarios?/.test(t)) {
+    return true;
+  }
+
+  return false;
+}
 
 const metaAll = {
   siteId,
@@ -870,24 +929,28 @@ const metaAll = {
 };
 
 if (isShortConfirmation(query) && lastAssistant) {
-llmQuery =
-  `The user replied "${rawQuery}" as a short confirmation and wants you to PROCEED ` +
-  `with your previous suggestion.\n\n` +
-  `Your previous message was:\n"""${lastAssistant.content}"""\n\n` +
-  `IMPORTANT:
+  llmQuery =
+    `The user replied "${rawQuery}" as a short confirmation and wants you to PROCEED ` +
+    `with your previous suggestion.\n\n` +
+    `Your previous message was:\n"""${lastAssistant.content}"""\n\n` +
+    `IMPORTANT:
   - Do NOT repeat the same campaign descriptions again.
   - Assume the user already knows what you wrote before.
   - Take the NEXT logical step of that suggestion.
   - Either ask 1–2 clarifying questions about their goals/budget/niche,
     or propose a concrete next action (e.g. "let's estimate a test campaign for your game").`;
+}
 
+if (isExampleFollowup(query) && lastAssistant) {
+  ragQuery =
+    `The user is asking for examples related to your previous suggestion.\n` +
+    `Previous assistant message:\n"""${lastAssistant.content}"""\n`;
 
-  // просим отвечать на нужном языке
-  if (lang.startsWith("ru")) {
-    llmQuery += `\n\nAnswer the user in Russian.`;
-  } else {
-    llmQuery += `\n\nAnswer the user in English.`;
-  }
+  llmQuery =
+    `The user is asking for examples of what you suggested earlier.\n` +
+    `Original user question: "${rawQuery}".\n` +
+    `Please give examples or describe typical cases, based ONLY on CONTEXT.\n` +
+    `Answer in the same language as the user's question.`;
 }
 
     // ====== ensureSession ======
@@ -1073,7 +1136,7 @@ const retrieveRes = await T.wrap("retrieve", async () => {
       clientId,
       siteId,
       query: ragQuery,   
-      kClient: Number(process.env.AIW_KCLIENT || 8),
+      kClient: Number(process.env.AIW_KCLIENT || 20),
       includeWeb: false,          // только клиентские/локальные источники
     });
 
@@ -1198,15 +1261,28 @@ let usageTotal  = null;
   if (oai) {
     // cfg вы уже получаете раньше через getWidgetConfigCached({ clientId })
 const sys = pickSystemPrompt(cfg, lang);
-const baseMessages = [
+
+// берём хвост диалога для LLM (user + assistant)
+const dialogTail = safeMsgs
+  .filter(m => m.role === "user" || m.role === "assistant")
+  .slice(-MAX_HISTORY_FOR_LLM);
+
+// гарантируем, что последний месседж – актуальный вопрос пользователя
+const lastIsUser = dialogTail.length && dialogTail[dialogTail.length - 1].role === "user";
+let messagesForLLM = [
   { role: "system", content: sys },
-  { role: "user",   content: llmQuery }
+  ...dialogTail,
 ];
+
+if (!lastIsUser || (dialogTail[dialogTail.length - 1].content || "").trim() !== llmQuery.trim()) {
+  messagesForLLM.push({ role: "user", content: llmQuery });
+}
+
 
 try {
 const r = await oai.chat.completions.create({
   model: MODEL,
-  messages: baseMessages,
+  messages: messagesForLLM,
   ...COMPLETION_OPTS,
 });
 
@@ -1355,10 +1431,44 @@ await logAssistantMessage({
   const sys = pickSystemPrompt(cfg, lang);
   // если buildPrompt где-то добавляет свой system — наш будет иметь приоритет
   prompt = [{ role: "system", content: sys }, ...prompt.filter(m => m.role !== "system")];
+// ---- ДОБАВЛЯЕМ ИСТОРИЮ ДИАЛОГА ДЛЯ LLM ----
 
+// хвост диалога (user + assistant)
+const dialogTail = safeMsgs
+  .filter(m => m.role === "user" || m.role === "assistant")
+  .slice(-MAX_HISTORY_FOR_LLM);
 
+// чтобы не дублировать последний вопрос пользователя (из dialogTail)
+// и тот, который buildPrompt уже включил в свой user-message,
+// можно убрать из хвоста последний user с тем же текстом:
+const lastUserContent = (lastUser?.content || "").trim();
+
+const dialogWithoutLastUser = dialogTail.filter(m =>
+  !(m.role === "user" && m.content.trim() === lastUserContent)
+);
+
+// сейчас prompt = [ system, ...rest ]
+const [systemMsg, ...restPrompt] = prompt;
+
+// окончательный промпт:
+prompt = [
+  systemMsg,
+  ...dialogWithoutLastUser,
+  ...restPrompt,
+];
 
     T.mark("buildPrompt"); // длительность = (buildPrompt - prePrompt)
+
+    // 🔍 DEBUG: смотрим, что реально уйдёт в OpenAI (RAG-ветка)
+console.log(
+  "[AIW][debug] promptForLLM",
+  prompt.map((m, i) => ({
+    i,
+    role: m.role,
+    len: m.content.length,
+    preview: m.content.slice(0, 120),
+  }))
+);
 
 if (stream) {
   // ---- STREAM (SSE) ----

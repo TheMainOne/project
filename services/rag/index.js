@@ -8,7 +8,7 @@ export async function retrieveUnified({
   clientId,
   siteId,
   query,
-  kClient = Number(process.env.AIW_KCLIENT || 8),
+  kClient,
   kWeb = 0,                 
   includeWeb = false,      
   minTextLen = 20
@@ -33,6 +33,7 @@ export async function retrieveUnified({
   const rx = query ? new RegExp(escapeRegExp(query), "i") : null;
 
   let chunks = [];
+  console.log("kClient:", kClient);
   try {
     chunks = await ClientDocChunk.find(
       rx ? { ...baseFilter, $or: [{ content: rx }, { title: rx }] } : baseFilter
