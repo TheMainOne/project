@@ -591,6 +591,17 @@ style.textContent = `
   box-shadow:0 1px 0 rgba(0,0,0,.2);
     line-height:1.5; 
 }
+
+.aiw-bubble a {
+  color: ${INLINE ? "#60a5fa" : THEME.accent};
+  text-decoration: underline;
+  word-break: break-all;
+}
+
+.aiw-bubble a:hover {
+  text-decoration: none;
+}
+  
 .aiw-row.me .aiw-bubble{
   background:${THEME.bubbleUser};
   color:${THEME.userText};
@@ -1249,6 +1260,32 @@ function escapeHtml(str) {
     .replace(/'/g, "&#39;");
 }
 
+function linkify(html) {
+  if (!html) return "";
+
+  // URL: http(s)://... или www....
+  const urlPattern = /\b((https?:\/\/|www\.)[^\s<]+[^\s<\.)])/gi;
+
+  // email
+  const emailPattern = /\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b/gi;
+
+  // сначала URL
+  let out = html.replace(urlPattern, (match, url) => {
+    let href = url;
+    if (!/^https?:\/\//i.test(href)) {
+      href = "https://" + href;        // для www. добавим https://
+    }
+    return `<a href="${href}" target="_blank" rel="noopener noreferrer">${url}</a>`;
+  });
+
+  // потом email
+  out = out.replace(emailPattern, (email) => {
+    return `<a href="mailto:${email}">${email}</a>`;
+  });
+
+  return out;
+}
+
 function renderMarkdownBasic(text) {
   let html = escapeHtml(text || "");
 
@@ -1261,10 +1298,11 @@ function renderMarkdownBasic(text) {
   // переносы строк
   html = html.replace(/\n/g, "<br>");
 
+  // авто-линковка URL и email
+  html = linkify(html);
+
   return html;
 }
-
-
 
 // создаём DOM для одного сообщения и сразу добавляем его в messagesWrap
 function appendMessageDOM(m) {
