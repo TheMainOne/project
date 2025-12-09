@@ -15,12 +15,14 @@ import s3 from "../amazon/s3Client.js";
 import { GetObjectCommand } from "@aws-sdk/client-s3";
 
 // ===== Config (под свои реалии можно вынести в .env) =====
-const SMALL_DOC_CHARS = Number(process.env.RAG_SMALL_DOC_CHARS || 6000);    // до этого размера — 1 чанк
+const SMALL_DOC_CHARS = Number(process.env.RAG_SMALL_DOC_CHARS || 6000); // до этого размера — 1 чанк
 const FULL_DOC_MAX_CHARS = Number(process.env.RAG_FULL_DOC_MAX_CHARS || 28000); // максимум для «полного» чанка
 const DEFAULT_CHUNK_SIZE = Number(process.env.RAG_CHUNK_SIZE || 1400);
 const DEFAULT_OVERLAP = Number(process.env.RAG_CHUNK_OVERLAP || 200);
 
-const oai = process.env.OPENAI_API_KEY ? new OpenAI({ apiKey: process.env.OPENAI_API_KEY }) : null;
+const oai = process.env.OPENAI_API_KEY
+  ? new OpenAI({ apiKey: process.env.OPENAI_API_KEY })
+  : null;
 
 // =================== Utils (S3 / IO) ===================
 async function streamToBuffer(stream) {
@@ -41,7 +43,9 @@ async function readSource({ localPath, s3Bucket, s3Key }) {
       return Buffer.isBuffer(body) ? body : await streamToBuffer(body);
     }
     if (s3 && typeof s3.send === "function") {
-      const resp = await s3.send(new GetObjectCommand({ Bucket: s3Bucket, Key: s3Key }));
+      const resp = await s3.send(
+        new GetObjectCommand({ Bucket: s3Bucket, Key: s3Key })
+      );
       const body = resp.Body;
       return Buffer.isBuffer(body) ? body : await streamToBuffer(body);
     }
@@ -51,7 +55,9 @@ async function readSource({ localPath, s3Bucket, s3Key }) {
     throw new Error("Unsupported S3 client: no getObject/send/getObjectBuffer");
   }
   if (localPath) return await fs.readFile(localPath);
-  throw new Error("No source provided: either {s3Bucket,s3Key} or localPath is required");
+  throw new Error(
+    "No source provided: either {s3Bucket,s3Key} or localPath is required"
+  );
 }
 
 function extFrom({ mimeType, localPath, s3Key }) {
@@ -76,7 +82,11 @@ async function parsePDFBuffer(buffer) {
   for (let i = 1; i <= pdf.numPages; i++) {
     const page = await pdf.getPage(i);
     const content = await page.getTextContent();
-    const text = content.items.map(it => it.str || "").join(" ").replace(/\s+/g, " ").trim();
+    const text = content.items
+      .map((it) => it.str || "")
+      .join(" ")
+      .replace(/\s+/g, " ")
+      .trim();
     if (text) pageTexts.push(text);
   }
   const text = pageTexts.join("\n\n--- PAGE BREAK ---\n\n");
@@ -87,10 +97,10 @@ function bufferToUtf8(bufLike) {
   const buf = Buffer.isBuffer(bufLike)
     ? bufLike
     : bufLike instanceof Uint8Array
-      ? Buffer.from(bufLike)
-      : Buffer.from(bufLike || []);
+    ? Buffer.from(bufLike)
+    : Buffer.from(bufLike || []);
   let s = buf.toString("utf8");
-  if (s.charCodeAt(0) === 0xFEFF) s = s.slice(1); // strip BOM
+  if (s.charCodeAt(0) === 0xfeff) s = s.slice(1); // strip BOM
   return s;
 }
 
@@ -103,9 +113,11 @@ async function parseByBuffer({ buffer, mimeType, ext }) {
     return { text: value || "", pages: 0 };
   }
   if (
-    ext === ".xlsx" || ext === ".xls" ||
+    ext === ".xlsx" ||
+    ext === ".xls" ||
     mimeType === "application/vnd.ms-excel" ||
-    mimeType === "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    mimeType ===
+      "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
   ) {
     const wb = XLSX.read(buffer, { type: "buffer" });
     const parts = [];
@@ -119,8 +131,11 @@ async function parseByBuffer({ buffer, mimeType, ext }) {
   const isTextMime = typeof mimeType === "string" && /^text\//i.test(mimeType);
   const isTextExt = [".txt", ".md", ".csv", ".log"].includes(ext);
   if (isTextMime || isTextExt || !mimeType) {
-    const gzHeader = Buffer.isBuffer(buffer) ? buffer.slice(0, 2) : Buffer.from(buffer).slice(0, 2);
-    const looksGzip = gzHeader.length === 2 && gzHeader[0] === 0x1f && gzHeader[1] === 0x8b;
+    const gzHeader = Buffer.isBuffer(buffer)
+      ? buffer.slice(0, 2)
+      : Buffer.from(buffer).slice(0, 2);
+    const looksGzip =
+      gzHeader.length === 2 && gzHeader[0] === 0x1f && gzHeader[1] === 0x8b;
     const decoded = looksGzip ? gunzipSync(Buffer.from(buffer)) : buffer;
     return { text: bufferToUtf8(decoded), pages: 0 };
   }
@@ -135,8 +150,8 @@ function normalizeText(raw) {
     .replace(/[ \u00A0\t]+/g, " ");
 
   s = s
-    .replace(/\n{3,}/g, "\n\n")           // >2 переносов -> 2
-    .replace(/([^\n])\n(?!\n)/g, "$1 ")   // одиночный перенос -> пробел (чтобы не рвало слова)
+    .replace(/\n{3,}/g, "\n\n") // >2 переносов -> 2
+    .replace(/([^\n])\n(?!\n)/g, "$1 ") // одиночный перенос -> пробел (чтобы не рвало слова)
     .replace(/[ ]{2,}/g, " ")
     .trim();
 
@@ -146,14 +161,21 @@ function normalizeText(raw) {
 /**
  * Полный чанкер с перекрытием.
  */
-export function splitIntoChunksFull(text, {
-  chunkSize = DEFAULT_CHUNK_SIZE,
-  overlap   = DEFAULT_OVERLAP,
-  normalize = true
-} = {}) {
+export function splitIntoChunksFull(
+  text,
+  {
+    chunkSize = DEFAULT_CHUNK_SIZE,
+    overlap = DEFAULT_OVERLAP,
+    normalize = true,
+  } = {}
+) {
   let s = text || "";
   if (normalize) {
-    s = s.replace(/\r/g, "").replace(/[ \t]+/g, " ").replace(/\n{3,}/g, "\n\n").trim();
+    s = s
+      .replace(/\r/g, "")
+      .replace(/[ \t]+/g, " ")
+      .replace(/\n{3,}/g, "\n\n")
+      .trim();
   }
 
   const chunks = [];
@@ -182,7 +204,10 @@ export function splitIntoChunksFull(text, {
 }
 
 // =================== Embeddings ===================
-async function embedBatch(texts, { model = "text-embedding-3-small", retries = 3 } = {}) {
+async function embedBatch(
+  texts,
+  { model = "text-embedding-3-small", retries = 3 } = {}
+) {
   if (!oai) throw new Error("OPENAI_API_KEY not configured");
 
   const MAX_PER_REQ = 64;
@@ -194,16 +219,99 @@ async function embedBatch(texts, { model = "text-embedding-3-small", retries = 3
       for (let i = 0; i < texts.length; i += MAX_PER_REQ) {
         const part = texts.slice(i, i + MAX_PER_REQ);
         const res = await oai.embeddings.create({ model, input: part });
-        all.push(...res.data.map(d => d.embedding));
+        all.push(...res.data.map((d) => d.embedding));
       }
       return all;
     } catch (e) {
       attempt += 1;
       if (attempt > retries) throw e;
-      await new Promise(r => setTimeout(r, 300 * attempt));
+      await new Promise((r) => setTimeout(r, 300 * attempt));
     }
   }
   return all;
+}
+
+async function enrichChunkWithLLM(content, { title } = {}) {
+  if (!oai) return null;
+
+  const safeContent = String(content || "").slice(0, 4000);
+  const pageTitle = title
+    ? `Page title (may help you understand context): "${title}".`
+    : "";
+
+  const prompt = `
+You help to index website content for Retrieval-Augmented Generation (RAG) search.
+
+You are given a fragment of text (a chunk). Your tasks:
+
+1) Briefly summarize the meaning of the chunk in 2–3 sentences.
+2) Decide the main category of this chunk. Choose ONE of:
+   - "contacts"      – contact information, emails, phone numbers, physical addresses, contact forms, support contacts.
+   - "services"      – description of services, what the company does for clients.
+   - "products"      – description of specific products, product features, technical specs.
+   - "case_study"    – case studies, success stories, campaign results, client examples.
+   - "about"         – about the company, team, mission, values, offices, geography, history.
+   - "pricing"       – prices, budgets, fees, minimums, payment terms, pricing plans.
+   - "faq"           – frequently asked questions and their answers.
+   - "legal"         – terms of use, privacy policy, cookies, legal notices, compliance text.
+   - "blog_article"  – blog posts, news, insights, educational articles.
+   - "support"       – help center, troubleshooting, step-by-step guides, how-to instructions.
+   - "other"         – everything else that does not clearly fit the categories above.
+
+3) Optionally add 1–5 short tags (one or two words each) that help search (for example: "Google Ads", "pricing", "contact form", "privacy").
+
+Very important rules:
+- DO NOT invent new facts, phone numbers, email addresses, URLs or people — use ONLY the information that is present in the chunk.
+- If there are no contacts in the text, do NOT fabricate them.
+- If it is hard to choose a type, or the text mixes multiple topics without a clear dominant one, use "other".
+- If the content is mostly navigation, cookie banners, or UI labels with no meaningful information, also use "other".
+
+${pageTitle}
+
+Return STRICT JSON (no markdown, no comments) in the following format:
+{
+  "summary": "string, 2-3 sentences",
+  "type": "contacts|services|products|case_study|about|pricing|faq|legal|blog_article|support|other",
+  "tags": ["tag1", "tag2"]
+}
+
+Chunk text:
+"""${safeContent}"""
+  `.trim();
+
+  const res = await oai.chat.completions.create({
+    model: "gpt-4o-mini",
+    temperature: 0.2,
+    messages: [
+      {
+        role: "system",
+        content:
+          "You are a helpful assistant that returns strict JSON with no extra text.",
+      },
+      { role: "user", content: prompt },
+    ],
+  });
+
+  const raw = res.choices[0]?.message?.content?.trim() || "{}";
+
+  try {
+    const parsed = JSON.parse(raw);
+    const summary = String(parsed.summary || "").trim();
+    const type = String(parsed.type || "other").trim();
+    const tags = Array.isArray(parsed.tags)
+      ? parsed.tags.map((t) => String(t).trim()).filter(Boolean)
+      : [];
+
+    return {
+      semanticSummary: summary || null,
+      chunkType: type || "other",
+      tags,
+    };
+  } catch (e) {
+    // если JSON не распарсился — просто не ставим enrichment
+    console.error("[RAG][enrichChunk] JSON parse error:", e?.message, raw);
+    return null;
+  }
 }
 
 // =================== Main ===================
@@ -226,7 +334,9 @@ export async function ingestDocument({
   const clientObjectId =
     clientId instanceof mongoose.Types.ObjectId
       ? clientId
-      : (mongoose.isValidObjectId(clientId) ? new mongoose.Types.ObjectId(clientId) : null);
+      : mongoose.isValidObjectId(clientId)
+      ? new mongoose.Types.ObjectId(clientId)
+      : null;
 
   if (!clientObjectId) {
     throw new Error("ingestDocument: invalid clientId");
@@ -262,28 +372,57 @@ export async function ingestDocument({
     chunks = splitIntoChunksFull(text, {
       chunkSize: DEFAULT_CHUNK_SIZE,
       overlap: DEFAULT_OVERLAP,
-      normalize: false
+      normalize: false,
     });
   }
 
-  // 3.1) Full-doc sentinel
   let fullSentinel = null;
-  if (len <= FULL_DOC_MAX_CHARS && !(chunks.length === 1 && chunks[0] === text)) {
+  if (
+    len <= FULL_DOC_MAX_CHARS &&
+    !(chunks.length === 1 && chunks[0] === text)
+  ) {
     fullSentinel = text;
   }
 
-  // 4) Эмбеддинги
-  const embedInputs = fullSentinel ? [...chunks, fullSentinel] : chunks;
-  const embeddings = await embedBatch(embedInputs, { model: "text-embedding-3-small" });
+  // 4) LLM-обогащение чанков (summary + type + tags)
+  const enrichments = [];
+  for (const c of chunks) {
+    try {
+      const enriched = await enrichChunkWithLLM(c, { title });
+      enrichments.push(enriched);
+    } catch (e) {
+      console.error("[RAG][enrichChunk] error:", e?.message);
+      enrichments.push(null);
+    }
+  }
 
-  // 5) запись: сначала удаляем прежние чанки этого документа
+  let fullSentinelEnrichment = null;
+  if (fullSentinel) {
+    try {
+      fullSentinelEnrichment = await enrichChunkWithLLM(fullSentinel, {
+        title,
+      });
+    } catch (e) {
+      console.error("[RAG][enrichChunk full] error:", e?.message);
+    }
+  }
+
+  // 5) Эмбеддинги
+  const embedInputs = fullSentinel ? [...chunks, fullSentinel] : chunks;
+  const embeddings = await embedBatch(embedInputs, {
+    model: "text-embedding-3-small",
+  });
+
+  // 6) запись: сначала удаляем прежние чанки этого документа
   await ClientDocChunk.deleteMany({ documentId });
 
   const docs = [];
   // обычные чанки
   chunks.forEach((content, idx) => {
+    const enr = enrichments[idx] || {};
+
     docs.push({
-      clientId: clientObjectId,            // ← ставим ObjectId
+      clientId: clientObjectId,
       siteId: siteId || null,
       documentId,
       title,
@@ -295,6 +434,9 @@ export async function ingestDocument({
       embedding: embeddings[idx],
       tokenCount: content.length,
       source: s3Key || localPath || null,
+      semanticSummary: enr.semanticSummary || null,
+      chunkType: enr.chunkType || "other",
+      tags: Array.isArray(enr.tags) ? enr.tags : [],
       createdAt: new Date(),
       updatedAt: new Date(),
     });
@@ -302,8 +444,10 @@ export async function ingestDocument({
 
   // sentinel-чанк (если есть)
   if (fullSentinel) {
+    const enr = fullSentinelEnrichment || {};
+
     docs.push({
-      clientId: clientObjectId,            // ← ставим ObjectId
+      clientId: clientObjectId,
       siteId: siteId || null,
       documentId,
       title,
@@ -315,6 +459,9 @@ export async function ingestDocument({
       embedding: embeddings[embeddings.length - 1],
       tokenCount: fullSentinel.length,
       source: s3Key || localPath || null,
+      semanticSummary: enr.semanticSummary || null,
+      chunkType: enr.chunkType || "other",
+      tags: Array.isArray(enr.tags) ? enr.tags : [],
       createdAt: new Date(),
       updatedAt: new Date(),
     });
@@ -322,11 +469,22 @@ export async function ingestDocument({
 
   if (docs.length) await ClientDocChunk.insertMany(docs);
 
-  // 6) обновим документ
+  // 7) обновим документ
   await ClientDocument.updateOne(
     { _id: documentId },
-    { $set: { pages, textPreview: text.slice(0, 1500), clientId: clientObjectId } } // ← сохраним clientId в документе тоже
+    {
+      $set: {
+        pages,
+        textPreview: text.slice(0, 1500),
+        clientId: clientObjectId,
+      },
+    } // ← сохраним clientId в документе тоже
   );
 
-  return { chunks: docs.length, pages, smallDocMode: len <= SMALL_DOC_CHARS, hasFullSentinel: !!fullSentinel };
+  return {
+    chunks: docs.length,
+    pages,
+    smallDocMode: len <= SMALL_DOC_CHARS,
+    hasFullSentinel: !!fullSentinel,
+  };
 }
