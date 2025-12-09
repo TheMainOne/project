@@ -23,9 +23,16 @@ const ClientDocumentSchema = new mongoose.Schema({
   textPreview:{ type: String },
   pages:      { type: Number, default: 0 },
   checksum:   { type: String, index: true },
+
+  // ► новый статус обработки для RAG
+  ingestStatus: {
+    type: String,
+    enum: ["processing", "ready", "failed"],
+    default: "processing",
+    index: true,
+  },
 }, { timestamps: true, versionKey: false });
 
 ClientDocumentSchema.index({ clientId: 1, siteId: 1, createdAt: -1 });
 
 export default mongoose.model("ClientDocument", ClientDocumentSchema);
-

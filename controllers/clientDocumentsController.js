@@ -68,9 +68,9 @@ export async function createClientDocument(req, res) {
     const mimeType = file.uploadedMimeType || file.mimetype;
     const fileSize = file.size;
 
-    // 3) создаём документ — ВАЖНО: кладём САМ clientId, который получили выше
+    // 3) создаём документ
     const doc = await ClientDocument.create({
-      clientId,                       // <—— вот оно!
+      clientId,
       siteId: siteId || null,
       title: title || fileName,
       originalName: fileName,
@@ -81,28 +81,51 @@ export async function createClientDocument(req, res) {
       s3Key,
       s3Url: publicUrl,
       etag: file.etag,
-      isActive: true
+      isActive: true,
+      ingestStatus: "processing"
     });
 
-    // 4) Ингест — передаём тот же clientId
-    const resIngest = await ingestDocument({
-      clientId,                       // <—— и здесь!
-      siteId: siteId || null,
+    // 4) ИНГЕСТ ЗАПУСКАЕМ В ФОНЕ — БЕЗ await
+    (async () => {
+      try {
+        const resIngest = await ingestDocument({
+          clientId,
+          siteId: siteId || null,
+          documentId: doc._id,
+          title: doc.title,
+          s3Key: s3Key || undefined,
+          s3Bucket: s3Bucket || undefined,
+          localPath: (!s3Key && file?.path) ? file.path : undefined,
+          mimeType
+        });
+
+        await ClientDocument.updateOne(
+          { _id: doc._id },
+          { $set: { ingestStatus: "ready" } }
+        );
+      } catch (e) {
+        console.error("[RAG][ingestDocument] failed:", String(doc._id), e?.message || e);
+
+        await ClientDocument.updateOne(
+          { _id: doc._id },
+          { $set: { ingestStatus: "failed" } }
+        );
+      }
+    })();
+
+    // 5) СРАЗУ ОТДАЁМ ОТВЕТ — БЕЗ ожидания ingestDocument
+    return res.status(202).json({
+      ok: true,
       documentId: doc._id,
-      title: doc.title,
-      s3Key: s3Key || undefined,
-      s3Bucket: s3Bucket || undefined,
-      localPath: (!s3Key && file?.path) ? file.path : undefined,
-      mimeType
+      status: "processing"
     });
-
-    return res.json({ ok: true, documentId: doc._id, ...resIngest });
   } catch (e) {
     console.error("createClientDocument error:", e);
     const status = e?.status || 500;
     return res.status(status).json({ ok: false, error: String(e?.message || e) });
   }
 }
+
 
 export async function deleteClientDocument(req, res) {
   try {
