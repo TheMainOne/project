@@ -10,9 +10,10 @@ import Lead from "../../models/Lead.js";
 import Client from "../../models/Client.js";
 import { hashIp, classifyTopics } from "../../utils/telemetry.js";
 import { buildPrompt } from "../../services/web_crawler/core.js";
-import { retrieveUnified } from "../../services/rag/index.js";
 import { getWidgetConfigCached } from '../../services/widgetConfig/cache.js';
 import { detectLeadIntent } from "../../services/lead/intent.js";
+import { retrieveHybrid } from '../../services/rag/retrieveHybrid.js';
+import { classifyRagIntent } from "../../services/rag/intent.js";
 import {
   hasLeadActions,
   leadStateMachine,
@@ -452,30 +453,6 @@ async function ensureSession(meta, req) {
   }
 }
 
-
-function setDebugHeaders(req, res, dbg = {}) {
-  try {
-    const t = Date.now() - (req.__trace?.start || Date.now());
-    res.setHeader("X-AIW-Build", BUILD_TAG);
-    res.setHeader("X-AIW-Trace", req.__trace?.id || "");
-    res.setHeader("X-AIW-Proc", `pid:${req.__trace?.pid}|port:${req.__trace?.port}`);
-    res.setHeader("X-AIW-Route", `${req.baseUrl || ""}${req.route?.path || req.originalUrl || ""}`);
-    if (dbg.siteId)    res.setHeader("X-AIW-Resolved-Site", dbg.siteId);
-    if (dbg.sessionId) res.setHeader("X-AIW-Resolved-Session", dbg.sessionId);
-    if (dbg.handler)   res.setHeader("X-AIW-Handler", dbg.handler);
-    if (dbg.phase)     res.setHeader("X-AIW-Phase", dbg.phase);           // cache | rag | rag-extractive | no-context | empty
-    if (dbg.db)        res.setHeader("X-AIW-DB", dbg.db);                 // user:+ assistant:+ / -
-    if (dbg.timing)    res.setHeader("X-AIW-Timing", JSON.stringify(dbg.timing)); // {retrieve:12, oai:45, total:60}
-    if (req.query.debug === "1" || req.headers["x-aiw-debug"] === "1") {
-      // Разрешим отдавать расширенные заголовки в браузер
-      res.setHeader("Access-Control-Expose-Headers",
-        "X-AIW-Build, X-AIW-Source, X-AIW-Citations-Count, X-AIW-Trace, X-AIW-Proc, X-AIW-Route, X-AIW-Resolved-Site, X-AIW-Resolved-Session, X-AIW-Handler, X-AIW-Phase, X-AIW-Timing, X-AIW-DB"
-      );
-    }
-  } catch {}
-}
-
-
 async function logUserMessage({ siteId, sessionId, content, clientId }) {
   try {
     if (!content) return;
@@ -820,6 +797,13 @@ const {
   maxHistory: MAX_HISTORY_FOR_LLM,
 });
 
+// === RAG intent classification (для chunkType-boost) ===
+const { intentTypes, intentLabel } = classifyRagIntent(rawQuery, lang);
+// чтобы можно было дебажить в DevTools
+if (intentLabel) {
+  res.setHeader("X-AIW-Intent", intentLabel);
+}
+
 let query    = rawQuery;
 let ragQuery = initialRagQuery;
 let llmQuery = initialLlmQuery;
@@ -1150,36 +1134,36 @@ if (hasLeadFlow) {
 
 
 
-// ====== RAG retrieve ======
+// ====== RAG retrieve (HYBRID) ======
 const retrieveRes = await T.wrap("retrieve", async () => {
   try {
-    const r = await retrieveUnified({
+    const r = await retrieveHybrid({
       clientId,
       siteId,
-      query: ragQuery,   
-      kClient: Number(process.env.AIW_KCLIENT || 20),
-      includeWeb: false,          // только клиентские/локальные источники
+      query: ragQuery,      // уже переписанный через prepareQueryForRag
+      intentTypes,          // ["contacts", "services", ...]
+      k: Number(process.env.AIW_KCLIENT || 12),
     });
 
     if (r?.contexts?.length) {
-      res.setHeader("X-AIW-Retrieve-Mode", "unified");
+      res.setHeader("X-AIW-Retrieve-Mode", "hybrid");
       return r;
     } else {
-      res.setHeader("X-AIW-Retrieve-Mode", "unified-empty");
+      res.setHeader("X-AIW-Retrieve-Mode", "hybrid-empty");
       return { contexts: [] };
     }
   } catch (e) {
-    console.warn("[retrieveUnified]", e?.message || e);
-    res.setHeader("X-AIW-Retrieve-Mode", "unified-error");
-    return { contexts: [] }; // вообще ничего не нашли / ошибка — пусть будет no-context
+    console.warn("[retrieveHybrid]", e?.message || e);
+    res.setHeader("X-AIW-Retrieve-Mode", "hybrid-error");
+    return { contexts: [] };
   }
 });
-
 
 const contexts = retrieveRes.contexts || [];
 res.setHeader("X-AIW-Contexts", String(contexts.length));
 console.log("[AIW] contexts:", contexts.length);
 timing.retrieve = T.get().retrieve;
+
 
 //     // ====== Fast extractive ======
 //     const fast = tryFastAnswer(query, contexts, lang);
