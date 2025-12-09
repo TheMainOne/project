@@ -1,6 +1,4 @@
 // The main code for the widget. All request processing logic is located here.
-
-
 import 'dotenv/config';     
 import mongoose from "mongoose";
 import express from "express";
@@ -14,6 +12,7 @@ import { hashIp, classifyTopics } from "../../utils/telemetry.js";
 import { buildPrompt } from "../../services/web_crawler/core.js";
 import { retrieveUnified } from "../../services/rag/index.js";
 import { getWidgetConfigCached } from '../../services/widgetConfig/cache.js';
+import { detectLeadIntent } from "../../services/lead/intent.js";
 import {
   hasLeadActions,
   leadStateMachine,
@@ -21,8 +20,12 @@ import {
   normalizeAnswers,
   shouldSuppressLead,
 } from "../../services/lead/stateMachine.js";
-import { detectLeadIntent } from "../../services/lead/intent.js";
-
+import {
+  prepareQueryForRag,
+  detectLangFromText,      
+  isShortConfirmation,    
+  isExampleFollowup,      
+} from "../../services/rag/queryRewrite.js";
 
 const router = express.Router();
 
@@ -801,120 +804,140 @@ if (cfg?._id) res.setHeader("X-AIW-WidgetCfg", String(cfg._id));
     res.setHeader("X-AIW-Resolved-Site", siteId);
     res.setHeader("X-AIW-Resolved-Session", sessionId || "(empty)");
 
-    // ====== извлекаем пользовательский вопрос ======
-const lastUser = [...safeMsgs].reverse().find((m) => m.role === "user");
-const lastAssistant = [...safeMsgs].reverse().find((m) => m.role === "assistant");
+    // ====== извлекаем пользовательский вопрос + подготовка для RAG/LLM ======
+const {
+  rawQuery,
+  ragQuery: initialRagQuery,
+  llmQuery: initialLlmQuery,
+  lang,
+  lastUser,
+  lastAssistant,
+} = await prepareQueryForRag({
+  messages: safeMsgs,
+  metaLang: meta.lang || "ru",
+  oai,
+  rewriteModel: "gpt-4o-mini",
+  maxHistory: MAX_HISTORY_FOR_LLM,
+});
 
-let query = (lastUser?.content || "").trim();   // это для логов / judge
-let ragQuery = query;                           // это будем слать в retrieve
+let query    = rawQuery;
+let ragQuery = initialRagQuery;
+let llmQuery = initialLlmQuery;
 
-// если пользовательский ответ очень короткий, подмешиваем предыдущий ассистентский текст
-if (ragQuery.length < 20 && lastAssistant) {
-  ragQuery = `${lastAssistant.content}\n\nUser follow-up: ${query}`;
-}
 
-// ---- NEW: нормализация коротких подтверждений ("yes", "да", "ок" и т.п.) ----
-const rawQuery = query;   // то, что реально написал пользователь
-let llmQuery = query;     // то, что пойдёт в buildPrompt / no-context LLM
+// const lastUser = [...safeMsgs].reverse().find((m) => m.role === "user");
+// const lastAssistant = [...safeMsgs].reverse().find((m) => m.role === "assistant");
 
-function detectLangFromText(text, fallback = "ru") {
-  const t = (text || "").toLowerCase();
-  if (/[а-яё]/i.test(t)) return "ru";   // есть кириллица
-  if (/[a-z]/i.test(t)) return "en";   // есть латиница
-  return fallback;                     // иначе доверяем fallback (из меты/конфига)
-}
+// let query = (lastUser?.content || "").trim();   // это для логов / judge
+// let ragQuery = query;                           // это будем слать в retrieve
 
-const uiLang = String(meta.lang || "ru");
-const lang   = detectLangFromText(query, uiLang);
+// // если пользовательский ответ очень короткий, подмешиваем предыдущий ассистентский текст
+// if (ragQuery.length < 20 && lastAssistant) {
+//   ragQuery = `${lastAssistant.content}\n\nUser follow-up: ${query}`;
+// }
 
-function isShortConfirmation(text) {
-  const q = (text || "").trim().toLowerCase();
-  if (!q) return false;
+// // ---- NEW: нормализация коротких подтверждений ("yes", "да", "ок" и т.п.) ----
+// const rawQuery = query;   // то, что реально написал пользователь
+// let llmQuery = query;     // то, что пойдёт в buildPrompt / no-context LLM
 
-  const variants = [
-    // EN
-    "yes", "yep", "yeah", "sure",
-    "ok", "okay",
-    "go", "let's go", "let's do it",
+// function detectLangFromText(text, fallback = "ru") {
+//   const t = (text || "").toLowerCase();
+//   if (/[а-яё]/i.test(t)) return "ru";   // есть кириллица
+//   if (/[a-z]/i.test(t)) return "en";   // есть латиница
+//   return fallback;                     // иначе доверяем fallback (из меты/конфига)
+// }
 
-    // RU
-    "да", "ага", "угу",
-    "ок", "окей",
-    "давай", "поехали", "го"
-  ];
+// const uiLang = String(meta.lang || "ru");
+// const lang   = detectLangFromText(query, uiLang);
 
-  return variants.some(w =>
-    q === w ||
-    q.startsWith(w + "!") ||
-    q.startsWith(w + ".") ||
-    q.startsWith(w + ",")
-  );
-}
+// function isShortConfirmation(text) {
+//   const q = (text || "").trim().toLowerCase();
+//   if (!q) return false;
 
-function isExampleFollowup(text = "") {
-  const t = text.trim().toLowerCase();
-  if (!t) return false;
+//   const variants = [
+//     // EN
+//     "yes", "yep", "yeah", "sure",
+//     "ok", "okay",
+//     "go", "let's go", "let's do it",
 
-  // 1) Точные однословные запросы типа "пример", "examples"
-  const singleWords = [
-    "пример",
-    "примеры",
-    "примерчик",
-    "example",
-    "examples",
-    "use case",
-    "use cases",
-  ];
-  if (singleWords.includes(t)) return true;
+//     // RU
+//     "да", "ага", "угу",
+//     "ок", "окей",
+//     "давай", "поехали", "го"
+//   ];
 
-  // 2) Типичные фразы RU/EN
-  const phrases = [
-    // RU
-    "дай пример",
-    "дай примеры",
-    "можно пример",
-    "можно примеры",
-    "приведи пример",
-    "приведи примеры",
-    "какие примеры",
-    "несколько примеров",
-    "типичные примеры",
-    "типичные кейсы",
-    "реальные кейсы",
-    "реальные примеры",
-    "примеры кейсов",
-    "примеры случаев",
-    "в каких случаях",
-    "в каких ситуациях",
+//   return variants.some(w =>
+//     q === w ||
+//     q.startsWith(w + "!") ||
+//     q.startsWith(w + ".") ||
+//     q.startsWith(w + ",")
+//   );
+// }
 
-    // EN
-    "give me an example",
-    "give me some examples",
-    "give examples",
-    "any examples",
-    "some examples",
-    "for example",
-    "for instance",
-    "show me an example",
-    "show me examples",
-    "use case",
-    "use cases",
-    "typical cases",
-    "typical scenarios",
-    "real cases",
-    "real examples",
-    "sample campaign",
-    "sample scenario",
-  ];
-  if (phrases.some(p => t.includes(p))) return true;
+// function isExampleFollowup(text = "") {
+//   const t = text.trim().toLowerCase();
+//   if (!t) return false;
 
-  // 3) Короткие вопросы, где явно фигрутируют "пример/примеры/examples/cases"
-  if (t.length <= 80 && /пример|примеры|примеров|examples?|use cases?|cases?|scenarios?/.test(t)) {
-    return true;
-  }
+//   // 1) Точные однословные запросы типа "пример", "examples"
+//   const singleWords = [
+//     "пример",
+//     "примеры",
+//     "примерчик",
+//     "example",
+//     "examples",
+//     "use case",
+//     "use cases",
+//   ];
+//   if (singleWords.includes(t)) return true;
 
-  return false;
-}
+//   // 2) Типичные фразы RU/EN
+//   const phrases = [
+//     // RU
+//     "дай пример",
+//     "дай примеры",
+//     "можно пример",
+//     "можно примеры",
+//     "приведи пример",
+//     "приведи примеры",
+//     "какие примеры",
+//     "несколько примеров",
+//     "типичные примеры",
+//     "типичные кейсы",
+//     "реальные кейсы",
+//     "реальные примеры",
+//     "примеры кейсов",
+//     "примеры случаев",
+//     "в каких случаях",
+//     "в каких ситуациях",
+
+//     // EN
+//     "give me an example",
+//     "give me some examples",
+//     "give examples",
+//     "any examples",
+//     "some examples",
+//     "for example",
+//     "for instance",
+//     "show me an example",
+//     "show me examples",
+//     "use case",
+//     "use cases",
+//     "typical cases",
+//     "typical scenarios",
+//     "real cases",
+//     "real examples",
+//     "sample campaign",
+//     "sample scenario",
+//   ];
+//   if (phrases.some(p => t.includes(p))) return true;
+
+//   // 3) Короткие вопросы, где явно фигрутируют "пример/примеры/examples/cases"
+//   if (t.length <= 80 && /пример|примеры|примеров|examples?|use cases?|cases?|scenarios?/.test(t)) {
+//     return true;
+//   }
+
+//   return false;
+// }
 
 const metaAll = {
   siteId,
@@ -927,6 +950,7 @@ const metaAll = {
   tz: meta.tz || null,
   lang,
 };
+
 
 if (isShortConfirmation(query) && lastAssistant) {
   llmQuery =
@@ -942,12 +966,9 @@ if (isShortConfirmation(query) && lastAssistant) {
 }
 
 if (isExampleFollowup(query) && lastAssistant) {
-  ragQuery =
-    `The user is asking for examples related to your previous suggestion.\n` +
-    `Previous assistant message:\n"""${lastAssistant.content}"""\n`;
-
   llmQuery =
     `The user is asking for examples of what you suggested earlier.\n` +
+    `Previous assistant message:\n"""${lastAssistant.content}"""\n` +
     `Original user question: "${rawQuery}".\n` +
     `Please give examples or describe typical cases, based ONLY on CONTEXT.\n` +
     `Answer in the same language as the user's question.`;
@@ -1459,14 +1480,15 @@ prompt = [
 
     T.mark("buildPrompt"); // длительность = (buildPrompt - prePrompt)
 
-    // 🔍 DEBUG: смотрим, что реально уйдёт в OpenAI (RAG-ветка)
+    // 🔍 DEBUG: смотрим, что реально уходит в OpenAI (RAG-ветка)
 console.log(
   "[AIW][debug] promptForLLM",
   prompt.map((m, i) => ({
     i,
     role: m.role,
     len: m.content.length,
-    preview: m.content.slice(0, 120),
+    // preview: m.content.slice(0, 120),
+        preview: m.content,
   }))
 );
 
