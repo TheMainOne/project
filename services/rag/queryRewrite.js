@@ -104,6 +104,106 @@ export function isExampleFollowup(text = "") {
 }
 
 /**
+ * Новый помощник: переписать запрос ДЛЯ ПОИСКА + классифицировать сложность.
+ * Возвращает объект:
+ * {
+ *   searchQuery: string,   // финальный запрос для RAG-поиска
+ *   isComplex: boolean,    // true, если нужен нетривиальный анализ/расчёты
+ *   taskTypes: string[],   // ["numeric_reasoning", "planning", "comparison", ...]
+ * }
+ */
+async function rewriteAndClassifyQuery({
+  oai,
+  model,
+  rawQuery,      // исходный текст пользователя
+  ragQueryBase,  // базовый текст для переписывания (может уже быть модифицирован)
+  history = [],
+  lang = "en",
+  targetLang = "en",
+}) {
+  const fallback = {
+    searchQuery: ragQueryBase || rawQuery || "",
+    isComplex: false,
+    taskTypes: ["other"],
+  };
+
+  if (!oai) return fallback;
+  if (!rawQuery) return fallback;
+
+  // очень длинные запросы не переписываем, чтобы не жечь токены
+  if (rawQuery.length > 800) return fallback;
+
+  const systemPrompt =
+    `You help a retrieval-augmented assistant in two ways:\n` +
+    `1) Rewrite the user's question into a short standalone SEARCH QUERY in ${targetLang.toUpperCase()}.\n` +
+    `2) Classify whether the question requires complex reasoning.\n\n` +
+    `Return ONLY a valid JSON object with the following shape:\n` +
+    `{\n` +
+    `  "searchQuery": "string",             // concise search query in ${targetLang.toUpperCase()}\n` +
+    `  "isComplex": true or false,         // true if the assistant must do multi-step or numeric reasoning\n` +
+    `  "taskTypes": [                      // list of reasoning types that apply\n` +
+    `    "numeric_reasoning" |             // user asks to calculate, estimate, check if budget is enough, etc.\n` +
+    `    "planning" |                      // user asks to design a plan, roadmap, strategy\n` +
+    `    "comparison" |                    // user compares options, tariffs, scenarios\n` +
+    `    "multi_step" |                    // clearly needs several logical steps/decisions\n` +
+    `    "other"\n` +
+    `  ]\n` +
+    `}\n\n` +
+    `Guidelines:\n` +
+    `- "searchQuery" must be short, standalone, and suitable for semantic search in ${targetLang.toUpperCase()}.\n` +
+    `- Use chat history to restore missing context (e.g. "email" -> "company contact email").\n` +
+    `- If the original question is not in ${targetLang}, translate it while preserving meaning.\n` +
+    `- If you're unsure whether it's complex, use "isComplex": false and ["other"].\n`;
+
+  const messages = [
+    { role: "system", content: systemPrompt },
+    ...history.slice(-6),
+    {
+      role: "user",
+      content:
+        `User last question (language: ${lang}):\n` +
+        `"""${rawQuery}"""\n\n` +
+        `Base query text for search rewriting (may contain extra hints):\n` +
+        `"""${ragQueryBase || rawQuery}"""\n\n` +
+        `Documents may be in multiple languages.\n` +
+        `Return ONLY the JSON object.`,
+    },
+  ];
+
+  try {
+    const r = await oai.chat.completions.create({
+      model,
+      messages,
+      temperature: 0.1,
+      response_format: { type: "json_object" },
+    });
+
+    const txt = r.choices?.[0]?.message?.content?.trim() || "";
+    if (!txt) return fallback;
+
+    let parsed;
+    try {
+      parsed = JSON.parse(txt);
+    } catch {
+      return fallback;
+    }
+
+    const searchQuery = String(parsed.searchQuery || fallback.searchQuery);
+    const isComplex = Boolean(parsed.isComplex);
+    const taskTypes = Array.isArray(parsed.taskTypes) && parsed.taskTypes.length
+      ? parsed.taskTypes.map(String)
+      : ["other"];
+
+    return { searchQuery, isComplex, taskTypes };
+  } catch (e) {
+    console.error("[RAG] rewriteAndClassifyQuery error:", e?.message || e);
+    return fallback;
+  }
+}
+
+
+
+/**
  * Вспомогательная функция: LLM-переписывание запросов для RAG.
  * Пишем "общий" промпт: переписать вопрос в короткий, самодостаточный запрос
  * 
@@ -216,30 +316,35 @@ export async function prepareQueryForRag({
   }
 
   // 3) Всегда пытаемся чуть-чуть улучшить ragQuery через дешёвую модель
+  // 3) LLM: переписать запрос для RAG + классифицировать сложность
   const historyForRewrite = safeMsgs
     .filter((m) => m.role === "user" || m.role === "assistant")
     .slice(-maxHistory);
 
-const searchLang = "en"; 
+  const searchLang = "en";
 
-ragQuery = await rewriteQueryWithLLM({
-  oai,
-  model: rewriteModel,
-  rawQuery: ragQuery,
-  history: historyForRewrite,
-  lang,        // язык исходного вопроса (ru/en) — для подсказки модели
-  targetLang: searchLang,
-});
+  const { searchQuery, isComplex, taskTypes } = await rewriteAndClassifyQuery({
+    oai,
+    model: rewriteModel,
+    rawQuery,      // исходный текст пользователя
+    ragQueryBase: ragQuery,  // может быть уже модифицирован под примеры/подтверждения
+    history: historyForRewrite,
+    lang,          // ru/en — просто инфа для модели
+    targetLang: searchLang,
+  });
 
-  // DEBUG: логим, что было и что стало
-    console.log("[RAG][prepareQueryForRag]", {
-      lang,
-      rawQuery,
-      ragQuery,
-      llmQuery,
-      isShortConfirmation: isShortConfirmation(rawQuery),
-      isExampleFollowup: isExampleFollowup(rawQuery),
-    });
+  ragQuery = searchQuery;
+
+  // DEBUG: логируем, что было и что стало
+  console.log("[RAG][prepareQueryForRag]", {
+    lang,
+    rawQuery,
+    ragQuery,
+    llmQuery,
+    isShortConfirmation: isShortConfirmation(rawQuery),
+    isExampleFollowup: isExampleFollowup(rawQuery),
+    complex: { isComplex, taskTypes },
+  });
 
   return {
     rawQuery,
@@ -248,5 +353,7 @@ ragQuery = await rewriteQueryWithLLM({
     lang,
     lastUser,
     lastAssistant,
+    complex: { isComplex, taskTypes },
   };
 }
+

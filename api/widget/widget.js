@@ -1,3 +1,4 @@
+// api/widget/widget.js
 // The main code for the widget. All request processing logic is located here.
 import 'dotenv/config';     
 import mongoose from "mongoose";
@@ -683,15 +684,13 @@ function combineReplies(base, extras = []) {
   return [base, ...(extras || [])].filter(Boolean).join("\n\n");
 }
 
-
-
 // !!This code successfully stopped the responses from randomly switching between languages!!
 
-function pickSystemPrompt(cfg, lang = "ru") {
+function pickSystemPrompt(cfg, lang = "ru", complex = null) {
   const fromDb = (cfg?.customSystemPrompt || "").trim();
   const base = fromDb || (lang.startsWith("ru") ? DEFAULT_SYS_RU : DEFAULT_SYS_EN);
+  let complexBlock = "";
 
-  // 🔒 Жёсткий язык для этой конкретной беседы
   const langHeader = lang.startsWith("ru")
     ? `IMPORTANT: For this conversation you MUST answer ONLY in Russian.
 - The user interface language is Russian.
@@ -702,8 +701,43 @@ function pickSystemPrompt(cfg, lang = "ru") {
 - Even if the system prompt or examples contain Russian or other languages, you MUST respond in English only.
 - Never reply in Russian unless explicitly asked to translate.`;
 
-  return `${langHeader}\n\n${base}`;
+  if (complex?.isComplex) {
+    const types = Array.isArray(complex.taskTypes) ? complex.taskTypes : [];
+
+    const lines = [
+      "ADDITIONAL RULES FOR COMPLEX QUERIES:",
+      "- Assume the question requires careful multi-step reasoning.",
+      "- Use only facts and numbers from the provided context. If something is missing, explicitly state what information is missing.",
+      "- If you need to make estimates or assumptions, clearly mark them as approximate and do not present them as hard facts.",
+    ];
+
+    if (types.includes("numeric_reasoning")) {
+      lines.push(
+        "- For numeric / budget questions (e.g. whether a budget is enough), first reason about the steps internally, then output a concise answer with a short explanation. Do NOT invent precise numbers that are not in the context."
+      );
+    }
+    if (types.includes("planning")) {
+      lines.push(
+        "- For planning tasks, structure the answer into clear steps/phases, timelines and priorities. Keep the answer practical and grounded in the context."
+      );
+    }
+    if (types.includes("comparison")) {
+      lines.push(
+        "- For comparison tasks, describe key pros/cons and the conditions under which each option is better, grounding your answer in the context."
+      );
+    }
+    if (types.includes("multi_step")) {
+      lines.push(
+        "- For multi-step problems, break the problem down internally but output only a concise, well-structured conclusion (no detailed chain-of-thought)."
+      );
+    }
+
+    complexBlock = "\n\n" + lines.join("\n");
+  }
+
+  return `${langHeader}\n\n${base}${complexBlock}`;
 }
+
 
 // !!This code successfully stopped the responses from randomly switching between languages!! END
 
@@ -789,6 +823,7 @@ const {
   lang,
   lastUser,
   lastAssistant,
+  complex,  // { isComplex, taskTypes }
 } = await prepareQueryForRag({
   messages: safeMsgs,
   metaLang: meta.lang || "ru",
@@ -796,6 +831,15 @@ const {
   rewriteModel: "gpt-4o-mini",
   maxHistory: MAX_HISTORY_FOR_LLM,
 });
+
+// чтобы можно было дебажить в DevTools / network
+if (complex) {
+  try {
+    res.setHeader("X-AIW-Complex", JSON.stringify(complex));
+    console.log("[DEBUG] complex:", complex);
+  } catch {}
+}
+
 
 // === RAG intent classification (для chunkType-boost) ===
 const { intentTypes, intentLabel } = classifyRagIntent(rawQuery, lang);
@@ -807,121 +851,6 @@ if (intentLabel) {
 let query    = rawQuery;
 let ragQuery = initialRagQuery;
 let llmQuery = initialLlmQuery;
-
-
-// const lastUser = [...safeMsgs].reverse().find((m) => m.role === "user");
-// const lastAssistant = [...safeMsgs].reverse().find((m) => m.role === "assistant");
-
-// let query = (lastUser?.content || "").trim();   // это для логов / judge
-// let ragQuery = query;                           // это будем слать в retrieve
-
-// // если пользовательский ответ очень короткий, подмешиваем предыдущий ассистентский текст
-// if (ragQuery.length < 20 && lastAssistant) {
-//   ragQuery = `${lastAssistant.content}\n\nUser follow-up: ${query}`;
-// }
-
-// // ---- NEW: нормализация коротких подтверждений ("yes", "да", "ок" и т.п.) ----
-// const rawQuery = query;   // то, что реально написал пользователь
-// let llmQuery = query;     // то, что пойдёт в buildPrompt / no-context LLM
-
-// function detectLangFromText(text, fallback = "ru") {
-//   const t = (text || "").toLowerCase();
-//   if (/[а-яё]/i.test(t)) return "ru";   // есть кириллица
-//   if (/[a-z]/i.test(t)) return "en";   // есть латиница
-//   return fallback;                     // иначе доверяем fallback (из меты/конфига)
-// }
-
-// const uiLang = String(meta.lang || "ru");
-// const lang   = detectLangFromText(query, uiLang);
-
-// function isShortConfirmation(text) {
-//   const q = (text || "").trim().toLowerCase();
-//   if (!q) return false;
-
-//   const variants = [
-//     // EN
-//     "yes", "yep", "yeah", "sure",
-//     "ok", "okay",
-//     "go", "let's go", "let's do it",
-
-//     // RU
-//     "да", "ага", "угу",
-//     "ок", "окей",
-//     "давай", "поехали", "го"
-//   ];
-
-//   return variants.some(w =>
-//     q === w ||
-//     q.startsWith(w + "!") ||
-//     q.startsWith(w + ".") ||
-//     q.startsWith(w + ",")
-//   );
-// }
-
-// function isExampleFollowup(text = "") {
-//   const t = text.trim().toLowerCase();
-//   if (!t) return false;
-
-//   // 1) Точные однословные запросы типа "пример", "examples"
-//   const singleWords = [
-//     "пример",
-//     "примеры",
-//     "примерчик",
-//     "example",
-//     "examples",
-//     "use case",
-//     "use cases",
-//   ];
-//   if (singleWords.includes(t)) return true;
-
-//   // 2) Типичные фразы RU/EN
-//   const phrases = [
-//     // RU
-//     "дай пример",
-//     "дай примеры",
-//     "можно пример",
-//     "можно примеры",
-//     "приведи пример",
-//     "приведи примеры",
-//     "какие примеры",
-//     "несколько примеров",
-//     "типичные примеры",
-//     "типичные кейсы",
-//     "реальные кейсы",
-//     "реальные примеры",
-//     "примеры кейсов",
-//     "примеры случаев",
-//     "в каких случаях",
-//     "в каких ситуациях",
-
-//     // EN
-//     "give me an example",
-//     "give me some examples",
-//     "give examples",
-//     "any examples",
-//     "some examples",
-//     "for example",
-//     "for instance",
-//     "show me an example",
-//     "show me examples",
-//     "use case",
-//     "use cases",
-//     "typical cases",
-//     "typical scenarios",
-//     "real cases",
-//     "real examples",
-//     "sample campaign",
-//     "sample scenario",
-//   ];
-//   if (phrases.some(p => t.includes(p))) return true;
-
-//   // 3) Короткие вопросы, где явно фигрутируют "пример/примеры/examples/cases"
-//   if (t.length <= 80 && /пример|примеры|примеров|examples?|use cases?|cases?|scenarios?/.test(t)) {
-//     return true;
-//   }
-
-//   return false;
-// }
 
 const metaAll = {
   siteId,
@@ -1164,93 +1093,6 @@ res.setHeader("X-AIW-Contexts", String(contexts.length));
 console.log("[AIW] contexts:", contexts.length);
 timing.retrieve = T.get().retrieve;
 
-
-//     // ====== Fast extractive ======
-//     const fast = tryFastAnswer(query, contexts, lang);
-//     if (fast) {
-//       phase = "rag-extractive";
-//       setSourceHeaders(res, "rag-extractive", fast.citations || []);
-//       res.setHeader("X-AIW-Phase", phase);
-
-//       const payload = { reply: fast.reply, citations: fast.citations || [] };
-//       await logAssistantMessage({ siteId, sessionId, content: payload.reply, latencyMs: Date.now() - started, clientId });
-//       dbMark = "user:+ assistant:+";
-//       // === judge & optional gap log (NEW) ===
-// const quick = quickFlag({ phase, contexts, reply: payload.reply });
-// res.setHeader("X-AIW-Good-Answer", String(quick.goodAnswer)); // быстрый флаг
-
-// defer(async () => {
-//   const judge = await assessGoodAnswer({
-//     oai, model: "gpt-5-nano",
-//     question: query, reply: payload.reply, contexts, lang
-//   });
-// const THRESH = Number(process.env.AIW_JUDGE_THRESHOLD || 0.60);
-//  const hasSupport = ((payload.citations?.length || 0) > 0) || ((contexts?.length || 0) > 0);
-//  // Плохо только если судья явно сказал false ИЛИ если нет опоры и низкая уверенность
- 
-//  const ans = payload.reply || "";
-// const explicitNoInfo = /(в контексте нет информации|в базе нет информации|в справке не указано|не (указан|приведён|сообщено|известно)|указано только контактн)/i.test(ans);
-
-// const finalBad = explicitNoInfo || (judge?.goodAnswer === false) || (!hasSupport && (judge?.confidence ?? 0) < THRESH);
-
-//  const reason =
-//    explicitNoInfo ? "no-data-in-kb" :
-//    (judge?.goodAnswer === false ? (judge?.reason || "judge-false") :
-//    (!hasSupport && (judge?.confidence ?? 0) < THRESH ? "low-confidence" : "ok"));
-
-
-//  await logGapIfBad({
-//    goodAnswer: !finalBad,
-//    confidence: judge.confidence,
-//    reason,
-//    siteId, sessionId, clientId, question: query, reply: payload.reply, phase, citations: payload.citations
-//  });
-// });
-
-//       res.setHeader("X-AIW-DB", dbMark);
-//       const timings = T.get();
-// // добавим производные: buildPromptDur, llmWait, ttfb (time-to-first-byte), firstChunk
-// const derived = {
-//   buildPromptDur: (timings.buildPrompt ?? 0) - (timings.prePrompt ?? 0),
-//   llmWait: (timings.afterLLM ?? 0) - (timings.beforeLLM ?? 0),
-//   ttfb: timings.firstByteToClient ?? undefined,
-//   firstChunk: (timings.firstChunkFlushed ?? 0) - (timings.firstByteToClient ?? 0),
-// };
-
-
-
-// res.setHeader("X-AIW-Timing", JSON.stringify({
-//   ...timing,          // твои старые поля для совместимости
-//   ...timings,         // подробные метки
-//   ...derived,
-//   total: timings.total
-// }));
-
-// // опционально красивый серверный лог
-// console.log("[AIW][timings]", JSON.stringify({
-//   siteId, sessionId, phase,
-//   timings: { ...timings, ...derived }
-// }));
-
-//       if (!stream) {
-//         setJSONHeaders(req, res);
-// return sendJSON(req, res, { 
-//   reply: payload.reply, source: "rag-extractive", citations: payload.citations,
-//   goodAnswer: quick.goodAnswer, confidence: quick.confidence
-// });
-//       } else {
-//         setSSEHeaders(req, res);
-//         res.write(": heartbeat\n\n");
-//           T.mark("firstByteToClient");   
-//         const CH = 24;
-//         for (let i = 0; i < payload.reply.length; i += CH) {
-//           res.write(`data: ${payload.reply.slice(i, i + CH)}\n\n`);
-//         }
-//         res.write("data: [DONE]\n\n");
-//         return res.end();
-//       }
-//     }
-
     // ====== Нет контекста ======
 if (!contexts.length) {
   phase = "no-context";
@@ -1264,9 +1106,7 @@ let usageOutput = null;
 let usageTotal  = null;
 
   if (oai) {
-    // cfg вы уже получаете раньше через getWidgetConfigCached({ clientId })
-const sys = pickSystemPrompt(cfg, lang);
-
+const sys = pickSystemPrompt(cfg, lang, complex);
 // берём хвост диалога для LLM (user + assistant)
 const dialogTail = safeMsgs
   .filter(m => m.role === "user" || m.role === "assistant")
@@ -1429,11 +1269,11 @@ await logAssistantMessage({
     const citations = contexts.map((c, i) => ({ idx: i + 1, url: c.url }));
     T.mark("prePrompt");
     // const prompt = buildPrompt({ query, contexts, lang });
-    let prompt = buildPrompt({ query: llmQuery, contexts, lang });
+    let prompt = buildPrompt({ query: llmQuery, contexts, lang, complex });
 
 // если есть кастомный системный промпт — добавим его первым сообщением
+  const sys = pickSystemPrompt(cfg, lang, complex);
 
-  const sys = pickSystemPrompt(cfg, lang);
   // если buildPrompt где-то добавляет свой system — наш будет иметь приоритет
   prompt = [{ role: "system", content: sys }, ...prompt.filter(m => m.role !== "system")];
 // ---- ДОБАВЛЯЕМ ИСТОРИЮ ДИАЛОГА ДЛЯ LLM ----
