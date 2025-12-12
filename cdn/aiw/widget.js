@@ -10,6 +10,16 @@ const RAW_FONT_FAMILY = (CFG.fontFamily || "").trim();       // может бы�
 const FONT_FILE_URL   = (CFG.fontFileUrl || "").trim() || null;
 const FONT_CSS_URL    = (CFG.fontCssUrl || "").trim() || null;
 
+  // --- НОВОЕ: ширина окна (для inline это ширина iframe) ---
+  const VIEWPORT_W =
+    window.innerWidth ||
+    document.documentElement?.clientWidth ||
+    document.body?.clientWidth ||
+    0;
+
+  const IS_MOBILE = VIEWPORT_W <= 480;         // телефоны
+  const IS_TABLET = !IS_MOBILE && VIEWPORT_W <= 768; // планшеты
+
 // имя, под которым мы реально используем шрифт
 const EFFECTIVE_FONT_NAME = RAW_FONT_FAMILY || (FONT_FILE_URL ? "__aiw_custom" : null);
 
@@ -122,11 +132,18 @@ const THEME = {
   time: "rgba(229,231,235,.6)"
 };
 
-const BASE_FONT_SIZE = Math.max(
-  10,
-  Math.min(24, Number(CFG.baseFontSize || 14))
-);
+  let baseSize = Number(CFG.baseFontSize || 14);
 
+  if (IS_MOBILE) {
+    baseSize -= 2;      // телефоны – чуть меньше
+  } else if (IS_TABLET) {
+    baseSize -= 1;      // планшеты – тоже немного меньше
+  }
+
+  const BASE_FONT_SIZE = Math.max(
+    10,
+    Math.min(24, baseSize)
+  );
 
 
 console.debug("[AIW][cfg]", { AUTOSTART, AUTO_MODE, AUTO_DELAY, AUTO_COOLDOWN_HOURS, AUTO_MSG });
@@ -444,12 +461,14 @@ style.textContent = `
   cursor:pointer;
 }
 .aiw-footer{
-  position:relative;                     /* нужно для абсолютной кнопки */
+  position:relative;                   
   padding:10px 16px;
   border-top:1px solid ${THEME.bubbleBorder};
   display:flex;
   align-items:center;
   background:${THEME.panel};
+
+    --aiw-input-h: 65px;
 }
 
 .aiw-footer-meta{
@@ -650,7 +669,6 @@ style.textContent = `
   font-size:${BASE_FONT_SIZE}px;
 
   /* универсальная высота инпута */
-  --aiw-input-h: 65px;
   height: var(--aiw-input-h);
   min-height: var(--aiw-input-h);
   max-height: var(--aiw-input-h);
@@ -671,8 +689,8 @@ style.textContent = `
   right:24px;
   top:50%;
   transform:translateY(-50%);
-  width:32px;
-  height:32px;
+  width:32px;              
+  height:32px;  
   border:none;
   border-radius:9999px;
 
@@ -849,9 +867,6 @@ ${INLINE ? `
     background: rgba(255,255,255,0.04);
     border: 1px solid ${THEME.border};
 
-    /* при желании меняешь только это значение — центр останется идеальным */
-    --aiw-input-h: 65px;
-
     /* только по бокам, вертикальные = 0 (центр за счёт line-height) */
     padding: 0 22px;
   }
@@ -868,8 +883,8 @@ ${INLINE ? `
     transform: none;
 
     /* такая же высота, как у инпута */
-    width:65px;
-    height:65px;
+    width: var(--aiw-input-h);
+    height: var(--aiw-input-h);
     border-radius:9999px;
     flex:0 0 auto;
 
@@ -888,6 +903,28 @@ ${INLINE ? `
 }
 
 ` : ""}
+/* --- RESPONSIVE (работает и в float, и в inline) --- */
+@media (max-width: 480px) {
+ .aiw-body { font-size: 14px !important; }
+  .aiw-header { font-size: 18px !important; }
+
+  .aiw-footer { --aiw-input-h: 52px; }
+  .aiw-send-icon { width:18px; height:18px; }
+
+  .aiw-btn { width:48px; height:48px; }
+  .aiw-panel { max-width: 96vw; }
+}
+
+@media (min-width: 481px) and (max-width: 768px) {
+  .aiw-body { font-size: 15px !important; }
+  .aiw-header { font-size: 19px !important; }
+
+  .aiw-footer { --aiw-input-h: 58px; }
+  .aiw-send-icon { width:20px; height:20px; }
+
+  .aiw-btn { width:52px; height:52px; }
+}
+
 `;
 
 
