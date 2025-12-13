@@ -10,6 +10,8 @@ const oai = process.env.OPENAI_API_KEY
 const VECTOR_K = 80;     // сколько кандидатов брать из vector search
 const FINAL_K  = 12;     // сколько отдаём в итоге
 const SINGLE_DOC_LIMIT = 7; // если все чанки из одного документа
+const MMR_LAMBDA = Number(0.75);  // 0.7–0.85
+const MMR_POOL   = Number(40);    // rerank pool перед MMR
 
 // =============================
 // 1. Embed query
@@ -21,6 +23,38 @@ async function embedQuery(text) {
     input: text
   });
   return r.data[0].embedding;
+}
+
+
+async function summarizeQueryForEmbedding(query) {
+  if (!oai) return null;
+
+  const q = String(query || "").trim();
+  if (!q) return "";
+
+  // короткие запросы не трогаем
+  if (q.length <= 80) return q;
+
+  try {
+    const res = await oai.chat.completions.create({
+      model: "gpt-4o-mini",
+      temperature: 0.0,
+      messages: [
+        {
+          role: "system",
+          content:
+            "Rewrite the user's query as a short search intent (max 12 words). No extra text.",
+        },
+        { role: "user", content: q },
+      ],
+    });
+
+    const s = (res.choices[0]?.message?.content || "").trim();
+    return s || q;
+  } catch (e) {
+    // fallback на исходный query
+    return q;
+  }
 }
 
 // =============================
@@ -35,6 +69,23 @@ function cosineSim(a, b) {
     nb += b[i] * b[i];
   }
   return dot / (Math.sqrt(na) * Math.sqrt(nb) || 1);
+}
+
+function minmaxNormalize(values) {
+  if (!values.length) return { min: 0, max: 1 };
+  let min = Infinity, max = -Infinity;
+  for (const v of values) { if (v < min) min = v; if (v > max) max = v; }
+  if (min === max) return { min, max: min + 1e-9 };
+  return { min, max };
+}
+
+function norm01(x, min, max) {
+  return (x - min) / ((max - min) || 1);
+}
+
+// cosine -1..1 -> 0..1
+function cosineTo01(c) {
+  return (c + 1) / 2;
 }
 
 // =============================
@@ -60,6 +111,63 @@ function computeTagBoost(tags, queryTokens) {
   return Math.min(score, 1.0);
 }
 
+function vecSim(a, b) {
+  return cosineSim(a, b);
+}
+
+function pickVector(row) {
+  // для разнообразия лучше summary-embedding; если нет — embedding
+  return row.embeddingSummary?.length ? row.embeddingSummary
+       : row.embedding?.length ? row.embedding
+       : null;
+}
+
+// MMR: выбираем k документов из pool (уже отсортированного по finalScore)
+function mmrSelect(rows, k, lambda = 0.75) {
+  const selected = [];
+  const selectedIdx = new Set();
+
+  // заранее подготовим векторы
+  const vectors = rows.map(pickVector);
+
+  while (selected.length < k && selected.length < rows.length) {
+    let bestI = -1;
+    let bestScore = -Infinity;
+
+    for (let i = 0; i < rows.length; i++) {
+      if (selectedIdx.has(i)) continue;
+
+      const relevance = rows[i].finalScore; // уже хороший скор
+
+      // diversity penalty = max similarity to selected
+      let maxSim = 0;
+      const vi = vectors[i];
+      if (vi && selected.length) {
+        for (const s of selected) {
+          const vj = vectors[s.__idx];
+          if (!vj) continue;
+          const sim = vecSim(vi, vj);
+          if (sim > maxSim) maxSim = sim;
+        }
+      }
+
+      const mmrScore = (lambda * relevance) - ((1 - lambda) * maxSim);
+      if (mmrScore > bestScore) {
+        bestScore = mmrScore;
+        bestI = i;
+      }
+    }
+
+    if (bestI === -1) break;
+    const item = { ...rows[bestI], __idx: bestI };
+    selected.push(item);
+    selectedIdx.add(bestI);
+  }
+
+  // уберём служебное поле
+  return selected.map(({ __idx, ...rest }) => rest);
+}
+
 // =============================
 // Hybrid retriever
 // =============================
@@ -73,8 +181,15 @@ export async function retrieveHybrid({
   if (!oai) return { contexts: [] };
 
   // 1. Embed query
-  const qEmb = await embedQuery(query);
-  if (!qEmb) return { contexts: [] };
+const qEmb = await embedQuery(query);
+if (!qEmb) return { contexts: [] };
+
+// query summary embedding (для сравнения с embeddingSummary)
+const qSummaryText = await summarizeQueryForEmbedding(query);
+const qSumEmb = await embedQuery(qSummaryText || query);
+// если вдруг что-то пошло не так — fallback на qEmb
+const qSumEmbSafe = qSumEmb?.length ? qSumEmb : qEmb;
+
 
   // 2. Build $vectorSearch filter
   let cid = null;
@@ -108,6 +223,7 @@ export async function retrieveHybrid({
           chunkType: 1,
           tags: 1,
           semanticSummary: 1,
+          embedding: 1,      
           embeddingSummary: 1,
           page: 1,
           documentId: 1,
@@ -127,26 +243,39 @@ export async function retrieveHybrid({
     query.toLowerCase().split(/\W+/).filter(Boolean)
   );
 
-  // 5. Compute hybrid score
+  // 5) Compute rerank score (0.7 / 0.3 + boosts), с нормализацией
+  const scoreStats = minmaxNormalize(vecRows.map(r => Number(r.score || 0)));
+
   const enriched = vecRows.map((r) => {
-    // semantic similarity based on summary embedding
-    let semSim = 0;
-    if (r.embeddingSummary) {
-      // embeddingSummary присутствует только если ты добавишь его при ingest
-      semSim = cosineSim(qEmb, r.embeddingSummary);
-    }
+    const baseScoreNorm = norm01(Number(r.score || 0), scoreStats.min, scoreStats.max);
 
-    const typeBoost = computeTypeBoost(r.chunkType, intentTypes);
-    const tagBoost = computeTagBoost(r.tags, qTokens);
+    // summary similarity: если embeddingSummary есть — используем его, иначе fallback на embedding
+    let semSim01 = 0;
+const hasSum = r.embeddingSummary?.length;
+const v = hasSum ? r.embeddingSummary : (r.embedding?.length ? r.embedding : null);
 
-    const finalScore =
-      r.score * 0.55 +
-      typeBoost * 0.20 +
-      tagBoost * 0.10 +
-      semSim * 0.15;
+if (v) {
+  // если сравниваем с embeddingSummary — используем qSumEmbSafe, иначе qEmb
+  const qVec = hasSum ? qSumEmbSafe : qEmb;
+  const cos = cosineSim(qVec, v);
+  semSim01 = cosineTo01(cos);
+}
 
-    return { ...r, finalScore };
+
+    const typeBoost = computeTypeBoost(r.chunkType, intentTypes);   // 0..1
+    const tagBoost  = computeTagBoost(r.tags, qTokens);             // 0..1
+
+    // 0.7/0.3 + boosts
+    // boosts делаем мягкими, чтобы не ломали ранжирование
+const finalScore =
+  (baseScoreNorm * 0.68) +
+  (semSim01      * 0.28) +
+  (typeBoost     * 0.03) +
+  (tagBoost      * 0.01);
+
+    return { ...r, baseScoreNorm, semSim01, finalScore };
   });
+
 
   // 6. группируем по documentId
   const groups = new Map();
@@ -160,9 +289,10 @@ export async function retrieveHybrid({
   if (groups.size === 1) {
     const onlyKey = [...groups.keys()][0];
     const rows = groups.get(onlyKey);
-    rows.sort((a, b) => b.finalScore - a.finalScore);
-    const sliced = rows.slice(0, SINGLE_DOC_LIMIT);
-    return { contexts: normalizeChunks(sliced) };
+rows.sort((a, b) => b.finalScore - a.finalScore);
+const mmrPool = rows.slice(0, Math.max(SINGLE_DOC_LIMIT, MMR_POOL));
+const sliced = mmrSelect(mmrPool, SINGLE_DOC_LIMIT, MMR_LAMBDA);
+return { contexts: normalizeChunks(sliced) };
   }
 
   // 8. Multi-doc balancing:
@@ -174,10 +304,13 @@ export async function retrieveHybrid({
   }
 
   // 9. Общая сортировка и ограничение итоговых контекстов
-  perDoc.sort((a, b) => b.finalScore - a.finalScore);
-  const finalRows = perDoc.slice(0, k);
+perDoc.sort((a, b) => b.finalScore - a.finalScore);
 
-  return { contexts: normalizeChunks(finalRows) };
+// 🔥 MMR: берём top-pool и выбираем k разнообразных
+const pool = perDoc.slice(0, Math.max(k, MMR_POOL));
+const finalRows = mmrSelect(pool, k, MMR_LAMBDA);
+
+return { contexts: normalizeChunks(finalRows) };
 }
 
 // =============================

@@ -407,11 +407,37 @@ export async function ingestDocument({
     }
   }
 
-  // 5) Эмбеддинги
-  const embedInputs = fullSentinel ? [...chunks, fullSentinel] : chunks;
-  const embeddings = await embedBatch(embedInputs, {
-    model: "text-embedding-3-small",
-  });
+// 5) Эмбеддинги
+// embedding  -> по content
+// embeddingSummary -> по semanticSummary (fallback на content)
+
+const contentInputs = fullSentinel ? [...chunks, fullSentinel] : chunks;
+
+// summaryInputs: берем LLM summary, если его нет — берем исходный content
+const summaryInputs = chunks.map((c, idx) => {
+  const s = enrichments[idx]?.semanticSummary;
+  return (s && String(s).trim()) ? String(s).trim() : c;
+});
+
+const summarySentinelInput = fullSentinel
+  ? (fullSentinelEnrichment?.semanticSummary && String(fullSentinelEnrichment.semanticSummary).trim())
+      ? String(fullSentinelEnrichment.semanticSummary).trim()
+      : fullSentinel
+  : null;
+
+const summaryInputsAll = fullSentinel
+  ? [...summaryInputs, summarySentinelInput]
+  : summaryInputs;
+
+// Делаем 2 батча эмбеддингов
+const contentEmbeddings = await embedBatch(contentInputs, {
+  model: "text-embedding-3-small",
+});
+
+const summaryEmbeddings = await embedBatch(summaryInputsAll, {
+  model: "text-embedding-3-small",
+});
+
 
   // 6) запись: сначала удаляем прежние чанки этого документа
   await ClientDocChunk.deleteMany({ documentId });
@@ -431,8 +457,8 @@ export async function ingestDocument({
       chunkIndex: idx,
       isFull: false,
       content,
-      embedding: embeddings[idx],
-      embeddingSummary: embeddings[idx], 
+      embedding: contentEmbeddings[idx],
+      embeddingSummary: summaryEmbeddings[idx],
       tokenCount: content.length,
       source: s3Key || localPath || null,
       semanticSummary: enr.semanticSummary || null,
@@ -457,8 +483,8 @@ export async function ingestDocument({
       chunkIndex: chunks.length,
       isFull: true,
       content: fullSentinel,
-      embedding: embeddings[embeddings.length - 1],
-      embeddingSummary: embeddings[embeddings.length - 1],
+      embedding: contentEmbeddings[contentEmbeddings.length - 1],
+      embeddingSummary: summaryEmbeddings[summaryEmbeddings.length - 1],
       tokenCount: fullSentinel.length,
       source: s3Key || localPath || null,
       semanticSummary: enr.semanticSummary || null,
