@@ -33,7 +33,6 @@ const ClientDocChunkSchema = new mongoose.Schema(
       type: [Number],
       validate: v => !v || Array.isArray(v), // допускаем пустое значение
     },
-    source: { type: String },
 
     tokenCount: { type: Number, default: 0 },
   },
