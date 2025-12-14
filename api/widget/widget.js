@@ -799,7 +799,8 @@ const clientId = await resolveClientIdStrict(req, meta, siteId);
 if (clientId) res.setHeader("X-AIW-Client", String(clientId));
 const cfg = await getWidgetConfigCached({ clientId, siteId });
 const leadCfg = cfg?.leadCapture || {};
-const leadEnabled = Boolean(leadCfg?.enabled);
+// const leadEnabled = Boolean(leadCfg?.enabled);
+const leadEnabled = false; // временно отключаем лиды в RAG-ассистенте
 
 // 👇 НОВОЕ: приоритет за cfg.stream
 if (cfg && typeof cfg.stream === "boolean") {
