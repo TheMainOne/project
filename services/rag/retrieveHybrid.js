@@ -57,37 +57,6 @@ async function summarizeQueryForEmbedding(query) {
   }
 }
 
-async function vectorSearchByPath({ indexName, path, queryVector, filter, limit, numCandidates }) {
-  return ClientDocChunk.aggregate([
-    {
-      $vectorSearch: {
-        index: indexName,
-        path,
-        queryVector,
-        numCandidates,
-        limit,
-        ...(Object.keys(filter || {}).length ? { filter } : {})
-      }
-    },
-    {
-      $project: {
-        _id: 1,                 // важно для merge
-        content: 1,
-        title: 1,
-        chunkType: 1,
-        tags: 1,
-        semanticSummary: 1,
-        embedding: 1,
-        embeddingSummary: 1,
-        page: 1,
-        documentId: 1,
-        score: { $meta: "searchScore" }
-      }
-    }
-  ]);
-}
-
-
 // =============================
 // Cosine similarity
 // =============================
@@ -233,61 +202,41 @@ const qSumEmbSafe = qSumEmb?.length ? qSumEmb : qEmb;
   // if (siteId) filter.siteId = siteId;
 
   // 3. Vector search (top 80)
-// 3. Vector search (двойной)
-let vecA = [];
-let vecB = [];
-
-try {
-  console.log("[RAG][hybrid] filter:", filter);
-
-  // A) по контенту
-  vecA = await vectorSearchByPath({
-    indexName: "default",
-    path: "embedding",
-    queryVector: qEmb,
-    filter,
-    limit: VECTOR_K,
-    numCandidates: VECTOR_K
-  });
-
-  // B) по summary
-  vecB = await vectorSearchByPath({
-    indexName: "default",
-    path: "embeddingSummary",
-    queryVector: qSumEmbSafe,
-    filter,
-    limit: VECTOR_K,
-    numCandidates: VECTOR_K
-  });
-
-} catch (e) {
-  console.error("[RAG][hybrid] vector search error:", e?.message);
-  return { contexts: [] };
-}
-
-// merge + dedupe
-const merged = new Map();
-
-// из A
-for (const r of vecA) {
-  merged.set(String(r._id), { ...r, _src: "embedding" });
-}
-
-// из B
-for (const r of vecB) {
-  const key = String(r._id);
-  if (!merged.has(key)) {
-    merged.set(key, { ...r, _src: "embeddingSummary" });
-  } else {
-    const prev = merged.get(key);
-    // оставляем запись с большим score, помечаем что пришло из обоих
-    const best = Number(r.score || 0) > Number(prev.score || 0) ? r : prev;
-    merged.set(key, { ...best, _src: "both" });
+  let vecRows = [];
+  try {
+      console.log("[RAG][hybrid] filter:", filter);
+    vecRows = await ClientDocChunk.aggregate([
+      {
+        $vectorSearch: {
+          index: "default",
+          path: "embedding",
+          queryVector: qEmb,
+          numCandidates: VECTOR_K,
+          limit: VECTOR_K,
+          ...(Object.keys(filter).length ? { filter } : {})
+        }
+      },
+      {
+        $project: {
+          content: 1,
+          title: 1,
+          chunkType: 1,
+          tags: 1,
+          semanticSummary: 1,
+          embedding: 1,      
+          embeddingSummary: 1,
+          page: 1,
+          documentId: 1,
+          score: { $meta: "searchScore" }
+        }
+      }
+    ]);
+  } catch (e) {
+    console.error("[RAG][hybrid] vector search error:", e?.message);
+    return { contexts: [] };
   }
-}
 
-const vecRows = [...merged.values()];
-if (!vecRows.length) return { contexts: [] };
+  if (!vecRows.length) return { contexts: [] };
 
   // 4. Tokenize query for tagBoost
   const qTokens = new Set(
