@@ -1154,7 +1154,7 @@ footer.appendChild(inputWrap);
   panel.appendChild(body);
   panel.appendChild(footer);
 
-const SCROLL_STICKY_THRESHOLD = 40;
+const SCROLL_STICKY_THRESHOLD = 24; 
 let userPinnedToBottom = true;
 
 let ignoreScroll = false;   // чтобы scroll от наших scrollTop не сбивал флаг
@@ -1174,10 +1174,7 @@ function scrollToBottom(force = false) {
     ignoreScroll = true;
     body.scrollTop = body.scrollHeight;
 
-    // отпускаем ignore после того, как браузер применит layout
     requestAnimationFrame(() => { ignoreScroll = false; });
-
-    userPinnedToBottom = true;
   });
 }
 
@@ -1185,7 +1182,6 @@ body.addEventListener("scroll", () => {
   if (ignoreScroll) return;
   userPinnedToBottom = isNearBottom();
 }, { passive: true });
-
 
 
   const footerMeta = document.createElement("div");
@@ -1502,7 +1498,8 @@ function renderAll() {
     appendMessageDOM(m);
   }
   updateEmptyHint();
-   scrollToBottom();
+  // при полном перерендере: скроллим только если юзер был pinned
+scrollToBottom(false);
   postHeight();
 }
 
@@ -1705,7 +1702,7 @@ await pumpSSE(reader, (data) => {
 
   if (bubble) {
       bubble.innerHTML = renderMarkdownBasic(msg.content);
-   scrollToBottom();
+    if (wasPinnedAtStart) scrollToBottom();
     postHeight();
   }
 });
@@ -1786,8 +1783,9 @@ function scheduleAutoGreet() {
     const safeMsgs = history.map(({ role, content }) => ({ role, content })).slice(-30);
     const controller = new AbortController();
     inflight = controller;
-
+const wasPinnedAtStart = userPinnedToBottom;
     try {
+      
       showTyping();
 
       const meta = collectMeta();
@@ -1881,7 +1879,7 @@ await pumpSSE(reader, (data) => {
 
 if (bubble) {
   bubble.innerHTML = renderMarkdownBasic(msg.content);
-  scrollToBottom();
+   if (wasPinnedAtStart) scrollToBottom();
   postHeight();
 }
 });
