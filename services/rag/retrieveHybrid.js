@@ -111,7 +111,7 @@ export async function retrieveHybrid({
           embeddingSummary: 1,
           page: 1,
           documentId: 1,
-          score: { $meta: "searchScore" }
+          score: { $meta: "vectorSearchScore" }
         }
       }
     ]);
@@ -129,6 +129,8 @@ export async function retrieveHybrid({
 
   // 5. Compute hybrid score
   const enriched = vecRows.map((r) => {
+     const baseScore = Number(r.score);
+     const safeBaseScore = Number.isFinite(baseScore) ? baseScore : 0;
     // semantic similarity based on summary embedding
     let semSim = 0;
     if (r.embeddingSummary) {
@@ -140,7 +142,7 @@ export async function retrieveHybrid({
     const tagBoost = computeTagBoost(r.tags, qTokens);
 
     const finalScore =
-      r.score * 0.55 +
+      safeBaseScore * 0.55 +
       typeBoost * 0.20 +
       tagBoost * 0.10 +
       semSim * 0.15;
@@ -177,6 +179,8 @@ export async function retrieveHybrid({
   perDoc.sort((a, b) => b.finalScore - a.finalScore);
   const finalRows = perDoc.slice(0, k);
 
+
+
   return { contexts: normalizeChunks(finalRows) };
 }
 
@@ -186,10 +190,10 @@ export async function retrieveHybrid({
 function normalizeChunks(rows) {
   return rows.map((r) => ({
     source: "client-doc",
-    url: "",
+    url: r.url || "",       
     title: r.title || "Client Document",
     text: r.content,
     snippet: String(r.content || "").slice(0, 500),
-    score: r.finalScore
+    score: Number.isFinite(r.finalScore) ? r.finalScore : 0
   }));
 }

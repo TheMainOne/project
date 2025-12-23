@@ -10,7 +10,6 @@ import AiwGap from "../../models/AiwGap.js";
 import Lead from "../../models/Lead.js";
 import Client from "../../models/Client.js";
 import { hashIp, classifyTopics } from "../../utils/telemetry.js";
-import { buildPrompt } from "../../services/web_crawler/core.js";
 import { getWidgetConfigCached } from '../../services/widgetConfig/cache.js';
 import { detectLeadIntent } from "../../services/lead/intent.js";
 import { retrieveHybrid } from '../../services/rag/retrieveHybrid.js';
@@ -26,8 +25,12 @@ import {
   prepareQueryForRag,
   detectLangFromText,      
   isShortConfirmation,    
-  isExampleFollowup,      
+  isExampleFollowup,  
+  countWords,    
 } from "../../services/rag/queryRewrite.js";
+import { buildPrompt } from '../../services/rag/buildPrompt.js';
+import fs from "fs";
+import path from "path";
 
 const router = express.Router();
 
@@ -131,6 +134,172 @@ function sseEncode(str = "") {
     .replace(/\n/g, "\\n"); // \n → \n (двойной бэкслеш)
 }
 
+function logLLMMessages(tag, msgs = []) {
+  try {
+    const view = (msgs || []).map((m, i) => {
+      const c = String(m?.content ?? "");
+      const hasQ = /(^|\n)\s*Question\s*:/i.test(c);
+      const hasCtx = /(^|\n)\s*Context\s*:/i.test(c);
+      const ctxMarks = (c.match(/\[#\d+\]/g) || []).length;
+
+      return {
+        i,
+        role: m?.role,
+        len: c.length,
+        head: c.slice(0, 160).replace(/\n/g, "\\n"),
+        tail: c.slice(-160).replace(/\n/g, "\\n"),
+        hasQuestionLabel: hasQ,
+        hasContextLabel: hasCtx,
+        ctxMarks,
+      };
+    });
+
+    const last = view[view.length - 1];
+    console.log(`[AIW][LLM][${tag}] messages=${view.length}`);
+    console.table(view);
+
+    if (last) {
+      console.log(`[AIW][LLM][${tag}] LAST role=${last.role} len=${last.len} hasQuestionLabel=${last.hasQuestionLabel} hasContextLabel=${last.hasContextLabel} ctxMarks=${last.ctxMarks}`);
+    }
+  } catch (e) {
+    console.error("[AIW][LLM] logLLMMessages error:", e?.message || e);
+  }
+}
+
+function normalizeLang(code, fallback = "en") {
+  const c = String(code || "").trim().toLowerCase();
+  if (!c) return fallback;
+  // берём только "en" из "en-US"
+  const short = c.split(/[-_]/)[0];
+  return short || fallback;
+}
+
+function hasLettersOfLang(text = "", lang = "") {
+  const t = String(text || "");
+  const l = normalizeLang(lang || "", "");
+  if (!t || !l) return false;
+
+  // минимально полезные группы (можно расширять)
+  if (l === "ru" || l === "uk") return /[а-яёіїєґ]/i.test(t);
+  if (l === "ar") return /[\u0600-\u06FF]/.test(t);
+  if (l === "he") return /[\u0590-\u05FF]/.test(t);
+  if (l === "zh" || l === "ja" || l === "ko") return /[\u3040-\u30FF\u3400-\u4DBF\u4E00-\u9FFF\uAC00-\uD7AF]/.test(t);
+
+  // латиница для большинства европейских языков
+  return /[a-z]/i.test(t);
+}
+
+function isPhoneLikeAnswer(s = "") {
+  const t = String(s || "").trim();
+
+  // Разрешаем: +, цифры, пробелы, (), -, .
+  // Минимальная длина, чтобы не спутать с "1" / "10"
+  if (t.length < 7 || t.length > 32) return false;
+
+  // Только допустимые символы
+  if (!/^[+\d\s().\-]+$/.test(t)) return false;
+
+  // Должно быть достаточно цифр (иначе "(---)" пройдет)
+  const digits = (t.match(/\d/g) || []).length;
+  if (digits < 7) return false;
+
+  return true;
+}
+
+function isShortEntityList(s = "") {
+  const t = String(s || "").trim();
+  if (!t) return false;
+  if (t.length > 40) return false;
+
+  // разрешим разделители списков
+  const parts = t.split(/[,\u2022/|&+]+/).map(x => x.trim()).filter(Boolean);
+  if (parts.length < 2 || parts.length > 4) return false; // 2..4 пункта
+
+  // каждый пункт — 1–2 слова, без “длинных фраз”
+return parts.every(p => {
+  const w = p.split(/\s+/).filter(Boolean);
+  if (w.length > 2 || p.length > 20) return false;
+  return /[\p{L}]/u.test(p); // есть буквы
+});
+}
+
+function looksLikeEntityAnswer(q = "") {
+  const s = String(q || "").trim();
+  if (!s) return false;
+
+  if (isPhoneLikeAnswer(s)) return true;
+  if (isShortEntityList(s)) return true;
+
+  // допускаем пробелы (до 2 слов), но запрещаем “нормальные” фразы с пунктуацией
+  const words = s.split(/\s+/).filter(Boolean);
+  if (words.length > 2) return false;
+
+  // типичные "значения": youtube, instagram ads, info@x.com, +1-555..., 10ml, ISO-9001
+  const okChars = /^[\p{L}\p{N}\s@._+#\-\/(),&]+$/u.test(s);
+  if (!okChars) return false;
+
+  // если слишком длинно — скорее всего это уже фраза
+  if (s.length > 24) return false;
+
+  return true;
+}
+
+/**
+ * True => НЕ переключаем язык (ни this turn, ни persist).
+ * Логика: если detectedNow != currentReplyLang,
+ * но user ответил очень коротко и похоже на "значение",
+ * и предыдущий ассистент явно писал на currentReplyLang.
+ */
+function shouldSuppressLangSwitchOnShortAnswer({
+  rawQuery,
+  currentReplyLang,
+  detectedNow,
+  lastAssistant,
+}) {
+  const q = String(rawQuery || "").trim();
+  if (!q) return false;
+
+  const cur = normalizeLang(currentReplyLang || "", "");
+  const det = normalizeLang(detectedNow || "", cur || det);
+
+  if (!cur || !det) return false;
+  if (cur === det) return false;
+
+  // короткий entity-like ответ?
+  if (!looksLikeEntityAnswer(q)) return false;
+
+  // предыдущий ассистент писал на текущем языке? (приблизительная проверка)
+  const prev = String(lastAssistant?.content || "");
+  if (!prev) return false;
+
+  // если в предыдущем сообщении нет явных признаков текущего языка — не рискуем
+  if (!hasLettersOfLang(prev, cur)) return false;
+
+  return true;
+}
+
+function langName(code = "en") {
+  const c = normalizeLang(code, "en");
+  const map = {
+    en: "English",
+    ru: "Russian",
+    uk: "Ukrainian",
+    de: "German",
+    fr: "French",
+    es: "Spanish",
+    it: "Italian",
+    pl: "Polish",
+    pt: "Portuguese",
+    tr: "Turkish",
+    ar: "Arabic",
+    hi: "Hindi",
+    zh: "Chinese",
+    ja: "Japanese",
+    ko: "Korean",
+  };
+  return map[c] || c.toUpperCase();
+}
+
 const EXPLICIT_NOINFO_RE = /(в контексте нет информации|в базе(?: знаний)? нет информации|в справке не указано|в (предоставленной|загруженн(?:ой|ых)) (базе знаний|документах) нет информации|нет информации о\b|нет данных о\b|no (information|info) (in|about|on) (our )?(knowledge base|docs?|documentation|database|records)|there (is|are) no (information|data) (available )?(on|about)|not (listed|specified|documented) (in|within) (the )?(knowledge base|docs?|documentation|database)|we (do not|don't) have (any )?(information|data) (on|about)|no data (on|about)|not available in (our )?(database|documents|docs|knowledge base))/i;
 async function assessGoodAnswer({ oai, model, question, reply, contexts, lang }) {
   // 1) эвристика до модели
@@ -221,7 +390,7 @@ export async function logGapIfBad({
     siteId: safeSiteId,
     sessionId: safeSessionId,
     normalizedQuestion,
-    resolvedAt: { $exists: false },
+resolvedAt: null,
   };
 
   const update = {
@@ -438,6 +607,10 @@ async function ensureSession(meta, req) {
           userAgent: req.headers["user-agent"] || null,
           ipHash: ipHashVal,
           startedAt: now,
+          replyLang: lang || "ru",
+langStreak: 0,
+lastDetectedLang: lang || "ru",
+replyLangUpdatedAt: now,
           topics: [],
           messagesCount: 0,
           userMessages: 0,
@@ -691,15 +864,12 @@ function pickSystemPrompt(cfg, lang = "ru", complex = null) {
   const base = fromDb || (lang.startsWith("ru") ? DEFAULT_SYS_RU : DEFAULT_SYS_EN);
   let complexBlock = "";
 
-  const langHeader = lang.startsWith("ru")
-    ? `IMPORTANT: For this conversation you MUST answer ONLY in Russian.
-- The user interface language is Russian.
-- Even if the system prompt or examples contain English or other languages, you MUST respond in Russian only.
-- Never reply in English unless explicitly asked to translate.`
-    : `IMPORTANT: For this conversation you MUST answer ONLY in English.
-- The user interface language is English.
-- Even if the system prompt or examples contain Russian or other languages, you MUST respond in English only.
-- Never reply in Russian unless explicitly asked to translate.`;
+  const LN = langName(lang);
+const langHeader =
+`IMPORTANT: You MUST answer ONLY in ${LN}.
+- Always respond in the same language as the user's last message.
+- Do not switch languages.`;
+
 
   if (complex?.isComplex) {
     const types = Array.isArray(complex.taskTypes) ? complex.taskTypes : [];
@@ -762,6 +932,10 @@ T.mark("entered"); // t=0
   let timing = {};
   let dbMark = "user:- assistant:-";
   let phase = "unknown";
+    let siteId = "unknown-site";
+      let sessionId = "unknown-session";
+  let visitorId = null;
+
 
   try {
     // ====== Базовые заголовки/метки для дебага ======
@@ -774,7 +948,10 @@ T.mark("entered"); // t=0
       "X-AIW-Handler","X-AIW-Resolved-Site","X-AIW-Resolved-Session",
       "X-AIW-Phase","X-AIW-DB","X-AIW-Timing","X-AIW-Good-Answer","X-AIW-Client",
        "X-AIW-WidgetCfg",
-         "X-AIW-Contexts",           
+         "X-AIW-Contexts",   
+         "X-AIW-Reply-Lang",
+"X-AIW-Detected-Lang",
+"X-AIW-Lang-Reason",        
   "X-AIW-Retrieve-Mode"       
     ].join(", ");
     const existingExpose = res.getHeader("Access-Control-Expose-Headers");
@@ -793,7 +970,12 @@ const safeMsgs = (Array.isArray(messages) ? messages : [])
   .map((m) => ({ role: m.role, content: m.content.slice(0, 4000) }))
   .slice(-30);
 
-const { siteId, sessionId, visitorId } = resolveIds(req, meta);
+({ siteId, sessionId, visitorId } = resolveIds(req, meta));
+
+const lastUserMsg = [...safeMsgs].reverse().find(m => m.role === "user") || null;
+const rawQueryEarly = (lastUserMsg?.content || "").trim();
+const langEarly = detectLangFromText(rawQueryEarly, meta.lang || "ru");
+
 
 const clientId = await resolveClientIdStrict(req, meta, siteId);
 if (clientId) res.setHeader("X-AIW-Client", String(clientId));
@@ -816,42 +998,15 @@ if (cfg?._id) res.setHeader("X-AIW-WidgetCfg", String(cfg._id));
     res.setHeader("X-AIW-Resolved-Site", siteId);
     res.setHeader("X-AIW-Resolved-Session", sessionId || "(empty)");
 
-    // ====== извлекаем пользовательский вопрос + подготовка для RAG/LLM ======
-const {
-  rawQuery,
-  ragQuery: initialRagQuery,
-  llmQuery: initialLlmQuery,
-  lang,
-  lastUser,
-  lastAssistant,
-  complex,  // { isComplex, taskTypes }
-} = await prepareQueryForRag({
-  messages: safeMsgs,
-  metaLang: meta.lang || "ru",
-  oai,
-  rewriteModel: "gpt-4o-mini",
-  maxHistory: MAX_HISTORY_FOR_LLM,
-});
+// (TEMP) intent/followup/query vars будут выставлены после prepareQueryForRag (pq)
+let intentTypes = [];
+let intentLabel = null;
 
-// чтобы можно было дебажить в DevTools / network
-if (complex) {
-  try {
-    res.setHeader("X-AIW-Complex", JSON.stringify(complex));
-    console.log("[DEBUG] complex:", complex);
-  } catch {}
-}
+let query = "";
+let ragQuery = "";
+let llmQuery = "";
 
-
-// === RAG intent classification (для chunkType-boost) ===
-const { intentTypes, intentLabel } = classifyRagIntent(rawQuery, lang);
-// чтобы можно было дебажить в DevTools
-if (intentLabel) {
-  res.setHeader("X-AIW-Intent", intentLabel);
-}
-
-let query    = rawQuery;
-let ragQuery = initialRagQuery;
-let llmQuery = initialLlmQuery;
+let isFollowUp = false;
 
 const metaAll = {
   siteId,
@@ -862,37 +1017,127 @@ const metaAll = {
   referrer: meta.referrer || null,
   utm: meta.utm || {},
   tz: meta.tz || null,
-  lang,
+ lang: langEarly,
 };
-
-
-if (isShortConfirmation(query) && lastAssistant) {
-  llmQuery =
-    `The user replied "${rawQuery}" as a short confirmation and wants you to PROCEED ` +
-    `with your previous suggestion.\n\n` +
-    `Your previous message was:\n"""${lastAssistant.content}"""\n\n` +
-    `IMPORTANT:
-  - Do NOT repeat the same campaign descriptions again.
-  - Assume the user already knows what you wrote before.
-  - Take the NEXT logical step of that suggestion.
-  - Either ask 1–2 clarifying questions about their goals/budget/niche,
-    or propose a concrete next action (e.g. "let's estimate a test campaign for your game").`;
-}
-
-if (isExampleFollowup(query) && lastAssistant) {
-  llmQuery =
-    `The user is asking for examples of what you suggested earlier.\n` +
-    `Previous assistant message:\n"""${lastAssistant.content}"""\n` +
-    `Original user question: "${rawQuery}".\n` +
-    `Please give examples or describe typical cases, based ONLY on CONTEXT.\n` +
-    `Answer in the same language as the user's question.`;
-}
 
     // ====== ensureSession ======
     const tEnsure = Date.now();
     await ensureSession(metaAll, req);
-    timing.ensure = Date.now() - tEnsure;
-    T.mark("ensureSession");
+// ====== replyLang resolve (NEW) ======
+timing.ensure = Date.now() - tEnsure;
+T.mark("ensureSession");
+
+// читаем сессию (после ensure)
+const sessionDoc = await AiwSession.findOne({ sessionId })
+  .select("replyLang langStreak lastDetectedLang lang replyLangUpdatedAt")
+  .lean();
+
+const uiLang = normalizeLang(meta.lang || sessionDoc?.lang || langEarly || "ru");
+const currentReplyLang = normalizeLang(sessionDoc?.replyLang || uiLang || "ru");
+
+// ====== prepareQueryForRag (ВАЖНО: раньше intent/followup и раньше replyLang hysteresis) ======
+const pq = await prepareQueryForRag({
+  messages: safeMsgs,
+  metaLang: uiLang,
+  currentReplyLang,
+  oai,
+  rewriteModel: "gpt-4o-mini",
+  maxHistory: MAX_HISTORY_FOR_LLM,
+});
+
+
+const {
+  rawQuery,
+  ragQuery: initialRagQuery,
+  llmQuery: initialLlmQuery,
+  lang,
+  detectedUserLang,
+  langConfidence,
+  requestedReplyLang,
+  lastUser,
+  lastAssistant,
+  complex,
+  shouldSwitchLang,
+  switchToLang,
+  switchConfidence,
+  switchEvidence,
+  switchReason,
+} = pq;
+
+// выставляем query/ragQuery/llmQuery (теперь они точно есть)
+query = rawQuery;
+ragQuery = initialRagQuery;
+llmQuery = initialLlmQuery;
+
+// intent теперь можно считать безопасно
+({ intentTypes, intentLabel } = classifyRagIntent(rawQuery, lang));
+if (intentLabel) res.setHeader("X-AIW-Intent", intentLabel);
+
+// follow-up теперь можно считать безопасно
+isFollowUp = !!lastAssistant && (
+  isShortConfirmation(rawQuery) || isExampleFollowup(rawQuery)
+);
+
+console.log("[AIW][followup]", {
+  rawQuery,
+  lastAssistant: !!lastAssistant,
+  isShortConfirmation: isShortConfirmation(rawQuery),
+  isExampleFollowup: isExampleFollowup(rawQuery),
+  isFollowUp
+});
+
+// judge объект (у тебя дальше используется)
+const judge = shouldSwitchLang
+  ? {
+      shouldSwitch: true,
+      replyLang: normalizeLang(
+        switchToLang || detectedUserLang || currentReplyLang,
+        currentReplyLang
+      ),
+      confidence: Number(switchConfidence ?? 0),
+      reason: switchReason || "switch",
+      evidence: switchEvidence || "",
+    }
+  : { shouldSwitch: false, replyLang: currentReplyLang, confidence: 0, reason: "no-switch", evidence: "" };
+
+// ====== replyLang logic (anti short-switch, any language) ======
+const detectedNow0 = normalizeLang(detectedUserLang || uiLang, uiLang);
+
+let replyLangThisTurn = detectedNow0;
+let persistReplyLang  = detectedNow0;
+
+let langReasonFinal = "detected";
+
+// ✅ универсально: короткие “значения” не должны переключать язык диалога
+if (shouldSuppressLangSwitchOnShortAnswer({
+  rawQuery,
+  currentReplyLang,
+  detectedNow: detectedNow0,
+  lastAssistant,
+})) {
+  replyLangThisTurn = currentReplyLang;
+  persistReplyLang  = currentReplyLang;
+  langReasonFinal   = "short_entity_followup";
+}
+
+res.setHeader("X-AIW-Reply-Lang", replyLangThisTurn);
+res.setHeader("X-AIW-Persist-Reply-Lang", persistReplyLang);
+res.setHeader("X-AIW-Detected-Lang", detectedNow0);
+res.setHeader("X-AIW-Lang-Reason", langReasonFinal);
+res.setHeader("X-AIW-Soft-Override", String(langReasonFinal !== "detected"));
+
+// persist
+await AiwSession.updateOne(
+  { sessionId },
+  {
+    $set: {
+      replyLang: persistReplyLang,
+      lastDetectedLang: detectedNow0,
+      langStreak: 0,
+      replyLangUpdatedAt: new Date(),
+    },
+  }
+);
 
 // ====== Lead state ======
 let leadState = normalizeLeadState();
@@ -975,13 +1220,13 @@ console.log("[AIW][timings]", JSON.stringify({
       if (!stream) {
         setJSONHeaders(req, res);
         return sendJSON(req, res, {
-          reply: lang.startsWith("ru") ? "Пустой вопрос" : "Empty question",
+          reply: replyLangThisTurn.startsWith("ru") ? "Пустой вопрос" : "Empty question",
           source: "empty",
           citations: []
         });
       } else {
         setSSEHeaders(req, res);
-        res.write(`data: ${lang.startsWith("ru") ? "Пустой вопрос" : "Empty question"}\n\n`);
+        res.write(`data:${sseEncode(replyLangThisTurn.startsWith("ru") ? "Пустой вопрос" : "Empty question")}\n\n`);
         res.write("data: [DONE]\n\n");
         return res.end();
       }
@@ -996,15 +1241,16 @@ if (hasLeadFlow) {
     actions: leadActions,
     leadCfg,
     leadState,
-    lang,
+    lang: replyLangThisTurn,
     siteId,
     sessionId,
     visitorId,
     clientId,
   });
 
-  const leadReply =
-    combineReplies("", leadMessages) || leadCopy(lang).askFallback;
+const leadReply =
+  combineReplies("", leadMessages) || leadCopy(replyLangThisTurn).askFallback;
+
 
   phase = "lead-capture";
   res.setHeader("X-AIW-Phase", phase);
@@ -1062,260 +1308,311 @@ if (hasLeadFlow) {
   }
 }
 
-
-
 // ====== RAG retrieve (HYBRID) ======
-const retrieveRes = await T.wrap("retrieve", async () => {
+let retrieveRes = { contexts: [] };
+
+retrieveRes = await T.wrap("retrieve", async () => {
   try {
+    const kDefault = Number(process.env.AIW_KCLIENT || 12);
+    const kFollow  = Number(process.env.AIW_KCLIENT_FOLLOWUP || 8);
+
+    const k = isFollowUp ? kFollow : kDefault;
+
     const r = await retrieveHybrid({
       clientId,
       siteId,
-      query: ragQuery,      // уже переписанный через prepareQueryForRag
-      intentTypes,          // ["contacts", "services", ...]
-      k: Number(process.env.AIW_KCLIENT || 12),
+      query: ragQuery,      
+      intentTypes,
+      k,
     });
 
-    if (r?.contexts?.length) {
-      res.setHeader("X-AIW-Retrieve-Mode", "hybrid");
-      return r;
-    } else {
-      res.setHeader("X-AIW-Retrieve-Mode", "hybrid-empty");
-      return { contexts: [] };
-    }
+    console.log("[RAG][retrieve] q=", ragQuery);
+    console.log("[RAG][retrieve] got=", r?.contexts?.length || 0);
+
+    const modeBase = isFollowUp ? "hybrid-followup" : "hybrid";
+    res.setHeader(
+      "X-AIW-Retrieve-Mode",
+      r?.contexts?.length ? modeBase : `${modeBase}-empty`
+    );
+
+    return r || { contexts: [] };
   } catch (e) {
     console.warn("[retrieveHybrid]", e?.message || e);
-    res.setHeader("X-AIW-Retrieve-Mode", "hybrid-error");
+    res.setHeader("X-AIW-Retrieve-Mode", isFollowUp ? "hybrid-followup-error" : "hybrid-error");
     return { contexts: [] };
   }
 });
 
 const contexts = retrieveRes.contexts || [];
+
 res.setHeader("X-AIW-Contexts", String(contexts.length));
 console.log("[AIW] contexts:", contexts.length);
 timing.retrieve = T.get().retrieve;
 
-    // ====== Нет контекста ======
+
+// ====== Нет контекста ======
 if (!contexts.length) {
   phase = "no-context";
   res.setHeader("X-AIW-Phase", phase);
-setSourceHeaders(res, "no-context-llm", []);
+  setSourceHeaders(res, "no-context-llm", []);
 
-  // <-- добавлено: если есть модель — отвечаем без RAG
-  let reply;
+  let reply = "";
   let usageInput  = null;
-let usageOutput = null;
-let usageTotal  = null;
+  let usageOutput = null;
+  let usageTotal  = null;
 
-  if (oai) {
-const sys = pickSystemPrompt(cfg, lang, complex);
-// берём хвост диалога для LLM (user + assistant)
-const dialogTail = safeMsgs
-  .filter(m => m.role === "user" || m.role === "assistant")
-  .slice(-MAX_HISTORY_FOR_LLM);
+  const sys = pickSystemPrompt(cfg, replyLangThisTurn, complex);
 
-// гарантируем, что последний месседж – актуальный вопрос пользователя
-const lastIsUser = dialogTail.length && dialogTail[dialogTail.length - 1].role === "user";
-let messagesForLLM = [
-  { role: "system", content: sys },
-  ...dialogTail,
-];
+  // хвост диалога
+  const dialogTail = safeMsgs
+    .filter(m => m.role === "user" || m.role === "assistant")
+    .slice(-MAX_HISTORY_FOR_LLM);
 
-if (!lastIsUser || (dialogTail[dialogTail.length - 1].content || "").trim() !== llmQuery.trim()) {
-  messagesForLLM.push({ role: "user", content: llmQuery });
-}
+  // гарантируем, что последний месседж – актуальный вопрос пользователя
+  const lastIsUser = dialogTail.length && dialogTail[dialogTail.length - 1].role === "user";
 
+  let messagesForLLM = [
+    { role: "system", content: sys },
+    ...dialogTail,
+  ];
 
-try {
-const r = await oai.chat.completions.create({
-  model: MODEL,
-  messages: messagesForLLM,
-  ...COMPLETION_OPTS,
-});
-
-  // ЛОГИ ТОКЕНОВ
- if (r.usage) {
-    usageInput  = r.usage.prompt_tokens     ?? r.usage.input_tokens;
-    usageOutput = r.usage.completion_tokens ?? r.usage.output_tokens;
-    usageTotal  = r.usage.total_tokens;
-
-    console.log("[AIW][tokens][no-context]", {
-      model: MODEL,
-      input:  usageInput,
-      output: usageOutput,
-      total:  usageTotal,
-    });
+  if (!lastIsUser || (dialogTail[dialogTail.length - 1].content || "").trim() !== llmQuery.trim()) {
+    messagesForLLM.push({ role: "user", content: llmQuery });
   }
 
-  reply = (r.choices?.[0]?.message?.content || "").trim();
-  if (!reply) reply = defaultNoContextReply(lang, cfg);
-} catch (e) {
-  console.error("[AIW] no-context LLM error:", e?.message || e);
-  reply = defaultNoContextReply(lang, cfg);
-}
-  } else {
-    reply = lang.startsWith("ru") ? "Демо-ответ (нет OPENAI_API_KEY)." : "Demo reply (no OPENAI_API_KEY).";
-  }
+  logLLMMessages("no-context", messagesForLLM);
 
-  if (leadEnabled && !leadSuppressed) {
-  const intent = await detectLeadIntent({ oai, messages: safeMsgs.slice(-8), lang });
-  const llmSm = leadStateMachine({
-    leadState,
-    leadCfg,
-    event: { type: "llm_signal", leadIntent: intent.leadIntent, confidence: intent.confidence },
-  });
-  leadState = llmSm.nextState;
-  leadActions.push(...llmSm.actions);
-  leadStateChanged = true;
+  console.log("[AIW][no-context] rawQuery:", rawQuery);
+  console.log("[AIW][no-context] llmQuery(head):", llmQuery.slice(0, 200).replace(/\n/g, "\\n"));
 
-  if (hasLeadActions(leadActions)) {
-    const leadMessages = await processLeadActions({
-      actions: leadActions,
-      leadCfg,
-      leadState,
-      lang,
-      siteId,
-      sessionId,
-      visitorId,
-      clientId,
-    });
+const quickNoCtx = quickFlag({ phase, contexts: [], reply: "" });
+res.setHeader("X-AIW-Good-Answer", String(quickNoCtx.goodAnswer));
 
-    reply = combineReplies(reply, leadMessages);
-  }
-}
-if (leadEnabled && leadStateChanged) {
-  await AiwSession.updateOne(
-    { sessionId },
-    { $set: { leadState } }
-  );
-}
-
-const costUsd = estimateCostUsd(MODEL, usageInput, usageOutput);
-
-await logAssistantMessage({
-  siteId,
-  sessionId,
-  content: reply,
-  latencyMs: Date.now() - started,
-  clientId,
-  tokensInput:  usageInput,
-  tokensOutput: usageOutput,
-  tokensTotal:  usageTotal,
-  costUsd,
-});
-
- 
-  // для no-context теперь не помечаем «плохо» — пусть решит судья
-  const quick = quickFlag({ phase, contexts: [], reply });
-  res.setHeader("X-AIW-Good-Answer", String(quick.goodAnswer));
-
-
-  defer(async () => {
-  const judge = await assessGoodAnswer({
-    oai, model: "gpt-5-nano",
-    question: query, reply, contexts: [], lang
-  });
-  const THRESH = Number(process.env.AIW_JUDGE_THRESHOLD || 0.60);
-  const hasSupport = false; // нет контекста и нет цитат
-  
-
-  const ans = reply || "";
-  const explicitNoInfo = EXPLICIT_NOINFO_RE.test(ans);
-  const finalBad = explicitNoInfo || (judge?.goodAnswer === false) || (!hasSupport && (judge?.confidence ?? 0) < THRESH);
-
-  const reason =
-    explicitNoInfo ? "no-data-in-kb" :
-    (judge?.goodAnswer === false ? (judge?.reason || "judge-false") :
-    (!hasSupport && (judge?.confidence ?? 0) < THRESH ? "low-confidence" : "ok"));
-
-  await logGapIfBad({
-    goodAnswer: !finalBad,
-    confidence: judge.confidence,
-    reason,
-    siteId, sessionId, clientId, question: query, reply, phase: "no-context", citations: []
-  });
-});
-
-  dbMark = "user:+ assistant:+";
-  res.setHeader("X-AIW-DB", dbMark);
-
-  const timings = T.get();
-  const derived = {
-    buildPromptDur: (timings.buildPrompt ?? 0) - (timings.prePrompt ?? 0),
-    llmWait: (timings.afterLLM ?? 0) - (timings.beforeLLM ?? 0),
-    ttfb: timings.firstByteToClient ?? undefined,
-    firstChunk: (timings.firstChunkFlushed ?? 0) - (timings.firstByteToClient ?? 0),
-  };
-  res.setHeader("X-AIW-Timing", JSON.stringify({ ...timing, ...timings, ...derived, total: timings.total }));
-
-  if (!stream) {
-    setJSONHeaders(req, res);
-    return sendJSON(req, res, {
-      reply,
-      source: "no-context-llm",      // <-- чтобы было видно, что ответ без RAG
-      citations: [],
-      goodAnswer: quick.goodAnswer,
-      confidence: quick.confidence
-    });
-  } else {
+  // ====== STREAM MODE ======
+  if (stream) {
     setSSEHeaders(req, res);
     res.write(": heartbeat\n\n");
     T.mark("firstByteToClient");
-    res.write(`data:${sseEncode(reply)}\n\n`);
-    res.write("data: [DONE]\n\n");
-    return res.end();
+
+    let clientClosed = false;
+    req.on("close", () => { clientClosed = true; });
+    req.on("aborted", () => { clientClosed = true; });
+
+    let buffer = "";
+    let usage = null;
+
+    if (!oai) {
+      const demo = replyLangThisTurn.startsWith("ru")
+        ? "Демо-ответ (нет OPENAI_API_KEY)."
+        : "Demo reply (no OPENAI_API_KEY).";
+
+      buffer = demo;
+      const CH = 24;
+      for (let i = 0; i < demo.length && !clientClosed; i += CH) {
+        res.write(`data:${sseEncode(demo.slice(i, i + CH))}\n\n`);
+      }
+    } else {
+      try {
+        T.mark("beforeLLM");
+
+        const completion = await oai.chat.completions.create({
+          model: MODEL,
+          messages: messagesForLLM,
+          stream: true,
+          stream_options: { include_usage: true },
+          ...COMPLETION_OPTS,
+        });
+
+        let firstChunkSent = false;
+
+        for await (const chunk of completion) {
+          if (chunk.usage) {
+            usage = {
+              input:  chunk.usage.prompt_tokens ?? chunk.usage.input_tokens,
+              output: chunk.usage.completion_tokens ?? chunk.usage.output_tokens,
+              total:  chunk.usage.total_tokens,
+            };
+          }
+
+          const piece = chunk.choices?.[0]?.delta?.content || "";
+          if (!piece) continue;
+
+          buffer += piece;
+
+          if (!clientClosed) {
+            res.write(`data:${sseEncode(piece)}\n\n`);
+            if (!firstChunkSent) {
+              firstChunkSent = true;
+              T.mark("firstChunkFlushed");
+            }
+          }
+        }
+
+        T.mark("afterLLM");
+
+        if (usage) {
+          console.log("[AIW][tokens][no-context-stream]", { model: MODEL, ...usage });
+        }
+      } catch (e) {
+        const msg = `⚠️ ${e?.message || "LLM error"}`;
+        buffer = msg;
+        if (!clientClosed) res.write(`data:${sseEncode(msg)}\n\n`);
+      }
+    }
+
+    // финальный текст
+    reply = (buffer || "").trim();
+    if (!reply) reply = defaultNoContextReply(replyLangThisTurn, cfg);
+
+    // usage → отдельные переменные
+    usageInput  = usage?.input  ?? null;
+    usageOutput = usage?.output ?? null;
+    usageTotal  = usage?.total  ?? null;
+
+    const costUsd = estimateCostUsd(MODEL, usageInput, usageOutput);
+
+    await logAssistantMessage({
+      siteId,
+      sessionId,
+      content: reply,
+      latencyMs: Date.now() - started,
+      clientId,
+      tokensInput: usageInput,
+      tokensOutput: usageOutput,
+      tokensTotal: usageTotal,
+      costUsd,
+    });
+
+    // deferred judge + gap (как у тебя было)
+    defer(async () => {
+      const judge = await assessGoodAnswer({
+        oai, model: "gpt-5-nano",
+        question: query, reply, contexts: [], lang
+      });
+      const THRESH = Number(process.env.AIW_JUDGE_THRESHOLD || 0.60);
+      const hasSupport = false;
+
+      const ans = reply || "";
+      const explicitNoInfo = EXPLICIT_NOINFO_RE.test(ans);
+      const finalBad =
+        explicitNoInfo ||
+        (judge?.goodAnswer === false) ||
+        (!hasSupport && (judge?.confidence ?? 0) < THRESH);
+
+      const reason =
+        explicitNoInfo ? "no-data-in-kb" :
+        (judge?.goodAnswer === false ? (judge?.reason || "judge-false") :
+        (!hasSupport && (judge?.confidence ?? 0) < THRESH ? "low-confidence" : "ok"));
+
+      await logGapIfBad({
+        goodAnswer: !finalBad,
+        confidence: judge.confidence,
+        reason,
+        siteId, sessionId, clientId, question: query, reply, phase: "no-context", citations: []
+      });
+    });
+
+    if (!clientClosed) {
+      res.write("data: [DONE]\n\n");
+      return res.end();
+    }
+    return; // если клиент закрыл — просто выходим
   }
+
+  // ====== JSON MODE (как было) ======
+  // (оставляем не-stream completion)
+  if (oai) {
+    try {
+      const r = await oai.chat.completions.create({
+        model: MODEL,
+        messages: messagesForLLM,
+        ...COMPLETION_OPTS,
+      });
+
+      if (r.usage) {
+        usageInput  = r.usage.prompt_tokens     ?? r.usage.input_tokens;
+        usageOutput = r.usage.completion_tokens ?? r.usage.output_tokens;
+        usageTotal  = r.usage.total_tokens;
+
+        console.log("[AIW][tokens][no-context-json]", {
+          model: MODEL,
+          input: usageInput,
+          output: usageOutput,
+          total: usageTotal,
+        });
+      }
+
+      reply = (r.choices?.[0]?.message?.content || "").trim();
+      if (!reply) reply = defaultNoContextReply(replyLangThisTurn, cfg);
+    } catch (e) {
+      console.error("[AIW] no-context LLM error:", e?.message || e);
+      reply = defaultNoContextReply(replyLangThisTurn, cfg);
+    }
+  } else {
+    reply = replyLangThisTurn.startsWith("ru")
+      ? "Демо-ответ (нет OPENAI_API_KEY)."
+      : "Demo reply (no OPENAI_API_KEY).";
+  }
+
+  const costUsd = estimateCostUsd(MODEL, usageInput, usageOutput);
+
+  await logAssistantMessage({
+    siteId,
+    sessionId,
+    content: reply,
+    latencyMs: Date.now() - started,
+    clientId,
+    tokensInput: usageInput,
+    tokensOutput: usageOutput,
+    tokensTotal: usageTotal,
+    costUsd,
+  });
+
+  const quick = quickFlag({ phase, contexts: [], reply });
+  res.setHeader("X-AIW-Good-Answer", String(quick.goodAnswer));
+
+  setJSONHeaders(req, res);
+  return sendJSON(req, res, {
+    reply,
+    source: "no-context-llm",
+    citations: [],
+    goodAnswer: quick.goodAnswer,
+    confidence: quick.confidence,
+  });
 }
+
 
     // ====== Полноценный RAG через LLM ======
     const citations = contexts.map((c, i) => ({ idx: i + 1, url: c.url }));
     T.mark("prePrompt");
-    // const prompt = buildPrompt({ query, contexts, lang });
-    let prompt = buildPrompt({ query: llmQuery, contexts, lang, complex });
+// let prompt = buildPrompt({ query: llmQuery, contexts, lang: replyLangThisTurn, complex });
 
 // если есть кастомный системный промпт — добавим его первым сообщением
-  const sys = pickSystemPrompt(cfg, lang, complex);
+const sys = pickSystemPrompt(cfg, replyLangThisTurn, complex);
 
-  // если buildPrompt где-то добавляет свой system — наш будет иметь приоритет
-  prompt = [{ role: "system", content: sys }, ...prompt.filter(m => m.role !== "system")];
-// ---- ДОБАВЛЯЕМ ИСТОРИЮ ДИАЛОГА ДЛЯ LLM ----
+const prompt = buildPrompt({
+  system: sys,
+  history: safeMsgs,                
+  query: llmQuery,
+  contexts,
+  maxHistory: MAX_HISTORY_FOR_LLM,
+  complex,
+});
+T.mark("buildPrompt");
 
-// хвост диалога (user + assistant)
-const dialogTail = safeMsgs
-  .filter(m => m.role === "user" || m.role === "assistant")
-  .slice(-MAX_HISTORY_FOR_LLM);
+// ====== prompt dump (debug only) ======
+if (process.env.AIW_DEBUG_PROMPT === "1") {
+  try {
+    const dumpDir = path.join(process.cwd(), ".aiw_debug");
+    fs.mkdirSync(dumpDir, { recursive: true });
 
-// чтобы не дублировать последний вопрос пользователя (из dialogTail)
-// и тот, который buildPrompt уже включил в свой user-message,
-// можно убрать из хвоста последний user с тем же текстом:
-const lastUserContent = (lastUser?.content || "").trim();
-
-const dialogWithoutLastUser = dialogTail.filter(m =>
-  !(m.role === "user" && m.content.trim() === lastUserContent)
-);
-
-// сейчас prompt = [ system, ...rest ]
-const [systemMsg, ...restPrompt] = prompt;
-
-// окончательный промпт:
-prompt = [
-  systemMsg,
-  ...dialogWithoutLastUser,
-  ...restPrompt,
-];
-
-    T.mark("buildPrompt"); // длительность = (buildPrompt - prePrompt)
-
-    // 🔍 DEBUG: смотрим, что реально уходит в OpenAI (RAG-ветка)
-console.log(
-  "[AIW][debug] promptForLLM",
-  prompt.map((m, i) => ({
-    i,
-    role: m.role,
-    len: m.content.length,
-    // preview: m.content.slice(0, 120),
-        preview: m.content,
-  }))
-);
+    const dumpPath = path.join(dumpDir, `llm_prompt_dump_${Date.now()}.json`);
+    fs.writeFileSync(dumpPath, JSON.stringify(prompt, null, 2), "utf8");
+    console.log("[AIW] prompt dumped to:", dumpPath);
+  } catch (e) {
+    console.warn("[AIW] prompt dump failed:", e?.message || e);
+  }
+}
 
 if (stream) {
   // ---- STREAM (SSE) ----
@@ -1339,15 +1636,16 @@ if (stream) {
       let buffer = "";
             let usage = null; // 
       if (!oai) {
-        const demo = lang.startsWith("ru") ? "Демо-ответ (нет OPENAI_API_KEY)." : "Demo reply (no OPENAI_API_KEY).";
+        const demo = replyLangThisTurn.startsWith("ru") ? "Демо-ответ (нет OPENAI_API_KEY)." : "Demo reply (no OPENAI_API_KEY).";
         buffer = demo;
         const CH = 24;
         for (let i = 0; i < demo.length && !clientClosed; i += CH) {
-          res.write(`data: ${demo.slice(i, i + CH)}\n\n`);
+          res.write(`data:${sseEncode(demo.slice(i, i + CH))}\n\n`);
         }
       } else {
         try {
        T.mark("beforeLLM");
+
 
       // 🔥 СТРИМ ИЗ OPENAI
 const completion = await oai.chat.completions.create({
@@ -1420,7 +1718,7 @@ const costUsd    = estimateCostUsd(MODEL, tokensInput, tokensOutput);
       const intent = await detectLeadIntent({
         oai,
         messages: safeMsgs.slice(-8),
-        lang,
+        lang: replyLangThisTurn,
       });
 
       const llmSm = leadStateMachine({
@@ -1442,15 +1740,15 @@ const costUsd    = estimateCostUsd(MODEL, tokensInput, tokensOutput);
           actions: leadActions,
           leadCfg,
           leadState,
-          lang,
+          lang: replyLangThisTurn,
           siteId,
           sessionId,
           visitorId,
           clientId,
         });
 
-        const extraText =
-          combineReplies("", extraLeadMessages) || leadCopy(lang).askFallback;
+const extraText =
+  combineReplies("", extraLeadMessages) || leadCopy(replyLangThisTurn).askFallback;
 
         // добавим лид-хвост к ответу (для логов)
         buffer = combineReplies(buffer, extraLeadMessages);
@@ -1526,7 +1824,7 @@ defer(async () => {
     question: query,
     reply: buffer,
     contexts,
-    lang,
+    lang: replyLangThisTurn,
   });
 
   const THRESH = Number(process.env.AIW_JUDGE_THRESHOLD || 0.60);
@@ -1580,7 +1878,7 @@ defer(async () => {
       setSourceHeaders(res, "rag", citations);
 T.mark("beforeLLM");
 
-let reply = lang.startsWith("ru") ? "Демо-ответ (нет OPENAI_API_KEY)." : "Demo reply (no OPENAI_API_KEY).";
+let reply = replyLangThisTurn.startsWith("ru") ? "Демо-ответ (нет OPENAI_API_KEY)." : "Demo reply (no OPENAI_API_KEY).";
 let usageInput  = null;
 let usageOutput = null;
 let usageTotal  = null;
@@ -1627,7 +1925,7 @@ if (leadEnabled && !leadSuppressed) {
       actions: leadActions,
       leadCfg,
       leadState,
-      lang,
+      lang: replyLangThisTurn,
       siteId,
       sessionId,
       visitorId,
@@ -1696,7 +1994,7 @@ console.log("[AIW][timings]", JSON.stringify({
     question: query,
     reply,
     contexts,
-    lang,
+    lang: replyLangThisTurn,
   });
 
   const THRESH = Number(process.env.AIW_JUDGE_THRESHOLD || 0.60);

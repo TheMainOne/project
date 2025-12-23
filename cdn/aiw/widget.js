@@ -169,6 +169,7 @@ function newSessionId() {
   return (crypto?.randomUUID?.() || (Date.now() + ":" + Math.random().toString(16).slice(2)));
 }
 
+
 // создаём/переиспользуем идентификаторы
 const VISITOR_ID = getVisitorId();
 // сессию создаём при загрузке виджета (сбросится кнопкой Reset)
@@ -468,7 +469,8 @@ style.textContent = `
   align-items:center;
   background:${THEME.panel};
 
-    --aiw-input-h: 65px;
+  --aiw-input-min-h: 44px; /* 1 строка */
+  --aiw-input-max-h: 92px; /* до ~3 строк */
 }
 
 .aiw-footer-meta{
@@ -501,6 +503,22 @@ style.textContent = `
 
 .aiw-body::-webkit-scrollbar{
   width:8px;
+}
+
+/* ===== textarea scrollbar (когда overflow-y:auto) ===== */
+.aiw-input{
+  scrollbar-width: none;          /* скрывает полосу */
+}
+
+.aiw-input::-webkit-scrollbar{
+  width: 0px;
+  height: 0px;
+}
+.aiw-input::-webkit-scrollbar-thumb{
+  background: transparent;
+}
+.aiw-input::-webkit-scrollbar-track{
+  background: transparent;
 }
 
 .aiw-body::-webkit-scrollbar-track{
@@ -611,6 +629,10 @@ style.textContent = `
     line-height:1.5; 
 }
 
+.aiw-h1{ font-size:1.15em; font-weight:800; margin:6px 0 4px; }
+.aiw-h2{ font-size:1.08em; font-weight:800; margin:6px 0 4px; }
+.aiw-h3{ font-size:1.02em; font-weight:800; margin:6px 0 4px; }
+
 .aiw-bubble a {
   color: ${INLINE ? "#60a5fa" : THEME.accent};
   text-decoration: underline;
@@ -656,32 +678,54 @@ style.textContent = `
 
 
 
+/* textarea autosize */
+/* wrapper клипает скролл по скруглению */
+.aiw-input-wrap{
+  flex: 1 1 auto;
+  border-radius: 12px;
+  overflow: hidden;                 /* <-- главное: скролл не "вылазит" */
+  border: 1px solid ${THEME.bubbleBorder};
+  background: ${THEME.panel};
+  box-sizing: border-box;
+}
+
+/* textarea autosize */
 .aiw-input {
-  flex:1 1 auto;
-  resize:none;
-  border:1px solid ${THEME.bubbleBorder};
-  background:${THEME.panel};
-  color:${THEME.text};
-  border-radius:12px;
-  box-sizing:border-box;
-  outline:none;
-  font-family:${BASE_FONT_STACK};
-  font-size:${BASE_FONT_SIZE}px;
+  width: 100%;
+  display: block;
 
-  /* универсальная высота инпута */
-  height: var(--aiw-input-h);
-  min-height: var(--aiw-input-h);
-  max-height: var(--aiw-input-h);
+  resize: none;
+  border: none;                     /* рамка на wrapper */
+  background: transparent;          /* фон на wrapper */
+  color: ${THEME.text};
+  outline: none;
+  box-sizing: border-box;
 
-  /* только горизонтальные отступы */
-  padding: 0 52px 0 16px;
+  font-family: ${BASE_FONT_STACK};
+  font-size: ${BASE_FONT_SIZE}px;
 
-  /* одна строка растянута на всю высоту → текст и placeholder по центру */
-  line-height: var(--aiw-input-h);
+  /* многострочный режим */
+  line-height: 1.35;
 
-  /* без вертикального скролла */
+  /* autosize: растём от min до max */
+  height: auto;
+  min-height: var(--aiw-input-min-h);
+  max-height: var(--aiw-input-max-h);
+
+  /* паддинги (место под кнопку в float справа) */
+  padding: 10px 52px 10px 16px;
+
+  /* до max — без скролла, после max — включим через JS */
   overflow-y: hidden;
 }
+
+
+/* лимиты по умолчанию (desktop) */
+.aiw-footer{
+  --aiw-input-min-h: 44px;  /* 1 строка */
+  --aiw-input-max-h: 68px;  /* ~2 строки */
+}
+
 
 
 .aiw-send {
@@ -708,8 +752,8 @@ style.textContent = `
 }
 
 .aiw-send-icon {
-  width: 16px;
-  height: 16px;
+  width: 42%;
+  height: 42%;
   display: block;
 }
 
@@ -844,62 +888,60 @@ ${INLINE ? `
   }
 
   /* FOOTER: без белой полоски сверху */
-  .aiw-footer {
-    position: relative;
-    padding: 20px 32px 20px;
+.aiw-footer{
+  position: relative;
+  padding: 20px 32px;
+  border-top: none !important;
+  background:${THEME.bg};
+  display:flex;
+  align-items:stretch;
+}
 
-    border-top: none !important;
-
-    background:${THEME.bg};
-    display:flex;
-    align-items:stretch;   /* инпут и кнопка одинаковой высоты */
-    gap:16px;
-  }
 
 
   .aiw-footer-meta {
     display:none !important;
   }
 
-  /* инпут: рамка = borderColor */
-  .aiw-input {
-    border-radius: 9999px;
-    background: rgba(255,255,255,0.04);
-    border: 1px solid ${THEME.border};
+/* инпут (INLINE): рамка и фон на wrapper */
+.aiw-input-wrap{
+  position: relative;
+  flex: 1 1 auto;
+  border-radius: 9999px;
+  background: rgba(255,255,255,0.04);
+  border: 1px solid ${THEME.border};
+  overflow: hidden;
+}
 
-    /* только по бокам, вертикальные = 0 (центр за счёт line-height) */
-    padding: 0 22px;
-  }
+/* textarea внутри: просто паддинги */
 
-
+.aiw-input{
+  padding: 12px 60px 12px 16px; /* справа место под кнопку */
+}
 
   .aiw-input::placeholder {
     color: rgba(249,250,251,0.75);
   }
 
   /* кнопка: белый круг с чёрной стрелкой */
-  .aiw-send {
-    position: static;
-    transform: none;
+.aiw-send{
+  position: absolute !important;
+  right: 12px !important;
+  top: 50% !important;
+  transform: translateY(-50%) !important;
 
-    /* такая же высота, как у инпута */
-    width: var(--aiw-input-h);
-    height: var(--aiw-input-h);
-    border-radius:9999px;
-    flex:0 0 auto;
+  width: 40px !important;
+  height: 40px !important;
+  border-radius: 9999px !important;
 
-    background:${THEME.border};
-    color:#000000;
-    box-shadow:0 6px 20px rgba(0,0,0,0.45);
+  background: ${THEME.border} !important;
+  box-shadow: none !important;
+  padding: 0 !important;
+}
 
-    display:flex;
-    align-items:center;
-    justify-content:center;
-  }
-
-  .aiw-send-icon {
-  width: 22px;
-  height: 22px;
+.aiw-send-icon{
+  width: 18px;
+  height: 18px;
 }
 
 ` : ""}
@@ -908,7 +950,7 @@ ${INLINE ? `
  .aiw-body { font-size: 14px !important; }
   .aiw-header { font-size: 18px !important; }
 
-  .aiw-footer { --aiw-input-h: 52px; }
+  .aiw-footer { --aiw-input-min-h: 44px; --aiw-input-max-h: 64px; } /* ~2 строки */
   .aiw-send-icon { width:18px; height:18px; }
 
   .aiw-btn { width:48px; height:48px; }
@@ -919,7 +961,7 @@ ${INLINE ? `
   .aiw-body { font-size: 15px !important; }
   .aiw-header { font-size: 19px !important; }
 
-  .aiw-footer { --aiw-input-h: 58px; }
+  .aiw-footer { --aiw-input-min-h: 46px; --aiw-input-max-h: 68px; } /* ~2 строки */
   .aiw-send-icon { width:20px; height:20px; }
 
   .aiw-btn { width:52px; height:52px; }
@@ -1081,7 +1123,6 @@ function updateEmptyHint() {
 }
 
 
-
 const footer = document.createElement("div");
 footer.className = "aiw-footer";
 
@@ -1103,11 +1144,48 @@ sendBtn.innerHTML = `
   />
 `;
 
-footer.appendChild(input);
-footer.appendChild(sendBtn);
+const inputWrap = document.createElement("div");
+inputWrap.className = "aiw-input-wrap";
+inputWrap.appendChild(input);
+
+inputWrap.appendChild(sendBtn);
+footer.appendChild(inputWrap);
   panel.appendChild(header);
   panel.appendChild(body);
   panel.appendChild(footer);
+
+const SCROLL_STICKY_THRESHOLD = 40;
+let userPinnedToBottom = true;
+
+let ignoreScroll = false;   // чтобы scroll от наших scrollTop не сбивал флаг
+let scrollRaf = null;       // чтобы не дергать scroll на каждый чанк
+
+function isNearBottom() {
+  return (body.scrollHeight - (body.scrollTop + body.clientHeight)) <= SCROLL_STICKY_THRESHOLD;
+}
+
+function scrollToBottom(force = false) {
+  if (!(force || userPinnedToBottom)) return;
+
+  if (scrollRaf) return;
+  scrollRaf = requestAnimationFrame(() => {
+    scrollRaf = null;
+
+    ignoreScroll = true;
+    body.scrollTop = body.scrollHeight;
+
+    // отпускаем ignore после того, как браузер применит layout
+    requestAnimationFrame(() => { ignoreScroll = false; });
+
+    userPinnedToBottom = true;
+  });
+}
+
+body.addEventListener("scroll", () => {
+  if (ignoreScroll) return;
+  userPinnedToBottom = isNearBottom();
+}, { passive: true });
+
 
 
   const footerMeta = document.createElement("div");
@@ -1145,7 +1223,7 @@ function showTyping() {
   if (panel.style.display === "none") return;
   if (!typing.isConnected) messagesWrap.appendChild(typing);
   typing.style.visibility = "visible";
-  body.scrollTop = body.scrollHeight;
+   scrollToBottom();
     postHeight(); 
 }
 function hideTyping() {
@@ -1174,12 +1252,32 @@ function updateCounter() {
   footerCounter.textContent = `${len}/${MAX_LEN}`;
 }
 
+function autoResizeInput() {
+  // сбрасываем, чтобы scrollHeight считался корректно
+  input.style.height = "auto";
+
+  const cs = getComputedStyle(input);
+  const maxH = parseFloat(cs.maxHeight) || 92;
+
+  const next = Math.min(input.scrollHeight, maxH);
+  input.style.height = next + "px";
+
+  // если упёрлись — включаем скролл внутри textarea
+  input.style.overflowY = (input.scrollHeight > maxH) ? "auto" : "hidden";
+
+  postHeight();
+}
+
+
 input.addEventListener("input", () => {
   cancelAllAutogreetTimers();
   try { sessionStorage.setItem(USER_INTERACTED_KEY, "1"); } catch {}
   updateCounter();
+    autoResizeInput();
 });
 updateCounter(); // начальное значение
+setTimeout(autoResizeInput, 0);
+
   // ---------- Chat logic ----------
 let history = readHistory();
 
@@ -1326,6 +1424,11 @@ function linkify(html) {
 function renderMarkdownBasic(text) {
   let html = escapeHtml(text || "");
 
+  // Заголовки markdown: ###, ##, #
+  html = html.replace(/^###\s+(.+)$/gm, "<div class=\"aiw-h3\">$1</div>");
+  html = html.replace(/^##\s+(.+)$/gm, "<div class=\"aiw-h2\">$1</div>");
+  html = html.replace(/^#\s+(.+)$/gm, "<div class=\"aiw-h1\">$1</div>");
+
   // **bold**
   html = html.replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>");
 
@@ -1399,7 +1502,7 @@ function renderAll() {
     appendMessageDOM(m);
   }
   updateEmptyHint();
-  body.scrollTop = body.scrollHeight;
+   scrollToBottom();
   postHeight();
 }
 
@@ -1417,6 +1520,7 @@ function postHeight() {
 
 
   renderAll();
+  scrollToBottom(true); 
 
   try {
   const ro = new ResizeObserver(() => postHeight());
@@ -1446,7 +1550,6 @@ if (!INLINE) {
   close.style.display = "none";
 }
 
-
 resetBtn.addEventListener("click", (e) => {
   e.preventDefault();
 
@@ -1463,6 +1566,7 @@ resetBtn.addEventListener("click", (e) => {
   SESSION_ID = newSessionId();
   input.value = "";
   updateCounter();
+  autoResizeInput();
   renderAll();
 });
 
@@ -1601,7 +1705,7 @@ await pumpSSE(reader, (data) => {
 
   if (bubble) {
       bubble.innerHTML = renderMarkdownBasic(msg.content);
-    body.scrollTop = body.scrollHeight;
+   scrollToBottom();
     postHeight();
   }
 });
@@ -1677,6 +1781,7 @@ function scheduleAutoGreet() {
     renderAll();
     input.value = "";
     updateCounter(); 
+    autoResizeInput();
 
     const safeMsgs = history.map(({ role, content }) => ({ role, content })).slice(-30);
     const controller = new AbortController();
@@ -1776,7 +1881,7 @@ await pumpSSE(reader, (data) => {
 
 if (bubble) {
   bubble.innerHTML = renderMarkdownBasic(msg.content);
-  body.scrollTop = body.scrollHeight;
+  scrollToBottom();
   postHeight();
 }
 });

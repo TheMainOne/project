@@ -37,6 +37,12 @@ const AiwSessionSchema = new mongoose.Schema({
   tz: String,
   lang: String,
 
+    // язык ответов ассистента (deterministic)
+  replyLang: { type: String, default: null },          // "ru","en","de",...
+  lastDetectedLang: { type: String, default: null },   // leading signal from detector/LLM
+  langStreak: { type: Number, default: 0 },            // сколько подряд сообщений “не на replyLang”
+  replyLangUpdatedAt: { type: Date, default: null },   // когда последний раз меняли replyLang
+
   startedAt: { type: Date, default: Date.now, index: true },
   endedAt: { type: Date },
   messagesCount: { type: Number, default: 0 },

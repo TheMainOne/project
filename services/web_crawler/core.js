@@ -42,22 +42,70 @@ export async function retrieveTopK(siteId, query, { k=5, softLimit=300, minScore
   return scored.filter(x => x.score >= minScore).slice(0, k);
 }
 
-export function buildPrompt({ query, contexts, lang = "ru", complex = null }) {
-  const ctx = (contexts || [])
-    .map((c, i) => `[#${i + 1}] ${c.text}`)
+// export function buildPrompt({ query, contexts, lang = "ru", complex = null }) {
+//   const ctx = (contexts || [])
+//     .map((c, i) => `[#${i + 1}] ${c.text}`)
+//     .join("\n\n");
+
+//   // Доп.подсказка для модели, если вопрос сложный
+//   let complexNote = "";
+//   if (complex?.isComplex) {
+//     complexNote =
+//       "The question is classified as complex: provide a carefully reasoned, coherent answer grounded in the context.\n\n";
+//   }
+
+//   return [
+//     {
+//       role: "user",
+//       content: `${complexNote}Question: ${query}`,
+//     },
+//   ];
+// }
+
+export function buildPrompt({
+  system,              // string (уже выбранный pickSystemPrompt)
+  history = [],        // массив {role, content}
+  query,               // llmQuery
+  contexts = [],       // [{ text, url, ... }]
+  maxHistory = 12,
+  complex = null,
+}) {
+  // 1) system
+  const systemMsg = { role: "system", content: system || "" };
+
+  // 2) хвост истории (только user/assistant)
+  const tail = (history || [])
+    .filter(m => m && (m.role === "user" || m.role === "assistant") && typeof m.content === "string")
+    .slice(-maxHistory);
+
+  // 2.1) дедуп: если последний элемент tail — user и он равен query → убрать
+  const cleanedTail = [...tail];
+  const lastTail = cleanedTail[cleanedTail.length - 1];
+  if (lastTail?.role === "user") {
+    const t = lastTail.content.trim();
+    const q = (query || "").trim();
+    if (t && q && t === q) cleanedTail.pop();
+  }
+
+  // 3+4) финальный user: Question + Context
+  const ctxBlock = (contexts || [])
+    .map((c, i) => `[#${i + 1}] ${(c?.text || "").trim()}`)
+    .filter(Boolean)
     .join("\n\n");
 
-  // Доп.подсказка для модели, если вопрос сложный
   let complexNote = "";
   if (complex?.isComplex) {
     complexNote =
       "The question is classified as complex: provide a carefully reasoned, coherent answer grounded in the context.\n\n";
   }
 
-  return [
-    {
-      role: "user",
-      content: `${complexNote}Question: ${query}\n\nContext:\n${ctx}\n`,
-    },
-  ];
+  const finalUser = {
+    role: "user",
+    content: [
+      complexNote + `Question: ${(query || "").trim()}`,
+      ctxBlock ? `Context:\n${ctxBlock}` : "Context:\n(none)",
+    ].join("\n\n"),
+  };
+
+  return [systemMsg, ...cleanedTail, finalUser];
 }
