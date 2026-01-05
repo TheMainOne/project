@@ -112,40 +112,166 @@ const frameOrigin = (() => {
     try { return new URL(base).origin; } catch { return base; }
   }
 })();
+function isScrollable(el) {
+  if (!el || el.nodeType !== 1) return false;
+  const st = window.getComputedStyle(el);
+  const oy = st.overflowY;
+  const ox = st.overflowX;
 
-    function findScrollableParent(el) {
-      let cur = el;
-      while (cur && cur !== document.documentElement) {
-        const st = window.getComputedStyle(cur);
-        const oy = st.overflowY;
-        const ox = st.overflowX;
-        const canY = (oy === "auto" || oy === "scroll") && cur.scrollHeight > cur.clientHeight + 1;
-        const canX = (ox === "auto" || ox === "scroll") && cur.scrollWidth > cur.clientWidth + 1;
-        if (canY || canX) return cur;
-        cur = cur.parentElement;
+  const canY = (oy === "auto" || oy === "scroll") && el.scrollHeight > el.clientHeight + 1;
+  const canX = (ox === "auto" || ox === "scroll") && el.scrollWidth > el.clientWidth + 1;
+  return canY || canX;
+}
+
+function pickBestScroller(startEl) {
+  // 0) optional override (если когда-то захочешь вручную)
+  const forcedSel = s.getAttribute("data-scroll-container");
+  if (forcedSel) {
+    const forced = document.querySelector(forcedSel);
+    if (forced) return forced;
+  }
+
+  // 1) ищем scrollable среди родителей mount
+  let cur = startEl;
+  while (cur && cur !== document.documentElement) {
+    if (isScrollable(cur)) return cur;
+    cur = cur.parentElement;
+  }
+
+  // 2) типовые “главные” контейнеры
+  const knownSelectors = [
+    "[data-scroll-container]",
+    "#smooth-wrapper",
+    "#smooth-content",
+    "#app",
+    "#root",
+    "main",
+    ".app",
+    ".root"
+  ];
+  for (const sel of knownSelectors) {
+    const el = document.querySelector(sel);
+    if (el && isScrollable(el)) return el;
+  }
+
+  // 3) fallback — нативный скроллер документа
+return (document.scrollingElement || document.documentElement);
+}
+
+function tryScrollElement(el, y, x) {
+  if (!el) return false;
+  const by = el.scrollTop;
+  const bx = el.scrollLeft;
+  if (y) el.scrollTop = by + y;
+  if (x) el.scrollLeft = bx + x;
+  return (el.scrollTop !== by) || (el.scrollLeft !== bx);
+}
+
+function dispatchWheelToHost(dy, dx) {
+  const y = Number(dy) || 0;
+  const x = Number(dx) || 0;
+  if (!y && !x) return false;
+
+  const opts = { deltaY: y, deltaX: x, deltaMode: 0, bubbles: true, cancelable: true };
+
+  // ВАЖНО: синтетический wheel сам по себе НЕ скроллит браузер,
+  // но его “видят” smooth-scroll библиотеки, которые слушают wheel.
+  try { window.dispatchEvent(new WheelEvent("wheel", opts)); } catch {}
+  try { document.dispatchEvent(new WheelEvent("wheel", opts)); } catch {}
+  try { document.body && document.body.dispatchEvent(new WheelEvent("wheel", opts)); } catch {}
+  try { document.documentElement.dispatchEvent(new WheelEvent("wheel", opts)); } catch {}
+  try { mount && mount.dispatchEvent(new WheelEvent("wheel", opts)); } catch {}
+
+  return true;
+}
+
+function trySmoothScrollAPIs(dy, dx) {
+  const y = Number(dy) || 0;
+  const x = Number(dx) || 0;
+
+  // GSAP ScrollSmoother
+  try {
+    if (window.ScrollSmoother && typeof window.ScrollSmoother.get === "function") {
+      const sm = window.ScrollSmoother.get();
+      if (sm) {
+        if (typeof sm.scrollTop === "function") {
+          const cur = Number(sm.scrollTop()) || 0;
+          sm.scrollTop(cur + y);
+          return true;
+        }
+        if (typeof sm.scrollTo === "function") {
+          sm.scrollTo((Number(sm.scrollTop?.()) || 0) + y, true);
+          return true;
+        }
       }
-      return document.scrollingElement || document.documentElement;
     }
+  } catch {}
 
-    const scrollTarget = findScrollableParent(mount);
-    const docScroller = document.scrollingElement || document.documentElement;
-
-    function scrollParentBy(dy, dx) {
-      const y = Number(dy) || 0;
-      const x = Number(dx) || 0;
-
-      // если страница скроллится не window, а контейнером — крутим контейнер
-      if (scrollTarget && scrollTarget !== docScroller && scrollTarget !== document.body && scrollTarget !== document.documentElement) {
-        if (y) scrollTarget.scrollTop += y;
-        if (x) scrollTarget.scrollLeft += x;
-      } else {
-        window.scrollBy({ top: y, left: x, behavior: "auto" });
-      }
+  // Lenis
+  try {
+    const lenis = window.lenis || window.__lenis || window.lenisInstance;
+    if (lenis && typeof lenis.scrollTo === "function") {
+      const cur = Number(lenis.scroll ?? lenis.animatedScroll ?? lenis.targetScroll ?? 0) || 0;
+      lenis.scrollTo(cur + y, { immediate: true });
+      return true;
     }
+  } catch {}
+
+  // LocomotiveScroll (если вдруг экземпляр лежит глобально)
+  try {
+    const loco = window.locomotiveScroll || window.locoScroll || window.__locomotiveScroll;
+    if (loco && typeof loco.scrollTo === "function") {
+      const cur =
+        loco.scroll?.instance?.scroll?.y ??
+        loco.instance?.scroll?.y ??
+        0;
+      loco.scrollTo(cur + y, { duration: 0, disableLerp: true });
+      return true;
+    }
+  } catch {}
+
+  return false;
+}
+
+function scrollParentBy(dy, dx) {
+  const y = Number(dy) || 0;
+  const x = Number(dx) || 0;
+  if (!y && !x) return;
+
+  // 0) сначала пробуем “официальные” API smooth-scroll (если они есть)
+  if (trySmoothScrollAPIs(y, x)) return;
+
+  // 1) затем всегда шлём wheel в хост-страницу — это критично для сайтов,
+  // где скролл реализован через wheel listeners + transforms
+  dispatchWheelToHost(y, x);
+
+  // 2) пробуем нативный scrollTop (если страница обычная)
+  if (scrollTarget && tryScrollElement(scrollTarget, y, x)) return;
+
+  // редко переподбираем scrollTarget (чтобы не лагать)
+  const now = Date.now();
+  if (now - lastRepickAt > 1000) {
+    lastRepickAt = now;
+    scrollTarget = pickBestScroller(mount);
+    if (scrollTarget && tryScrollElement(scrollTarget, y, x)) return;
+  }
+
+  // 3) fallback — window.scrollBy, но проверяем, что он реально сдвинул
+  const beforeY = window.scrollY;
+  const beforeX = window.scrollX;
+  try {
+    window.scrollBy({ top: y, left: x, behavior: "auto" });
+  } catch {}
+
+  if (window.scrollY !== beforeY || window.scrollX !== beforeX) return;
+
+  // 4) последний шанс: напрямую документ
+  const doc = document.scrollingElement || document.documentElement;
+  tryScrollElement(doc, y, x);
+}
 
     function onFrameMessage(e) {
       // безопасность + гарантия что это наш iframe
-      if (e.source !== iframe.contentWindow) return;
       if (e.origin !== frameOrigin) return;
 
       const d = e.data || {};
@@ -171,6 +297,9 @@ const frameOrigin = (() => {
     window.addEventListener("message", onFrameMessage, { passive: true });
 
     mount.appendChild(iframe);
+
+    let scrollTarget = pickBestScroller(mount);
+    let lastRepickAt = 0;
 
     // в inline-режиме ВЫХОДИМ — дальше скрипт ничего не делает
     return;
