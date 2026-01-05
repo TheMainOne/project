@@ -30,6 +30,114 @@
   const siteId   = p.get("siteId") || "";
   const clientId = p.get("clientId") || "";
   const mode     = (p.get("mode") || "inline").toLowerCase();
+  const parentOrigin = p.get("parentOrigin") || "*";
+  const instanceId   = p.get("instanceId") || "";
+
+    (function initScrollPassthrough(){
+    if (window === window.parent) return;
+
+    const TARGET_ORIGIN = parentOrigin || "*";
+
+    function postScroll(deltaY, deltaX = 0) {
+      window.parent.postMessage(
+        { type: "aiw:scroll", instanceId, deltaY, deltaX },
+        TARGET_ORIGIN
+      );
+    }
+
+    function isScrollable(el) {
+      if (!el || el === document || el === window) return false;
+      if (el.nodeType !== 1) return false;
+      const st = getComputedStyle(el);
+      const oy = st.overflowY;
+      const ox = st.overflowX;
+      const canY = (oy === "auto" || oy === "scroll") && el.scrollHeight > el.clientHeight + 1;
+      const canX = (ox === "auto" || ox === "scroll") && el.scrollWidth > el.clientWidth + 1;
+      return canY || canX;
+    }
+
+    function canScroll(el, dy, dx) {
+      if (!el) return false;
+
+      // вертикаль
+      if (dy > 0) { // вниз
+        if (el.scrollTop + el.clientHeight < el.scrollHeight - 1) return true;
+      } else if (dy < 0) { // вверх
+        if (el.scrollTop > 0) return true;
+      }
+
+      // горизонталь (на всякий)
+      if (dx > 0) { // вправо
+        if (el.scrollLeft + el.clientWidth < el.scrollWidth - 1) return true;
+      } else if (dx < 0) { // влево
+        if (el.scrollLeft > 0) return true;
+      }
+
+      return false;
+    }
+
+    function findScrollableInPath(path) {
+      for (const n of path) {
+        if (isScrollable(n)) return n;
+      }
+      return null;
+    }
+
+    // Desktop wheel
+    window.addEventListener("wheel", (e) => {
+      // ctrl+wheel = zoom на тачпаде — не трогаем
+      if (e.ctrlKey) return;
+
+      const dx = e.deltaX || 0;
+      const dy = e.deltaY || 0;
+      const path = e.composedPath ? e.composedPath() : [e.target];
+      const sc = findScrollableInPath(path);
+
+      // если скроллить внутри нельзя — пробрасываем наверх
+      if (!sc || !canScroll(sc, dy, dx)) {
+        postScroll(dy, dx);
+        e.preventDefault();
+      }
+    }, { passive: false });
+
+    // Touch (mobile/tablet)
+    let lastX = null, lastY = null;
+
+    window.addEventListener("touchstart", (e) => {
+      if (e.touches && e.touches.length === 1) {
+        lastX = e.touches[0].clientX;
+        lastY = e.touches[0].clientY;
+      } else {
+        lastX = lastY = null;
+      }
+    }, { passive: true });
+
+    window.addEventListener("touchmove", (e) => {
+      if (lastX == null || lastY == null) return;
+      if (!e.touches || e.touches.length !== 1) return;
+
+      const x = e.touches[0].clientX;
+      const y = e.touches[0].clientY;
+
+      const dx = lastX - x;
+      const dy = lastY - y;
+
+      lastX = x;
+      lastY = y;
+
+      const path = e.composedPath ? e.composedPath() : [e.target];
+      const sc = findScrollableInPath(path);
+
+      if (!sc || !canScroll(sc, dy, dx)) {
+        postScroll(dy, dx);
+        e.preventDefault();
+      }
+    }, { passive: false });
+
+    window.addEventListener("touchend", () => {
+      lastX = lastY = null;
+    }, { passive: true });
+  })();
 
   // адрес бэкенда берём из origin, если страница хостится на том же домене
   // поменяй при необходимости на свой базовый URL:

@@ -66,12 +66,19 @@
 
     const iframe = document.createElement("iframe");
 
+      // instanceId + parentOrigin для безопасного postMessage
+    const instanceId = "aiw_" + Math.random().toString(36).slice(2, 10);
+    const parentOrigin = window.location.origin;
+
     // передаём siteId/clientId и флаги mode/fit в страницу фрейма
     const qp = new URLSearchParams();
     if (siteId) qp.set("siteId", siteId);
     if (clientId) qp.set("clientId", clientId);
     qp.set("mode", "inline");
     qp.set("fit", fitMode);
+
+    qp.set("parentOrigin", parentOrigin);
+    qp.set("instanceId", instanceId);
 
     iframe.src = `${base}/aiw/widget-frame.html?${qp.toString()}`;
     iframe.style.width = "100%";
@@ -87,18 +94,81 @@
     } else {
       // fit=content → фрейм сам сообщит высоту
       iframe.style.height = Math.max(200, iHeight) + "px";
-      window.addEventListener("message", (e) => {
-        if (!e?.data || e.data.type !== "aiw:resize") return;
-        if (e.source === iframe.contentWindow) {
-          const minH = Math.max(200, iHeight);
-          const h = Math.max(
-            minH,
-            parseInt(e.data.height || "0", 10) || 0
-          );
-          iframe.style.height = h + "px";
-        }
-      });
+      // window.addEventListener("message", (e) => {
+      //   if (!e?.data || e.data.type !== "aiw:resize") return;
+      //   if (e.source === iframe.contentWindow) {
+      //     const minH = Math.max(200, iHeight);
+      //     const h = Math.max(
+      //       minH,
+      //       parseInt(e.data.height || "0", 10) || 0
+      //     );
+      //     iframe.style.height = h + "px";
+      //   }
+      // });
     }
+        // определяем origin фрейма + выбираем, куда скроллить (window или ближайший scroll-container)
+const frameOrigin = (() => {
+  try { return new URL(iframe.src).origin; } catch {
+    try { return new URL(base).origin; } catch { return base; }
+  }
+})();
+
+    function findScrollableParent(el) {
+      let cur = el;
+      while (cur && cur !== document.documentElement) {
+        const st = window.getComputedStyle(cur);
+        const oy = st.overflowY;
+        const ox = st.overflowX;
+        const canY = (oy === "auto" || oy === "scroll") && cur.scrollHeight > cur.clientHeight + 1;
+        const canX = (ox === "auto" || ox === "scroll") && cur.scrollWidth > cur.clientWidth + 1;
+        if (canY || canX) return cur;
+        cur = cur.parentElement;
+      }
+      return document.scrollingElement || document.documentElement;
+    }
+
+    const scrollTarget = findScrollableParent(mount);
+    const docScroller = document.scrollingElement || document.documentElement;
+
+    function scrollParentBy(dy, dx) {
+      const y = Number(dy) || 0;
+      const x = Number(dx) || 0;
+
+      // если страница скроллится не window, а контейнером — крутим контейнер
+      if (scrollTarget && scrollTarget !== docScroller && scrollTarget !== document.body && scrollTarget !== document.documentElement) {
+        if (y) scrollTarget.scrollTop += y;
+        if (x) scrollTarget.scrollLeft += x;
+      } else {
+        window.scrollBy({ top: y, left: x, behavior: "auto" });
+      }
+    }
+
+    function onFrameMessage(e) {
+      // безопасность + гарантия что это наш iframe
+      if (e.source !== iframe.contentWindow) return;
+      if (e.origin !== frameOrigin) return;
+
+      const d = e.data || {};
+      if (!d || typeof d !== "object") return;
+
+      // --- resize (у тебя уже было)
+      if (d.type === "aiw:resize" && fitMode !== "container") {
+        const minH = Math.max(200, iHeight);
+        const h = Math.max(minH, parseInt(d.height || "0", 10) || 0);
+        iframe.style.height = h + "px";
+        return;
+      }
+
+      // --- NEW: scroll passthrough
+      if (d.type === "aiw:scroll") {
+        // если используешь instanceId — можно фильтровать
+        if (d.instanceId && d.instanceId !== instanceId) return;
+        scrollParentBy(d.deltaY, d.deltaX);
+        return;
+      }
+    }
+
+    window.addEventListener("message", onFrameMessage, { passive: true });
 
     mount.appendChild(iframe);
 

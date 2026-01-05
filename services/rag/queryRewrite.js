@@ -450,7 +450,6 @@ if (specialMode.ack && lastAssistant) {
   ragQuery = String(lastAssistant.content || "").slice(0, 500).trim() || rawQuery;
 }
 
-
   // 2) Запросы вида "дай пример / examples / use cases"
 if (specialMode.examples && lastAssistant) {
   ragQuery =
@@ -463,7 +462,6 @@ if (specialMode.examples && lastAssistant) {
     `Please give examples or describe typical cases, based ONLY on CONTEXT.\n` +
     `Answer in the same language as the user's last question.`;
 }
-
 
   // 3) Всегда пытаемся чуть-чуть улучшить ragQuery через дешёвую модель
   // 3) LLM: переписать запрос для RAG + классифицировать сложность
