@@ -101,46 +101,107 @@
     }, { passive: false });
 
     // Touch (mobile/tablet)
-    let lastX = null, lastY = null;
+// Touch (mobile/tablet) — smoother + inertia
+let lastX = null, lastY = null;
+let lastT = 0;
 
-    window.addEventListener("touchstart", (e) => {
-      if (e.touches && e.touches.length === 1) {
-        lastX = e.touches[0].clientX;
-        lastY = e.touches[0].clientY;
-      } else {
-        lastX = lastY = null;
-      }
-    }, { passive: true });
+// накопители для батчинга
+let accX = 0, accY = 0;
+let rafId = null;
 
-    window.addEventListener("touchmove", (e) => {
-      if (lastX == null || lastY == null) return;
-      if (!e.touches || e.touches.length !== 1) return;
+// скорость для "инерции"
+let vY = 0;
 
-      const x = e.touches[0].clientX;
-      const y = e.touches[0].clientY;
+// настройка "ощущения"
+const SCROLL_MULT = 1.15;      // 1.0..1.4 — сделает прокрутку “легче/быстрее”
+const V_SMOOTH = 0.85;         // 0.7..0.9 — сглаживание скорости
+const FLING_MIN_V = 0.02;      // порог для инерции (px/ms)
+const FLING_DECAY = 0.95;      // затухание (0.92..0.97)
+const FLING_STOP = 0.5;        // остановка (px/frame)
 
-      const dx = lastX - x;
-      const dy = lastY - y;
+function flushScroll() {
+  rafId = null;
+  if (!accX && !accY) return;
+  postScroll(accY, accX); // deltaY, deltaX
+  accX = 0;
+  accY = 0;
+}
 
-      lastX = x;
-      lastY = y;
+function scheduleFlush() {
+  if (rafId) return;
+  rafId = requestAnimationFrame(flushScroll);
+}
 
-      const path = e.composedPath ? e.composedPath() : [e.target];
-      const sc = findScrollableInPath(path);
+function startFling() {
+  // vY в px/ms → переводим примерно в px/frame (16ms)
+  let vy = vY * 16;
 
-      if (!sc || !canScroll(sc, dy, dx)) {
-        postScroll(dy, dx);
-        e.preventDefault();
-      }
-    }, { passive: false });
+  if (Math.abs(vy) < FLING_STOP) return;
 
-    window.addEventListener("touchend", () => {
-      lastX = lastY = null;
-    }, { passive: true });
+  function step() {
+    vy *= FLING_DECAY;
+    if (Math.abs(vy) < FLING_STOP) return;
+
+    accY += vy;
+    scheduleFlush();
+    requestAnimationFrame(step);
+  }
+
+  requestAnimationFrame(step);
+}
+
+window.addEventListener("touchstart", (e) => {
+  if (e.touches && e.touches.length === 1) {
+    lastX = e.touches[0].clientX;
+    lastY = e.touches[0].clientY;
+    lastT = performance.now();
+    vY = 0;
+  } else {
+    lastX = lastY = null;
+  }
+}, { passive: true });
+
+window.addEventListener("touchmove", (e) => {
+  if (lastX == null || lastY == null) return;
+  if (!e.touches || e.touches.length !== 1) return;
+
+  const x = e.touches[0].clientX;
+  const y = e.touches[0].clientY;
+  const t = performance.now();
+
+  const dx = (lastX - x) * SCROLL_MULT;
+  const dy = (lastY - y) * SCROLL_MULT;
+
+  const dt = Math.max(1, t - lastT);
+  const instV = dy / dt;            // px/ms
+  vY = vY * V_SMOOTH + instV * (1 - V_SMOOTH);
+
+  lastX = x;
+  lastY = y;
+  lastT = t;
+
+  const path = e.composedPath ? e.composedPath() : [e.target];
+  const sc = findScrollableInPath(path);
+
+  if (!sc || !canScroll(sc, dy, dx)) {
+    accY += dy;
+    accX += dx;
+    scheduleFlush();
+    e.preventDefault();
+  }
+}, { passive: false });
+
+window.addEventListener("touchend", () => {
+  lastX = lastY = null;
+
+  // “инерция” только если жест был достаточно быстрым
+  if (Math.abs(vY) > FLING_MIN_V) {
+    startFling();
+  }
+}, { passive: true });
   })();
 
   // адрес бэкенда берём из origin, если страница хостится на том же домене
-  // поменяй при необходимости на свой базовый URL:
   const host = location.origin;
 
   // тот же феч конфига, что и в loader
