@@ -115,6 +115,26 @@ let vY = 0;
 let gestureLockedToInner = false;  // если жест начался на scrollable элементе — НЕ пробрасываем на страницу
 let gestureScroller = null;        // тот scrollable элемент, с которого начали жест
 let didPassthrough = false;        // делали ли passthrough в рамках этого жеста
+let gestureEdgeAtStart = null;
+
+function getEdgeState(el) {
+  return {
+    top: el.scrollTop <= 0,
+    bottom: el.scrollTop + el.clientHeight >= el.scrollHeight - 1,
+    left: el.scrollLeft <= 0,
+    right: el.scrollLeft + el.clientWidth >= el.scrollWidth - 1,
+  };
+}
+
+function allowPassthroughFromEdge(edge, dy, dx) {
+  if (!edge) return false;
+  if (dy > 0 && edge.bottom) return true; // хотим вниз, а мы уже на дне
+  if (dy < 0 && edge.top) return true;    // хотим вверх, а мы уже наверху
+  if (dx > 0 && edge.right) return true;
+  if (dx < 0 && edge.left) return true;
+  return false;
+}
+
 
 // настройка "ощущения"
 const SCROLL_MULT  = 1.15;
@@ -169,6 +189,7 @@ window.addEventListener("touchstart", (e) => {
     const path = e.composedPath ? e.composedPath() : [e.target];
     gestureScroller = findScrollableInPath(path);
     gestureLockedToInner = !!gestureScroller;
+    gestureEdgeAtStart = gestureScroller ? getEdgeState(gestureScroller) : null;
   } else {
     lastX = lastY = null;
     gestureScroller = null;
@@ -199,16 +220,24 @@ window.addEventListener("touchmove", (e) => {
   const path = e.composedPath ? e.composedPath() : [e.target];
   const sc = gestureScroller || findScrollableInPath(path);
 
-  // ✅ КЛЮЧЕВОЕ: если жест начался на scrollable элементе (чат),
-  // то НЕ пробрасываем на страницу в рамках этого жеста.
-  // Когда дошли до края — просто “стоп”, пока палец не отпустят.
-  if (gestureLockedToInner) {
-    if (!sc || !canScroll(sc, dy, dx)) {
-      // на краю — блокируем, но НЕ пробрасываем наверх
-      e.preventDefault();
-    }
-    return; // даём нативно скроллить чат, если он может
+if (gestureLockedToInner) {
+  // если чат МОЖЕТ скроллиться — даём браузеру нативно скроллить чат
+  if (sc && canScroll(sc, dy, dx)) return;
+
+  // чат НЕ может (край). В ЭТОМ ЖЕ свайпе — стоп.
+  // Но если новый свайп начался уже на краю и тянем дальше — разрешаем проброс на страницу.
+  if (allowPassthroughFromEdge(gestureEdgeAtStart, dy, dx)) {
+    accY += dy;
+    accX += dx;
+    didPassthrough = true;
+    scheduleFlush();
+    e.preventDefault();
+  } else {
+    // стоп до конца этого жеста
+    e.preventDefault();
   }
+  return;
+}
 
   // ✅ Если жест НЕ начинался на scrollable — это passthrough режим
   if (!sc || !canScroll(sc, dy, dx)) {
@@ -231,6 +260,7 @@ window.addEventListener("touchend", () => {
   gestureScroller = null;
   gestureLockedToInner = false;
   didPassthrough = false;
+  gestureEdgeAtStart = null;
 }, { passive: true });
   })();
 
