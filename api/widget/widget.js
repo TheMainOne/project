@@ -25,8 +25,7 @@ import {
   prepareQueryForRag,
   detectLangFromText,      
   isShortConfirmation,    
-  isExampleFollowup,  
-  countWords,    
+  isExampleFollowup,      
 } from "../../services/rag/queryRewrite.js";
 import { buildPrompt } from '../../services/rag/buildPrompt.js';
 import fs from "fs";

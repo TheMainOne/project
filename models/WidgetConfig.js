@@ -1,7 +1,7 @@
 import mongoose from "mongoose";
 
 const LeadStepSchema = new mongoose.Schema({
-  id:       { type: String, required: true },           // "fullName", "email"
+  id:       { type: String, required: true },           
   type:     { type: String, enum: ["text", "email", "phone", "select", "textarea"], default: "text" },
   required: { type: Boolean, default: true },
   label: {
@@ -133,6 +133,8 @@ baseFontSize:      { type: Number, default: 14, min: 10, max: 24 },
   // ===== флаги/метаданные =====
   isActive:   { type: Boolean, default: true },
   version:    { type: Number,   default: 1 },
+    // if it's empty, the client will use the global defaultWidgetVersion
+  widgetVersionOverride: { type: String, default: "", trim: true },
 }, { timestamps: true });
 
 // уникальная связка владельца + сайта

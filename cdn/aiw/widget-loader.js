@@ -27,6 +27,8 @@
   const jsSrc =
     s.getAttribute("data-src") ||
     (host.replace(/\/$/, "") + "/aiw/widget.js");
+  
+    const hasDataSrc = !!s.getAttribute("data-src");
 
   // --- режим рендера ---
   // если явно data-mode не задан, но скрипт стоит внутри контейнера → считаем inline
@@ -370,10 +372,46 @@ function scrollParentBy(dy, dx) {
 
     window.__AIW_CONFIG__ = cfg;
 
-    const js = document.createElement("script");
-    js.src = jsSrc + (jsSrc.includes("?") ? "&" : "?") + "v=" + Date.now();
-    js.async = true;
-    js.crossOrigin = "anonymous";
-    document.head.appendChild(js);
+   // ===== Versioned widget.js =====
+const rawVer = String(config?.resolvedWidgetVersion || "").trim();
+const safeVer = /^[0-9A-Za-z._-]{1,50}$/.test(rawVer) ? rawVer : "";
+
+const versionedSrc = (!hasDataSrc && safeVer)
+  ? `${base}/aiw/releases/${encodeURIComponent(safeVer)}/widget.js`
+  : jsSrc;
+
+// the fallback is always to the regular widget.js with cache-busting
+const fallbackSrc = jsSrc + (jsSrc.includes("?") ? "&" : "?") + "v=" + Date.now();
+
+function appendScriptWithFallback(src, fallback) {
+  const js = document.createElement("script");
+  js.async = true;
+  js.crossOrigin = "anonymous";
+  js.src = src;
+
+  js.onerror = () => {
+    // if this is a data-src override, we don't perform a fallback (to avoid breaking the manual override)
+    if (!fallback) return;
+
+    console.warn("[AIW] Script failed:", src, "→ fallback:", fallback);
+    js.remove();
+
+    const js2 = document.createElement("script");
+    js2.async = true;
+    js2.crossOrigin = "anonymous";
+    js2.src = fallback;
+    document.head.appendChild(js2);
+  };
+
+  document.head.appendChild(js);
+}
+
+if (versionedSrc === jsSrc) {
+  // if this was a manual override (data-src), then a fallback is NOT needed
+  appendScriptWithFallback(hasDataSrc ? jsSrc : fallbackSrc, null);
+} else {
+  // version first, then fallback
+  appendScriptWithFallback(versionedSrc, fallbackSrc);
+}
   })();
 })();

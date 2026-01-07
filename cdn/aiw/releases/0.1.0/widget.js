@@ -1,6 +1,6 @@
 /*
 ====================================================
-aiw widget
+aiw widget v0.1.0
 ====================================================
 */
 (function widget () {
@@ -1625,8 +1625,11 @@ function showLocalGreeting() {
   }, 250);
 }
 
+
+
+
+
   async function fetchAIGreeting() {
-    const wasPinnedAtStart = userPinnedToBottom;
     openPanelIfHidden();
     const safeMsgs = [
       { role: "system", content: "You are a concise, friendly website assistant." },

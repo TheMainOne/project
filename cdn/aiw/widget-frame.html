@@ -59,17 +59,15 @@
     function canScroll(el, dy, dx) {
       if (!el) return false;
 
-      // вертикаль
-      if (dy > 0) { // вниз
+      if (dy > 0) { 
         if (el.scrollTop + el.clientHeight < el.scrollHeight - 1) return true;
-      } else if (dy < 0) { // вверх
+      } else if (dy < 0) { 
         if (el.scrollTop > 0) return true;
       }
 
-      // горизонталь (на всякий)
-      if (dx > 0) { // вправо
+      if (dx > 0) { 
         if (el.scrollLeft + el.clientWidth < el.scrollWidth - 1) return true;
-      } else if (dx < 0) { // влево
+      } else if (dx < 0) { 
         if (el.scrollLeft > 0) return true;
       }
 
@@ -85,7 +83,6 @@
 
     // Desktop wheel
     window.addEventListener("wheel", (e) => {
-      // ctrl+wheel = zoom на тачпаде — не трогаем
       if (e.ctrlKey) return;
 
       const dx = e.deltaX || 0;
@@ -93,7 +90,6 @@
       const path = e.composedPath ? e.composedPath() : [e.target];
       const sc = findScrollableInPath(path);
 
-      // если скроллить внутри нельзя — пробрасываем наверх
       if (!sc || !canScroll(sc, dy, dx)) {
         postScroll(dy, dx);
         e.preventDefault();
@@ -104,17 +100,14 @@
 let lastX = null, lastY = null;
 let lastT = 0;
 
-// накопители для батчинга
 let accX = 0, accY = 0;
 let rafId = null;
 
-// скорость для "инерции"
 let vY = 0;
 
-// ФЛАГИ ЖЕСТА
-let gestureLockedToInner = false;  // если жест начался на scrollable элементе — НЕ пробрасываем на страницу
-let gestureScroller = null;        // тот scrollable элемент, с которого начали жест
-let didPassthrough = false;        // делали ли passthrough в рамках этого жеста
+let gestureLockedToInner = false;  
+let gestureScroller = null;       
+let didPassthrough = false;        
 let gestureEdgeAtStart = null;
 
 function getEdgeState(el) {
@@ -128,8 +121,8 @@ function getEdgeState(el) {
 
 function allowPassthroughFromEdge(edge, dy, dx) {
   if (!edge) return false;
-  if (dy > 0 && edge.bottom) return true; // хотим вниз, а мы уже на дне
-  if (dy < 0 && edge.top) return true;    // хотим вверх, а мы уже наверху
+  if (dy > 0 && edge.bottom) return true; 
+  if (dy < 0 && edge.top) return true;
   if (dx > 0 && edge.right) return true;
   if (dx < 0 && edge.left) return true;
   return false;
@@ -179,13 +172,11 @@ window.addEventListener("touchstart", (e) => {
     lastY = e.touches[0].clientY;
     lastT = performance.now();
 
-    // сброс на новый жест
     vY = 0;
     accX = 0;
     accY = 0;
     didPassthrough = false;
 
-    // ВАЖНО: определяем, начался ли жест внутри scrollable
     const path = e.composedPath ? e.composedPath() : [e.target];
     gestureScroller = findScrollableInPath(path);
     gestureLockedToInner = !!gestureScroller;
@@ -221,11 +212,9 @@ window.addEventListener("touchmove", (e) => {
   const sc = gestureScroller || findScrollableInPath(path);
 
 if (gestureLockedToInner) {
-  // если чат МОЖЕТ скроллиться — даём браузеру нативно скроллить чат
   if (sc && canScroll(sc, dy, dx)) return;
 
-  // чат НЕ может (край). В ЭТОМ ЖЕ свайпе — стоп.
-  // Но если новый свайп начался уже на краю и тянем дальше — разрешаем проброс на страницу.
+  // if a new swipe gesture starts at the edge and we continue dragging, we allow the swipe to transition to the next page.
   if (allowPassthroughFromEdge(gestureEdgeAtStart, dy, dx)) {
     accY += dy;
     accX += dx;
@@ -233,13 +222,12 @@ if (gestureLockedToInner) {
     scheduleFlush();
     e.preventDefault();
   } else {
-    // стоп до конца этого жеста
     e.preventDefault();
   }
   return;
 }
 
-  // ✅ Если жест НЕ начинался на scrollable — это passthrough режим
+  // if the gesture did NOT start on a scrollable element, it's a passthrough mode.
   if (!sc || !canScroll(sc, dy, dx)) {
     accY += dy;
     accX += dx;
@@ -252,7 +240,7 @@ if (gestureLockedToInner) {
 window.addEventListener("touchend", () => {
   lastX = lastY = null;
 
-  // Инерцию даём только если это был именно passthrough-жест
+  // we only apply inertia if it was indeed a passthrough gesture
   if (!gestureLockedToInner && didPassthrough && Math.abs(vY) > FLING_MIN_V) {
     startFling();
   }
@@ -264,10 +252,10 @@ window.addEventListener("touchend", () => {
 }, { passive: true });
   })();
 
-  // адрес бэкенда берём из origin, если страница хостится на том же домене
+  // the backend address is taken from the origin if the page is hosted on the same domain
   const host = location.origin;
 
-  // тот же феч конфига, что и в loader
+  // the same config fetch as in the loader.
   const base = host.replace(/\/$/,'');
   const url  = new URL(base + "/api/clients/widget-config");
   if (siteId)   url.searchParams.set("siteId", siteId);
@@ -317,19 +305,56 @@ window.addEventListener("touchend", () => {
       fontCssUrl:  config?.fontCssUrl  || "",
       fontFileUrl: config?.fontFileUrl || "",
         stream: (typeof config?.stream === "boolean") ? config.stream : true,
-      // ▼ NEW: подсказка виджету, что он рендерится внутри iframe как inline
       mode
     };
 
-    // отдаём конфиг виджету
+    // passing the configuration to the widget
     window.__AIW_CONFIG__ = cfg;
 
-    // подключаем тот же widget.js
-    const js = document.createElement("script");
-    js.src = base + "/aiw/widget.js?v=" + Date.now();
-    js.async = true;
-    js.crossOrigin = "anonymous";
-    document.head.appendChild(js);
+  const resolvedVerRaw =
+  (config && (config.resolvedWidgetVersion || config.widgetVersionResolved)) || "";
+
+const resolvedVer = String(resolvedVerRaw).trim();
+
+// A small safety measure: we only allow "normal" versions
+const safeVer = /^[0-9A-Za-z._-]{1,32}$/.test(resolvedVer) ? resolvedVer : "";
+
+const primarySrc = safeVer
+  ? `${base}/aiw/releases/${encodeURIComponent(safeVer)}/widget.js`
+  : "";
+
+const fallbackSrc = `${base}/aiw/widget.js?v=${Date.now()}`;
+
+function loadWithFallback(src, fallback) {
+  const js = document.createElement("script");
+  js.async = true;
+  js.crossOrigin = "anonymous";
+  js.src = src;
+
+  js.onerror = () => {
+    console.warn("[AIW][frame] failed:", src, "→ fallback:", fallback);
+    js.remove();
+
+    const js2 = document.createElement("script");
+    js2.async = true;
+    js2.crossOrigin = "anonymous";
+    js2.src = fallback;
+    document.head.appendChild(js2);
+  };
+
+  document.head.appendChild(js);
+}
+
+if (primarySrc) {
+  loadWithFallback(primarySrc, fallbackSrc);
+} else {
+  // нет версии — сразу грузим fallback
+  const js = document.createElement("script");
+  js.async = true;
+  js.crossOrigin = "anonymous";
+  js.src = fallbackSrc;
+  document.head.appendChild(js);
+}
   })();
 })();
 </script>

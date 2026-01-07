@@ -1,6 +1,7 @@
 import mongoose from "mongoose";
 import WidgetConfig from "../models/WidgetConfig.js";
 import Client from "../models/Client.js";
+import { getDefaultWidgetVersion } from "../services/widgetRelease/getDefaultWidgetVersion.js";
 
 function resolveClientFilter(idOrSlug) {
   if (!idOrSlug) return null;
@@ -50,7 +51,6 @@ function parseLeadCapture(raw) {
 
   return undefined;
 }
-
 
 // GET /api/clients/:idOrSlug/widget-config  (или /api/widget-config?siteId= | ?clientId=)
 export async function getWidgetConfig(req, res) {
@@ -170,6 +170,7 @@ export async function upsertWidgetConfig(req, res) {
       resetHistoryOnOpen:      req.body.resetHistoryOnOpen,
       stream:                  req.body.stream,
 
+      widgetVersionOverride: req.body.widgetVersionOverride,
       isActive:           req.body.isActive ?? true,
     };
 
@@ -291,10 +292,14 @@ export async function getPublicWidgetConfig(req, res) {
 
       siteId: 1,
       clientId: 1,
+      widgetVersionOverride: 1,
       isActive: 1,
     };
 
     const cfg = await WidgetConfig.findOne(filter, projection).lean();
+    const defaultWidgetVersion = await getDefaultWidgetVersion();
+    const override = (cfg?.widgetVersionOverride || "").trim();
+    const resolvedWidgetVersion = override || defaultWidgetVersion;
 
 const out = cfg ? {
   siteId:   cfg.siteId   || null,
@@ -341,6 +346,7 @@ const out = cfg ? {
   preserveHistory:    cfg.preserveHistory !== false,
   resetHistoryOnOpen: !!cfg.resetHistoryOnOpen,
   inlineAutostart:    cfg.inlineAutostart || null,
+  resolvedWidgetVersion,
 
   // NEW: leadCapture в нормализованном виде
 leadCapture: (() => {
@@ -375,7 +381,11 @@ leadCapture: (() => {
     triggers: defaultTriggers,
   };
 })(),
-} : null;
+} : {
+  siteId: siteId || null,
+  clientId: clientId || null,
+  resolvedWidgetVersion,
+};
 
     return res.json({ ok: true, config: out });
   } catch (e) {
@@ -426,7 +436,6 @@ export async function uploadWidgetFont(req, res) {
         .json({ ok: false, error: "font file is required (field 'font')" });
     }
 
-    console.log("BODY.leadCapture =", req.body.leadCapture);
     const payload = {
       fontFileUrl: req.file.location,
     };
