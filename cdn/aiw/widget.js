@@ -201,14 +201,6 @@ function collectMeta() {
     return document.visibilityState === "visible";
   }
 
-  // function alreadyInteracted() {
-  //   // если пользователь уже что-то писал в этой сессии
-  //   try {
-  //     const arr = readHistory();
-  //     return arr.some(m => m.role === "user");
-  //   } catch { return false; }
-  // }
-
 function alreadyInteracted() {
   try {
     return sessionStorage.getItem(USER_INTERACTED_KEY) === "1";
@@ -216,7 +208,6 @@ function alreadyInteracted() {
     return false;
   }
 }
-
 
 function shouldAutoGreetNow() {
   if (!AUTOSTART) { log("block: AUTOSTART=false"); return false; }
@@ -236,7 +227,6 @@ function shouldAutoGreetNow() {
   return true;
 }
 
-
 function markAutoGreetUsed() {
   sessionStorage.setItem(AUTO_KEY_SESSION, "1");
   localStorage.setItem(AUTO_KEY_LAST_TS, String(Date.now()));
@@ -245,8 +235,6 @@ function markAutoGreetUsed() {
     lastKey: AUTO_KEY_LAST_TS
   });
 }
-
-
 
   // ---------- Utilities ----------
 const storeKey = `aiw_hist_${SITE_ID}`;
@@ -969,8 +957,6 @@ ${INLINE ? `
 
 `;
 
-
-
   shadow.appendChild(style);
 if (INLINE && FIT_MODE === "content") {
   const fix = document.createElement("style");
@@ -1122,7 +1108,6 @@ function updateEmptyHint() {
   emptyHint.style.display = shouldShow ? "block" : "none";
 }
 
-
 const footer = document.createElement("div");
 footer.className = "aiw-footer";
 
@@ -1264,7 +1249,6 @@ function autoResizeInput() {
   postHeight();
 }
 
-
 input.addEventListener("input", () => {
   cancelAllAutogreetTimers();
   try { sessionStorage.setItem(USER_INTERACTED_KEY, "1"); } catch {}
@@ -1298,7 +1282,6 @@ function cancelAllAutogreetTimers() {
     }
   } catch {}
 }
-
 
 function runInlineAutostart(cfg) {
   if (!INLINE) return;                               // только для inline
@@ -1372,9 +1355,6 @@ function runInlineAutostart(cfg) {
     INLINE_AUTO_TIMEOUTS.push(tid);
   });
 }
-
-
-
 
 function fmtTime(ts){
   try{
@@ -1514,8 +1494,6 @@ function postHeight() {
   } catch {}
 }
 
-
-
   renderAll();
   scrollToBottom(true); 
 
@@ -1567,8 +1545,6 @@ resetBtn.addEventListener("click", (e) => {
   renderAll();
 });
 
-
-
   input.addEventListener("keydown", (e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); doSend(); } });
   sendBtn.addEventListener("click", doSend);
 
@@ -1595,9 +1571,7 @@ function pumpSSE(reader, onData) {
   })();
 }
 
-
   let inflight = null;
-
 
 function panelIsHidden() {
   if (INLINE) return false;
@@ -1607,7 +1581,6 @@ function openPanelIfHidden() {
   if (INLINE) return; // в inline всегда открыт
   if (panelIsHidden()) panel.style.display = "flex";
 }
-
 
 function showLocalGreeting() {
   if (!AUTO_MSG) { log("showLocalGreeting: no AUTO_MSG"); return; }
@@ -1671,8 +1644,6 @@ function showLocalGreeting() {
     return;
       }
 
-// SSE
-// SSE
 // SSE
 const msg = { role: "assistant", content: "", ts: Date.now() };
 history.push(msg);
@@ -1757,9 +1728,6 @@ function scheduleAutoGreet() {
   }, AUTO_DELAY);
 }
 
-
-
-
   async function doSend() {
     const text = sanitize(input.value).trim();
     if (!text || inflight) return;
@@ -1805,24 +1773,9 @@ const res = await fetch(ENDPOINT, {
   mode: "cors",
 });
 
-
-      // const res = await fetch(ENDPOINT, {
-      //   method: "POST",
-      //   headers: { "Content-Type": "application/json", "x-aiw-site": SITE_ID },
-      //   body: JSON.stringify({ messages: safeMsgs, stream: false, meta: { referrer: location.href, lang: LANG } }),
-      //   signal: controller.signal,
-      //   keepalive: true,
-      //   mode: "cors",
-      // });
-
       const ct = (res.headers.get("content-type") || "").toLowerCase();
 
       if (!ct.includes("text/event-stream")) {
-        // JSON mode
-        // const raw = await res.text();
-        // let reply = "";
-        // try { reply = (JSON.parse(raw) || {}).reply || ""; } catch { reply = raw || ""; }
-        // history.push({ role: "assistant", content: reply || (LANG.startsWith("ru") ? "…" : "…") });
 const raw = await res.text();
  let reply = "";
  let citations = [];
@@ -1831,11 +1784,6 @@ const raw = await res.text();
    reply = obj.reply || ""; 
    citations = Array.isArray(obj.citations) ? obj.citations : [];
  } catch { reply = raw || ""; }
-//  if (citations.length) {
-//    const label = LANG.startsWith("ru") ? "Источники:" : "Sources:";
-//    const list  = citations.map((c,i)=>`[${i+1}] ${c.url}`).join("  ");
-//    reply = `${reply}\n\n${label} ${list}`;
-//  }
 history.push({
   role: "assistant",
   content: reply || (LANG.startsWith("ru") ? "…" : "…"),
@@ -1849,8 +1797,6 @@ history.push({
       }
 
       // SSE mode
-// SSE mode
-// SSE mode
 const msg = { role: "assistant", content: "", ts: Date.now() };
 history.push(msg);
 writeHistory(history);
