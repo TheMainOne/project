@@ -37,7 +37,7 @@ const router = express.Router();
 function topCitations(contexts = []) {
   return (contexts || []).map(c => c.url).filter(Boolean).slice(0, 5);
 }
-
+ 
 // fire-and-forget без падений
 function defer(promiseFactory) {
   try {
@@ -163,6 +163,51 @@ function logLLMMessages(tag, msgs = []) {
   } catch (e) {
     console.error("[AIW][LLM] logLLMMessages error:", e?.message || e);
   }
+}
+
+// === AIW_META helpers (NEW) ===
+const AIW_META_TAG = "[AIW_META]";
+
+function extractAiwMeta(fullText = "") {
+  const text = String(fullText || "");
+  const m = text.match(/\n?\[AIW_META\](\{.*\})\s*$/);
+  if (!m) return { answerText: text.trimEnd(), meta: null };
+
+  const jsonStr = m[1];
+  let meta = null;
+  try { meta = JSON.parse(jsonStr); } catch { meta = null; }
+
+  const answerText = text.replace(/\n?\[AIW_META\]\{.*\}\s*$/s, "").trimEnd();
+  return { answerText, meta };
+}
+
+function normalizeMeta(meta) {
+  if (!meta || typeof meta !== "object") return null;
+  return {
+    answerable: meta.answerable === true,
+    support: String(meta.support || "none"),
+    gap_reason: String(meta.gap_reason || "").slice(0, 300),
+    used_context_ids: Array.isArray(meta.used_context_ids) ? meta.used_context_ids : [],
+    confidence: Math.max(0, Math.min(1, Number(meta.confidence) || 0)),
+  };
+}
+
+function metaSaysGap(metaNorm) {
+  if (!metaNorm) return false;
+  if (metaNorm.answerable === false) return true;
+  if ((metaNorm.support || "none") === "none") return true;
+  return false;
+}
+
+function metaToCitations(metaNorm, contexts = []) {
+  const ids = (metaNorm?.used_context_ids || [])
+    .map(n => Number(n))
+    .filter(n => Number.isFinite(n) && n >= 1 && n <= (contexts?.length || 0));
+
+  return ids
+    .map(id => contexts[id - 1]?.url)
+    .filter(Boolean)
+    .slice(0, 5);
 }
 
 function normalizeLang(code, fallback = "en") {
@@ -300,59 +345,6 @@ function langName(code = "en") {
 }
 
 const EXPLICIT_NOINFO_RE = /(в контексте нет информации|в базе(?: знаний)? нет информации|в справке не указано|в (предоставленной|загруженн(?:ой|ых)) (базе знаний|документах) нет информации|нет информации о\b|нет данных о\b|no (information|info) (in|about|on) (our )?(knowledge base|docs?|documentation|database|records)|there (is|are) no (information|data) (available )?(on|about)|not (listed|specified|documented) (in|within) (the )?(knowledge base|docs?|documentation|database)|we (do not|don't) have (any )?(information|data) (on|about)|no data (on|about)|not available in (our )?(database|documents|docs|knowledge base))/i;
-async function assessGoodAnswer({ oai, model, question, reply, contexts, lang }) {
-  // 1) эвристика до модели
-  const pre = quickHeuristicGood({ phase: null, contexts, reply });
-  if (pre) return pre;
-
-  if (!oai) {
-    // нет ключа — не тормозим пайплайн
-    return { goodAnswer: true, confidence: 0.99, reason: "no-oai" };
-  }
-
-  const prompt = [
-    { role: "system", content:
-`You are a strict QA checker for a retrieval-based assistant.
- Return ONLY valid JSON:
- {"goodAnswer":true|false,"confidence":0..1,"reason":"short text"}
-
- Rules:
- - "goodAnswer": true if the assistant adequately answers the user's question, with specific statements grounded in the retrieved sources. Minor omissions are acceptable if the main question is answered and grounded.
- - If any requested part is missing, refused, vague, generic, or not grounded in the sources, set goodAnswer=false.
- - Refusals like "cannot provide/disclose", "не могу предоставить/раскрыть" MUST be marked goodAnswer=false.
- - Prefer being strict; if unsure, lean to false.` },
-    { role: "user", content:
-`Question:
-"""${question}"""
-
-Assistant reply:
-"""${(reply || "").slice(0, 2000)}"""
-
-Retrieved source URLs:
-${topCitations(contexts).join("\n") || "(none)"}
-
-Return JSON only.`}
-  ];
-
-  try {
-    const r = await oai.chat.completions.create({
-      model: "gpt-5-nano",                 // дешёвая/быстрая - можно протестировать другие модели gpt-5-nano
-      messages: prompt,
-      response_format: { type: "json_object" },
-      temperature: 0
-    });
-    const txt = r.choices?.[0]?.message?.content || "{}";
-    const parsed = JSON.parse(txt);
-    return {
-      goodAnswer: !!parsed.goodAnswer,
-      confidence: Math.max(0, Math.min(1, Number(parsed.confidence) || 0)),
-      reason: String(parsed.reason || "")
-    };
-  } catch (e) {
-    // при ошибке — не блокируем ответ
-    return { goodAnswer: true, confidence: 0.5, reason: "judge-error" };
-  }
-}
 
 export async function logGapIfBad({
   goodAnswer,
@@ -442,6 +434,69 @@ resolvedAt: null,
   }
 }
 
+export async function logGapFromMetaOnly({
+  metaNorm,
+  siteId,
+  sessionId,
+  clientId,
+  question,
+  reply,
+  phase,
+  contexts,
+}) {
+  // meta — единственный источник правды
+  if (!metaNorm) return;
+
+  const isGap = metaSaysGap(metaNorm);
+  if (!isGap) return;
+
+  const normalizedQuestion = (question || "")
+    .toLowerCase()
+    .trim()
+    .replace(/\s+/g, " ");
+  if (!normalizedQuestion) return;
+
+  const safeSiteId = siteId || "UNKNOWN_SITE";
+  const safeSessionId = sessionId || "UNKNOWN_SESSION";
+
+  const filter = {
+    siteId: safeSiteId,
+    sessionId: safeSessionId,
+    normalizedQuestion,
+    resolvedAt: null,
+  };
+
+  const update = {
+    $setOnInsert: {
+      siteId: safeSiteId,
+      sessionId: safeSessionId,
+      clientId: clientId || null,
+      question,
+      normalizedQuestion,
+      createdAt: new Date(),
+      resolvedAt: null,
+    },
+    $set: {
+      answerPreview: (reply || "").slice(0, 1500),
+      phase: phase || "rag-meta",
+      citations: metaToCitations(metaNorm, contexts),
+      judge: {
+        goodAnswer: false,
+        confidence: metaNorm.confidence,
+        reason: metaNorm.gap_reason || `support:${metaNorm.support}`,
+      },
+      lastSeenAt: new Date(),
+      updatedAt: new Date(),
+    },
+  };
+
+  try {
+    const updRes = await AiwGap.updateOne(filter, update, { upsert: true });
+    console.log("[AiwGap][meta] result:", updRes);
+  } catch (e) {
+    console.error("[AiwGap][meta] updateOne ERROR:", e?.name, e?.message, e);
+  }
+}
 
 async function resolveClientIdStrict(req, meta, siteId) {
   // 1) явный x-aiw-client
@@ -515,13 +570,15 @@ function estimateCostUsd(model, inputTokens = 0, outputTokens = 0) {
 const DEFAULT_SYS_RU = `Ты — бот-ассистент этого сайта. Отвечай кратко и дружелюбно.
 - Помогаешь с вопросами о компании, услугах, тарифах, документах и контактах.
 - Если информации не хватает, вежливо уточни 1–2 вопроса.
-- Если пользователь отвечает коротко вроде "да", "давай", "ок", "go", "let's do it" на твоё предложение (например, подготовить быстрый расчёт цены), считай это согласием и продолжай именно эту инициативу: задай уточняющие вопросы, чтобы выполнить предложенное действие.
+- Считай это согласием ТОЛЬКО если сообщение состоит ТОЛЬКО из короткого подтверждения (например "ок", "да", "давай") и НЕ содержит нового вопроса/темы (нет "?", нет дополнительных фраз).
+- Если после "ок" идёт новый вопрос или уточнение — отвечай на новый вопрос.
 - Формат: 2–4 коротких предложения.`;
 
 const DEFAULT_SYS_EN = `You are this site's assistant bot. Respond briefly and friendly.
 - Help with questions about the company, services, rates, documents, and contacts.
 - If information is missing, politely ask 1-2 questions to clarify.
-- If the user responds briefly to your suggestion (e.g., prepare a quick price quote) with a simple "yes," "ok," "go," or "let's do it," consider it consent and continue with that specific initiative: ask clarifying questions to complete the suggested action.
+-Treat it as consent ONLY if the message consists of a short confirmation (for example: "ok", "yes", "sure", "let’s do it") and contains no new question or topic (no “?”, no additional phrases).
+-If after "ok" there is a new question, clarification, or any extra content, respond to that new question instead of proceeding with the previously suggested action.
 - Format: 2-4 short sentences.`;
 
 function defaultNoContextReply(lang = "ru", cfg = {}) {
@@ -1073,8 +1130,10 @@ llmQuery = initialLlmQuery;
 if (intentLabel) res.setHeader("X-AIW-Intent", intentLabel);
 
 // follow-up теперь можно считать безопасно
+const followupText = rawQueryEarly || rawQuery;
+
 isFollowUp = !!lastAssistant && (
-  isShortConfirmation(rawQuery) || isExampleFollowup(rawQuery)
+  isShortConfirmation(followupText) || isExampleFollowup(followupText)
 );
 
 console.log("[AIW][followup]", {
@@ -1397,7 +1456,12 @@ res.setHeader("X-AIW-Good-Answer", String(quickNoCtx.goodAnswer));
     req.on("close", () => { clientClosed = true; });
     req.on("aborted", () => { clientClosed = true; });
 
-    let buffer = "";
+    let buffer = "";       // финальный видимый ответ (без meta)
+let fullBuffer = "";   // полный текст от LLM (включая meta)
+let outBuffer = "";    // что реально отдали пользователю
+let hold = "";         // хвост, чтобы ловить [AIW_META] между чанками
+let metaStarted = false;
+
     let usage = null;
 
     if (!oai) {
@@ -1424,30 +1488,73 @@ res.setHeader("X-AIW-Good-Answer", String(quickNoCtx.goodAnswer));
 
         let firstChunkSent = false;
 
-        for await (const chunk of completion) {
-          if (chunk.usage) {
-            usage = {
-              input:  chunk.usage.prompt_tokens ?? chunk.usage.input_tokens,
-              output: chunk.usage.completion_tokens ?? chunk.usage.output_tokens,
-              total:  chunk.usage.total_tokens,
-            };
-          }
+for await (const chunk of completion) {
+  if (chunk.usage) {
+    usage = {
+      input:  chunk.usage.prompt_tokens ?? chunk.usage.input_tokens,
+      output: chunk.usage.completion_tokens ?? chunk.usage.output_tokens,
+      total:  chunk.usage.total_tokens,
+    };
+  }
 
-          const piece = chunk.choices?.[0]?.delta?.content || "";
-          if (!piece) continue;
+  const piece = chunk.choices?.[0]?.delta?.content || "";
+  if (!piece) continue;
 
-          buffer += piece;
+  fullBuffer += piece;
 
-          if (!clientClosed) {
-            res.write(`data:${sseEncode(piece)}\n\n`);
-            if (!firstChunkSent) {
-              firstChunkSent = true;
-              T.mark("firstChunkFlushed");
-            }
-          }
-        }
+  if (metaStarted) continue;
+
+  hold += piece;
+
+  const idx = hold.indexOf(AIW_META_TAG);
+  if (idx !== -1) {
+    const before = hold.slice(0, idx);
+    if (before) {
+      outBuffer += before;
+      if (!clientClosed) {
+        res.write(`data:${sseEncode(before)}\n\n`);
+        if (!firstChunkSent) { firstChunkSent = true; T.mark("firstChunkFlushed"); }
+      }
+    }
+    metaStarted = true;
+    hold = "";
+    continue;
+  }
+
+  const HOLD_N = 64;
+  if (hold.length > HOLD_N) {
+    const flush = hold.slice(0, hold.length - HOLD_N);
+    hold = hold.slice(hold.length - HOLD_N);
+
+    outBuffer += flush;
+    if (!clientClosed) {
+      res.write(`data:${sseEncode(flush)}\n\n`);
+      if (!firstChunkSent) { firstChunkSent = true; T.mark("firstChunkFlushed"); }
+    }
+  }
+}
+
+// финальный хвост (если meta не встретили)
+if (!metaStarted && hold) {
+  const tail = String(hold).replace(/\s+$/g, ""); // trimEnd, но через regex
+  outBuffer += tail;
+  if (!clientClosed && tail) {
+    res.write(`data:${sseEncode(tail)}\n\n`);
+    if (!firstChunkSent) { firstChunkSent = true; T.mark("firstChunkFlushed"); }
+  }
+}
 
         T.mark("afterLLM");
+
+        const { meta } = extractAiwMeta(fullBuffer);
+const metaNorm = normalizeMeta(meta);
+
+// show AIW_META in debug mode
+  console.log("[AIW][AIW_META][norm]", metaNorm);
+
+
+// финальный видимый ответ (без meta)
+buffer = (outBuffer || "").trim();
 
         if (usage) {
           console.log("[AIW][tokens][no-context-stream]", { model: MODEL, ...usage });
@@ -1482,34 +1589,18 @@ res.setHeader("X-AIW-Good-Answer", String(quickNoCtx.goodAnswer));
       costUsd,
     });
 
-    // deferred judge + gap (как у тебя было)
-    defer(async () => {
-      const judge = await assessGoodAnswer({
-        oai, model: "gpt-5-nano",
-        question: query, reply, contexts: [], lang
-      });
-      const THRESH = Number(process.env.AIW_JUDGE_THRESHOLD || 0.60);
-      const hasSupport = false;
-
-      const ans = reply || "";
-      const explicitNoInfo = EXPLICIT_NOINFO_RE.test(ans);
-      const finalBad =
-        explicitNoInfo ||
-        (judge?.goodAnswer === false) ||
-        (!hasSupport && (judge?.confidence ?? 0) < THRESH);
-
-      const reason =
-        explicitNoInfo ? "no-data-in-kb" :
-        (judge?.goodAnswer === false ? (judge?.reason || "judge-false") :
-        (!hasSupport && (judge?.confidence ?? 0) < THRESH ? "low-confidence" : "ok"));
-
-      await logGapIfBad({
-        goodAnswer: !finalBad,
-        confidence: judge.confidence,
-        reason,
-        siteId, sessionId, clientId, question: query, reply, phase: "no-context", citations: []
-      });
-    });
+defer(async () => {
+  await logGapFromMetaOnly({
+    metaNorm,
+    siteId,
+    sessionId,
+    clientId,
+    question: query,
+    reply: buffer,
+    phase: "rag-meta",
+    contexts,
+  });
+});
 
     if (!clientClosed) {
       res.write("data: [DONE]\n\n");
@@ -1632,8 +1723,15 @@ if (stream) {
       req.on("close", () => { clientClosed = true; });
       req.on("aborted", () => { clientClosed = true; });
 
-      let buffer = "";
-            let usage = null; // 
+let buffer = "";      // финальный видимый ответ (без meta)
+let fullBuffer = "";  // полный текст от LLM (включая meta)
+let outBuffer = "";   // что реально отдали пользователю
+let hold = "";        // хвост для ловли [AIW_META]
+let metaStarted = false;
+let metaNorm = null;
+
+let usage = null;
+
       if (!oai) {
         const demo = replyLangThisTurn.startsWith("ru") ? "Демо-ответ (нет OPENAI_API_KEY)." : "Demo reply (no OPENAI_API_KEY).";
         buffer = demo;
@@ -1658,10 +1756,7 @@ const completion = await oai.chat.completions.create({
 
       let firstChunkSent = false;
 
-
-
 for await (const chunk of completion) {
-  // 👇 если в чанке есть usage — сохраняем
   if (chunk.usage) {
     usage = {
       input:  chunk.usage.prompt_tokens ?? chunk.usage.input_tokens,
@@ -1673,21 +1768,64 @@ for await (const chunk of completion) {
   const piece = chunk.choices?.[0]?.delta?.content || "";
   if (!piece) continue;
 
-  buffer += piece;
+  fullBuffer += piece;
 
-  if (!clientClosed) {
-    res.write(`data:${sseEncode(piece)}\n\n`);
+  if (metaStarted) continue;
 
-    if (!firstChunkSent) {
-      firstChunkSent = true;
-      T.mark("firstChunkFlushed");
+  hold += piece;
+
+  const idx = hold.indexOf(AIW_META_TAG);
+  if (idx !== -1) {
+    const before = hold.slice(0, idx);
+    if (before) {
+      outBuffer += before;
+      if (!clientClosed) {
+        res.write(`data:${sseEncode(before)}\n\n`);
+        if (!firstChunkSent) { firstChunkSent = true; T.mark("firstChunkFlushed"); }
+      }
+    }
+    metaStarted = true;
+    hold = "";
+    continue;
+  }
+
+  const HOLD_N = 64;
+  if (hold.length > HOLD_N) {
+    const flush = hold.slice(0, hold.length - HOLD_N);
+    hold = hold.slice(hold.length - HOLD_N);
+
+    outBuffer += flush;
+    if (!clientClosed) {
+      res.write(`data:${sseEncode(flush)}\n\n`);
+      if (!firstChunkSent) { firstChunkSent = true; T.mark("firstChunkFlushed"); }
     }
   }
 }
 
+// финальный хвост (если meta не встретили)
+if (!metaStarted && hold) {
+  const tail = String(hold).replace(/\s+$/g, "");
+  outBuffer += tail;
+  if (!clientClosed && tail) {
+    res.write(`data:${sseEncode(tail)}\n\n`);
+    if (!firstChunkSent) { firstChunkSent = true; T.mark("firstChunkFlushed"); }
+  }
+}
+
+
 T.mark("afterLLM");
 
-// 👇 Логируем токены после завершения стрима
+const { meta } = extractAiwMeta(fullBuffer);
+metaNorm = normalizeMeta(meta);
+
+// show AIW_META in debug mode
+  console.log("[AIW][AIW_META][norm]", metaNorm);
+
+
+// финальный видимый ответ (без meta)
+buffer = (outBuffer || "").trim();
+
+// Логируем токены после завершения стрима
 if (usage) {
   console.log("[AIW][tokens][rag-stream]", {
     model: MODEL,
@@ -1706,9 +1844,6 @@ if (usage) {
 let tokensOutput = usage?.output ?? null;
 let tokensTotal  = usage?.total  ?? null;
 const costUsd    = estimateCostUsd(MODEL, tokensInput, tokensOutput);
-
-
-
 
  // 🔥 LEAD: llm_signal + обработка действий прямо в SSE-ветке
   let extraLeadMessages = [];
@@ -1781,6 +1916,19 @@ await logAssistantMessage({
   costUsd,
 });
 
+defer(async () => {
+  await logGapFromMetaOnly({
+    metaNorm,
+    siteId,
+    sessionId,
+    clientId,
+    question: query,
+    reply: buffer,
+    phase: "rag-meta",
+    contexts,
+  });
+});
+
       T.mark("logAssistantMessage");
       dbMark = "user:+ assistant:+";
       const timings = T.get();
@@ -1816,59 +1964,6 @@ console.log("[AIW][timings]", JSON.stringify({
         res.end();
       }
 
-defer(async () => {
-  const judge = await assessGoodAnswer({
-    oai,
-    model: "gpt-5-nano",
-    question: query,
-    reply: buffer,
-    contexts,
-    lang: replyLangThisTurn,
-  });
-
-  const THRESH = Number(process.env.AIW_JUDGE_THRESHOLD || 0.60);
-
-  const ans = buffer || "";
-  const explicitNoInfo = EXPLICIT_NOINFO_RE.test(ans);
-
-  let hasSupport =
-    (citations?.length || 0) > 0 ||
-    (contexts?.length || 0) > 0;
-
-  // если явно сказано, что в базе/документах нет информации — считаем, что опоры нет
-  if (explicitNoInfo) {
-    hasSupport = false;
-  }
-
-  const finalBad =
-    explicitNoInfo ||
-    (judge?.goodAnswer === false) ||
-    (!hasSupport && (judge?.confidence ?? 0) < THRESH);
-
-  const reason =
-    explicitNoInfo
-      ? "no-data-in-kb"
-      : (judge?.goodAnswer === false
-          ? (judge?.reason || "judge-false")
-          : (!hasSupport && (judge?.confidence ?? 0) < THRESH
-              ? "low-confidence"
-              : "ok"));
-
-  await logGapIfBad({
-    goodAnswer: !finalBad,
-    confidence: judge.confidence,
-    reason,
-    siteId,
-    sessionId,
-    clientId,
-    question: query,
-    reply: buffer,
-    phase,
-    citations,
-  });
-});
-
-
       return;
     } else {
       // ---- JSON ----
@@ -1903,7 +1998,24 @@ const completion = await oai.chat.completions.create({
     });
   }
 
-  reply = completion.choices?.[0]?.message?.content?.trim() || reply;
+  const raw = completion.choices?.[0]?.message?.content || "";
+const { answerText, meta } = extractAiwMeta(raw);
+const metaNorm = normalizeMeta(meta);
+
+reply = (answerText || "").trim() || reply;
+
+defer(async () => {
+  await logGapFromMetaOnly({
+    metaNorm,
+    siteId,
+    sessionId,
+    clientId,
+    question: query,
+    reply,
+    phase: "rag-meta",
+    contexts,
+  });
+});
 }
 T.mark("afterLLM");
 timing.llm = T.get().afterLLM - T.get().beforeLLM;
@@ -1985,58 +2097,6 @@ console.log("[AIW][timings]", JSON.stringify({
  setJSONHeaders(req, res);
  const quick = quickFlag({ phase, contexts, reply });
  res.setHeader("X-AIW-Good-Answer", String(quick.goodAnswer));
-
- defer(async () => {
-  const judge = await assessGoodAnswer({
-    oai,
-    model: "gpt-5-nano",
-    question: query,
-    reply,
-    contexts,
-    lang: replyLangThisTurn,
-  });
-
-  const THRESH = Number(process.env.AIW_JUDGE_THRESHOLD || 0.60);
-
-  const ans = reply || "";
-  const explicitNoInfo = EXPLICIT_NOINFO_RE.test(ans);
-
-  let hasSupport =
-    (citations?.length || 0) > 0 ||
-    (contexts?.length || 0) > 0;
-
-  if (explicitNoInfo) {
-    hasSupport = false;
-  }
-
-  const finalBad =
-    explicitNoInfo ||
-    (judge?.goodAnswer === false) ||
-    (!hasSupport && (judge?.confidence ?? 0) < THRESH);
-
-  const reason =
-    explicitNoInfo
-      ? "no-data-in-kb"
-      : (judge?.goodAnswer === false
-          ? (judge?.reason || "judge-false")
-          : (!hasSupport && (judge?.confidence ?? 0) < THRESH
-              ? "low-confidence"
-              : "ok"));
-
-  await logGapIfBad({
-    goodAnswer: !finalBad ? true : false,
-    confidence: judge.confidence,
-    reason,
-    siteId,
-    sessionId,
-    clientId,
-    question: query,
-    reply,
-    phase,
-    citations,
-  });
-});
-
 
  return sendJSON(req, res, {
    reply, source: "rag", citations,

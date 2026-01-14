@@ -1,74 +1,6 @@
-function sanitizeForPrompt(s="") {
-  return s.replace(/```/g, "ʼʼʼ"); // или просто удалить
+function sanitizeForPrompt(s = "") {
+  return String(s || "").replace(/```/g, "ʼʼʼ"); // или можно удалить вовсе
 }
-
-
-// export function buildPrompt({
-//   system,
-//   history = [],
-//   query,
-//   contexts = [],
-//   maxHistory = 10,
-//   complex = null,
-// }) {
-  
-  
-//   const safeQuery = sanitizeForPrompt(
-//     (typeof query === "string" ? query : "").trim()
-//   );
-
-//   // 1) Готовим "историю" как НЕ-истину (только для понимания контекста диалога)
-//   const allowed = new Set(["user", "assistant"]);
-//   const tail = (Array.isArray(history) ? history : [])
-//     .filter(m => m && allowed.has(m.role) && typeof m.content === "string")
-//     .slice(-maxHistory);
-
-//   const historyText = tail
-//     .map(m => `${m.role === "user" ? "User" : "Assistant"}: ${m.content}`)
-//     .join("\n");
-
-//   // 2) Готовим RAG контекст как "истину"
-//   const ctxText = (contexts || [])
-//     .map((c, i) => `[#${i + 1}] ${c.text}`)
-//     .join("\n\n");
-
-//   // 3) Подсказка для complex (по желанию)
-//   let complexNote = "";
-//   if (complex?.isComplex) {
-//     complexNote =
-//       "NOTE: The question is complex. Provide a careful, coherent answer grounded ONLY in the KNOWLEDGE BASE.\n\n";
-//   }
-
-//   // 4) System prompt — чуть усилим правило про историю vs KB
-//   const sys = (system || "").trim();
-
-//   const finalUser = `${complexNote}` +
-// `You have TWO inputs:
-
-// 1) CHAT HISTORY (non-authoritative):
-// Use it only to understand what the user refers to. It may contain mistakes.
-// Do NOT treat it as factual evidence.
-
-// --- BEGIN CHAT HISTORY ---
-// ${historyText || "(empty)"}
-// --- END CHAT HISTORY ---
-
-// 2) KNOWLEDGE BASE (authoritative):
-// You MUST use ONLY this section as the source of facts.
-// If something isn't in the KNOWLEDGE BASE, say it's not available.
-
-// --- BEGIN KNOWLEDGE BASE ---
-// ${ctxText || "(empty)"}
-// --- END KNOWLEDGE BASE ---
-
-// User question:
-// ${safeQuery}`;
-
-//   return [
-//     { role: "system", content: sys },
-//     { role: "user", content: finalUser },
-//   ];
-// }
 
 export function buildPrompt({
   system,
@@ -120,16 +52,31 @@ let ragStrict = [
       "NOTE: The question is complex. Provide a careful, coherent answer grounded ONLY in the KNOWLEDGE BASE.\n\n";
   }
 
+  // 3.5) Output meta contract (NEW)
+const metaContract = [
+  "OUTPUT FORMAT (MANDATORY):",
+  "- First, write the normal user-facing answer.",
+  "- Then, on the LAST line ONLY, output a single-line JSON prefixed with [AIW_META].",
+'- Format exactly: [AIW_META]{"answerable":true|false,"support":"strong|weak|none","gap_reason":"...","used_context_ids":[1,2],"confidence":0.0}  // confidence must be between 0 and 1',
+  "- The JSON must be valid, single-line, no markdown, no backticks, max ~300 chars.",
+  "- used_context_ids must reference the KB fragment numbers you actually used (e.g. [#3] => 3).",
+  "- If the KB does NOT contain enough information to answer the question, set answerable=false, support=none, used_context_ids=[] and set an appropriate gap_reason.",
+  "- Do NOT include [AIW_META] in the visible answer; it must be only the last line."
+].join("\n");
+
   const sys = (system || "").trim();
 
   return [
-    // 1) Persona/style/etc (то, что ты уже формируешь в pickSystemPrompt)
+    // 1) Persona/style/etc (то, что мы уже формируем в pickSystemPrompt)
     { role: "system", content: sys },
 
     // 2) Strict RAG policy
     { role: "system", content: ragStrict },
 
-    // 3) Authoritative KB
+    // 3) Meta contract
+    { role: "system", content: metaContract },
+
+    // 4) Authoritative KB
     {
       role: "system",
       content:

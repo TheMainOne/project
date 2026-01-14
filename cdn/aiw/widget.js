@@ -1398,7 +1398,8 @@ function linkify(html) {
 }
 
 function renderMarkdownBasic(text) {
-  let html = escapeHtml(text || "");
+  const cleaned = String(text || "").replace(/\s+$/g, "");
+  let html = escapeHtml(cleaned);
 
   // Заголовки markdown: ###, ##, #
   html = html.replace(/^###\s+(.+)$/gm, "<div class=\"aiw-h3\">$1</div>");

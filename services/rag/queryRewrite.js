@@ -11,28 +11,39 @@ export function detectLangFromText(text, fallback = "ru") {
   return fallback;
 }
 
+// services/rag/queryRewrite.js
+
 export function isShortConfirmation(text) {
-  const q = (text || "").trim().toLowerCase();
+  const q = String(text || "").trim().toLowerCase();
   if (!q) return false;
 
-  const variants = [
-    // EN
-    "yes", "yep", "yeah", "sure",
-    "ok", "okay",
-    "go", "let's go", "let's do it",
+  // если есть вопросительный знак — это почти всегда НЕ ack
+  if (q.includes("?")) return false;
 
+  // убираем только завершающую пунктуацию (но НЕ запятые внутри)
+  const cleaned = q.replace(/[!.…]+$/g, "").trim();
+
+  // ВАЖНО: ack должен быть "вся строка = ack", а не "начинается с ack"
+  const ACK = new Set([
     // RU
-    "да", "ага", "угу",
-    "ок", "окей",
-    "давай", "поехали", "го",
-  ];
+    "да", "ага", "ок", "оки", "хорошо", "ладно", "давай", "поехали",
+    // EN
+    "yes", "yep", "yeah", "ok", "okay", "sure", "go", "let's go", "lets go"
+  ]);
 
-  return variants.some((w) =>
-    q === w ||
-    q.startsWith(w + "!") ||
-    q.startsWith(w + ".") ||
-    q.startsWith(w + ",")
-  );
+  if (ACK.has(cleaned)) return true;
+
+  // Допускаем супер-короткие сочетания типа "ок давай" / "да ок" (2 слова)
+  const parts = cleaned.split(/\s+/).filter(Boolean);
+  if (parts.length <= 2) {
+    const joined = parts.join(" ");
+    const ALLOW_2 = new Set([
+      "ок давай", "да ок", "давай ок", "ok go", "ok sure"
+    ]);
+    if (ALLOW_2.has(joined)) return true;
+  }
+
+  return false;
 }
 
 export function isExampleFollowup(text = "") {
@@ -469,8 +480,8 @@ if (specialMode.examples && lastAssistant) {
     .filter((m) => m.role === "user" || m.role === "assistant")
     .slice(-maxHistory);
 
-// ✅ dynamic targetLang: ищем на языке пользователя (если уверенность норм), иначе на uiLang
-let targetLang = normalizeLang(lang, normalizeLang(uiLang, "ru"));
+// RAG search query always in English (documents are EN)
+let targetLang = "en";
 
 let out = {
   searchQuery: ragQuery,
