@@ -7,6 +7,7 @@ aiw widget v0.1.0
   const CFG = (window.__AIW_CONFIG__ || {});
   const STREAM = (typeof CFG.stream === "boolean") ? CFG.stream : true;
 const RAW_FONT_FAMILY = (CFG.fontFamily || "").trim();       // может быть ""
+const FONT_FILE_URL   = (CFG.fontFileUrl || "").trim() || null;
 const FONT_CSS_URL    = (CFG.fontCssUrl || "").trim() || null;
 
   // --- НОВОЕ: ширина окна (для inline это ширина iframe) ---
