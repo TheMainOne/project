@@ -347,8 +347,7 @@ style.textContent = `
   box-shadow:0 14px 44px rgba(0,0,0,.25);
   border:1px solid ${THEME.border}22;
 
-  /* чтобы скролл не “цеплялся” к странице */
-  overscroll-behavior: contain;
+${INLINE ? "overscroll-behavior: auto;" : "overscroll-behavior: contain;"}
 }
 
 
@@ -497,8 +496,6 @@ style.textContent = `
   overflow-y: auto;
   overflow-x: hidden;
 
-  /* помогает Safari держать плавность */
-  -webkit-transform: translateZ(0);
     -webkit-overflow-scrolling: touch; /* нормальная инерция на iOS */
 overscroll-behavior-y: auto;
   touch-action: pan-y;               /* явно разрешаем вертикальный пан */
@@ -954,7 +951,7 @@ ${INLINE ? `
 @media (max-width: 480px) {
 
   .aiw-bubble { box-shadow: none !important; }
-  
+
   .aiw-panel {
     height: 70svh;
     max-height: 70svh;
@@ -1223,18 +1220,19 @@ function enableIOSSrollTrap(scrollEl) {
     }
   }, { passive: false });
 }
-let scrollTicking = false;
+let _scrollTick = false;
 
 body.addEventListener("scroll", () => {
   if (ignoreScroll) return;
-  if (scrollTicking) return;
+  if (_scrollTick) return;
 
-  scrollTicking = true;
+  _scrollTick = true;
   requestAnimationFrame(() => {
-    scrollTicking = false;
+    _scrollTick = false;
     userPinnedToBottom = isNearBottom();
   });
 }, { passive: true });
+
 
 
 body.addEventListener("touchstart", () => {
@@ -1251,15 +1249,6 @@ body.addEventListener("touchcancel", () => {
   if (userTouchTimer) clearTimeout(userTouchTimer);
   userTouchScrolling = false;
 }, { passive: true });
-
-
-// В float-режиме скролл страницы уже заблокирован через lockPageScroll(),
-// поэтому iOS-trap может иногда "убивать" скролл в виджете.
-// Оставляем trap только для INLINE (iframe).
-if (IS_MOBILE && !INLINE) {
-  enableIOSSrollTrap(body);
-}
-
 
   const footerMeta = document.createElement("div");
 footerMeta.className = "aiw-footer-meta";
