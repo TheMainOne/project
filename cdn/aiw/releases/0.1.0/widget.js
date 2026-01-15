@@ -1164,6 +1164,17 @@ const SCROLL_STICKY_THRESHOLD = 24;
 let userPinnedToBottom = true;
 let userTouchScrolling = false;
 let userTouchTimer = null;
+const IS_IOS = (() => {
+  const ua = navigator.userAgent || "";
+  const iOS = /iP(ad|hone|od)/.test(ua);
+  const iPadOS = (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+  return iOS || iPadOS;
+})();
+
+const PARENT_ORIGIN = (() => {
+  try { return new URL(document.referrer).origin; } catch { return "*"; }
+})();
+
 
 
 let ignoreScroll = false;   // чтобы scroll от наших scrollTop не сбивал флаг
@@ -1188,38 +1199,75 @@ function scrollToBottom(force = false) {
   });
 }
 
-// ===== iOS scroll trap for nested scroll (prevents rubber-band at edges) =====
-function enableIOSSrollTrap(scrollEl) {
-  let startY = 0;
+function enableScrollBridge(scrollEl) {
+  let lastY = 0;
+  let raf = null;
+  let acc = 0;
 
-  function isScrollable() {
-    return scrollEl.scrollHeight > (scrollEl.clientHeight + 2);
+  function flush() {
+    raf = null;
+    if (!acc) return;
+    try {
+      if (window.parent && window.parent !== window) {
+        window.parent.postMessage({ type: "aiw:scrollBy", deltaY: acc }, PARENT_ORIGIN);
+      }
+    } catch {}
+    acc = 0;
+  }
+
+  function enqueue(deltaY) {
+    acc += deltaY;
+    if (!raf) raf = requestAnimationFrame(flush);
   }
 
   scrollEl.addEventListener("touchstart", (e) => {
-    if (!e.touches || !e.touches.length) return;
-    startY = e.touches[0].clientY;
+    if (!e.touches || e.touches.length !== 1) return;
+    lastY = e.touches[0].clientY;
   }, { passive: true });
 
+  // ВАЖНО: passive:false, но preventDefault делаем ТОЛЬКО когда реально "перекидываем" скролл наружу.
   scrollEl.addEventListener("touchmove", (e) => {
     if (!e.touches || e.touches.length !== 1) return;
 
-    // ✅ если внутри нет скролла — НЕ трогаем жест вообще, пусть скроллится страница
-    if (!isScrollable()) return;
-
     const y = e.touches[0].clientY;
-    const dy = y - startY;
+    const deltaY = lastY - y; // >0 палец вверх => скролл вниз (как wheel)
+    lastY = y;
 
     const atTop = scrollEl.scrollTop <= 0;
     const atBottom = (scrollEl.scrollTop + scrollEl.clientHeight) >= (scrollEl.scrollHeight - 1);
 
-    // ⚠️ блокируем только “резиновый” выход, когда реально есть внутренний скролл
-    if ((atTop && dy > 0) || (atBottom && dy < 0)) {
+    // хотим "перекинуть" только когда упёрлись и тянем наружу
+    const wantsUpOutside = atTop && deltaY < 0;     // палец вниз => страница вверх
+    const wantsDownOutside = atBottom && deltaY > 0; // палец вверх => страница вниз
+
+    if (wantsUpOutside || wantsDownOutside) {
+      e.preventDefault(); // стопим резиновый дерг внутри iframe
+      enqueue(deltaY);    // и скроллим родителя
+    }
+  }, { passive: false });
+
+  // Для ноутбуков/трекпада — тоже самое на wheel
+  scrollEl.addEventListener("wheel", (e) => {
+    const deltaY = e.deltaY || 0;
+    if (!deltaY) return;
+
+    const atTop = scrollEl.scrollTop <= 0;
+    const atBottom = (scrollEl.scrollTop + scrollEl.clientHeight) >= (scrollEl.scrollHeight - 1);
+
+    const wantsUpOutside = atTop && deltaY < 0;
+    const wantsDownOutside = atBottom && deltaY > 0;
+
+    if (wantsUpOutside || wantsDownOutside) {
       e.preventDefault();
-      e.stopPropagation();
+      enqueue(deltaY);
     }
   }, { passive: false });
 }
+
+if (INLINE && IS_IOS) {
+  enableScrollBridge(body);
+}
+
 let _scrollTick = false;
 
 body.addEventListener("scroll", () => {
@@ -1586,7 +1634,10 @@ function postHeight() {
   scrollToBottom(true); 
 
   try {
-  const ro = new ResizeObserver(() => postHeight());
+const ro = new ResizeObserver(() => {
+  if (userTouchScrolling) return; // не дёргаем родителя во время свайпа
+  postHeight();
+});
   ro.observe(document.documentElement);
 } catch {}
 
