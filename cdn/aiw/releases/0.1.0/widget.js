@@ -952,6 +952,9 @@ ${INLINE ? `
 ` : ""}
 /* --- RESPONSIVE (работает и в float, и в inline) --- */
 @media (max-width: 480px) {
+
+  .aiw-bubble { box-shadow: none !important; }
+  
   .aiw-panel {
     height: 70svh;
     max-height: 70svh;
