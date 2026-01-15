@@ -1209,8 +1209,9 @@ function enableIOSSrollTrap(scrollEl) {
     // Если тянем вниз на верхней границе или вверх на нижней — не даём iOS “передать” скролл странице
     if ((atTop && dy > 0) || (atBottom && dy < 0)) {
       e.preventDefault();   // важно: passive:false
+      e.stopPropagation();
     }
-    e.stopPropagation();
+
   }, { passive: false });
 }
 
@@ -1236,9 +1237,13 @@ body.addEventListener("touchcancel", () => {
 }, { passive: true });
 
 
-if (IS_MOBILE) {
+// В float-режиме скролл страницы уже заблокирован через lockPageScroll(),
+// поэтому iOS-trap может иногда "убивать" скролл в виджете.
+// Оставляем trap только для INLINE (iframe).
+if (IS_MOBILE && INLINE) {
   enableIOSSrollTrap(body);
 }
+
 
   const footerMeta = document.createElement("div");
 footerMeta.className = "aiw-footer-meta";
