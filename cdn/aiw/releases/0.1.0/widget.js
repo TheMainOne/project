@@ -494,7 +494,11 @@ style.textContent = `
     font-family:${BASE_FONT_STACK};
   font-size:${BASE_FONT_SIZE}px;
   background:${THEME.panel};
+  overflow-y: auto;
+  overflow-x: hidden;
 
+  /* помогает Safari держать плавность */
+  -webkit-transform: translateZ(0);
     -webkit-overflow-scrolling: touch; /* нормальная инерция на iOS */
 overscroll-behavior-y: auto;
   touch-action: pan-y;               /* явно разрешаем вертикальный пан */
@@ -1216,13 +1220,19 @@ function enableIOSSrollTrap(scrollEl) {
     }
   }, { passive: false });
 }
-
-
+let scrollTicking = false;
 
 body.addEventListener("scroll", () => {
   if (ignoreScroll) return;
-  userPinnedToBottom = isNearBottom();
+  if (scrollTicking) return;
+
+  scrollTicking = true;
+  requestAnimationFrame(() => {
+    scrollTicking = false;
+    userPinnedToBottom = isNearBottom();
+  });
 }, { passive: true });
+
 
 body.addEventListener("touchstart", () => {
   userTouchScrolling = true;
@@ -1243,7 +1253,7 @@ body.addEventListener("touchcancel", () => {
 // В float-режиме скролл страницы уже заблокирован через lockPageScroll(),
 // поэтому iOS-trap может иногда "убивать" скролл в виджете.
 // Оставляем trap только для INLINE (iframe).
-if (IS_MOBILE && INLINE) {
+if (IS_MOBILE && !INLINE) {
   enableIOSSrollTrap(body);
 }
 
@@ -1563,16 +1573,22 @@ scrollToBottom(false);
   postHeight();
 }
 
+let _postHeightRaf = null;
 
 function postHeight() {
   try {
-    if (FIT_MODE === "container") return; // родитель сам управляет высотой
-    if (window.parent && window.parent !== window) {
+    if (FIT_MODE === "container") return;
+    if (!(window.parent && window.parent !== window)) return;
+
+    if (_postHeightRaf) return;
+    _postHeightRaf = requestAnimationFrame(() => {
+      _postHeightRaf = null;
       const h = document.documentElement.scrollHeight;
       window.parent.postMessage({ type: "aiw:resize", height: h }, "*");
-    }
+    });
   } catch {}
 }
+
 
   renderAll();
   scrollToBottom(true); 
