@@ -310,11 +310,11 @@ style.textContent = `
    40%{transform:scale(1);opacity:1}
  }
 
- .aiw-wrap{
-   position:fixed;
-   z-index:2147483000;
-   bottom:20px;
- }
+.aiw-wrap{
+  position:fixed;
+  z-index:2147483000;
+  bottom: calc(20px + env(safe-area-inset-bottom));
+}
 
 .aiw-btn{
   width:56px;height:56px;border-radius:50%;border:none;cursor:pointer;
@@ -325,22 +325,36 @@ style.textContent = `
     font-family:${BASE_FONT_STACK};
 }
 
- .aiw-panel{
-   position:absolute;
-   bottom:70px;
-   width:360px;
-   max-width:80vw;
-   height:480px;
-   max-height:70vh;
-   display:none;
-   flex-direction:column;
-   background:${THEME.panel};
-   color:${THEME.text};
-   border-radius:16px;
-   overflow:hidden;
-   box-shadow:0 14px 44px rgba(0,0,0,.25);
-   border:1px solid ${THEME.border}22;
- }
+.aiw-panel{
+  position:absolute;
+  bottom: calc(70px + env(safe-area-inset-bottom));
+  width:360px;
+  max-width:80vw;
+
+  height:480px;
+
+  /* fallback для старых браузеров */
+  max-height:70vh;
+  /* стабильная высота на мобилках (iOS/Safari) */
+  max-height:70svh;
+
+  display:none;
+  flex-direction:column;
+  background:${THEME.panel};
+  color:${THEME.text};
+  border-radius:16px;
+  overflow:hidden;
+  box-shadow:0 14px 44px rgba(0,0,0,.25);
+  border:1px solid ${THEME.border}22;
+
+  /* чтобы скролл не “цеплялся” к странице */
+  overscroll-behavior: contain;
+
+  /* мелкий буст против дерганий */
+  will-change: transform;
+  transform: translateZ(0);
+}
+
 
 .aiw-header-brand{
   display:flex;
@@ -485,6 +499,9 @@ style.textContent = `
   font-size:${BASE_FONT_SIZE}px;
   background:${THEME.panel};
 
+    -webkit-overflow-scrolling: touch; /* нормальная инерция на iOS */
+  overscroll-behavior-y: contain;    /* не отдавать скролл странице */
+  touch-action: pan-y;               /* явно разрешаем вертикальный пан */
   scrollbar-width:thin;
   scrollbar-color:${THEME.bubbleBorder} transparent;
 }
@@ -935,6 +952,10 @@ ${INLINE ? `
 ` : ""}
 /* --- RESPONSIVE (работает и в float, и в inline) --- */
 @media (max-width: 480px) {
+  .aiw-panel {
+    height: 70svh;
+    max-height: 70svh;
+  }
  .aiw-body { font-size: 14px !important; }
   .aiw-header { font-size: 18px !important; }
 
