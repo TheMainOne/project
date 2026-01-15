@@ -349,10 +349,6 @@ style.textContent = `
 
   /* чтобы скролл не “цеплялся” к странице */
   overscroll-behavior: contain;
-
-  /* мелкий буст против дерганий */
-  will-change: transform;
-  transform: translateZ(0);
 }
 
 
@@ -500,7 +496,7 @@ style.textContent = `
   background:${THEME.panel};
 
     -webkit-overflow-scrolling: touch; /* нормальная инерция на iOS */
-  overscroll-behavior-y: contain;    /* не отдавать скролл странице */
+overscroll-behavior-y: auto;
   touch-action: pan-y;               /* явно разрешаем вертикальный пан */
   scrollbar-width:thin;
   scrollbar-color:${THEME.bubbleBorder} transparent;
