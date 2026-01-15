@@ -1188,6 +1188,10 @@ function scrollToBottom(force = false) {
 function enableIOSSrollTrap(scrollEl) {
   let startY = 0;
 
+  function isScrollable() {
+    return scrollEl.scrollHeight > (scrollEl.clientHeight + 2);
+  }
+
   scrollEl.addEventListener("touchstart", (e) => {
     if (!e.touches || !e.touches.length) return;
     startY = e.touches[0].clientY;
@@ -1196,20 +1200,23 @@ function enableIOSSrollTrap(scrollEl) {
   scrollEl.addEventListener("touchmove", (e) => {
     if (!e.touches || e.touches.length !== 1) return;
 
+    // ✅ если внутри нет скролла — НЕ трогаем жест вообще, пусть скроллится страница
+    if (!isScrollable()) return;
+
     const y = e.touches[0].clientY;
     const dy = y - startY;
 
     const atTop = scrollEl.scrollTop <= 0;
     const atBottom = (scrollEl.scrollTop + scrollEl.clientHeight) >= (scrollEl.scrollHeight - 1);
 
-    // Если тянем вниз на верхней границе или вверх на нижней — не даём iOS “передать” скролл странице
+    // ⚠️ блокируем только “резиновый” выход, когда реально есть внутренний скролл
     if ((atTop && dy > 0) || (atBottom && dy < 0)) {
-      e.preventDefault();   // важно: passive:false
+      e.preventDefault();
       e.stopPropagation();
     }
-
   }, { passive: false });
 }
+
 
 
 body.addEventListener("scroll", () => {
