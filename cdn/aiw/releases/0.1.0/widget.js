@@ -1162,6 +1162,9 @@ footer.appendChild(inputWrap);
 
 const SCROLL_STICKY_THRESHOLD = 24; 
 let userPinnedToBottom = true;
+let userTouchScrolling = false;
+let userTouchTimer = null;
+
 
 let ignoreScroll = false;   // чтобы scroll от наших scrollTop не сбивал флаг
 let scrollRaf = null;       // чтобы не дергать scroll на каждый чанк
@@ -1171,6 +1174,7 @@ function isNearBottom() {
 }
 
 function scrollToBottom(force = false) {
+    if (!force && userTouchScrolling) return;     // ← не мешаем пальцу
   if (!(force || userPinnedToBottom)) return;
 
   if (scrollRaf) return;
@@ -1184,11 +1188,57 @@ function scrollToBottom(force = false) {
   });
 }
 
+// ===== iOS scroll trap for nested scroll (prevents rubber-band at edges) =====
+function enableIOSSrollTrap(scrollEl) {
+  let startY = 0;
+
+  scrollEl.addEventListener("touchstart", (e) => {
+    if (!e.touches || !e.touches.length) return;
+    startY = e.touches[0].clientY;
+  }, { passive: true });
+
+  scrollEl.addEventListener("touchmove", (e) => {
+    if (!e.touches || e.touches.length !== 1) return;
+
+    const y = e.touches[0].clientY;
+    const dy = y - startY;
+
+    const atTop = scrollEl.scrollTop <= 0;
+    const atBottom = (scrollEl.scrollTop + scrollEl.clientHeight) >= (scrollEl.scrollHeight - 1);
+
+    // Если тянем вниз на верхней границе или вверх на нижней — не даём iOS “передать” скролл странице
+    if ((atTop && dy > 0) || (atBottom && dy < 0)) {
+      e.preventDefault();   // важно: passive:false
+    }
+    e.stopPropagation();
+  }, { passive: false });
+}
+
+
 body.addEventListener("scroll", () => {
   if (ignoreScroll) return;
   userPinnedToBottom = isNearBottom();
 }, { passive: true });
 
+body.addEventListener("touchstart", () => {
+  userTouchScrolling = true;
+  if (userTouchTimer) clearTimeout(userTouchTimer);
+}, { passive: true });
+
+body.addEventListener("touchend", () => {
+  if (userTouchTimer) clearTimeout(userTouchTimer);
+  userTouchTimer = setTimeout(() => { userTouchScrolling = false; }, 120);
+}, { passive: true });
+
+body.addEventListener("touchcancel", () => {
+  if (userTouchTimer) clearTimeout(userTouchTimer);
+  userTouchScrolling = false;
+}, { passive: true });
+
+
+if (IS_MOBILE) {
+  enableIOSSrollTrap(body);
+}
 
   const footerMeta = document.createElement("div");
 footerMeta.className = "aiw-footer-meta";
@@ -1526,22 +1576,87 @@ function postHeight() {
 
 let open = INLINE ? true : false;
 
+// ===== MOBILE SCROLL LOCK (fix iOS rubber-band / page-jank) =====
+const _aiwLock = {
+  locked: false,
+  y: 0,
+  body: {}
+};
+
+function lockPageScroll() {
+  if (INLINE) return;          // inline не трогаем
+  if (!IS_MOBILE) return;
+  if (_aiwLock.locked) return;
+
+  _aiwLock.locked = true;
+  _aiwLock.y = window.scrollY || window.pageYOffset || 0;
+
+  const b = document.body;
+  _aiwLock.body = {
+    position: b.style.position,
+    top: b.style.top,
+    left: b.style.left,
+    right: b.style.right,
+    width: b.style.width,
+    overflow: b.style.overflow,
+    touchAction: b.style.touchAction
+  };
+
+  b.style.position = "fixed";
+  b.style.top = `-${_aiwLock.y}px`;
+  b.style.left = "0";
+  b.style.right = "0";
+  b.style.width = "100%";
+  b.style.overflow = "hidden";
+  b.style.touchAction = "none"; // блокируем фоновые pan-жесты
+}
+
+function unlockPageScroll() {
+  if (INLINE) return;
+  if (!IS_MOBILE) return;
+  if (!_aiwLock.locked) return;
+
+  const b = document.body;
+  const s = _aiwLock.body || {};
+
+  b.style.position = s.position || "";
+  b.style.top = s.top || "";
+  b.style.left = s.left || "";
+  b.style.right = s.right || "";
+  b.style.width = s.width || "";
+  b.style.overflow = s.overflow || "";
+  b.style.touchAction = s.touchAction || "";
+
+  _aiwLock.locked = false;
+
+  window.scrollTo(0, _aiwLock.y || 0);
+}
+
 if (!INLINE) {
-  btn.addEventListener("click", () => {
-    open = !open;
-    panel.style.display = open ? "flex" : "none";
-    if (open) {
-      if (RESET_HISTORY_ON_OPEN) {
-        try { localStorage.removeItem(storeKey); } catch {}
-        try { sessionStorage.removeItem(USER_INTERACTED_KEY); } catch {}
-        history = [];
-        writeHistory(history);
-        renderAll();
-      }
-      setTimeout(() => input.focus(), 0);
+btn.addEventListener("click", () => {
+  open = !open;
+  panel.style.display = open ? "flex" : "none";
+
+  if (open) lockPageScroll();
+  else unlockPageScroll();
+
+  if (open) {
+    if (RESET_HISTORY_ON_OPEN) {
+      try { localStorage.removeItem(storeKey); } catch {}
+      try { sessionStorage.removeItem(USER_INTERACTED_KEY); } catch {}
+      history = [];
+      writeHistory(history);
+      renderAll();
     }
-  });
-  close.addEventListener("click", () => { open = false; panel.style.display = "none"; });
+    setTimeout(() => input.focus(), 0);
+  }
+});
+
+close.addEventListener("click", () => {
+  open = false;
+  panel.style.display = "none";
+  unlockPageScroll();
+});
 } else {
   // в inline закрывашку можно спрятать или оставить — на твой вкус
   close.style.display = "none";
@@ -1600,9 +1715,14 @@ function panelIsHidden() {
   try { return getComputedStyle(panel).display === "none"; } catch { return false; }
 }
 function openPanelIfHidden() {
-  if (INLINE) return; // в inline всегда открыт
-  if (panelIsHidden()) panel.style.display = "flex";
+  if (INLINE) return; 
+  if (panelIsHidden()) {
+    open = true;                 
+    panel.style.display = "flex";
+    lockPageScroll();            
+  }
 }
+
 
 function showLocalGreeting() {
   if (!AUTO_MSG) { log("showLocalGreeting: no AUTO_MSG"); return; }
