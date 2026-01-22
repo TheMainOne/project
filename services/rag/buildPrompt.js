@@ -2,6 +2,8 @@ function sanitizeForPrompt(s = "") {
   return String(s || "").replace(/```/g, "ʼʼʼ"); // или можно удалить вовсе
 }
 
+const AIW_META_TAG = "[AIW_META]";
+
 export function buildPrompt({
   system,
   history = [],
@@ -9,6 +11,7 @@ export function buildPrompt({
   contexts = [],
   maxHistory = 10,
   complex = null,
+  replyLangThisTurn,
 }) {
   const safeQuery = sanitizeForPrompt(
     (typeof query === "string" ? query : "").trim()
@@ -52,17 +55,22 @@ let ragStrict = [
       "NOTE: The question is complex. Provide a careful, coherent answer grounded ONLY in the KNOWLEDGE BASE.\n\n";
   }
 
-  // 3.5) Output meta contract (NEW)
-const metaContract = [
+// 3.5) Output meta contract 
+const RAG_META_CONTRACT = [
   "OUTPUT FORMAT (MANDATORY):",
   "- First, write the normal user-facing answer.",
-  "- Then, on the LAST line ONLY, output a single-line JSON prefixed with [AIW_META].",
-'- Format exactly: [AIW_META]{"answerable":true|false,"support":"strong|weak|none","gap_reason":"...","used_context_ids":[1,2],"confidence":0.0}  // confidence must be between 0 and 1',
-  "- The JSON must be valid, single-line, no markdown, no backticks, max ~300 chars.",
+  `- Then, on the LAST line ONLY, output a single-line JSON prefixed with ${AIW_META_TAG}.`,
+  "- The JSON must be valid, single-line, no markdown, no backticks, keep it compact.",
+  `- Format: ${AIW_META_TAG}{"answerable":true|false,"support":"strong|weak|none","gap_reason":"...","used_context_ids":[1,2],"confidence":0.0,"lead":{"contact":true|false,"email":"","phone":"","handle":"","name":"","confidence":0.0}}`,
+  "- confidence fields must be between 0 and 1.",
   "- used_context_ids must reference the KB fragment numbers you actually used (e.g. [#3] => 3).",
-  "- If the KB does NOT contain enough information to answer the question, set answerable=false, support=none, used_context_ids=[] and set an appropriate gap_reason.",
-  "- Do NOT include [AIW_META] in the visible answer; it must be only the last line."
+  "- If the KB does NOT contain enough information: answerable=false, support=none, used_context_ids=[], set a short gap_reason.",
+  "- LEAD: lead.contact=true ONLY if the USER message contains contact details.",
+  "- LEAD: lead.email/phone/handle/name MUST be exact substrings copied from the user's LAST message (otherwise empty).",
+  `- CRITICAL: If you do NOT output the ${AIW_META_TAG} JSON line, your answer is invalid. Always output it.`,
+  `- Do NOT output ${AIW_META_TAG} anywhere except the last line.`,
 ].join("\n");
+
 
   const sys = (system || "").trim();
 
@@ -74,7 +82,7 @@ const metaContract = [
     { role: "system", content: ragStrict },
 
     // 3) Meta contract
-    { role: "system", content: metaContract },
+    { role: "system", content: RAG_META_CONTRACT },
 
     // 4) Authoritative KB
     {
@@ -87,12 +95,14 @@ const metaContract = [
 
     // 4) Non-authoritative history
     {
-      role: "system",
+      role: "user",
       content:
-        "CHAT HISTORY (NON-AUTHORITATIVE, FOR CONTEXT ONLY):\n--- BEGIN CHAT HISTORY ---\n" +
+        "CHAT HISTORY (NON-AUTHORITATIVE, FOR REFERENCE ONLY):\n--- BEGIN CHAT HISTORY ---\n" +
         (historyText || "(empty)") +
         "\n--- END CHAT HISTORY ---",
     },
+
+    { role: "system", content: `IMPORTANT: You MUST answer ONLY in ${replyLangThisTurn}.` },
 
     // 5) Final user request only
     { role: "user", content: safeQuery || "(empty)" },

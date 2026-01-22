@@ -12,6 +12,6 @@ const LeadSchema = new mongoose.Schema({
   status:    { type: String, enum: ["new", "processed"], default: "new" },
 
   createdAt: { type: Date, default: Date.now },
-});
+}, { timestamps: true, versionKey: false });
 
 export default mongoose.model("Lead", LeadSchema);
