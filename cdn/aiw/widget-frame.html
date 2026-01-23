@@ -41,7 +41,6 @@
     const TARGET_ORIGIN = parentOrigin || "*";
 
     function postScroll(deltaY, deltaX = 0, source = "") {
-      if (window.__AIW_FULLSCREEN__) return;
       window.parent.postMessage(
         { type: "aiw:scroll", instanceId, deltaY, deltaX, source },
         TARGET_ORIGIN
