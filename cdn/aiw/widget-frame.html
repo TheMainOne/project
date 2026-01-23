@@ -32,8 +32,6 @@
   const mode     = (p.get("mode") || "inline").toLowerCase();
   const parentOrigin = p.get("parentOrigin") || "*";
   const instanceId   = p.get("instanceId") || "";
-  const UA = navigator.userAgent || "";
-  const IS_IOS = /iPad|iPhone|iPod/.test(UA) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
 
     (function initScrollPassthrough(){
     if (window === window.parent) return;
@@ -43,12 +41,6 @@
     function postScroll(deltaY, deltaX = 0, source = "") {
       window.parent.postMessage(
         { type: "aiw:scroll", instanceId, deltaY, deltaX, source },
-        TARGET_ORIGIN
-      );
-    }
-    function postFling(velocityY) {
-      window.parent.postMessage(
-        { type: "aiw:fling", instanceId, velocityY },
         TARGET_ORIGIN
       );
     }
@@ -104,14 +96,10 @@
       }
     }, { passive: false });
 
-// Touch (mobile/tablet) — passthrough + optional lightweight inertia for iOS
+// Touch (mobile/tablet) — simple passthrough without synthetic inertia
 let lastX = null, lastY = null;
-let lastT = 0;
-let vY = 0;
-let didPassthrough = false;
 let touchScroller = null;
 let aiwBody = null;
-const TOUCH_PASSTHROUGH = !IS_IOS;
 
 function getAiwBody() {
   if (aiwBody && document.contains(aiwBody)) return aiwBody;
@@ -136,41 +124,30 @@ function findScrollableByPoint(x, y) {
   return null;
 }
 
-if (TOUCH_PASSTHROUGH) window.addEventListener("touchstart", (e) => {
+window.addEventListener("touchstart", (e) => {
   if (e.touches && e.touches.length === 1) {
     lastX = e.touches[0].clientX;
     lastY = e.touches[0].clientY;
-    lastT = performance.now();
-    vY = 0;
-    didPassthrough = false;
     const path = e.composedPath ? e.composedPath() : [e.target];
     touchScroller = findScrollableInPath(path) || findScrollableByPoint(lastX, lastY);
   } else {
     lastX = lastY = null;
-    lastT = 0;
-    vY = 0;
-    didPassthrough = false;
     touchScroller = null;
   }
 }, { passive: true });
 
-if (TOUCH_PASSTHROUGH) window.addEventListener("touchmove", (e) => {
+window.addEventListener("touchmove", (e) => {
   if (lastX == null || lastY == null) return;
   if (!e.touches || e.touches.length !== 1) return;
 
   const x = e.touches[0].clientX;
   const y = e.touches[0].clientY;
-  const t = performance.now();
 
   const dx = (lastX - x);
   const dy = (lastY - y);
-  const dt = Math.max(1, t - lastT);
-  const instV = dy / dt; // px/ms
-  vY = (vY * 0.8) + (instV * 0.2);
 
   lastX = x;
   lastY = y;
-  lastT = t;
 
   const path = e.composedPath ? e.composedPath() : [e.target];
   const sc = touchScroller || findScrollableInPath(path) || findScrollableByPoint(x, y);
@@ -178,23 +155,16 @@ if (TOUCH_PASSTHROUGH) window.addEventListener("touchmove", (e) => {
   if (sc && canScroll(sc, dy, dx)) return;
 
   postScroll(dy, dx, "touch");
-  didPassthrough = true;
   e.preventDefault();
 }, { passive: false });
 
-if (TOUCH_PASSTHROUGH) window.addEventListener("touchend", () => {
+window.addEventListener("touchend", () => {
   lastX = lastY = null;
-  lastT = 0;
-  vY = 0;
-  didPassthrough = false;
   touchScroller = null;
 }, { passive: true });
 
-if (TOUCH_PASSTHROUGH) window.addEventListener("touchcancel", () => {
+window.addEventListener("touchcancel", () => {
   lastX = lastY = null;
-  lastT = 0;
-  vY = 0;
-  didPassthrough = false;
   touchScroller = null;
 }, { passive: true });
   })();
