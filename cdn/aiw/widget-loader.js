@@ -91,6 +91,125 @@
     iframe.setAttribute("scrolling", "no");
     iframe.allow = "clipboard-write";
 
+    const UA = navigator.userAgent || "";
+    const IS_IOS = /iPad|iPhone|iPod/.test(UA) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+    let fsActive = false;
+    let iframePrevStyle = null;
+    const scrollLock = {
+      active: false,
+      scrollX: 0,
+      scrollY: 0,
+      docOverflow: "",
+      bodyOverflow: "",
+      bodyPosition: "",
+      bodyTop: "",
+      bodyLeft: "",
+      bodyWidth: ""
+    };
+
+    function lockHostScroll() {
+      if (scrollLock.active) return;
+      const docEl = document.documentElement;
+      const bodyEl = document.body || document.documentElement;
+
+      scrollLock.scrollX = window.scrollX || window.pageXOffset || 0;
+      scrollLock.scrollY = window.scrollY || window.pageYOffset || 0;
+      scrollLock.docOverflow = docEl.style.overflow;
+      scrollLock.bodyOverflow = bodyEl.style.overflow;
+      scrollLock.bodyPosition = bodyEl.style.position;
+      scrollLock.bodyTop = bodyEl.style.top;
+      scrollLock.bodyLeft = bodyEl.style.left;
+      scrollLock.bodyWidth = bodyEl.style.width;
+
+      docEl.style.overflow = "hidden";
+      bodyEl.style.overflow = "hidden";
+
+      if (IS_IOS) {
+        bodyEl.style.position = "fixed";
+        bodyEl.style.width = "100%";
+        bodyEl.style.top = -scrollLock.scrollY + "px";
+        bodyEl.style.left = -scrollLock.scrollX + "px";
+      }
+
+      scrollLock.active = true;
+    }
+
+    function unlockHostScroll() {
+      if (!scrollLock.active) return;
+      const docEl = document.documentElement;
+      const bodyEl = document.body || document.documentElement;
+
+      docEl.style.overflow = scrollLock.docOverflow || "";
+      bodyEl.style.overflow = scrollLock.bodyOverflow || "";
+      bodyEl.style.position = scrollLock.bodyPosition || "";
+      bodyEl.style.top = scrollLock.bodyTop || "";
+      bodyEl.style.left = scrollLock.bodyLeft || "";
+      bodyEl.style.width = scrollLock.bodyWidth || "";
+
+      if (IS_IOS) {
+        window.scrollTo(scrollLock.scrollX, scrollLock.scrollY);
+      }
+
+      scrollLock.active = false;
+    }
+
+    function setIframeFullscreen(enabled) {
+      const next = !!enabled;
+      if (next === fsActive) return;
+      fsActive = next;
+
+      if (next) {
+        iframePrevStyle = {
+          position: iframe.style.position,
+          top: iframe.style.top,
+          left: iframe.style.left,
+          right: iframe.style.right,
+          bottom: iframe.style.bottom,
+          width: iframe.style.width,
+          height: iframe.style.height,
+          maxWidth: iframe.style.maxWidth,
+          maxHeight: iframe.style.maxHeight,
+          margin: iframe.style.margin,
+          zIndex: iframe.style.zIndex,
+          borderRadius: iframe.style.borderRadius,
+          boxShadow: iframe.style.boxShadow
+        };
+
+        iframe.style.position = "fixed";
+        iframe.style.top = "0";
+        iframe.style.left = "0";
+        iframe.style.right = "0";
+        iframe.style.bottom = "0";
+        iframe.style.width = "100vw";
+        iframe.style.height = "100vh";
+        iframe.style.maxWidth = "100vw";
+        iframe.style.maxHeight = "100vh";
+        iframe.style.margin = "0";
+        iframe.style.zIndex = "2147483000";
+        iframe.style.borderRadius = "0";
+        iframe.style.boxShadow = "none";
+
+        lockHostScroll();
+      } else {
+        const prev = iframePrevStyle || {};
+        iframe.style.position = prev.position || "";
+        iframe.style.top = prev.top || "";
+        iframe.style.left = prev.left || "";
+        iframe.style.right = prev.right || "";
+        iframe.style.bottom = prev.bottom || "";
+        iframe.style.width = prev.width || "";
+        iframe.style.height = prev.height || "";
+        iframe.style.maxWidth = prev.maxWidth || "";
+        iframe.style.maxHeight = prev.maxHeight || "";
+        iframe.style.margin = prev.margin || "";
+        iframe.style.zIndex = prev.zIndex || "";
+        iframe.style.borderRadius = prev.borderRadius || "";
+        iframe.style.boxShadow = prev.boxShadow || "";
+
+        unlockHostScroll();
+      }
+    }
+
   if (fitMode === "container") {
       iframe.style.height = "100%";
     } else {
@@ -295,8 +414,14 @@ function scrollParentBy(dy, dx, source = "") {
       const d = e.data || {};
       if (!d || typeof d !== "object") return;
 
+      if (d.type === "aiw:fullscreen") {
+        if (d.instanceId && d.instanceId !== instanceId) return;
+        setIframeFullscreen(!!d.enabled);
+        return;
+      }
+
       // --- resize (у тебя уже было)
-      if (d.type === "aiw:resize" && fitMode !== "container") {
+      if (d.type === "aiw:resize" && fitMode !== "container" && !fsActive) {
         const minH = Math.max(200, iHeight);
         const h = Math.max(minH, parseInt(d.height || "0", 10) || 0);
         iframe.style.height = h + "px";
@@ -305,6 +430,7 @@ function scrollParentBy(dy, dx, source = "") {
 
       // --- NEW: scroll passthrough
       if (d.type === "aiw:scroll") {
+        if (fsActive) return;
         // если используешь instanceId — можно фильтровать
         if (d.instanceId && d.instanceId !== instanceId) return;
         scrollParentBy(d.deltaY, d.deltaX, d.source);
