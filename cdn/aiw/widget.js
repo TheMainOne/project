@@ -29,12 +29,9 @@ const BASE_FONT_STACK = EFFECTIVE_FONT_NAME
   ? `'${EFFECTIVE_FONT_NAME}', system-ui,-apple-system,Segoe UI,Roboto,sans-serif`
   : 'system-ui,-apple-system,Segoe UI,Roboto,sans-serif';
   // ▼ NEW: режим рендера
-const QS = new URLSearchParams(location.search);
-const MODE   = (CFG.mode || QS.get("mode") || "float").toLowerCase();
+const MODE   = (CFG.mode || new URLSearchParams(location.search).get("mode") || "float").toLowerCase();
 const INLINE = MODE === "inline";
-const FIT_MODE = (QS.get("fit") || "container").toLowerCase();
-const PARENT_ORIGIN = QS.get("parentOrigin") || "*";
-const INSTANCE_ID = QS.get("instanceId") || "";
+const FIT_MODE = (new URLSearchParams(location.search).get("fit") || "container").toLowerCase();
 const FILL_CONTAINER = INLINE && FIT_MODE === "container";
 const MAX_LEN = 1000;
 let FIRST_BOOT = true; // первый старт виджета за эту загрузку страницы
@@ -345,38 +342,6 @@ style.textContent = `
    overflow:hidden;
    box-shadow:0 14px 44px rgba(0,0,0,.25);
    border:1px solid ${THEME.border}22;
- }
-
- .aiw-wrap.aiw-fullscreen{
-   position:fixed !important;
-   inset:0 !important;
-   top:0 !important;
-   right:0 !important;
-   bottom:0 !important;
-   left:0 !important;
-   width:100vw !important;
-   height:100vh !important;
- }
- .aiw-wrap.aiw-fullscreen .aiw-btn{
-   display:none !important;
- }
- .aiw-panel.aiw-fullscreen{
-   position:fixed !important;
-   inset:0 !important;
-   top:0 !important;
-   right:0 !important;
-   bottom:0 !important;
-   left:0 !important;
-   width:100vw !important;
-   height:100vh !important;
-   max-width:100vw !important;
-   max-height:100vh !important;
-   border-radius:0 !important;
-   box-shadow:none !important;
-   display:flex !important;
- }
- .aiw-panel.aiw-fullscreen .aiw-body{
-   overscroll-behavior:contain;
  }
 
 .aiw-header-brand{
@@ -1123,16 +1088,10 @@ close.textContent = "×";
 const resetBtn = document.createElement("button");
 resetBtn.title = LANG.startsWith("ru") ? "Сбросить диалог" : "Reset chat";
 resetBtn.textContent = "↺";
-const fsBtn = document.createElement("button");
-fsBtn.className = "aiw-fs-btn";
-fsBtn.title = LANG.startsWith("ru") ? "На весь экран" : "Full screen";
-fsBtn.textContent = "⤢";
-fsBtn.setAttribute("aria-label", fsBtn.title);
 
 const actions = document.createElement("div");
 actions.className = "aiw-actions";
 actions.appendChild(resetBtn);
-actions.appendChild(fsBtn);
 actions.appendChild(close);
 
 // собираем хедер
@@ -1537,115 +1496,9 @@ scrollToBottom(false);
   postHeight();
 }
 
-let isFullscreen = false;
-window.__AIW_FULLSCREEN__ = false;
-
-const pageScrollLock = {
-  active: false,
-  scrollX: 0,
-  scrollY: 0,
-  docOverflow: "",
-  bodyOverflow: "",
-  bodyPosition: "",
-  bodyTop: "",
-  bodyLeft: "",
-  bodyWidth: ""
-};
-
-function lockPageScroll() {
-  if (pageScrollLock.active) return;
-  const docEl = document.documentElement;
-  const bodyEl = document.body || document.documentElement;
-
-  pageScrollLock.scrollX = window.scrollX || window.pageXOffset || 0;
-  pageScrollLock.scrollY = window.scrollY || window.pageYOffset || 0;
-  pageScrollLock.docOverflow = docEl.style.overflow;
-  pageScrollLock.bodyOverflow = bodyEl.style.overflow;
-  pageScrollLock.bodyPosition = bodyEl.style.position;
-  pageScrollLock.bodyTop = bodyEl.style.top;
-  pageScrollLock.bodyLeft = bodyEl.style.left;
-  pageScrollLock.bodyWidth = bodyEl.style.width;
-
-  docEl.style.overflow = "hidden";
-  bodyEl.style.overflow = "hidden";
-
-  if (IS_IOS) {
-    bodyEl.style.position = "fixed";
-    bodyEl.style.width = "100%";
-    bodyEl.style.top = -pageScrollLock.scrollY + "px";
-    bodyEl.style.left = -pageScrollLock.scrollX + "px";
-  }
-
-  pageScrollLock.active = true;
-}
-
-function unlockPageScroll() {
-  if (!pageScrollLock.active) return;
-  const docEl = document.documentElement;
-  const bodyEl = document.body || document.documentElement;
-
-  docEl.style.overflow = pageScrollLock.docOverflow || "";
-  bodyEl.style.overflow = pageScrollLock.bodyOverflow || "";
-  bodyEl.style.position = pageScrollLock.bodyPosition || "";
-  bodyEl.style.top = pageScrollLock.bodyTop || "";
-  bodyEl.style.left = pageScrollLock.bodyLeft || "";
-  bodyEl.style.width = pageScrollLock.bodyWidth || "";
-
-  if (IS_IOS) {
-    window.scrollTo(pageScrollLock.scrollX, pageScrollLock.scrollY);
-  }
-
-  pageScrollLock.active = false;
-}
-
-function postToParent(type, payload) {
-  if (window.parent && window.parent !== window) {
-    try {
-      window.parent.postMessage(
-        { type, instanceId: INSTANCE_ID, ...(payload || {}) },
-        PARENT_ORIGIN || "*"
-      );
-    } catch {}
-  }
-}
-
-function updateFullscreenButton() {
-  if (!fsBtn) return;
-  if (isFullscreen) {
-    fsBtn.textContent = "⤡";
-    fsBtn.title = LANG.startsWith("ru") ? "Выйти из полноэкранного режима" : "Exit full screen";
-  } else {
-    fsBtn.textContent = "⤢";
-    fsBtn.title = LANG.startsWith("ru") ? "На весь экран" : "Full screen";
-  }
-  fsBtn.setAttribute("aria-label", fsBtn.title);
-}
-
-function setFullscreen(next) {
-  const enabled = !!next;
-  if (enabled === isFullscreen) return;
-  isFullscreen = enabled;
-  window.__AIW_FULLSCREEN__ = enabled;
-
-  panel.classList.toggle("aiw-fullscreen", enabled);
-  wrap.classList.toggle("aiw-fullscreen", enabled);
-
-  updateFullscreenButton();
-
-  if (enabled) {
-    lockPageScroll();
-    postToParent("aiw:fullscreen", { enabled: true });
-  } else {
-    postToParent("aiw:fullscreen", { enabled: false });
-    unlockPageScroll();
-    postHeight();
-  }
-}
-
 
 function postHeight() {
   try {
-    if (isFullscreen) return;
     if (FIT_MODE === "container") return; // родитель сам управляет высотой
     if (window.parent && window.parent !== window) {
       const h = document.documentElement.scrollHeight;
@@ -1654,7 +1507,6 @@ function postHeight() {
   } catch {}
 }
 
-  updateFullscreenButton();
   renderAll();
   scrollToBottom(true); 
 
@@ -1667,7 +1519,6 @@ let open = INLINE ? true : false;
 
 if (!INLINE) {
   btn.addEventListener("click", () => {
-    if (open && isFullscreen) setFullscreen(false);
     open = !open;
     panel.style.display = open ? "flex" : "none";
     if (open) {
@@ -1681,11 +1532,7 @@ if (!INLINE) {
       setTimeout(() => input.focus(), 0);
     }
   });
-  close.addEventListener("click", () => {
-    if (isFullscreen) setFullscreen(false);
-    open = false;
-    panel.style.display = "none";
-  });
+    close.addEventListener("click", () => { open = false; panel.style.display = "none"; });
 } else {
   // в inline закрывашку можно спрятать или оставить — на твой вкус
   close.style.display = "none";
@@ -1709,11 +1556,6 @@ resetBtn.addEventListener("click", (e) => {
   updateCounter();
   autoResizeInput();
   renderAll();
-});
-
-fsBtn.addEventListener("click", (e) => {
-  e.preventDefault();
-  setFullscreen(!isFullscreen);
 });
 
   input.addEventListener("keydown", (e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); doSend(); } });
