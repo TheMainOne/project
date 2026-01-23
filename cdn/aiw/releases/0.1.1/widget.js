@@ -39,10 +39,24 @@ let FIRST_BOOT = true; // первый старт виджета за эту з�
 
   if (INLINE) {
     const bodyEl = document.body;
+    const docEl = document.documentElement;
     if (bodyEl) {
       bodyEl.style.margin = "0";
       bodyEl.style.background = bodyEl.style.background || "transparent";
       bodyEl.style.boxSizing = bodyEl.style.boxSizing || "border-box";
+    }
+    if (IS_IOS) {
+      if (docEl) {
+        docEl.style.height = "100%";
+        docEl.style.overflow = "hidden";
+        docEl.style.overscrollBehavior = "contain";
+        docEl.style.overscrollBehaviorY = "contain";
+      }
+      if (bodyEl) {
+        bodyEl.style.overflow = "hidden";
+        bodyEl.style.overscrollBehavior = "contain";
+        bodyEl.style.overscrollBehaviorY = "contain";
+      }
     }
   }
 
@@ -522,6 +536,12 @@ style.textContent = `
 
 ${(INLINE && IS_IOS) ? `
 /* iOS scroll chaining / rubber-band fix for inline */
+.aiw-wrap,
+.aiw-panel{
+  overscroll-behavior: contain;
+  overscroll-behavior-y: contain;
+  touch-action: pan-y;
+}
 .aiw-body{
   -webkit-overflow-scrolling: touch;
   overscroll-behavior: contain;
@@ -1214,6 +1234,73 @@ function enableIOSScrollFix(el) {
 if (INLINE && IS_IOS) {
   enableIOSScrollFix(body);
   enableIOSScrollFix(input);
+  enableIOSPanelScrollLock(panel, body, input);
+}
+
+function enableIOSPanelScrollLock(panelEl, bodyEl, inputEl) {
+  if (!panelEl) return;
+  let lastY = 0;
+  let activeScroller = null;
+
+  function buildPath(node) {
+    const path = [];
+    let cur = node;
+    while (cur) {
+      path.push(cur);
+      if (cur === panelEl) break;
+      if (cur.parentNode) cur = cur.parentNode;
+      else if (cur.host) cur = cur.host;
+      else cur = null;
+    }
+    return path;
+  }
+
+  function pickScroller(path) {
+    if (inputEl && path.includes(inputEl)) return inputEl;
+    if (bodyEl && path.includes(bodyEl)) return bodyEl;
+    return null;
+  }
+
+  panelEl.addEventListener("touchstart", (e) => {
+    if (e.touches.length !== 1) return;
+    lastY = e.touches[0].clientY;
+    const path = (e.composedPath && e.composedPath()) || buildPath(e.target);
+    activeScroller = pickScroller(path);
+    if (activeScroller) {
+      const maxScrollTop = activeScroller.scrollHeight - activeScroller.clientHeight;
+      if (maxScrollTop > 0) {
+        if (activeScroller.scrollTop <= 0) activeScroller.scrollTop = 1;
+        else if (activeScroller.scrollTop >= maxScrollTop) activeScroller.scrollTop = Math.max(0, maxScrollTop - 1);
+      }
+    }
+  }, { passive: true, capture: true });
+
+  panelEl.addEventListener("touchmove", (e) => {
+    if (e.touches.length !== 1) return;
+    const y = e.touches[0].clientY;
+    const delta = y - lastY;
+    lastY = y;
+
+    if (!activeScroller) {
+      e.preventDefault();
+      return;
+    }
+
+    const maxScrollTop = activeScroller.scrollHeight - activeScroller.clientHeight;
+    if (maxScrollTop <= 0) {
+      e.preventDefault();
+      return;
+    }
+
+    const atTop = activeScroller.scrollTop <= 0;
+    const atBottom = activeScroller.scrollTop >= maxScrollTop;
+    if ((atTop && delta > 0) || (atBottom && delta < 0)) {
+      e.preventDefault();
+    }
+  }, { passive: false, capture: true });
+
+  panelEl.addEventListener("touchend", () => { activeScroller = null; }, { passive: true, capture: true });
+  panelEl.addEventListener("touchcancel", () => { activeScroller = null; }, { passive: true, capture: true });
 }
 
 
