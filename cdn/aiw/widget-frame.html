@@ -38,9 +38,9 @@
 
     const TARGET_ORIGIN = parentOrigin || "*";
 
-    function postScroll(deltaY, deltaX = 0) {
+    function postScroll(deltaY, deltaX = 0, source = "") {
       window.parent.postMessage(
-        { type: "aiw:scroll", instanceId, deltaY, deltaX },
+        { type: "aiw:scroll", instanceId, deltaY, deltaX, source },
         TARGET_ORIGIN
       );
     }
@@ -91,101 +91,48 @@
       const sc = findScrollableInPath(path);
 
       if (!sc || !canScroll(sc, dy, dx)) {
-        postScroll(dy, dx);
+        postScroll(dy, dx, "wheel");
         e.preventDefault();
       }
     }, { passive: false });
 
-// Touch (mobile/tablet) — smoother + inertia + NO scroll chaining per gesture
+// Touch (mobile/tablet) — simple passthrough without synthetic inertia
 let lastX = null, lastY = null;
-let lastT = 0;
+let touchScroller = null;
+let aiwBody = null;
 
-let accX = 0, accY = 0;
-let rafId = null;
-
-let vY = 0;
-
-let gestureLockedToInner = false;  
-let gestureScroller = null;       
-let didPassthrough = false;        
-let gestureEdgeAtStart = null;
-
-function getEdgeState(el) {
-  return {
-    top: el.scrollTop <= 0,
-    bottom: el.scrollTop + el.clientHeight >= el.scrollHeight - 1,
-    left: el.scrollLeft <= 0,
-    right: el.scrollLeft + el.clientWidth >= el.scrollWidth - 1,
-  };
-}
-
-function allowPassthroughFromEdge(edge, dy, dx) {
-  if (!edge) return false;
-  if (dy > 0 && edge.bottom) return true; 
-  if (dy < 0 && edge.top) return true;
-  if (dx > 0 && edge.right) return true;
-  if (dx < 0 && edge.left) return true;
-  return false;
-}
-
-
-// настройка "ощущения"
-const SCROLL_MULT  = 1.15;
-const V_SMOOTH     = 0.85;
-const FLING_MIN_V  = 0.02;
-const FLING_DECAY  = 0.95;
-const FLING_STOP   = 0.5;
-
-function flushScroll() {
-  rafId = null;
-  if (!accX && !accY) return;
-  postScroll(accY, accX); // deltaY, deltaX
-  accX = 0;
-  accY = 0;
-}
-
-function scheduleFlush() {
-  if (rafId) return;
-  rafId = requestAnimationFrame(flushScroll);
-}
-
-function startFling() {
-  let vy = vY * 16; // px/ms -> px/frame
-
-  if (Math.abs(vy) < FLING_STOP) return;
-
-  function step() {
-    vy *= FLING_DECAY;
-    if (Math.abs(vy) < FLING_STOP) return;
-
-    accY += vy;
-    scheduleFlush();
-    requestAnimationFrame(step);
+function getAiwBody() {
+  if (aiwBody && document.contains(aiwBody)) return aiwBody;
+  const all = document.querySelectorAll("*");
+  for (const el of all) {
+    if (!el.shadowRoot) continue;
+    const b = el.shadowRoot.querySelector(".aiw-body");
+    if (b) { aiwBody = b; return b; }
   }
+  return null;
+}
 
-  requestAnimationFrame(step);
+function pointInside(el, x, y) {
+  if (!el) return false;
+  const r = el.getBoundingClientRect();
+  return x >= r.left && x <= r.right && y >= r.top && y <= r.bottom;
+}
+
+function findScrollableByPoint(x, y) {
+  const b = getAiwBody();
+  if (b && pointInside(b, x, y)) return b;
+  return null;
 }
 
 window.addEventListener("touchstart", (e) => {
   if (e.touches && e.touches.length === 1) {
     lastX = e.touches[0].clientX;
     lastY = e.touches[0].clientY;
-    lastT = performance.now();
-
-    vY = 0;
-    accX = 0;
-    accY = 0;
-    didPassthrough = false;
-
     const path = e.composedPath ? e.composedPath() : [e.target];
-    gestureScroller = findScrollableInPath(path);
-    gestureLockedToInner = !!gestureScroller;
-    gestureEdgeAtStart = gestureScroller ? getEdgeState(gestureScroller) : null;
+    touchScroller = findScrollableInPath(path) || findScrollableByPoint(lastX, lastY);
   } else {
     lastX = lastY = null;
-    gestureScroller = null;
-    gestureLockedToInner = false;
-    didPassthrough = false;
+    touchScroller = null;
   }
 }, { passive: true });
 
@@ -195,60 +142,30 @@ window.addEventListener("touchmove", (e) => {
 
   const x = e.touches[0].clientX;
   const y = e.touches[0].clientY;
-  const t = performance.now();
 
-  const dx = (lastX - x) * SCROLL_MULT;
-  const dy = (lastY - y) * SCROLL_MULT;
-
-  const dt = Math.max(1, t - lastT);
-  const instV = dy / dt; // px/ms
-  vY = vY * V_SMOOTH + instV * (1 - V_SMOOTH);
+  const dx = (lastX - x);
+  const dy = (lastY - y);
 
   lastX = x;
   lastY = y;
-  lastT = t;
 
   const path = e.composedPath ? e.composedPath() : [e.target];
-  const sc = gestureScroller || findScrollableInPath(path);
+  const sc = touchScroller || findScrollableInPath(path) || findScrollableByPoint(x, y);
 
-if (gestureLockedToInner) {
   if (sc && canScroll(sc, dy, dx)) return;
 
-  // if a new swipe gesture starts at the edge and we continue dragging, we allow the swipe to transition to the next page.
-  if (allowPassthroughFromEdge(gestureEdgeAtStart, dy, dx)) {
-    accY += dy;
-    accX += dx;
-    didPassthrough = true;
-    scheduleFlush();
-    e.preventDefault();
-  } else {
-    e.preventDefault();
-  }
-  return;
-}
-
-  // if the gesture did NOT start on a scrollable element, it's a passthrough mode.
-  if (!sc || !canScroll(sc, dy, dx)) {
-    accY += dy;
-    accX += dx;
-    didPassthrough = true;
-    scheduleFlush();
-    e.preventDefault();
-  }
+  postScroll(dy, dx, "touch");
+  e.preventDefault();
 }, { passive: false });
 
 window.addEventListener("touchend", () => {
   lastX = lastY = null;
+  touchScroller = null;
+}, { passive: true });
 
-  // we only apply inertia if it was indeed a passthrough gesture
-  if (!gestureLockedToInner && didPassthrough && Math.abs(vY) > FLING_MIN_V) {
-    startFling();
-  }
-
-  gestureScroller = null;
-  gestureLockedToInner = false;
-  didPassthrough = false;
-  gestureEdgeAtStart = null;
+window.addEventListener("touchcancel", () => {
+  lastX = lastY = null;
+  touchScroller = null;
 }, { passive: true });
   })();
 

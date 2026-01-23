@@ -235,10 +235,26 @@ function trySmoothScrollAPIs(dy, dx) {
   return false;
 }
 
-function scrollParentBy(dy, dx) {
+function scrollParentBy(dy, dx, source = "") {
   const y = Number(dy) || 0;
   const x = Number(dx) || 0;
   if (!y && !x) return;
+
+  if (source === "touch") {
+    if (scrollTarget && tryScrollElement(scrollTarget, y, x)) return;
+
+    const beforeY = window.scrollY;
+    const beforeX = window.scrollX;
+    try {
+      window.scrollBy({ top: y, left: x, behavior: "auto" });
+    } catch {}
+
+    if (window.scrollY !== beforeY || window.scrollX !== beforeX) return;
+
+    const doc = document.scrollingElement || document.documentElement;
+    tryScrollElement(doc, y, x);
+    return;
+  }
 
   // 0) сначала пробуем “официальные” API smooth-scroll (если они есть)
   if (trySmoothScrollAPIs(y, x)) return;
@@ -291,7 +307,7 @@ function scrollParentBy(dy, dx) {
       if (d.type === "aiw:scroll") {
         // если используешь instanceId — можно фильтровать
         if (d.instanceId && d.instanceId !== instanceId) return;
-        scrollParentBy(d.deltaY, d.deltaX);
+        scrollParentBy(d.deltaY, d.deltaX, d.source);
         return;
       }
     }
