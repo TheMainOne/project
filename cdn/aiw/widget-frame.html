@@ -184,8 +184,8 @@ window.addEventListener("touchmove", (e) => {
 window.addEventListener("touchend", () => {
   lastX = lastY = null;
   lastT = 0;
-  if (IS_IOS && didPassthrough && Math.abs(vY) > 0.02) {
-    const capped = Math.max(-1.2, Math.min(1.2, vY));
+  if (IS_IOS && didPassthrough && Math.abs(vY) > 0.04) {
+    const capped = Math.max(-0.8, Math.min(0.8, vY));
     postFling(capped);
   }
   vY = 0;

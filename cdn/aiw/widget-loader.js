@@ -292,18 +292,33 @@ function scrollParentBy(dy, dx, source = "") {
 let flingRaf = null;
 function startFling(vy) {
   if (!IS_IOS) return;
-  let v = Number(vy) * 16; // px/ms -> px/frame
-  if (!v || Math.abs(v) < 0.5) return;
-  v = Math.max(-60, Math.min(60, v));
+  const v = Number(vy);
+  if (!v || Math.abs(v) < 0.04) return;
+
+  const distance = Math.max(-900, Math.min(900, v * 520));
+  const duration = 260; // ms
+  const start = performance.now();
+  let last = 0;
 
   if (flingRaf) cancelAnimationFrame(flingRaf);
 
-  const step = () => {
-    v *= 0.95;
-    if (Math.abs(v) < 0.5) { flingRaf = null; return; }
-    const moved = scrollParentBy(v, 0, "touch");
-    if (!moved) { flingRaf = null; return; }
-    flingRaf = requestAnimationFrame(step);
+  const step = (t) => {
+    const p = Math.min(1, (t - start) / duration);
+    const ease = 1 - Math.pow(1 - p, 3); // easeOutCubic
+    const target = distance * ease;
+    const delta = target - last;
+    last = target;
+
+    if (Math.abs(delta) > 0.1) {
+      const moved = scrollParentBy(delta, 0, "touch");
+      if (!moved) { flingRaf = null; return; }
+    }
+
+    if (p < 1) {
+      flingRaf = requestAnimationFrame(step);
+    } else {
+      flingRaf = null;
+    }
   };
 
   flingRaf = requestAnimationFrame(step);
