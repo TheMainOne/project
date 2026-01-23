@@ -114,6 +114,8 @@ const frameOrigin = (() => {
     try { return new URL(base).origin; } catch { return base; }
   }
 })();
+const UA = navigator.userAgent || "";
+const IS_IOS = /iPad|iPhone|iPod/.test(UA) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
 function isScrollable(el) {
   if (!el || el.nodeType !== 1) return false;
   const st = window.getComputedStyle(el);
@@ -241,7 +243,7 @@ function scrollParentBy(dy, dx, source = "") {
   if (!y && !x) return;
 
   if (source === "touch") {
-    if (scrollTarget && tryScrollElement(scrollTarget, y, x)) return;
+    if (scrollTarget && tryScrollElement(scrollTarget, y, x)) return true;
 
     const beforeY = window.scrollY;
     const beforeX = window.scrollX;
@@ -249,29 +251,28 @@ function scrollParentBy(dy, dx, source = "") {
       window.scrollBy({ top: y, left: x, behavior: "auto" });
     } catch {}
 
-    if (window.scrollY !== beforeY || window.scrollX !== beforeX) return;
+    if (window.scrollY !== beforeY || window.scrollX !== beforeX) return true;
 
     const doc = document.scrollingElement || document.documentElement;
-    tryScrollElement(doc, y, x);
-    return;
+    return tryScrollElement(doc, y, x);
   }
 
   // 0) сначала пробуем “официальные” API smooth-scroll (если они есть)
-  if (trySmoothScrollAPIs(y, x)) return;
+  if (trySmoothScrollAPIs(y, x)) return true;
 
   // 1) затем всегда шлём wheel в хост-страницу — это критично для сайтов,
   // где скролл реализован через wheel listeners + transforms
   dispatchWheelToHost(y, x);
 
   // 2) пробуем нативный scrollTop (если страница обычная)
-  if (scrollTarget && tryScrollElement(scrollTarget, y, x)) return;
+  if (scrollTarget && tryScrollElement(scrollTarget, y, x)) return true;
 
   // редко переподбираем scrollTarget (чтобы не лагать)
   const now = Date.now();
   if (now - lastRepickAt > 1000) {
     lastRepickAt = now;
     scrollTarget = pickBestScroller(mount);
-    if (scrollTarget && tryScrollElement(scrollTarget, y, x)) return;
+    if (scrollTarget && tryScrollElement(scrollTarget, y, x)) return true;
   }
 
   // 3) fallback — window.scrollBy, но проверяем, что он реально сдвинул
@@ -281,11 +282,31 @@ function scrollParentBy(dy, dx, source = "") {
     window.scrollBy({ top: y, left: x, behavior: "auto" });
   } catch {}
 
-  if (window.scrollY !== beforeY || window.scrollX !== beforeX) return;
+  if (window.scrollY !== beforeY || window.scrollX !== beforeX) return true;
 
   // 4) последний шанс: напрямую документ
   const doc = document.scrollingElement || document.documentElement;
-  tryScrollElement(doc, y, x);
+  return tryScrollElement(doc, y, x);
+}
+
+let flingRaf = null;
+function startFling(vy) {
+  if (!IS_IOS) return;
+  let v = Number(vy) * 16; // px/ms -> px/frame
+  if (!v || Math.abs(v) < 0.5) return;
+  v = Math.max(-60, Math.min(60, v));
+
+  if (flingRaf) cancelAnimationFrame(flingRaf);
+
+  const step = () => {
+    v *= 0.95;
+    if (Math.abs(v) < 0.5) { flingRaf = null; return; }
+    const moved = scrollParentBy(v, 0, "touch");
+    if (!moved) { flingRaf = null; return; }
+    flingRaf = requestAnimationFrame(step);
+  };
+
+  flingRaf = requestAnimationFrame(step);
 }
 
     function onFrameMessage(e) {
@@ -308,6 +329,11 @@ function scrollParentBy(dy, dx, source = "") {
         // если используешь instanceId — можно фильтровать
         if (d.instanceId && d.instanceId !== instanceId) return;
         scrollParentBy(d.deltaY, d.deltaX, d.source);
+        return;
+      }
+      if (d.type === "aiw:fling") {
+        if (d.instanceId && d.instanceId !== instanceId) return;
+        startFling(d.velocityY);
         return;
       }
     }
