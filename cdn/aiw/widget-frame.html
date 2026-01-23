@@ -111,6 +111,7 @@ let vY = 0;
 let didPassthrough = false;
 let touchScroller = null;
 let aiwBody = null;
+const TOUCH_PASSTHROUGH = !IS_IOS;
 
 function getAiwBody() {
   if (aiwBody && document.contains(aiwBody)) return aiwBody;
@@ -135,7 +136,7 @@ function findScrollableByPoint(x, y) {
   return null;
 }
 
-window.addEventListener("touchstart", (e) => {
+if (TOUCH_PASSTHROUGH) window.addEventListener("touchstart", (e) => {
   if (e.touches && e.touches.length === 1) {
     lastX = e.touches[0].clientX;
     lastY = e.touches[0].clientY;
@@ -153,7 +154,7 @@ window.addEventListener("touchstart", (e) => {
   }
 }, { passive: true });
 
-window.addEventListener("touchmove", (e) => {
+if (TOUCH_PASSTHROUGH) window.addEventListener("touchmove", (e) => {
   if (lastX == null || lastY == null) return;
   if (!e.touches || e.touches.length !== 1) return;
 
@@ -181,19 +182,15 @@ window.addEventListener("touchmove", (e) => {
   e.preventDefault();
 }, { passive: false });
 
-window.addEventListener("touchend", () => {
+if (TOUCH_PASSTHROUGH) window.addEventListener("touchend", () => {
   lastX = lastY = null;
   lastT = 0;
-  if (IS_IOS && didPassthrough && Math.abs(vY) > 0.04) {
-    const capped = Math.max(-0.8, Math.min(0.8, vY));
-    postFling(capped);
-  }
   vY = 0;
   didPassthrough = false;
   touchScroller = null;
 }, { passive: true });
 
-window.addEventListener("touchcancel", () => {
+if (TOUCH_PASSTHROUGH) window.addEventListener("touchcancel", () => {
   lastX = lastY = null;
   lastT = 0;
   vY = 0;
