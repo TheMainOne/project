@@ -36,6 +36,16 @@ function normalizeChatId(raw) {
   return chatId;
 }
 
+function sanitizeDestination(doc) {
+  if (!doc) return doc;
+  const obj = typeof doc.toObject === "function" ? doc.toObject() : { ...doc };
+  if (obj?.config?.botToken) {
+    obj.config = { ...obj.config, botToken: undefined };
+    delete obj.config.botToken;
+  }
+  return obj;
+}
+
 // POST /api/notification-destinations
 export async function createNotificationDestination(req, res, next) {
   try {
@@ -51,6 +61,8 @@ export async function createNotificationDestination(req, res, next) {
     if (!chatId) {
       return res.status(400).json({ error: "chatId is required" });
     }
+const botTokenRaw = (req.body?.botToken ?? req.body?.config?.botToken);
+const botToken = String(botTokenRaw ?? "").trim() || null;
 
     const siteId = req.body?.siteId ?? null;
     const enabled = parseBoolean(req.body?.enabled, true);
@@ -61,11 +73,11 @@ export async function createNotificationDestination(req, res, next) {
       clientId,
       siteId,
       enabled: enabled !== undefined ? enabled : true,
-      config: { chatId },
+      config: { chatId, botToken },
       notes,
     });
 
-    return res.status(201).json({ ok: true, destination: doc });
+    return res.status(201).json({ ok: true, destination: sanitizeDestination(doc) });
   } catch (err) {
     return next(err);
   }
@@ -107,7 +119,7 @@ export async function listNotificationDestinations(req, res, next) {
       page,
       limit,
       total,
-      items,
+      items: items.map(sanitizeDestination),
     });
   } catch (err) {
     return next(err);
@@ -125,7 +137,7 @@ export async function getNotificationDestination(req, res, next) {
     const doc = await NotificationDestination.findById(id).lean();
     if (!doc) return res.status(404).json({ error: "Destination not found" });
 
-    return res.json({ ok: true, destination: doc });
+    return res.json({ ok: true, destination: sanitizeDestination(doc) });
   } catch (err) {
     return next(err);
   }
@@ -177,6 +189,11 @@ export async function updateNotificationDestination(req, res, next) {
       if (!chatId) return res.status(400).json({ error: "chatId cannot be empty" });
       update["config.chatId"] = chatId;
     }
+    const botTokenRaw = req.body?.botToken ?? req.body?.config?.botToken;
+    if (botTokenRaw !== undefined) {
+      const botToken = String(botTokenRaw || "").trim() || null;
+      update["config.botToken"] = botToken;
+    }
 
     if (Object.keys(update).length === 0) {
       return res.status(400).json({ error: "No valid fields to update" });
@@ -189,7 +206,7 @@ export async function updateNotificationDestination(req, res, next) {
 
     if (!doc) return res.status(404).json({ error: "Destination not found" });
 
-    return res.json({ ok: true, destination: doc });
+    return res.json({ ok: true, destination: sanitizeDestination(doc) });
   } catch (err) {
     return next(err);
   }
@@ -213,4 +230,3 @@ export async function deleteNotificationDestination(req, res, next) {
     return next(err);
   }
 }
-

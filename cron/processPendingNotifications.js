@@ -95,6 +95,9 @@ function resolveChatId(notification, destination) {
   );
 }
 
+function resolveBotToken(destination) {
+  return destination?.config?.botToken || process.env.TELEGRAM_BOT_TOKEN || "";
+}
 function truncateText(text, maxChars) {
   const s = String(text || "").trim();
   if (!s) return "";
@@ -209,6 +212,7 @@ async function processOne(id, now) {
 
   const destination = await NotificationDestination.findById(claimed.destinationId).lean();
   const chatId = resolveChatId(claimed, destination);
+  const botToken = resolveBotToken(destination);
 
   if (!destination || destination.enabled === false || !chatId) {
     const reason = !destination
@@ -228,7 +232,7 @@ async function processOne(id, now) {
   }
 
   try {
-    await sendTelegramMessage({ chatId, text: message });
+    await sendTelegramMessage({ chatId, text: message, botToken });
     await markSent(claimed._id);
     return { sent: 1, failed: 0, retried: 0, skipped: 0 };
   } catch (err) {

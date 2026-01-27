@@ -31,6 +31,11 @@ const NotificationDestinationSchema = new mongoose.Schema(
         required: true,
         trim: true,
       },
+      botToken: {
+        type: String,
+        trim: true,
+        default: null,
+      },
     },
     notes: {
       type: String,
@@ -45,4 +50,3 @@ const NotificationDestinationSchema = new mongoose.Schema(
 NotificationDestinationSchema.index({ clientId: 1, type: 1, enabled: 1, siteId: 1 });
 
 export default mongoose.model("NotificationDestination", NotificationDestinationSchema);
-
