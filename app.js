@@ -12,6 +12,9 @@ import sendTelegramMessage from "./services/telegramNotify.js";
 import widgetRouter from "./api/widget/widget.js";
 import retrieveRouter from "./api/widget/aiwSearch.js";
 import chatRouter from "./api/widget/aiwChat.js";
+import notificationDestinationsRouter from "./api/notificationDestinations.js";
+import Notification from "./models/Notification.js";
+import NotificationDestination from "./models/NotificationDestination.js";
 import createBot from "./src/bot.js";
 import path from "path";
 import { randomUUID } from "crypto";
@@ -92,6 +95,11 @@ const uriDB = process.env.DATABASE_URL;
 mongoose
   .connect(uriDB, { dbName: "materials_reader" })
   .then(async () => {
+    // Инициализируем индексы для outbox-уведомлений
+    await NotificationDestination.createCollection().catch(() => {});
+    await NotificationDestination.syncIndexes();
+    await Notification.createCollection().catch(() => {});
+    await Notification.syncIndexes();
     // создаём бота только ПОСЛЕ подключения к Mongo
     const bot = createBot(BOT_TOKEN);
 
@@ -112,6 +120,7 @@ mongoose
     app.use("/api/clients", clientRouter);
     app.use("/api/users", adminUsersRouter);
     app.use("/api/statistic", aiwStatsRouter);
+    app.use("/api/notification-destinations", notificationDestinationsRouter);
 
 const aiwRouter = express.Router();
 

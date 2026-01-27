@@ -9,6 +9,7 @@ import AiwMessage from "../../models/AiwMessage.js";
 import AiwGap from "../../models/AiwGap.js"; 
 import Lead from "../../models/Lead.js";
 import Client from "../../models/Client.js";
+import enqueueLeadCreatedNotification from "../../services/notifications/enqueueLeadCreatedNotification.js";
 import { hashIp, classifyTopics } from "../../utils/telemetry.js";
 import { getWidgetConfigCached } from '../../services/widgetConfig/cache.js';
 import { retrieveHybrid } from '../../services/rag/retrieveHybrid.js';
@@ -555,6 +556,26 @@ async function upsertLeadFromMeta({
 
     const filter = { siteId, sessionId };
 
+    const existingLead = await Lead.findOne(filter)
+      .select({
+        status: 1,
+        meta: 1,
+        answers: 1,
+        clientId: 1,
+        siteId: 1,
+        sessionId: 1,
+        createdAt: 1,
+      })
+      .lean();
+
+    const hadContactBefore = Boolean(
+      existingLead?.meta?.lead?.contact ||
+      existingLead?.answers?.contact?.email ||
+      existingLead?.answers?.contact?.phone ||
+      existingLead?.answers?.contact?.handle ||
+      existingLead?.answers?.contact?.name
+    );
+
     // 4) строим $set только для НЕпустых значений (merge-only)
     const set = {};
     if (email)  set["answers.contact.email"]  = email;
@@ -616,6 +637,15 @@ const update = {
 };
 
     await Lead.updateOne(filter, update, { upsert: true });
+
+    const leadDoc = await Lead.findOne(filter).lean();
+    const isNewLead = !existingLead;
+    const statusIsNew = leadDoc?.status === "new";
+    const shouldNotifyLeadCreated = statusIsNew && (isNewLead || !hadContactBefore);
+
+    if (shouldNotifyLeadCreated && leadDoc) {
+      await enqueueLeadCreatedNotification({ leadDoc });
+    }
 
     console.log("[AIW][lead] upserted(merge)", {
       siteId,
