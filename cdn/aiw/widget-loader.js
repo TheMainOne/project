@@ -72,7 +72,13 @@
       };
 
       const json = JSON.stringify(payload);
-      if (navigator.sendBeacon) {
+      let canBeacon = false;
+      try {
+        const targetOrigin = new URL(url, window.location.href).origin;
+        canBeacon = targetOrigin === window.location.origin;
+      } catch {}
+
+      if (canBeacon && navigator.sendBeacon) {
         const blob = new Blob([json], { type: "application/json" });
         navigator.sendBeacon(url, blob);
       } else {
