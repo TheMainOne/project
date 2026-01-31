@@ -26,6 +26,7 @@
     "googleapis": "^150.0.1",
     "got": "^14.4.9",
     "grammy": "^1.38.1",
+    "geoip-lite": "^1.4.10",
     "html-to-text": "^9.0.5",
     "iconv-lite": "^0.7.0",
     "joi": "^18.0.1",

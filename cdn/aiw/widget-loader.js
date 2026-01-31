@@ -30,6 +30,66 @@
   
     const hasDataSrc = !!s.getAttribute("data-src");
 
+  // Minimal, privacy-friendly page visit telemetry (no cookies, no identifiers, no IP storage).
+  function sendPageVisit() {
+    if (!host || !siteId) return;
+    const key = String(siteId);
+    const sent = window.__AIW_TELEMETRY_SENT__ || {};
+    if (sent[key]) return;
+    sent[key] = true;
+    window.__AIW_TELEMETRY_SENT__ = sent;
+
+    try {
+      const base = host.replace(/\/$/, "");
+      const url = base + "/api/telemetry/page-visit";
+
+      const pagePath = window.location.pathname || "/";
+      let referrerDomain = "";
+      try {
+        if (document.referrer) {
+          referrerDomain = new URL(document.referrer).hostname || "";
+        }
+      } catch {}
+
+      const viewportW = Math.max(0, window.innerWidth || document.documentElement.clientWidth || 0);
+      const viewportH = Math.max(0, window.innerHeight || document.documentElement.clientHeight || 0);
+      const tz = (Intl && Intl.DateTimeFormat) ? (Intl.DateTimeFormat().resolvedOptions().timeZone || "") : "";
+      const lang = navigator.language || "";
+      const ts = Date.now();
+
+      const deviceType = (viewportW && viewportW <= 768) ? "mobile" : "desktop";
+
+      const payload = {
+        siteId: String(siteId),
+        pagePath,
+        referrerDomain,
+        deviceType,
+        viewportW,
+        viewportH,
+        tz,
+        lang,
+        ts
+      };
+
+      const json = JSON.stringify(payload);
+      if (navigator.sendBeacon) {
+        const blob = new Blob([json], { type: "application/json" });
+        navigator.sendBeacon(url, blob);
+      } else {
+        fetch(url, {
+          method: "POST",
+          credentials: "omit",
+          mode: "cors",
+          keepalive: true,
+          headers: { "Content-Type": "application/json" },
+          body: json
+        }).catch(() => {});
+      }
+    } catch {}
+  }
+
+  sendPageVisit();
+
   // --- режим рендера ---
   // если явно data-mode не задан, но скрипт стоит внутри контейнера → считаем inline
   const explicitMode = s.getAttribute("data-mode");

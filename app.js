@@ -8,6 +8,7 @@ import authRouter from "./api/auth.js";
 import clientRouter from "./api/clientRoutes.js";
 import adminUsersRouter from "./api/adminUsers.js";
 import aiwStatsRouter from "./api/aiwStats.js";
+import telemetryRouter from "./api/telemetry.js";
 import sendTelegramMessage from "./services/telegramNotify.js";
 import widgetRouter from "./api/widget/widget.js";
 import retrieveRouter from "./api/widget/aiwSearch.js";
@@ -43,7 +44,9 @@ const app = express();
 const PORT = process.env.PORT || 3000;
 
 app.set('trust proxy', true);
-app.use(morgan("tiny"));
+app.use(morgan("tiny", {
+  skip: (req) => req.originalUrl.startsWith("/api/telemetry"),
+}));
 
 app.use((req, res, next) => {
   // Уникальный traceId для запроса
@@ -121,6 +124,7 @@ mongoose
     app.use("/api/users", adminUsersRouter);
     app.use("/api/statistic", aiwStatsRouter);
     app.use("/api/notification-destinations", notificationDestinationsRouter);
+    app.use("/api/telemetry", telemetryRouter);
 
 const aiwRouter = express.Router();
 
