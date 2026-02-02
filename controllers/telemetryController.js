@@ -64,9 +64,20 @@ function parseDate(value, fallback) {
   return Number.isNaN(d.getTime()) ? null : d;
 }
 
+function parsePayloadBody(rawBody) {
+  if (!rawBody) return {};
+  if (typeof rawBody === "object") return rawBody;
+  if (typeof rawBody !== "string") return {};
+  try {
+    return JSON.parse(rawBody);
+  } catch {
+    return {};
+  }
+}
+
 export async function recordPageVisit(req, res) {
   try {
-    const body = req.body || {};
+    const body = parsePayloadBody(req.body);
     const errors = [];
 
     if (typeof body.siteId !== "string" || !body.siteId.trim()) errors.push("siteId");

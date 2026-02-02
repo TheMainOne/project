@@ -73,8 +73,9 @@
 
       const json = JSON.stringify(payload);
       let canBeacon = false;
+      let targetOrigin = "";
       try {
-        const targetOrigin = new URL(url, window.location.href).origin;
+        targetOrigin = new URL(url, window.location.href).origin;
         canBeacon = targetOrigin === window.location.origin;
       } catch {}
 
@@ -82,14 +83,18 @@
         const blob = new Blob([json], { type: "application/json" });
         navigator.sendBeacon(url, blob);
       } else {
-        fetch(url, {
+        const isCrossOrigin = !targetOrigin || targetOrigin !== window.location.origin;
+        const requestOptions = {
           method: "POST",
           credentials: "omit",
-          mode: "cors",
+          mode: isCrossOrigin ? "no-cors" : "cors",
           keepalive: true,
-          headers: { "Content-Type": "application/json" },
           body: json
-        }).catch(() => {});
+        };
+        if (!isCrossOrigin) {
+          requestOptions.headers = { "Content-Type": "application/json" };
+        }
+        fetch(url, requestOptions).catch(() => {});
       }
     } catch {}
   }

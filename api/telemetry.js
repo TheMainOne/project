@@ -3,7 +3,11 @@ import { recordPageVisit, telemetrySummary } from "../controllers/telemetryContr
 
 const telemetryRouter = express.Router();
 
-telemetryRouter.post("/page-visit", recordPageVisit);
+telemetryRouter.post(
+  "/page-visit",
+  express.text({ type: "text/plain", limit: "32kb" }),
+  recordPageVisit
+);
 telemetryRouter.get("/summary", telemetrySummary);
 
 export default telemetryRouter;
