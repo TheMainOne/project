@@ -141,6 +141,35 @@ function clampString(value, maxLen) {
   return value.slice(0, maxLen);
 }
 
+function isLocalHost(host) {
+  const d = String(host || "").trim().toLowerCase();
+  return (
+    d === "localhost" ||
+    d.endsWith(".localhost") ||
+    d === "127.0.0.1" ||
+    d === "::1" ||
+    d === "[::1]"
+  );
+}
+
+function isLocalReferrerDomain(domain) {
+  return isLocalHost(domain);
+}
+
+function isLocalRequestSource(req) {
+  const sources = [req.get("origin"), req.get("referer")];
+  for (const raw of sources) {
+    if (!raw) continue;
+    try {
+      const parsed = new URL(raw);
+      if (isLocalHost(parsed.hostname)) return true;
+    } catch {
+      continue;
+    }
+  }
+  return false;
+}
+
 function parseDate(value, fallback) {
   if (!value) return fallback;
   const d = new Date(value);
@@ -333,16 +362,21 @@ export async function recordPageVisit(req, res) {
       return res.status(400).json({ error: "Invalid telemetry payload", fields: errors });
     }
 
-    const ip = getClientIp(req);
-    if (isRateLimited(ip)) {
-      return res.status(429).json({ error: "Rate limited" });
-    }
-
     const pagePath = clampString(normalizePath(body.pagePath), 512);
     const referrerDomain = clampString(normalizeReferrer(body.referrerDomain), 255);
     const siteId = clampString(body.siteId.trim(), 200);
     const viewportWidth = clampViewport(viewportW);
     const viewportHeight = clampViewport(viewportH);
+
+    // Skip local dev traffic to keep production analytics clean.
+    if (isLocalReferrerDomain(referrerDomain) || isLocalRequestSource(req)) {
+      return res.status(204).end();
+    }
+
+    const ip = getClientIp(req);
+    if (isRateLimited(ip)) {
+      return res.status(429).json({ error: "Rate limited" });
+    }
 
     const geo = ip ? geoip.lookup(ip) : null;
     const countryCode = normalizeCountryCode(geo?.country);
