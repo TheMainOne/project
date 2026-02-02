@@ -6,6 +6,8 @@ const TelemetryEventSchema = new mongoose.Schema(
     pagePath: { type: String, required: true },
     referrerDomain: { type: String, default: "" },
     deviceType: { type: String, enum: ["mobile", "desktop"], required: true },
+    viewportW: { type: Number, min: 0, default: null },
+    viewportH: { type: Number, min: 0, default: null },
     countryCode: { type: String, default: null },
     country: { type: String, default: null },
     regionCode: { type: String, default: null },

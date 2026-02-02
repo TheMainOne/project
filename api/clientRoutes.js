@@ -11,6 +11,7 @@ import {
   listClientUsers
 } from "../controllers/clientController.js";
 import { getWidgetConfig, upsertWidgetConfig, getPublicWidgetConfig, uploadWidgetFont } from "../controllers/widgetConfigController.js";
+import { telemetryEventsByClient, telemetrySummaryByClient } from "../controllers/telemetryController.js";
 
 const clientRouter = express.Router();
 
@@ -22,6 +23,8 @@ clientRouter.get("/:id", getClient);         // GET /api/clients/:idOrSlug
 clientRouter.post("/:id/documents", upload.single("file"), createClientDocument);
 clientRouter.get("/:id/documents", listClientDocuments);
 clientRouter.get("/:id/users", listClientUsers);
+clientRouter.get("/:id/telemetry/events", telemetryEventsByClient);
+clientRouter.get("/:id/telemetry/summary", telemetrySummaryByClient);
 clientRouter.put("/:idOrSlug", updateClient);      // PUT /api/clients/:idOrSlug
 clientRouter.delete("/:idOrSlug", deleteClient);   // DELETE /api/clients/:idOrSlug
 clientRouter.delete("/:id/documents/:docId", deleteClientDocument); // DELETE /api/clients/:id/documents/:docId

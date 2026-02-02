@@ -1,5 +1,6 @@
 import geoip from "geoip-lite";
 import TelemetryEvent from "../models/TelemetryEvent.js";
+import Client from "../models/Client.js";
 
 const RATE_LIMIT_MAX = 60;
 const RATE_LIMIT_WINDOW_MS = 60 * 1000;
@@ -190,6 +191,121 @@ function parsePayloadBody(rawBody) {
   }
 }
 
+function parsePagination(query) {
+  const page = Math.max(1, Number(query.page || 1));
+  const limit = Math.min(100, Math.max(1, Number(query.limit || 20)));
+  const skip = (page - 1) * limit;
+  return { page, limit, skip };
+}
+
+function parseTelemetryRange(query) {
+  const defaultFrom = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+  const from = parseDate(query.from, defaultFrom);
+  const to = parseDate(query.to, new Date());
+  if (!from || !to) return { error: "Invalid from/to date" };
+  if (from > to) return { error: "from must be <= to" };
+  return { from, to };
+}
+
+function clampViewport(value) {
+  const n = Number(value);
+  if (!Number.isFinite(n)) return null;
+  const rounded = Math.round(n);
+  if (rounded < 0) return 0;
+  if (rounded > 20000) return 20000;
+  return rounded;
+}
+
+function isObjectId(value) {
+  return /^[0-9a-fA-F]{24}$/.test(String(value || ""));
+}
+
+async function findClientByIdOrSlug(idOrSlug) {
+  if (!idOrSlug) return null;
+  const key = String(idOrSlug).trim();
+  const filter = isObjectId(key) ? { _id: key } : { slug: key };
+  return Client.findOne(filter).select("_id siteId slug name").lean();
+}
+
+function buildEventsFilter({ siteId, query, from, to }) {
+  const filter = {
+    siteId: String(siteId).trim(),
+    createdAt: { $gte: from, $lte: to },
+  };
+
+  if (query.deviceType) {
+    const device = String(query.deviceType).toLowerCase().trim();
+    if (!["mobile", "desktop"].includes(device)) {
+      return { error: "deviceType must be mobile or desktop" };
+    }
+    filter.deviceType = device;
+  }
+
+  if (query.countryCode) {
+    filter.countryCode = normalizeCountryCode(query.countryCode);
+  }
+
+  if (query.pagePath) {
+    filter.pagePath = normalizePath(String(query.pagePath));
+  }
+
+  if (query.referrerDomain) {
+    filter.referrerDomain = normalizeReferrer(String(query.referrerDomain));
+  }
+
+  return { filter };
+}
+
+async function getTelemetryEventsPayload({ siteId, query }) {
+  if (!siteId || !String(siteId).trim()) {
+    return { status: 400, payload: { error: "siteId is required" } };
+  }
+
+  const range = parseTelemetryRange(query);
+  if (range.error) return { status: 400, payload: { error: range.error } };
+
+  const { page, limit, skip } = parsePagination(query);
+  const { from, to } = range;
+  const built = buildEventsFilter({ siteId, query, from, to });
+  if (built.error) return { status: 400, payload: { error: built.error } };
+
+  const projection = {
+    siteId: 1,
+    pagePath: 1,
+    referrerDomain: 1,
+    deviceType: 1,
+    viewportW: 1,
+    viewportH: 1,
+    countryCode: 1,
+    country: 1,
+    regionCode: 1,
+    region: 1,
+    createdAt: 1,
+  };
+
+  const [items, total] = await Promise.all([
+    TelemetryEvent.find(built.filter, projection)
+      .sort({ createdAt: -1 })
+      .skip(skip)
+      .limit(limit)
+      .lean(),
+    TelemetryEvent.countDocuments(built.filter),
+  ]);
+
+  return {
+    status: 200,
+    payload: {
+      siteId: String(siteId).trim(),
+      from,
+      to,
+      page,
+      limit,
+      total,
+      items,
+    },
+  };
+}
+
 export async function recordPageVisit(req, res) {
   try {
     const body = parsePayloadBody(req.body);
@@ -225,6 +341,8 @@ export async function recordPageVisit(req, res) {
     const pagePath = clampString(normalizePath(body.pagePath), 512);
     const referrerDomain = clampString(normalizeReferrer(body.referrerDomain), 255);
     const siteId = clampString(body.siteId.trim(), 200);
+    const viewportWidth = clampViewport(viewportW);
+    const viewportHeight = clampViewport(viewportH);
 
     const geo = ip ? geoip.lookup(ip) : null;
     const countryCode = normalizeCountryCode(geo?.country);
@@ -238,6 +356,8 @@ export async function recordPageVisit(req, res) {
       pagePath,
       referrerDomain,
       deviceType: device,
+      viewportW: viewportWidth,
+      viewportH: viewportHeight,
       countryCode,
       country,
       regionCode,
@@ -250,102 +370,183 @@ export async function recordPageVisit(req, res) {
   }
 }
 
-export async function telemetrySummary(req, res) {
-  try {
-    const siteId = typeof req.query.siteId === "string" ? req.query.siteId.trim() : "";
-    if (!siteId) {
-      return res.status(400).json({ error: "siteId is required" });
-    }
+async function getTelemetrySummaryPayload({ siteId, query }) {
+  if (!siteId || !String(siteId).trim()) {
+    return { status: 400, payload: { error: "siteId is required" } };
+  }
 
-    const defaultFrom = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
-    const from = parseDate(req.query.from, defaultFrom);
-    const to = parseDate(req.query.to, new Date());
+  const range = parseTelemetryRange(query);
+  if (range.error) return { status: 400, payload: { error: range.error } };
+  const { from, to } = range;
 
-    if (!from || !to) {
-      return res.status(400).json({ error: "Invalid from/to date" });
-    }
-    if (from > to) {
-      return res.status(400).json({ error: "from must be <= to" });
-    }
+  const match = {
+    siteId: String(siteId).trim(),
+    createdAt: { $gte: from, $lte: to },
+  };
 
-    const match = {
-      siteId,
-      createdAt: { $gte: from, $lte: to },
-    };
-
-    const [summary] = await TelemetryEvent.aggregate([
-      { $match: match },
-      {
-        $facet: {
-          total: [{ $count: "count" }],
-          byDevice: [
-            { $group: { _id: "$deviceType", count: { $sum: 1 } } },
-            { $sort: { count: -1 } },
-            { $project: { _id: 0, deviceType: "$_id", count: 1 } },
-          ],
-          topCountries: [
-            {
-              $addFields: {
-                countryCodeNorm: { $ifNull: ["$countryCode", "$country"] },
-                countryNorm: { $ifNull: ["$country", "$countryCode"] },
-              },
+  const [summary] = await TelemetryEvent.aggregate([
+    { $match: match },
+    {
+      $facet: {
+        total: [{ $count: "count" }],
+        byDevice: [
+          { $group: { _id: "$deviceType", count: { $sum: 1 } } },
+          { $sort: { count: -1 } },
+          { $project: { _id: 0, deviceType: "$_id", count: 1 } },
+        ],
+        topCountries: [
+          {
+            $addFields: {
+              countryCodeNorm: { $ifNull: ["$countryCode", "$country"] },
+              countryNorm: { $ifNull: ["$country", "$countryCode"] },
             },
-            { $match: { countryCodeNorm: { $nin: [null, ""] } } },
-            {
-              $group: {
-                _id: { countryCode: "$countryCodeNorm", country: "$countryNorm" },
-                count: { $sum: 1 },
-              },
+          },
+          { $match: { countryCodeNorm: { $nin: [null, ""] } } },
+          {
+            $group: {
+              _id: { countryCode: "$countryCodeNorm", country: "$countryNorm" },
+              count: { $sum: 1 },
             },
-            { $sort: { count: -1 } },
-            { $limit: 10 },
-            { $project: { _id: 0, countryCode: "$_id.countryCode", country: "$_id.country", count: 1 } },
-          ],
-          topRegions: [
-            {
-              $addFields: {
-                countryCodeNorm: { $ifNull: ["$countryCode", "$country"] },
-                regionCodeNorm: { $ifNull: ["$regionCode", "$region"] },
-                regionNorm: { $ifNull: ["$region", "$regionCode"] },
-              },
+          },
+          { $sort: { count: -1 } },
+          { $limit: 10 },
+          { $project: { _id: 0, countryCode: "$_id.countryCode", country: "$_id.country", count: 1 } },
+        ],
+        topRegions: [
+          {
+            $addFields: {
+              countryCodeNorm: { $ifNull: ["$countryCode", "$country"] },
+              regionCodeNorm: { $ifNull: ["$regionCode", "$region"] },
+              regionNorm: { $ifNull: ["$region", "$regionCode"] },
             },
-            { $match: { regionCodeNorm: { $nin: [null, ""] } } },
-            {
-              $group: {
-                _id: {
-                  countryCode: "$countryCodeNorm",
-                  regionCode: "$regionCodeNorm",
-                  region: "$regionNorm",
-                },
-                count: { $sum: 1 },
+          },
+          { $match: { regionCodeNorm: { $nin: [null, ""] } } },
+          {
+            $group: {
+              _id: {
+                countryCode: "$countryCodeNorm",
+                regionCode: "$regionCodeNorm",
+                region: "$regionNorm",
               },
+              count: { $sum: 1 },
             },
-            { $sort: { count: -1 } },
-            { $limit: 10 },
-            {
-              $project: {
-                _id: 0,
-                countryCode: "$_id.countryCode",
-                regionCode: "$_id.regionCode",
-                region: "$_id.region",
-                count: 1,
-              },
+          },
+          { $sort: { count: -1 } },
+          { $limit: 10 },
+          {
+            $project: {
+              _id: 0,
+              countryCode: "$_id.countryCode",
+              regionCode: "$_id.regionCode",
+              region: "$_id.region",
+              count: 1,
             },
-          ],
-        },
+          },
+        ],
+        topViewports: [
+          { $match: { viewportW: { $ne: null }, viewportH: { $ne: null } } },
+          {
+            $group: {
+              _id: { viewportW: "$viewportW", viewportH: "$viewportH" },
+              count: { $sum: 1 },
+            },
+          },
+          { $sort: { count: -1 } },
+          { $limit: 10 },
+          {
+            $project: {
+              _id: 0,
+              viewportW: "$_id.viewportW",
+              viewportH: "$_id.viewportH",
+              count: 1,
+            },
+          },
+        ],
       },
-    ]);
+    },
+  ]);
 
-    return res.json({
-      siteId,
+  return {
+    status: 200,
+    payload: {
+      siteId: String(siteId).trim(),
       from,
       to,
       total: summary?.total?.[0]?.count || 0,
       byDevice: summary?.byDevice || [],
       topCountries: summary?.topCountries || [],
       topRegions: summary?.topRegions || [],
+      topViewports: summary?.topViewports || [],
+    },
+  };
+}
+
+export async function telemetryEvents(req, res) {
+  try {
+    const siteId = typeof req.query.siteId === "string" ? req.query.siteId.trim() : "";
+    const result = await getTelemetryEventsPayload({ siteId, query: req.query || {} });
+    return res.status(result.status).json(result.payload);
+  } catch (e) {
+    return res.status(500).json({ error: "Telemetry events error" });
+  }
+}
+
+export async function telemetryEventsByClient(req, res) {
+  try {
+    const client = await findClientByIdOrSlug(req.params.id);
+    if (!client) {
+      return res.status(404).json({ error: "Client not found" });
+    }
+
+    const result = await getTelemetryEventsPayload({
+      siteId: client.siteId,
+      query: req.query || {},
+    });
+
+    if (result.status !== 200) {
+      return res.status(result.status).json(result.payload);
+    }
+    return res.json({
+      clientId: String(client._id),
+      clientSlug: client.slug,
+      ...result.payload,
     });
   } catch (e) {
+    return res.status(500).json({ error: "Client telemetry events error" });
+  }
+}
+
+export async function telemetrySummary(req, res) {
+  try {
+    const siteId = typeof req.query.siteId === "string" ? req.query.siteId.trim() : "";
+    const result = await getTelemetrySummaryPayload({ siteId, query: req.query || {} });
+    return res.status(result.status).json(result.payload);
+  } catch (e) {
     return res.status(500).json({ error: "Telemetry summary error" });
+  }
+}
+
+export async function telemetrySummaryByClient(req, res) {
+  try {
+    const client = await findClientByIdOrSlug(req.params.id);
+    if (!client) {
+      return res.status(404).json({ error: "Client not found" });
+    }
+
+    const result = await getTelemetrySummaryPayload({
+      siteId: client.siteId,
+      query: req.query || {},
+    });
+    if (result.status !== 200) {
+      return res.status(result.status).json(result.payload);
+    }
+
+    return res.json({
+      clientId: String(client._id),
+      clientSlug: client.slug,
+      ...result.payload,
+    });
+  } catch (e) {
+    return res.status(500).json({ error: "Client telemetry summary error" });
   }
 }
