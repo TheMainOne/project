@@ -4,6 +4,88 @@ import TelemetryEvent from "../models/TelemetryEvent.js";
 const RATE_LIMIT_MAX = 60;
 const RATE_LIMIT_WINDOW_MS = 60 * 1000;
 const rateLimits = new Map();
+const COUNTRY_DISPLAY_NAMES =
+  typeof Intl !== "undefined" && typeof Intl.DisplayNames === "function"
+    ? new Intl.DisplayNames(["en"], { type: "region" })
+    : null;
+
+const REGION_NAMES_BY_COUNTRY = {
+  PT: {
+    "01": "Aveiro",
+    "02": "Beja",
+    "03": "Braga",
+    "04": "Braganca",
+    "05": "Castelo Branco",
+    "06": "Coimbra",
+    "07": "Evora",
+    "08": "Faro",
+    "09": "Guarda",
+    "10": "Leiria",
+    "11": "Lisboa",
+    "12": "Portalegre",
+    "13": "Porto",
+    "14": "Santarem",
+    "15": "Setubal",
+    "16": "Viana do Castelo",
+    "17": "Vila Real",
+    "18": "Viseu",
+    "20": "Acores",
+    "30": "Madeira",
+  },
+  US: {
+    AL: "Alabama",
+    AK: "Alaska",
+    AZ: "Arizona",
+    AR: "Arkansas",
+    CA: "California",
+    CO: "Colorado",
+    CT: "Connecticut",
+    DE: "Delaware",
+    FL: "Florida",
+    GA: "Georgia",
+    HI: "Hawaii",
+    ID: "Idaho",
+    IL: "Illinois",
+    IN: "Indiana",
+    IA: "Iowa",
+    KS: "Kansas",
+    KY: "Kentucky",
+    LA: "Louisiana",
+    ME: "Maine",
+    MD: "Maryland",
+    MA: "Massachusetts",
+    MI: "Michigan",
+    MN: "Minnesota",
+    MS: "Mississippi",
+    MO: "Missouri",
+    MT: "Montana",
+    NE: "Nebraska",
+    NV: "Nevada",
+    NH: "New Hampshire",
+    NJ: "New Jersey",
+    NM: "New Mexico",
+    NY: "New York",
+    NC: "North Carolina",
+    ND: "North Dakota",
+    OH: "Ohio",
+    OK: "Oklahoma",
+    OR: "Oregon",
+    PA: "Pennsylvania",
+    RI: "Rhode Island",
+    SC: "South Carolina",
+    SD: "South Dakota",
+    TN: "Tennessee",
+    TX: "Texas",
+    UT: "Utah",
+    VT: "Vermont",
+    VA: "Virginia",
+    WA: "Washington",
+    WV: "West Virginia",
+    WI: "Wisconsin",
+    WY: "Wyoming",
+    DC: "District of Columbia",
+  },
+};
 
 function getClientIp(req) {
   const ip = String(req.ip || "");
@@ -64,6 +146,39 @@ function parseDate(value, fallback) {
   return Number.isNaN(d.getTime()) ? null : d;
 }
 
+function normalizeCountryCode(value) {
+  if (!value) return null;
+  const code = String(value).trim().toUpperCase();
+  return code || null;
+}
+
+function resolveCountryName(countryCode) {
+  if (!countryCode) return null;
+  if (!COUNTRY_DISPLAY_NAMES) return countryCode;
+  try {
+    return COUNTRY_DISPLAY_NAMES.of(countryCode) || countryCode;
+  } catch {
+    return countryCode;
+  }
+}
+
+function normalizeRegionCode(countryCode, value) {
+  if (!value) return null;
+  let code = String(value).trim();
+  if (!code) return null;
+  if (countryCode === "PT" && /^\d+$/.test(code)) {
+    code = code.padStart(2, "0");
+  } else {
+    code = code.toUpperCase();
+  }
+  return code;
+}
+
+function resolveRegionName(countryCode, regionCode) {
+  if (!countryCode || !regionCode) return null;
+  return REGION_NAMES_BY_COUNTRY[countryCode]?.[regionCode] || null;
+}
+
 function parsePayloadBody(rawBody) {
   if (!rawBody) return {};
   if (typeof rawBody === "object") return rawBody;
@@ -112,8 +227,10 @@ export async function recordPageVisit(req, res) {
     const siteId = clampString(body.siteId.trim(), 200);
 
     const geo = ip ? geoip.lookup(ip) : null;
-    const country = geo?.country || null;
-    const region = geo?.region || null;
+    const countryCode = normalizeCountryCode(geo?.country);
+    const regionCode = normalizeRegionCode(countryCode, geo?.region);
+    const country = resolveCountryName(countryCode);
+    const region = resolveRegionName(countryCode, regionCode) || regionCode;
 
     // Privacy: store no raw IPs, cookies, or identifiers; only derived geo + minimal fields.
     await TelemetryEvent.create({
@@ -121,7 +238,9 @@ export async function recordPageVisit(req, res) {
       pagePath,
       referrerDomain,
       deviceType: device,
+      countryCode,
       country,
+      regionCode,
       region,
     });
 
@@ -165,18 +284,53 @@ export async function telemetrySummary(req, res) {
             { $project: { _id: 0, deviceType: "$_id", count: 1 } },
           ],
           topCountries: [
-            { $match: { country: { $nin: [null, ""] } } },
-            { $group: { _id: "$country", count: { $sum: 1 } } },
+            {
+              $addFields: {
+                countryCodeNorm: { $ifNull: ["$countryCode", "$country"] },
+                countryNorm: { $ifNull: ["$country", "$countryCode"] },
+              },
+            },
+            { $match: { countryCodeNorm: { $nin: [null, ""] } } },
+            {
+              $group: {
+                _id: { countryCode: "$countryCodeNorm", country: "$countryNorm" },
+                count: { $sum: 1 },
+              },
+            },
             { $sort: { count: -1 } },
             { $limit: 10 },
-            { $project: { _id: 0, country: "$_id", count: 1 } },
+            { $project: { _id: 0, countryCode: "$_id.countryCode", country: "$_id.country", count: 1 } },
           ],
           topRegions: [
-            { $match: { region: { $nin: [null, ""] } } },
-            { $group: { _id: "$region", count: { $sum: 1 } } },
+            {
+              $addFields: {
+                countryCodeNorm: { $ifNull: ["$countryCode", "$country"] },
+                regionCodeNorm: { $ifNull: ["$regionCode", "$region"] },
+                regionNorm: { $ifNull: ["$region", "$regionCode"] },
+              },
+            },
+            { $match: { regionCodeNorm: { $nin: [null, ""] } } },
+            {
+              $group: {
+                _id: {
+                  countryCode: "$countryCodeNorm",
+                  regionCode: "$regionCodeNorm",
+                  region: "$regionNorm",
+                },
+                count: { $sum: 1 },
+              },
+            },
             { $sort: { count: -1 } },
             { $limit: 10 },
-            { $project: { _id: 0, region: "$_id", count: 1 } },
+            {
+              $project: {
+                _id: 0,
+                countryCode: "$_id.countryCode",
+                regionCode: "$_id.regionCode",
+                region: "$_id.region",
+                count: 1,
+              },
+            },
           ],
         },
       },

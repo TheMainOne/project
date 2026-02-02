@@ -6,7 +6,9 @@ const TelemetryEventSchema = new mongoose.Schema(
     pagePath: { type: String, required: true },
     referrerDomain: { type: String, default: "" },
     deviceType: { type: String, enum: ["mobile", "desktop"], required: true },
+    countryCode: { type: String, default: null },
     country: { type: String, default: null },
+    regionCode: { type: String, default: null },
     region: { type: String, default: null },
   },
   { timestamps: { createdAt: true, updatedAt: false }, versionKey: false }
@@ -14,6 +16,6 @@ const TelemetryEventSchema = new mongoose.Schema(
 
 TelemetryEventSchema.index({ siteId: 1, createdAt: -1 });
 TelemetryEventSchema.index({ siteId: 1, pagePath: 1, createdAt: -1 });
-TelemetryEventSchema.index({ siteId: 1, country: 1, createdAt: -1 });
+TelemetryEventSchema.index({ siteId: 1, countryCode: 1, createdAt: -1 });
 
 export default mongoose.model("TelemetryEvent", TelemetryEventSchema);
