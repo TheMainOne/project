@@ -235,8 +235,8 @@ function buildEventsFilter({ siteId, query, from, to }) {
 
   if (query.deviceType) {
     const device = String(query.deviceType).toLowerCase().trim();
-    if (!["mobile", "desktop"].includes(device)) {
-      return { error: "deviceType must be mobile or desktop" };
+    if (!["mobile", "tablet", "desktop"].includes(device)) {
+      return { error: "deviceType must be mobile, tablet, or desktop" };
     }
     filter.deviceType = device;
   }
@@ -316,7 +316,7 @@ export async function recordPageVisit(req, res) {
     if (typeof body.referrerDomain !== "string") errors.push("referrerDomain");
 
     const device = typeof body.deviceType === "string" ? body.deviceType.toLowerCase() : "";
-    if (device !== "mobile" && device !== "desktop") errors.push("deviceType");
+    if (!["mobile", "tablet", "desktop"].includes(device)) errors.push("deviceType");
 
     const viewportW = Number(body.viewportW);
     const viewportH = Number(body.viewportH);

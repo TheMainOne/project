@@ -57,7 +57,12 @@
       const lang = navigator.language || "";
       const ts = Date.now();
 
-      const deviceType = (viewportW && viewportW <= 768) ? "mobile" : "desktop";
+      let deviceType = "desktop";
+      if (viewportW && viewportW <= 768) {
+        deviceType = "mobile";
+      } else if (viewportW && viewportW <= 1024) {
+        deviceType = "tablet";
+      }
 
       const payload = {
         siteId: String(siteId),
