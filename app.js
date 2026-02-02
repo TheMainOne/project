@@ -9,6 +9,7 @@ import clientRouter from "./api/clientRoutes.js";
 import adminUsersRouter from "./api/adminUsers.js";
 import aiwStatsRouter from "./api/aiwStats.js";
 import telemetryRouter from "./api/telemetry.js";
+import leadsRouter from "./api/leads.js";
 import sendTelegramMessage from "./services/telegramNotify.js";
 import widgetRouter from "./api/widget/widget.js";
 import retrieveRouter from "./api/widget/aiwSearch.js";
@@ -125,6 +126,7 @@ mongoose
     app.use("/api/statistic", aiwStatsRouter);
     app.use("/api/notification-destinations", notificationDestinationsRouter);
     app.use("/api/telemetry", telemetryRouter);
+    app.use("/api/leads", leadsRouter);
 
 const aiwRouter = express.Router();
 

@@ -14,4 +14,9 @@ const LeadSchema = new mongoose.Schema({
   createdAt: { type: Date, default: Date.now },
 }, { timestamps: true, versionKey: false });
 
+LeadSchema.index({ siteId: 1, createdAt: -1 });
+LeadSchema.index({ clientId: 1, createdAt: -1 });
+LeadSchema.index({ status: 1, createdAt: -1 });
+LeadSchema.index({ siteId: 1, sessionId: 1 });
+
 export default mongoose.model("Lead", LeadSchema);
