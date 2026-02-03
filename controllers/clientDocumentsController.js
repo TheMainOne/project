@@ -7,18 +7,46 @@ import ClientDocument from "../models/ClientDocument.js";
 import ClientDocChunk from "../models/ClientDocChunk.js";
 import { ingestDocument } from "../services/rag/ingestDocument.js";
 
-// вспомогательный разбор ключа из URL (если нужно)
+async function resolveClientId(idOrSlug) {
+  if (!idOrSlug) return null;
+
+  if (mongoose.isValidObjectId(idOrSlug)) {
+    return new mongoose.Types.ObjectId(idOrSlug);
+  }
+
+  const client = await Client.findOne({
+    $or: [
+      { slug: idOrSlug },
+      { siteId: idOrSlug },
+      { domains: idOrSlug }
+    ]
+  }).select("_id").lean();
+
+  return client?._id || null;
+}
+
+async function resolveClientIdFromRequest(req) {
+  const idOrSlug =
+    req.params.id ||
+    req.params.clientId ||
+    req.body?.clientId ||
+    req.header("x-aiw-client") ||
+    null;
+
+  return resolveClientId(idOrSlug);
+}
+
 function extractKeyFromUrl(url) {
   try {
     const u = new URL(url);
-    // pathname без ведущего слэша
     let key = u.pathname.replace(/^\/+/, "");
-    // если формат s3.amazonaws.com/<bucket>/<key> — убрать первый сегмент (bucket)
+
     if (u.hostname === "s3.amazonaws.com" || /^s3\.[^.]+\.amazonaws\.com$/.test(u.hostname)) {
       const parts = key.split("/");
       parts.shift();
       key = parts.join("/");
     }
+
     return decodeURIComponent(key);
   } catch {
     return null;
@@ -27,28 +55,7 @@ function extractKeyFromUrl(url) {
 
 export async function createClientDocument(req, res) {
   try {
-    // 1) достаём идентификатор из URL/headers/body
-    const idOrSlug =
-      req.params.id ||
-      req.params.clientId ||
-      req.body?.clientId ||
-      req.header("x-aiw-client") ||
-      null;
-
-    // 2) приводим к ObjectId или ищем по слагу
-    let clientId = null;
-    if (idOrSlug && mongoose.isValidObjectId(idOrSlug)) {
-      clientId = new mongoose.Types.ObjectId(idOrSlug);
-    } else if (idOrSlug) {
-      const c = await Client.findOne({
-        $or: [
-          { slug: idOrSlug },
-          { siteId: idOrSlug },
-          { domains: idOrSlug }
-        ]
-      }).select("_id").lean();
-      if (c?._id) clientId = c._id;
-    }
+    const clientId = await resolveClientIdFromRequest(req);
 
     if (!clientId) {
       return res.status(400).json({ ok: false, error: "clientId is required in URL" });
@@ -60,15 +67,13 @@ export async function createClientDocument(req, res) {
       return res.status(400).json({ ok: false, error: "file is required (multipart field 'file')" });
     }
 
-    // поля от multer-s3 (или локального multer)
-    const s3Key    = file.key || null;
+    const s3Key = file.key || null;
     const s3Bucket = file.bucket || null;
     const publicUrl = file.location || null;
     const fileName = file.uploadedOriginalName || file.originalname || "document";
     const mimeType = file.uploadedMimeType || file.mimetype;
     const fileSize = file.size;
 
-    // 3) создаём документ
     const doc = await ClientDocument.create({
       clientId,
       siteId: siteId || null,
@@ -85,10 +90,9 @@ export async function createClientDocument(req, res) {
       ingestStatus: "processing"
     });
 
-    // 4) ИНГЕСТ ЗАПУСКАЕМ В ФОНЕ — БЕЗ await
     (async () => {
       try {
-        const resIngest = await ingestDocument({
+        await ingestDocument({
           clientId,
           siteId: siteId || null,
           documentId: doc._id,
@@ -113,7 +117,6 @@ export async function createClientDocument(req, res) {
       }
     })();
 
-    // 5) СРАЗУ ОТДАЁМ ОТВЕТ — БЕЗ ожидания ingestDocument
     return res.status(202).json({
       ok: true,
       documentId: doc._id,
@@ -126,6 +129,50 @@ export async function createClientDocument(req, res) {
   }
 }
 
+export async function setClientDocumentActive(req, res) {
+  try {
+    const { docId } = req.params;
+    const { isActive } = req.body || {};
+
+    if (!mongoose.isValidObjectId(docId)) {
+      return res.status(400).json({ ok: false, error: "Invalid docId" });
+    }
+
+    if (typeof isActive !== "boolean") {
+      return res.status(400).json({ ok: false, error: "isActive boolean is required" });
+    }
+
+    const clientId = await resolveClientIdFromRequest(req);
+    if (!clientId) {
+      return res.status(400).json({ ok: false, error: "clientId is required in URL" });
+    }
+
+    const doc = await ClientDocument.findOneAndUpdate(
+      { _id: docId, clientId },
+      { $set: { isActive } },
+      { new: true, runValidators: true }
+    ).lean();
+
+    if (!doc) {
+      return res.status(404).json({ ok: false, error: "Document not found" });
+    }
+
+    return res.json({
+      ok: true,
+      document: {
+        _id: doc._id,
+        clientId: doc.clientId,
+        title: doc.title,
+        isActive: doc.isActive,
+        ingestStatus: doc.ingestStatus,
+        updatedAt: doc.updatedAt
+      }
+    });
+  } catch (e) {
+    console.error("setClientDocumentActive error:", e);
+    return res.status(500).json({ ok: false, error: String(e?.message || e) });
+  }
+}
 
 export async function deleteClientDocument(req, res) {
   try {
@@ -134,36 +181,24 @@ export async function deleteClientDocument(req, res) {
     const doc = await ClientDocument.findById(docId);
     if (!doc) return res.status(404).json({ error: "Document not found" });
 
-    // (опционально) проверить клиента
-    // const client = await Client.findById(doc.clientId);
-    // if (!client) return res.status(404).json({ error: "Client not found" });
-
-    // --- FIX: читаем плоские поля из БД ---
     let Bucket = doc.s3Bucket || process.env.AWS_S3_BUCKET || null;
-    let Key    = doc.s3Key || null;
+    let Key = doc.s3Key || null;
 
-    // фолбэк: попробуем достать ключ из URL, если его нет
     if (!Key && doc.s3Url) {
       Key = extractKeyFromUrl(doc.s3Url);
     }
 
-    // 1) Удаляем объект из S3 (идемпотентно)
     if (Bucket && Key) {
       try {
         await s3.send(new DeleteObjectCommand({ Bucket, Key }));
       } catch (err) {
         console.error("[S3] DeleteObject error:", err?.name || err?.message || err);
-        // Если хочешь фейлить целиком — раскомментируй следующую строку:
-        // return res.status(502).json({ error: "Failed to delete file from S3" });
       }
     } else {
       console.warn("[S3] Skip delete: missing Bucket/Key", { Bucket, Key, url: doc.s3Url });
     }
 
-    // 2) Чистим чанки
     await ClientDocChunk.deleteMany({ $or: [{ documentId: doc._id }, { docId: doc._id }] });
-
-    // 3) Удаляем запись документа
     await ClientDocument.deleteOne({ _id: doc._id });
 
     return res.json({ ok: true, removed: docId });
@@ -173,17 +208,12 @@ export async function deleteClientDocument(req, res) {
   }
 }
 
-// ====== COUNT ALL CLIENT DOCUMENTS ======
 export async function countAllClientDocuments(req, res) {
   try {
-    // Быстрое приближённое число (быстрее на больших коллекциях):
     const estimated = await ClientDocument.estimatedDocumentCount();
 
-    const exact = await ClientDocument.countDocuments();
-
     return res.json({
-      total: estimated,
-      // exact  // вернёт точное число, если используешь строкой выше
+      total: estimated
     });
   } catch (e) {
     return res.status(500).json({ error: e.message });

@@ -1,6 +1,7 @@
 // services/rag/retrieveDocs.js
 import mongoose from "mongoose";
 import ClientDocChunk from "../../models/ClientDocChunk.js";
+import ClientDocument from "../../models/ClientDocument.js";
 import OpenAI from "openai";
 
 const oai = process.env.OPENAI_API_KEY ? new OpenAI({ apiKey: process.env.OPENAI_API_KEY }) : null;
@@ -21,7 +22,17 @@ export async function retrieveDocsTopK({ clientId, siteId, query, k = 24 }) {
   }
 
   // фильтр в сам $vectorSearch
-  const filter = {};
+  const activeDocFilter = {
+    isActive: true
+  };
+  if (clientObjId) activeDocFilter.clientId = clientObjId;
+  else if (siteId) activeDocFilter.siteId = siteId;
+
+  const activeDocs = await ClientDocument.find(activeDocFilter).select("_id").lean();
+  const activeDocIds = activeDocs.map((d) => d._id);
+  if (!activeDocIds.length) return { chunks: [], mode: "vector" };
+
+  const filter = { documentId: { $in: activeDocIds } };
   if (clientObjId) filter.clientId = clientObjId;
   if (siteId) filter.siteId = siteId;
 

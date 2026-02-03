@@ -1,6 +1,7 @@
 // services/rag/retrieveHybrid.js
 import mongoose from "mongoose";
 import ClientDocChunk from "../../models/ClientDocChunk.js";
+import ClientDocument from "../../models/ClientDocument.js";
 import OpenAI from "openai";
 
 const oai = process.env.OPENAI_API_KEY
@@ -60,6 +61,18 @@ function computeTagBoost(tags, queryTokens) {
   return Math.min(score, 1.0);
 }
 
+async function getActiveDocumentIds({ clientId, siteId }) {
+  const filter = {
+    isActive: true,
+  };
+
+  if (clientId) filter.clientId = clientId;
+  else if (siteId) filter.siteId = siteId;
+
+  const docs = await ClientDocument.find(filter).select("_id").lean();
+  return docs.map((d) => d._id);
+}
+
 // =============================
 // Hybrid retriever
 // =============================
@@ -82,14 +95,23 @@ export async function retrieveHybrid({
     cid = new mongoose.Types.ObjectId(clientId);
   }
 
-  const filter = {};
+  const activeDocumentIds = await getActiveDocumentIds({ clientId: cid, siteId });
+  if (!activeDocumentIds.length) return { contexts: [] };
+
+  const filter = {
+    documentId: { $in: activeDocumentIds },
+  };
   if (cid) filter.clientId = cid;
   // if (siteId) filter.siteId = siteId;
 
   // 3. Vector search (top 80)
   let vecRows = [];
   try {
-      console.log("[RAG][hybrid] filter:", filter);
+    console.log("[RAG][hybrid] scope:", {
+      hasClient: Boolean(cid),
+      hasSite: Boolean(siteId),
+      activeDocs: activeDocumentIds.length
+    });
     vecRows = await ClientDocChunk.aggregate([
       {
         $vectorSearch: {

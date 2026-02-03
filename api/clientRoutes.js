@@ -1,6 +1,6 @@
 import express from "express";
 import upload from "../middlewares/s3Upload.js";
-import { createClientDocument, deleteClientDocument, countAllClientDocuments } from "../controllers/clientDocumentsController.js";
+import { createClientDocument, setClientDocumentActive, deleteClientDocument, countAllClientDocuments } from "../controllers/clientDocumentsController.js";
 import {
   createClient,
   getAllClients,
@@ -27,6 +27,7 @@ clientRouter.get("/:id/telemetry/events", telemetryEventsByClient);
 clientRouter.get("/:id/telemetry/summary", telemetrySummaryByClient);
 clientRouter.put("/:idOrSlug", updateClient);      // PUT /api/clients/:idOrSlug
 clientRouter.delete("/:idOrSlug", deleteClient);   // DELETE /api/clients/:idOrSlug
+clientRouter.patch("/:id/documents/:docId", setClientDocumentActive); // PATCH /api/clients/:id/documents/:docId
 clientRouter.delete("/:id/documents/:docId", deleteClientDocument); // DELETE /api/clients/:id/documents/:docId
 
 // Widget Config routes

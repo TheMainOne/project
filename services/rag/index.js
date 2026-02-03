@@ -28,6 +28,19 @@ export async function retrieveUnified({
 
   const baseFilter = { $or: or };
 
+  const activeDocFilter = {
+    isActive: true,
+    $or: or
+  };
+  const activeDocs = await ClientDocument.find(activeDocFilter).select("_id").lean();
+  const activeDocIds = activeDocs.map((d) => d._id);
+  if (!activeDocIds.length) return { contexts: [] };
+
+  const chunkScopeFilter = {
+    ...baseFilter,
+    documentId: { $in: activeDocIds }
+  };
+
   // 3) запрос — сначала пробуем RegExp по content/title (НЕ $text)
   //    $text нужен индекс, часто его нет → тишком отдаёт 0. Регексы надёжнее.
   const rx = query ? new RegExp(escapeRegExp(query), "i") : null;
@@ -35,9 +48,11 @@ export async function retrieveUnified({
   let chunks = [];
   console.log("kClient:", kClient);
   try {
-    chunks = await ClientDocChunk.find(
-      rx ? { ...baseFilter, $or: [{ content: rx }, { title: rx }] } : baseFilter
-    )
+    const searchFilter = rx
+      ? { $and: [chunkScopeFilter, { $or: [{ content: rx }, { title: rx }] }] }
+      : chunkScopeFilter;
+
+    chunks = await ClientDocChunk.find(searchFilter)
       .sort(rx ? { updatedAt: -1 } : { createdAt: -1 })
       .limit(kClient * 3)
       .lean();
@@ -48,7 +63,7 @@ export async function retrieveUnified({
 
   // 4) если ничего — возьмём последние чанки клиента/сайта, чтобы хоть что-то было
   if (!chunks.length) {
-    chunks = await ClientDocChunk.find(baseFilter)
+    chunks = await ClientDocChunk.find(chunkScopeFilter)
       .sort({ createdAt: -1 })
       .limit(kClient * 3)
       .lean();
@@ -87,8 +102,8 @@ export async function retrieveUnified({
     });
 
   // 7) дедуп и сортировка
-const deduped = dedupeByUrl(normalized);
-deduped.sort((a, b) => (b.score ?? 0) - (a.score ?? 0));
+  const deduped = dedupeByUrl(normalized);
+  deduped.sort((a, b) => (b.score ?? 0) - (a.score ?? 0));
 
   // 8) маленькая диагностика в лог (поможет, если снова будет 0)
   try {
@@ -99,7 +114,7 @@ deduped.sort((a, b) => (b.score ?? 0) - (a.score ?? 0));
       "| out:", deduped.length
     );
 
-       console.log(
+    console.log(
       "[RAG][preview]",
       deduped.slice(0, kClient).map(c => ({
         title: c.title,
@@ -110,7 +125,7 @@ deduped.sort((a, b) => (b.score ?? 0) - (a.score ?? 0));
     );
   } catch {}
 
-return { contexts: deduped.slice(0, kClient) };
+  return { contexts: deduped.slice(0, kClient) };
 }
 
 // ====== helpers (оставь как есть, только убедись что они в файле) ======
