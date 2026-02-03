@@ -2,7 +2,7 @@
 import User from "../models/user.js";
 import ms from "ms";
 
-/* утилиты */
+/* утилиты  */
 const pick = (obj, fields) =>
   Object.fromEntries(Object.entries(obj || {}).filter(([k]) => fields.includes(k)));
 
@@ -24,6 +24,9 @@ export async function listUsers(req, res, next) {
       select,
     } = req.query;
 
+    const pageNum = Math.max(parseInt(page, 10) || 1, 1);
+    const limitNum = Math.min(Math.max(parseInt(limit, 10) || 20, 1), 200);
+
     const filter = {};
     if (q) {
       filter.$or = [
@@ -31,19 +34,28 @@ export async function listUsers(req, res, next) {
         { name: { $regex: q, $options: "i" } },
       ];
     }
-if (role) filter.roles = { $in: [role] };           // roles — массив
-if (req.query.site) filter["sites.siteId"] = req.query.site;  // sites.* — вложенный объект
-if (req.query.clientId) filter.clientIds = req.query.clientId; // поиск по привязке к клиенту
 
-const proj = (select || "_id email name roles isActive clientIds sites.createdAt sites.siteId sites.clientId sites.role sites.isActive createdAt")
-  .split(",");
+    if (role) filter.roles = { $in: [role] };
+    if (req.query.clientId) filter.clientIds = req.query.clientId;
+
+    const scope = req.accessScope;
+    if (scope && !scope.isSuperadmin) {
+      if (!scope.allowedSiteIds.length) {
+        return res.json({ total: 0, page: pageNum, limit: limitNum, users: [] });
+      }
+      if (site && !scope.allowedSiteIds.includes(site)) {
+        return res.json({ total: 0, page: pageNum, limit: limitNum, users: [] });
+      }
+      filter["sites.siteId"] = site ? site : { $in: scope.allowedSiteIds };
+    } else if (site) {
+      filter["sites.siteId"] = site;
+    }
+
+    const proj = (select || "_id email name roles isActive clientIds sites.createdAt sites.siteId sites.clientId sites.role sites.isActive createdAt")
+      .split(",");
 
     if (active === "true") filter.isActive = { $ne: false };
     if (active === "false") filter.isActive = false;
-
-    const pageNum = Math.max(parseInt(page, 10) || 1, 1);
-    const limitNum = Math.min(Math.max(parseInt(limit, 10) || 20, 1), 200);
-
 
     const [items, total] = await Promise.all([
       User.find(filter)
@@ -127,7 +139,7 @@ export async function updateUser(req, res, next) {
   try {
     const updates = pick(req.body, ["name", "email", "roles", "sites", "isActive", "timezone"]);
 
-    // Нельзя удалить последнего супер-админа или снять у него роль
+// нельзя снимать роль superadmin у последнего супер-админа
     if (Array.isArray(updates.roles)) {
       const target = await User.findById(req.params.id).lean();
       if (!target) return res.status(404).json({ error: "Not found" });
@@ -163,7 +175,7 @@ export async function updateUserPassword(req, res, next) {
     }
     const u = await User.findById(req.params.id).select("+password");
     if (!u) return res.status(404).json({ error: "Not found" });
-    u.password = password; // pre-save hook в модели захеширует
+    u.password = password; // pre-save hook Ð² Ð¼Ð¾Ð´ÐµÐ»Ð¸ Ð·Ð°Ñ…ÐµÑˆÐ¸Ñ€ÑƒÐµÑ‚
     await u.save();
     return res.json({ ok: true });
   } catch (err) {
@@ -171,13 +183,13 @@ export async function updateUserPassword(req, res, next) {
   }
 }
 
-/** PATCH /api/admin/users/:id/roles  {roles: string[]}  (только superadmin) */
+/** PATCH /api/admin/users/:id/roles  {roles: string[]}  (Ñ‚Ð¾Ð»ÑŒÐºÐ¾ superadmin) */
 export async function updateUserRoles(req, res, next) {
   try {
     const { roles } = req.body || {};
     if (!Array.isArray(roles)) return res.status(400).json({ error: "roles must be an array" });
 
-    // защита «последний супер-админ»
+    // защита «последнего супер-админа»
     const target = await User.findById(req.params.id).lean();
     if (!target) return res.status(404).json({ error: "Not found" });
 
@@ -233,7 +245,7 @@ export async function deactivateUser(req, res, next) {
     if (typeof isActive !== "boolean")
       return res.status(400).json({ error: "isActive boolean required" });
 
-    // запрет деактивировать последнего супер-админа
+    // защита «последнего супер-админа»
     if (isActive === false) {
       const target = await User.findById(req.params.id).lean();
       if ((target?.roles || []).includes("superadmin")) {
@@ -256,7 +268,7 @@ export async function deactivateUser(req, res, next) {
   }
 }
 
-/** DELETE /api/admin/users/:id  (жёсткое удаление, только superadmin) */
+/** DELETE /api/admin/users/:id  (Ð¶Ñ‘ÑÑ‚ÐºÐ¾Ðµ ÑƒÐ´Ð°Ð»ÐµÐ½Ð¸Ðµ, Ñ‚Ð¾Ð»ÑŒÐºÐ¾ superadmin) */
 export async function deleteUserHard(req, res, next) {
   try {
     const target = await User.findById(req.params.id).lean();

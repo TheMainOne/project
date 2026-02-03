@@ -12,18 +12,24 @@ import {
   deleteUserHard,
 } from "../controllers/adminUsersController.js";
 import { requireAuth, requireRoles } from "../middlewares/auth.js";
+import {
+  attachAccessScope,
+  enforceSitesPayloadWithinScope,
+  enforceUserAccessByParam,
+} from "../middlewares/accessScope.js";
 
 const adminUsersRouter = express.Router();
 
-// adminUsersRouter.use(requireAuth, requireRoles(["superadmin", "admin"]));    
+adminUsersRouter.use(requireAuth, attachAccessScope);
+adminUsersRouter.param("id", enforceUserAccessByParam());
 
 adminUsersRouter.get("/", listUsers);
 adminUsersRouter.get("/:id", getUserById);
-adminUsersRouter.post("/", createUser);
-adminUsersRouter.patch("/:id", updateUser);
+adminUsersRouter.post("/", enforceSitesPayloadWithinScope, createUser);
+adminUsersRouter.patch("/:id", enforceSitesPayloadWithinScope, updateUser);
 adminUsersRouter.patch("/:id/password", updateUserPassword);
 adminUsersRouter.patch("/:id/roles", requireRoles(["superadmin"]), updateUserRoles);
-adminUsersRouter.patch("/:id/sites", updateUserSites);
+adminUsersRouter.patch("/:id/sites", enforceSitesPayloadWithinScope, updateUserSites);
 adminUsersRouter.patch("/:id/deactivate", deactivateUser);
 adminUsersRouter.delete("/:id", requireRoles(["superadmin"]), deleteUserHard);
 

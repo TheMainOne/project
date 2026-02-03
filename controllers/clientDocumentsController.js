@@ -210,6 +210,28 @@ export async function deleteClientDocument(req, res) {
 
 export async function countAllClientDocuments(req, res) {
   try {
+    const scope = req.accessScope;
+    if (scope && !scope.isSuperadmin) {
+      if (!scope.allowedSiteIds.length) {
+        return res.json({ total: 0 });
+      }
+
+      const clients = await Client.find({
+        siteId: { $in: scope.allowedSiteIds }
+      }).select("_id").lean();
+
+      const clientIds = clients.map((c) => c._id);
+      if (!clientIds.length) {
+        return res.json({ total: 0 });
+      }
+
+      const total = await ClientDocument.countDocuments({
+        clientId: { $in: clientIds }
+      });
+
+      return res.json({ total });
+    }
+
     const estimated = await ClientDocument.estimatedDocumentCount();
 
     return res.json({

@@ -113,8 +113,16 @@ export const getAllClients = async (req, res, next) => {
     const page = Number(req.query.page || 1);
     const limit = Math.min(Number(req.query.limit || 20), 100);
     const { active, q } = req.query;
+    const scope = req.accessScope;
 
     const filter = {};
+    if (scope && !scope.isSuperadmin) {
+      if (!scope.allowedSiteIds.length) {
+        return res.json({ total: 0, page, clients: [] });
+      }
+      filter.siteId = { $in: scope.allowedSiteIds };
+    }
+
     if (active !== undefined) filter.isActive = active === "true";
     if (q) {
       filter.$or = [

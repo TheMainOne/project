@@ -1,5 +1,7 @@
 import express from "express";
 import upload from "../middlewares/s3Upload.js";
+import { requireAuth } from "../middlewares/auth.js";
+import { attachAccessScope, enforceClientAccessByParam } from "../middlewares/accessScope.js";
 import { createClientDocument, setClientDocumentActive, deleteClientDocument, countAllClientDocuments } from "../controllers/clientDocumentsController.js";
 import {
   createClient,
@@ -15,9 +17,14 @@ import { telemetryEventsByClient, telemetrySummaryByClient } from "../controller
 
 const clientRouter = express.Router();
 
+clientRouter.get("/widget-config", getPublicWidgetConfig);
+
+clientRouter.use(requireAuth, attachAccessScope);
+clientRouter.param("id", enforceClientAccessByParam());
+clientRouter.param("idOrSlug", enforceClientAccessByParam());
+
 clientRouter.post("/", createClient);              // POST /api/clients
 clientRouter.get("/", getAllClients);              // GET /api/clients
-clientRouter.get("/widget-config", getPublicWidgetConfig);
 clientRouter.get("/documents/count", countAllClientDocuments); // count all documents across clients
 clientRouter.get("/:id", getClient);         // GET /api/clients/:idOrSlug
 clientRouter.post("/:id/documents", upload.single("file"), createClientDocument);
