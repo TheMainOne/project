@@ -1,9 +1,12 @@
 import User from "../models/user.js";
 import Token from "../models/token.js";
+import dotenv from "dotenv";
 import { signAccess, signRefresh, verifyRefresh } from "../utils/jwt.js";
 import ms from "ms";
 import { randomBytes } from "crypto";
 import { OAuth2Client } from "google-auth-library";
+
+dotenv.config({ path: "/home/ec2-user/project/.env" });
 
 const googleOauthClient = new OAuth2Client();
 
@@ -87,10 +90,10 @@ export const login = async (req, res, next) => {
 export const googleLogin = async (req, res, next) => {
   try {
     const { idToken } = req.body;
-    const audience = process.env.GOOGLE_CLIENT_ID;
+    const audience = process.env.GOOGLE_CLIENT_ID_FOR_AUTH;
 
     if (!audience) {
-      return res.status(500).json({ error: "GOOGLE_CLIENT_ID is missing" });
+      return res.status(500).json({ error: "GOOGLE_CLIENT_ID_FOR_AUTH is missing" });
     }
 
     let payload;
