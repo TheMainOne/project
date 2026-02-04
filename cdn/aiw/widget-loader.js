@@ -165,7 +165,8 @@
     iframe.style.maxWidth = "100%";
     iframe.style.boxSizing = "border-box";
     iframe.setAttribute("scrolling", "no");
-    iframe.allow = "clipboard-write";
+    iframe.allow = "clipboard-write; fullscreen";
+    iframe.setAttribute("allowfullscreen", "");
 
   if (fitMode === "container") {
       iframe.style.height = "100%";
@@ -190,6 +191,178 @@ const frameOrigin = (() => {
     try { return new URL(base).origin; } catch { return base; }
   }
 })();
+const frameTargetOrigin = frameOrigin && frameOrigin !== "null" ? frameOrigin : "*";
+const hostZIndexRaw = Number.parseInt(s.getAttribute("data-z-index") || "", 10);
+const hostZIndex = Number.isFinite(hostZIndexRaw) ? hostZIndexRaw : 2147483000;
+const iframeAnchor = document.createComment("aiw-inline-anchor");
+const inlineFrameStyle = {
+  width: "",
+  height: "",
+  maxWidth: "",
+  maxHeight: "",
+  display: "",
+  flex: ""
+};
+let fullscreenActive = false;
+let fullscreenOverlay = null;
+const SCROLL_LOCK_KEY = "__AIW_FULLSCREEN_SCROLL_LOCK__";
+
+function postToFrame(type, payload = {}) {
+  try {
+    if (!iframe.contentWindow) return;
+    iframe.contentWindow.postMessage(
+      { type, instanceId, ...payload },
+      frameTargetOrigin
+    );
+  } catch {}
+}
+
+function notifyFullscreenState() {
+  postToFrame("aiw:fullscreen-state", { enabled: fullscreenActive });
+}
+
+function lockHostScroll() {
+  const current = window[SCROLL_LOCK_KEY] || {
+    count: 0,
+    htmlOverflow: "",
+    bodyOverflow: "",
+    bodyTouchAction: ""
+  };
+
+  if (current.count === 0) {
+    const docEl = document.documentElement;
+    current.htmlOverflow = docEl ? docEl.style.overflow : "";
+    current.bodyOverflow = document.body ? document.body.style.overflow : "";
+    current.bodyTouchAction = document.body ? document.body.style.touchAction : "";
+
+    if (docEl) docEl.style.overflow = "hidden";
+    if (document.body) {
+      document.body.style.overflow = "hidden";
+      document.body.style.touchAction = "none";
+    }
+  }
+
+  current.count += 1;
+  window[SCROLL_LOCK_KEY] = current;
+}
+
+function unlockHostScroll() {
+  const current = window[SCROLL_LOCK_KEY];
+  if (!current) return;
+
+  current.count = Math.max(0, Number(current.count || 0) - 1);
+  if (current.count > 0) {
+    window[SCROLL_LOCK_KEY] = current;
+    return;
+  }
+
+  const docEl = document.documentElement;
+  if (docEl) docEl.style.overflow = current.htmlOverflow || "";
+  if (document.body) {
+    document.body.style.overflow = current.bodyOverflow || "";
+    document.body.style.touchAction = current.bodyTouchAction || "";
+  }
+
+  try { delete window[SCROLL_LOCK_KEY]; } catch { window[SCROLL_LOCK_KEY] = null; }
+}
+
+function createFullscreenOverlay() {
+  const overlay = document.createElement("div");
+  overlay.style.position = "fixed";
+  overlay.style.left = "0";
+  overlay.style.top = "0";
+  overlay.style.right = "0";
+  overlay.style.bottom = "0";
+  overlay.style.width = "100vw";
+  overlay.style.height = "100vh";
+  overlay.style.height = "100dvh";
+  overlay.style.maxWidth = "100vw";
+  overlay.style.maxHeight = "100dvh";
+  overlay.style.display = "flex";
+  overlay.style.alignItems = "stretch";
+  overlay.style.justifyContent = "stretch";
+  overlay.style.boxSizing = "border-box";
+  overlay.style.padding = "env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left)";
+  overlay.style.background = "rgba(0,0,0,0.16)";
+  overlay.style.zIndex = String(hostZIndex);
+  overlay.style.overscrollBehavior = "contain";
+  return overlay;
+}
+
+function stashInlineFrameStyle() {
+  inlineFrameStyle.width = iframe.style.width;
+  inlineFrameStyle.height = iframe.style.height;
+  inlineFrameStyle.maxWidth = iframe.style.maxWidth;
+  inlineFrameStyle.maxHeight = iframe.style.maxHeight;
+  inlineFrameStyle.display = iframe.style.display;
+  inlineFrameStyle.flex = iframe.style.flex;
+}
+
+function restoreInlineFrameStyle() {
+  iframe.style.width = inlineFrameStyle.width;
+  iframe.style.height = inlineFrameStyle.height;
+  iframe.style.maxWidth = inlineFrameStyle.maxWidth;
+  iframe.style.maxHeight = inlineFrameStyle.maxHeight;
+  iframe.style.display = inlineFrameStyle.display;
+  iframe.style.flex = inlineFrameStyle.flex;
+}
+
+function setFullscreenEnabled(next) {
+  const shouldEnable = !!next;
+  if (shouldEnable === fullscreenActive) {
+    notifyFullscreenState();
+    return;
+  }
+
+  if (shouldEnable) {
+    stashInlineFrameStyle();
+    fullscreenOverlay = createFullscreenOverlay();
+    fullscreenOverlay.appendChild(iframe);
+
+    iframe.style.width = "100%";
+    iframe.style.height = "100%";
+    iframe.style.maxWidth = "100%";
+    iframe.style.maxHeight = "100%";
+    iframe.style.display = "block";
+    iframe.style.flex = "1 1 auto";
+
+    const hostBody = document.body || document.documentElement;
+    if (!hostBody) return;
+    hostBody.appendChild(fullscreenOverlay);
+    lockHostScroll();
+    fullscreenActive = true;
+    notifyFullscreenState();
+    return;
+  }
+
+  unlockHostScroll();
+  restoreInlineFrameStyle();
+
+  if (iframeAnchor.parentNode) {
+    iframeAnchor.parentNode.insertBefore(iframe, iframeAnchor.nextSibling);
+  } else {
+    mount.appendChild(iframe);
+  }
+
+  if (fullscreenOverlay && fullscreenOverlay.parentNode) {
+    fullscreenOverlay.parentNode.removeChild(fullscreenOverlay);
+  }
+  fullscreenOverlay = null;
+  fullscreenActive = false;
+  notifyFullscreenState();
+}
+
+function isFrameMessage(e) {
+  if (!e) return false;
+  if (e.source !== iframe.contentWindow) return false;
+  if (e.origin !== frameOrigin) return false;
+  return true;
+}
+
+function requestFullscreenToggle(rawEnabled) {
+  const requested = typeof rawEnabled === "boolean" ? rawEnabled : !fullscreenActive;
+  setFullscreenEnabled(requested);
+}
 const UA = navigator.userAgent || "";
 const IS_IOS = /iPad|iPhone|iPod/.test(UA) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
 function isScrollable(el) {
@@ -402,13 +575,15 @@ function startFling(vy) {
 
     function onFrameMessage(e) {
       // безопасность + гарантия что это наш iframe
-      if (e.origin !== frameOrigin) return;
+      if (!isFrameMessage(e)) return;
 
       const d = e.data || {};
       if (!d || typeof d !== "object") return;
+      if (d.instanceId && d.instanceId !== instanceId) return;
 
       // --- resize (у тебя уже было)
       if (d.type === "aiw:resize" && fitMode !== "container") {
+        if (fullscreenActive) return;
         const minH = Math.max(200, iHeight);
         const h = Math.max(minH, parseInt(d.height || "0", 10) || 0);
         iframe.style.height = h + "px";
@@ -417,21 +592,29 @@ function startFling(vy) {
 
       // --- NEW: scroll passthrough
       if (d.type === "aiw:scroll") {
-        // если используешь instanceId — можно фильтровать
-        if (d.instanceId && d.instanceId !== instanceId) return;
         scrollParentBy(d.deltaY, d.deltaX, d.source);
         return;
       }
       if (d.type === "aiw:fling") {
-        if (d.instanceId && d.instanceId !== instanceId) return;
         startFling(d.velocityY);
+        return;
+      }
+      if (d.type === "aiw:fullscreen-toggle") {
+        requestFullscreenToggle(d.enabled);
+        return;
+      }
+      if (d.type === "aiw:fullscreen-query") {
+        notifyFullscreenState();
         return;
       }
     }
 
     window.addEventListener("message", onFrameMessage, { passive: true });
+    window.addEventListener("pagehide", () => setFullscreenEnabled(false), { once: true });
 
+    mount.appendChild(iframeAnchor);
     mount.appendChild(iframe);
+    iframe.addEventListener("load", notifyFullscreenState, { once: true });
 
     let scrollTarget = pickBestScroller(mount);
     let lastRepickAt = 0;
