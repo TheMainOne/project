@@ -64,25 +64,19 @@
       return canY || canX;
     }
 
-    const EDGE_EPS = 6;
-
     function canScroll(el, dy, dx) {
       if (!el) return false;
-      const maxY = Math.max(0, el.scrollHeight - el.clientHeight);
-      const maxX = Math.max(0, el.scrollWidth - el.clientWidth);
-      const top = Math.max(0, Number(el.scrollTop) || 0);
-      const left = Math.max(0, Number(el.scrollLeft) || 0);
 
       if (dy > 0) { 
-        if (top < (maxY - EDGE_EPS)) return true;
+         if (el.scrollTop + el.clientHeight < el.scrollHeight - 1) return true;
       } else if (dy < 0) { 
-        if (top > EDGE_EPS) return true;
+         if (el.scrollTop > 0) return true;
       }
 
       if (dx > 0) { 
-        if (left < (maxX - EDGE_EPS)) return true;
+         if (el.scrollLeft + el.clientWidth < el.scrollWidth - 1) return true;
       } else if (dx < 0) { 
-        if (left > EDGE_EPS) return true;
+         if (el.scrollLeft > 0) return true;
       }
 
       return false;
@@ -95,22 +89,18 @@
       return null;
     }
 
-    function findScrollableForEvent(e) {
-      const path = e.composedPath ? e.composedPath() : [e.target];
-      return findScrollableInPath(path) || findScrollableByPoint(e.clientX, e.clientY);
-    }
-
     // Desktop wheel
     window.addEventListener("wheel", (e) => {
       if (e.ctrlKey) return;
 
       const dx = e.deltaX || 0;
       const dy = e.deltaY || 0;
-      const sc = findScrollableForEvent(e);
+      const path = e.composedPath ? e.composedPath() : [e.target];
+      const sc = findScrollableInPath(path);
 
       if (!sc || !canScroll(sc, dy, dx)) {
         postScroll(dy, dx, "wheel");
-        if (dy || dx) e.preventDefault();
+        e.preventDefault();
       }
     }, { passive: false });
 
@@ -121,7 +111,7 @@ let vY = 0;
 let didPassthrough = false;
 let touchScroller = null;
 let aiwBody = null;
-const TOUCH_PASSTHROUGH = true;
+const TOUCH_PASSTHROUGH = !IS_IOS;
 
 function getAiwBody() {
   if (aiwBody && document.contains(aiwBody)) return aiwBody;
@@ -193,9 +183,6 @@ if (TOUCH_PASSTHROUGH) window.addEventListener("touchmove", (e) => {
 }, { passive: false });
 
 if (TOUCH_PASSTHROUGH) window.addEventListener("touchend", () => {
-  if (IS_IOS && didPassthrough && Math.abs(vY) > 0.04) {
-    postFling(vY);
-  }
   lastX = lastY = null;
   lastT = 0;
   vY = 0;
