@@ -165,8 +165,7 @@
     iframe.style.maxWidth = "100%";
     iframe.style.boxSizing = "border-box";
     iframe.setAttribute("scrolling", "no");
-    iframe.allow = "clipboard-write; fullscreen";
-    iframe.setAttribute("allowfullscreen", "");
+    iframe.allow = "clipboard-write";
 
   if (fitMode === "container") {
       iframe.style.height = "100%";
@@ -191,13 +190,6 @@ const frameOrigin = (() => {
     try { return new URL(base).origin; } catch { return base; }
   }
 })();
-  return true;
-}
-
-function requestFullscreenToggle(rawEnabled) {
-  const requested = typeof rawEnabled === "boolean" ? rawEnabled : !fullscreenActive;
-  setFullscreenEnabled(requested);
-}
 const UA = navigator.userAgent || "";
 const IS_IOS = /iPad|iPhone|iPod/.test(UA) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
 function isScrollable(el) {
@@ -410,15 +402,13 @@ function startFling(vy) {
 
     function onFrameMessage(e) {
       // безопасность + гарантия что это наш iframe
-if (!isFrameMessage(e)) return;
+      if (e.origin !== frameOrigin) return;
 
       const d = e.data || {};
       if (!d || typeof d !== "object") return;
-      if (d.instanceId && d.instanceId !== instanceId) return;
 
       // --- resize (у тебя уже было)
       if (d.type === "aiw:resize" && fitMode !== "container") {
-          if (fullscreenActive) return;
         const minH = Math.max(200, iHeight);
         const h = Math.max(minH, parseInt(d.height || "0", 10) || 0);
         iframe.style.height = h + "px";
@@ -427,19 +417,14 @@ if (!isFrameMessage(e)) return;
 
       // --- NEW: scroll passthrough
       if (d.type === "aiw:scroll") {
+        // если используешь instanceId — можно фильтровать
+        if (d.instanceId && d.instanceId !== instanceId) return;
         scrollParentBy(d.deltaY, d.deltaX, d.source);
         return;
       }
       if (d.type === "aiw:fling") {
+        if (d.instanceId && d.instanceId !== instanceId) return;
         startFling(d.velocityY);
-        return;
-      }
-      if (d.type === "aiw:fullscreen-toggle") {
-        requestFullscreenToggle(d.enabled);
-        return;
-      }
-      if (d.type === "aiw:fullscreen-query") {
-        notifyFullscreenState();
         return;
       }
     }

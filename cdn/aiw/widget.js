@@ -29,14 +29,10 @@ const BASE_FONT_STACK = EFFECTIVE_FONT_NAME
   ? `'${EFFECTIVE_FONT_NAME}', system-ui,-apple-system,Segoe UI,Roboto,sans-serif`
   : 'system-ui,-apple-system,Segoe UI,Roboto,sans-serif';
   // ▼ NEW: режим рендера
-const QUERY = new URLSearchParams(location.search);
-const MODE   = (CFG.mode || QUERY.get("mode") || "float").toLowerCase();
+const MODE   = (CFG.mode || new URLSearchParams(location.search).get("mode") || "float").toLowerCase();
 const INLINE = MODE === "inline";
-const FIT_MODE = (QUERY.get("fit") || "container").toLowerCase();
+const FIT_MODE = (new URLSearchParams(location.search).get("fit") || "container").toLowerCase();
 const FILL_CONTAINER = INLINE && FIT_MODE === "container";
-const FRAME_INSTANCE_ID = QUERY.get("instanceId") || "";
-const PARENT_ORIGIN = QUERY.get("parentOrigin") || "*";
-const PARENT_TARGET_ORIGIN = PARENT_ORIGIN && PARENT_ORIGIN !== "null" ? PARENT_ORIGIN : "*";
 const MAX_LEN = 1000;
 let FIRST_BOOT = true; // первый старт виджета за эту загрузку страницы
 
@@ -267,17 +263,6 @@ if (PRESERVE_HISTORY === false && STORAGE) {
 
 const sanitize = (s) => (s || "").toString().slice(0, MAX_LEN);
 
-let inlineFullscreenActive = false;
-
-function postToHost(type, payload = {}) {
-  try {
-    if (!window.parent || window.parent === window) return;
-    const msg = { type, ...payload };
-    if (FRAME_INSTANCE_ID) msg.instanceId = FRAME_INSTANCE_ID;
-    window.parent.postMessage(msg, PARENT_TARGET_ORIGIN);
-  } catch {}
-}
-
 
   // ---------- DOM ----------
   const root = document.createElement("div");
@@ -465,35 +450,6 @@ style.textContent = `
   color:${THEME.accentText};
   font-size:18px;
   cursor:pointer;
-}
-  .aiw-inline-fullscreen-btn{
-  width:34px;
-  height:34px;
-  padding:0;
-  display:inline-flex;
-  align-items:center;
-  justify-content:center;
-  border-radius:10px !important;
-  border:1px solid rgba(255,255,255,.14) !important;
-  background:rgba(5,8,15,.45) !important;
-  line-height:0;
-}
-.aiw-inline-fullscreen-btn .aiw-inline-icon{
-  width:17px;
-  height:17px;
-  display:block;
-  stroke:currentColor;
-  fill:none;
-  stroke-width:1.8;
-  stroke-linecap:round;
-  stroke-linejoin:round;
-}
-.aiw-inline-fullscreen-btn:hover{
-  background:rgba(255,255,255,.1) !important;
-}
-.aiw-inline-fullscreen-btn:focus-visible{
-  outline:2px solid rgba(255,255,255,.7);
-  outline-offset:2px;
 }
 .aiw-footer{
   position:relative;                   
@@ -989,24 +945,6 @@ ${INLINE ? `
 }
 
 ` : ""}
-:host(.aiw-inline-fullscreen) .aiw-wrap{
-  height:100% !important;
-}
-:host(.aiw-inline-fullscreen) .aiw-panel{
-  height:100% !important;
-  max-height:100% !important;
-  min-height:0 !important;
-  border-radius:0 !important;
-}
-:host(.aiw-inline-fullscreen) .aiw-header{
-  padding:12px 14px !important;
-}
-:host(.aiw-inline-fullscreen) .aiw-body{
-  padding:16px 14px 12px !important;
-}
-:host(.aiw-inline-fullscreen) .aiw-footer{
-  padding:12px 14px !important;
-}
 /* --- RESPONSIVE (работает и в float, и в inline) --- */
 @media (max-width: 480px) {
  .aiw-body { font-size: 14px !important; }
@@ -1146,62 +1084,19 @@ brand.appendChild(titleWrap);
 
 
 const close = document.createElement("button");
-close.type = "button";
 close.textContent = "×";
 const resetBtn = document.createElement("button");
-resetBtn.type = "button";
-const fullscreenBtn = document.createElement("button");
-fullscreenBtn.type = "button";
-fullscreenBtn.className = "aiw-inline-fullscreen-btn";
-const ICON_FULLSCREEN_ENTER = `
-  <svg class="aiw-inline-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
-    <path d="M15 3h6v6"></path>
-    <path d="M9 21H3v-6"></path>
-    <path d="M21 3l-7 7"></path>
-    <path d="M3 21l7-7"></path>
-  </svg>
-`;
-const ICON_FULLSCREEN_EXIT = `
-  <svg class="aiw-inline-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
-    <path d="M18 6L6 18"></path>
-    <path d="M6 6l12 12"></path>
-  </svg>
-`;
-
-function applyInlineFullscreenState(next) {
-  if (!INLINE) return;
-  inlineFullscreenActive = !!next;
-  if (inlineFullscreenActive) {
-    root.classList.add("aiw-inline-fullscreen");
-  } else {
-    root.classList.remove("aiw-inline-fullscreen");
-  }
-
-  const title = inlineFullscreenActive ? "Exit fullscreen" : "Open fullscreen";
-  fullscreenBtn.innerHTML = inlineFullscreenActive
-    ? ICON_FULLSCREEN_EXIT
-    : ICON_FULLSCREEN_ENTER;
-  fullscreenBtn.title = title;
-  fullscreenBtn.setAttribute("aria-label", title);
-}
-
-function requestInlineFullscreen(next) {
-  if (!INLINE) return;
-  postToHost("aiw:fullscreen-toggle", { enabled: !!next });
-}
 resetBtn.title = LANG.startsWith("ru") ? "Сбросить диалог" : "Reset chat";
 resetBtn.textContent = "↺";
 
 const actions = document.createElement("div");
 actions.className = "aiw-actions";
 actions.appendChild(resetBtn);
-if (INLINE) actions.appendChild(fullscreenBtn);
 actions.appendChild(close);
 
 // собираем хедер
 header.appendChild(brand);
 header.appendChild(actions);
-applyInlineFullscreenState(false);
 
 const body = document.createElement("div");
 body.className = "aiw-body";
@@ -1608,7 +1503,6 @@ function postHeight() {
     if (window.parent && window.parent !== window) {
       const h = document.documentElement.scrollHeight;
       window.parent.postMessage({ type: "aiw:resize", height: h }, "*");
-       postToHost("aiw:resize", { height: h });
     }
   } catch {}
 }
@@ -1642,31 +1536,6 @@ if (!INLINE) {
 } else {
   // в inline закрывашку можно спрятать или оставить — на твой вкус
   close.style.display = "none";
-   fullscreenBtn.addEventListener("click", () => {
-    requestInlineFullscreen(!inlineFullscreenActive);
-  });
-
-  window.addEventListener("message", (e) => {
-    if (!e || e.source !== window.parent) return;
-    if (PARENT_TARGET_ORIGIN !== "*" && e.origin !== PARENT_TARGET_ORIGIN) return;
-
-    const d = e.data || {};
-    if (!d || typeof d !== "object") return;
-    if (d.instanceId && d.instanceId !== FRAME_INSTANCE_ID) return;
-
-    if (d.type === "aiw:fullscreen-state") {
-      applyInlineFullscreenState(!!d.enabled);
-    }
-  }, { passive: true });
-
-  window.addEventListener("keydown", (e) => {
-    if (e.key === "Escape" && inlineFullscreenActive) {
-      e.preventDefault();
-      requestInlineFullscreen(false);
-    }
-  });
-
-  postToHost("aiw:fullscreen-query");
 }
 
 resetBtn.addEventListener("click", (e) => {
