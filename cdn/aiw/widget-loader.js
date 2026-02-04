@@ -420,6 +420,17 @@ function tryScrollElement(el, y, x) {
   return (el.scrollTop !== by) || (el.scrollLeft !== bx);
 }
 
+function tryWindowScroll(y, x) {
+  const beforeY = window.scrollY;
+  const beforeX = window.scrollX;
+  try {
+    window.scrollBy({ top: y, left: x, behavior: "auto" });
+  } catch {
+    try { window.scrollBy(x, y); } catch {}
+  }
+  return (window.scrollY !== beforeY) || (window.scrollX !== beforeX);
+}
+
 function dispatchWheelToHost(dy, dx) {
   const y = Number(dy) || 0;
   const x = Number(dx) || 0;
@@ -493,14 +504,7 @@ function scrollParentBy(dy, dx, source = "") {
 
   if (source === "touch") {
     if (scrollTarget && tryScrollElement(scrollTarget, y, x)) return true;
-
-    const beforeY = window.scrollY;
-    const beforeX = window.scrollX;
-    try {
-      window.scrollBy({ top: y, left: x, behavior: "auto" });
-    } catch {}
-
-    if (window.scrollY !== beforeY || window.scrollX !== beforeX) return true;
+    if (tryWindowScroll(y, x)) return true;
 
     const doc = document.scrollingElement || document.documentElement;
     return tryScrollElement(doc, y, x);
@@ -509,12 +513,9 @@ function scrollParentBy(dy, dx, source = "") {
   // 0) сначала пробуем “официальные” API smooth-scroll (если они есть)
   if (trySmoothScrollAPIs(y, x)) return true;
 
-  // 1) затем всегда шлём wheel в хост-страницу — это критично для сайтов,
-  // где скролл реализован через wheel listeners + transforms
-  dispatchWheelToHost(y, x);
-
-  // 2) пробуем нативный scrollTop (если страница обычная)
+  // 1) пробуем нативный scrollTop (если страница обычная/контейнерная)
   if (scrollTarget && tryScrollElement(scrollTarget, y, x)) return true;
+  if (tryWindowScroll(y, x)) return true;
 
   // редко переподбираем scrollTarget (чтобы не лагать)
   const now = Date.now();
@@ -522,18 +523,14 @@ function scrollParentBy(dy, dx, source = "") {
     lastRepickAt = now;
     scrollTarget = pickBestScroller(mount);
     if (scrollTarget && tryScrollElement(scrollTarget, y, x)) return true;
+    if (tryWindowScroll(y, x)) return true;
   }
 
-  // 3) fallback — window.scrollBy, но проверяем, что он реально сдвинул
-  const beforeY = window.scrollY;
-  const beforeX = window.scrollX;
-  try {
-    window.scrollBy({ top: y, left: x, behavior: "auto" });
-  } catch {}
+  // 2) fallback для сайтов с кастомным smooth-scroll через wheel listeners
+  dispatchWheelToHost(y, x);
+  if (tryWindowScroll(y, x)) return true;
 
-  if (window.scrollY !== beforeY || window.scrollX !== beforeX) return true;
-
-  // 4) последний шанс: напрямую документ
+  // 3) последний шанс: напрямую документ
   const doc = document.scrollingElement || document.documentElement;
   return tryScrollElement(doc, y, x);
 }
