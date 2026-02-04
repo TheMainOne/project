@@ -2,10 +2,39 @@ import User from "../models/user.js";
 import Token from "../models/token.js";
 import { signAccess, signRefresh, verifyRefresh } from "../utils/jwt.js";
 import ms from "ms";
+import { randomBytes } from "crypto";
+import { OAuth2Client } from "google-auth-library";
+
+const googleOauthClient = new OAuth2Client();
 
 function parseExpiryToDate(expStr, fallback = "30d") {
   const dur = ms(expStr || fallback); // "30d" -> ms
   return new Date(Date.now() + dur);
+}
+
+function toPublicUser(user) {
+  return {
+    id: user._id,
+    email: user.email,
+    name: user.name,
+    roles: user.roles,
+    sites: user.sites || []
+  };
+}
+
+async function issueTokens(user, req) {
+  const accessToken = signAccess({ sub: user._id.toString(), email: user.email });
+  const refreshToken = signRefresh({ sub: user._id.toString() });
+
+  await Token.create({
+    userId: user._id,
+    refreshToken,
+    expiresAt: parseExpiryToDate(process.env.JWT_REFRESH_EXPIRES),
+    userAgent: req.headers["user-agent"],
+    ip: req.ip
+  });
+
+  return { accessToken, refreshToken };
 }
 
 /** POST /api/auth/register */
@@ -19,19 +48,10 @@ export const register = async (req, res, next) => {
     const user = await User.create({ email, password, name });
 
     // ⚠️ если нет секрета — тут падает
-    const accessToken = signAccess({ sub: user._id.toString(), email: user.email });
-    const refreshToken = signRefresh({ sub: user._id.toString() });
-
-    await Token.create({
-      userId: user._id,
-      refreshToken,
-      expiresAt: parseExpiryToDate(process.env.JWT_REFRESH_EXPIRES),
-      userAgent: req.headers["user-agent"],
-      ip: req.ip
-    });
+    const { accessToken, refreshToken } = await issueTokens(user, req);
 
     return res.status(201).json({
-      user: { id: user._id, email: user.email, name: user.name, roles: user.roles },
+      user: toPublicUser(user),
       tokens: { accessToken, refreshToken }
     });
   } catch (err) {
@@ -50,21 +70,80 @@ export const login = async (req, res, next) => {
     const ok = await user.comparePassword(password);
     if (!ok) return res.status(401).json({ error: "Invalid email or password" });
 
-    const accessToken = signAccess({ sub: user._id.toString(), email: user.email });
-    const refreshToken = signRefresh({ sub: user._id.toString() });
-
-    await Token.create({
-      userId: user._id,
-      refreshToken,
-      expiresAt: parseExpiryToDate(process.env.JWT_REFRESH_EXPIRES),
-      userAgent: req.headers["user-agent"],
-      ip: req.ip
-    });
+    const { accessToken, refreshToken } = await issueTokens(user, req);
 
 
     
     return res.json({
-      user: { id: user._id, email: user.email, name: user.name, roles: user.roles, sites: user.sites || [] },
+      user: toPublicUser(user),
+      tokens: { accessToken, refreshToken }
+    });
+  } catch (err) {
+    return next(err);
+  }
+};
+
+/** POST /api/auth/google */
+export const googleLogin = async (req, res, next) => {
+  try {
+    const { idToken } = req.body;
+    const audience = process.env.GOOGLE_CLIENT_ID;
+
+    if (!audience) {
+      return res.status(500).json({ error: "GOOGLE_CLIENT_ID is missing" });
+    }
+
+    let payload;
+    try {
+      const ticket = await googleOauthClient.verifyIdToken({ idToken, audience });
+      payload = ticket.getPayload();
+    } catch {
+      return res.status(401).json({ error: "Invalid Google token" });
+    }
+
+    const email = payload?.email?.toLowerCase().trim();
+    const googleId = payload?.sub;
+    const name = payload?.name?.trim();
+
+    if (!email || !googleId) {
+      return res.status(401).json({ error: "Invalid Google token payload" });
+    }
+
+    if (payload.email_verified === false) {
+      return res.status(403).json({ error: "Google email is not verified" });
+    }
+
+    let user = await User.findOne({ email });
+
+    if (!user) {
+      user = await User.create({
+        email,
+        name,
+        googleId,
+        emailVerified: true,
+        password: randomBytes(32).toString("hex"),
+        lastLoginAt: new Date(),
+        lastSeenAt: new Date(),
+        loginCount: 1
+      });
+    } else {
+      if (user.googleId && user.googleId !== googleId) {
+        return res.status(409).json({ error: "Google account mismatch for this email" });
+      }
+
+      if (!user.googleId) user.googleId = googleId;
+      if (!user.name && name) user.name = name;
+      if (!user.emailVerified) user.emailVerified = true;
+      user.lastLoginAt = new Date();
+      user.lastSeenAt = new Date();
+      user.loginCount = (user.loginCount || 0) + 1;
+      await user.save();
+    }
+
+    const { accessToken, refreshToken } = await issueTokens(user, req);
+
+    return res.json({
+      user: toPublicUser(user),
       tokens: { accessToken, refreshToken }
     });
   } catch (err) {

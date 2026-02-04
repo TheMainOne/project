@@ -11,6 +11,10 @@ export const loginSchema = Joi.object({
   password: Joi.string().min(6).max(128).required()
 });
 
+export const googleSchema = Joi.object({
+  idToken: Joi.string().required()
+});
+
 export function validate(schema) {
   return (req, res, next) => {
     const { error, value } = schema.validate(req.body, { abortEarly: false, stripUnknown: true });

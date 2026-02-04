@@ -12,7 +12,7 @@ export function signAccess(payload) {
 
 export function signRefresh(payload) {
   const secret = process.env.JWT_REFRESH_SECRET;
-    const expiresIn = process.env.JWT_ACCESS_EXPIRES || '15m';
+  const expiresIn = process.env.JWT_REFRESH_EXPIRES || '30d';
   if (!secret) {
     throw new Error('JWT_REFRESH_SECRET is missing.');
   }

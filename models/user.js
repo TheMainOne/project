@@ -21,6 +21,7 @@ const SiteAccessSchema = new mongoose.Schema(
 const UserSchema = new mongoose.Schema(
   {
     email: { type: String, required: true, unique: true, lowercase: true, trim: true },
+    googleId: { type: String, unique: true, sparse: true, trim: true },
     name:  { type: String, trim: true },
     password: { type: String, required: true, minlength: 6, select: false },
     roles: { type: [String], default: ["user"] },
