@@ -459,18 +459,25 @@ style.textContent = `
   width:34px;
   height:34px;
   border-radius:12px !important;
-  border:1px solid rgba(148,163,184,.25) !important;
-  background:rgba(15,23,42,.55) !important;
+  border:none !important;
+  background:transparent !important;
   color:#dbe4f0 !important;
   display:inline-flex !important;
   align-items:center;
   justify-content:center;
   padding:0 !important;
   line-height:1;
+  transition:background-color .15s ease, box-shadow .15s ease, color .15s ease;
 }
 
 .aiw-fs-toggle:hover{
-  background:rgba(15,23,42,.72) !important;
+  background:rgba(255,255,255,.14) !important;
+  box-shadow:inset 0 0 0 1px rgba(255,255,255,.22);
+  color:#ffffff !important;
+}
+
+.aiw-fs-toggle:active{
+  background:rgba(255,255,255,.2) !important;
 }
 
 .aiw-fs-toggle:focus-visible{
