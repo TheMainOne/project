@@ -39,6 +39,16 @@
     if (window === window.parent) return;
 
     const TARGET_ORIGIN = parentOrigin || "*";
+    let isHostFullscreen = false;
+
+    window.addEventListener("message", (e) => {
+      if (TARGET_ORIGIN !== "*" && e.origin !== TARGET_ORIGIN) return;
+      const d = e.data || {};
+      if (!d || typeof d !== "object") return;
+      if (d.type !== "aiw:fullscreen-state") return;
+      if (d.instanceId && instanceId && d.instanceId !== instanceId) return;
+      isHostFullscreen = !!d.value;
+    }, { passive: true });
 
     function postScroll(deltaY, deltaX = 0, source = "") {
       window.parent.postMessage(
@@ -99,7 +109,9 @@
       const sc = findScrollableInPath(path);
 
       if (!sc || !canScroll(sc, dy, dx)) {
-        postScroll(dy, dx, "wheel");
+        if (!isHostFullscreen) {
+          postScroll(dy, dx, "wheel");
+        }
         e.preventDefault();
       }
     }, { passive: false });
@@ -177,7 +189,9 @@ if (TOUCH_PASSTHROUGH) window.addEventListener("touchmove", (e) => {
 
   if (sc && canScroll(sc, dy, dx)) return;
 
-  postScroll(dy, dx, "touch");
+  if (!isHostFullscreen) {
+    postScroll(dy, dx, "touch");
+  }
   didPassthrough = true;
   e.preventDefault();
 }, { passive: false });

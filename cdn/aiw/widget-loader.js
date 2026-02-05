@@ -167,6 +167,12 @@
     iframe.setAttribute("scrolling", "no");
     iframe.allow = "clipboard-write";
 
+    let isFullscreen = false;
+    let fullscreenOverlay = null;
+    let fullscreenPlaceholder = null;
+    let preFullscreenStyleText = null;
+    let pendingInlineHeight = null;
+
   if (fitMode === "container") {
       iframe.style.height = "100%";
     } else {
@@ -190,6 +196,104 @@ const frameOrigin = (() => {
     try { return new URL(base).origin; } catch { return base; }
   }
 })();
+
+function postFullscreenStateToFrame() {
+  try {
+    if (!iframe.contentWindow) return;
+    iframe.contentWindow.postMessage(
+      { type: "aiw:fullscreen-state", instanceId, value: isFullscreen },
+      frameOrigin
+    );
+  } catch {}
+}
+
+function enterFullscreen() {
+  if (isFullscreen) return true;
+
+  try {
+    const hostNode = document.body || document.documentElement;
+    if (!hostNode) return false;
+
+    const parent = iframe.parentNode;
+    if (!parent) return false;
+
+    preFullscreenStyleText = iframe.style.cssText;
+    fullscreenPlaceholder = document.createComment("aiw-inline-fullscreen-anchor");
+    parent.insertBefore(fullscreenPlaceholder, iframe);
+
+    fullscreenOverlay = document.createElement("div");
+    fullscreenOverlay.setAttribute("data-aiw-inline-fullscreen", instanceId);
+    fullscreenOverlay.style.position = "fixed";
+    fullscreenOverlay.style.inset = "0";
+    fullscreenOverlay.style.zIndex = "2147483646";
+    fullscreenOverlay.style.margin = "0";
+    fullscreenOverlay.style.padding = "0";
+    fullscreenOverlay.style.border = "0";
+    fullscreenOverlay.style.background = "transparent";
+    fullscreenOverlay.style.boxSizing = "border-box";
+    fullscreenOverlay.style.display = "flex";
+    fullscreenOverlay.style.alignItems = "stretch";
+    fullscreenOverlay.style.justifyContent = "stretch";
+    fullscreenOverlay.style.overflow = "hidden";
+
+    hostNode.appendChild(fullscreenOverlay);
+    fullscreenOverlay.appendChild(iframe);
+
+    iframe.style.width = "100%";
+    iframe.style.maxWidth = "100%";
+    iframe.style.height = "100%";
+    iframe.style.maxHeight = "100%";
+    iframe.style.display = "block";
+    iframe.style.border = "0";
+    iframe.style.boxSizing = "border-box";
+
+    isFullscreen = true;
+    postFullscreenStateToFrame();
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function exitFullscreen() {
+  if (!isFullscreen) return true;
+
+  try {
+    if (fullscreenPlaceholder && fullscreenPlaceholder.parentNode) {
+      fullscreenPlaceholder.parentNode.insertBefore(iframe, fullscreenPlaceholder);
+      fullscreenPlaceholder.remove();
+    } else if (mount) {
+      mount.appendChild(iframe);
+    }
+
+    if (fullscreenOverlay && fullscreenOverlay.parentNode) {
+      fullscreenOverlay.parentNode.removeChild(fullscreenOverlay);
+    }
+
+    if (typeof preFullscreenStyleText === "string") {
+      iframe.style.cssText = preFullscreenStyleText;
+    }
+
+    if (fitMode !== "container" && pendingInlineHeight != null) {
+      iframe.style.height = pendingInlineHeight + "px";
+    }
+
+    isFullscreen = false;
+    fullscreenOverlay = null;
+    fullscreenPlaceholder = null;
+    preFullscreenStyleText = null;
+    postFullscreenStateToFrame();
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function setFullscreen(next) {
+  if (next) return enterFullscreen();
+  return exitFullscreen();
+}
+
 const UA = navigator.userAgent || "";
 const IS_IOS = /iPad|iPhone|iPod/.test(UA) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
 function isScrollable(el) {
@@ -411,7 +515,23 @@ function startFling(vy) {
       if (d.type === "aiw:resize" && fitMode !== "container") {
         const minH = Math.max(200, iHeight);
         const h = Math.max(minH, parseInt(d.height || "0", 10) || 0);
-        iframe.style.height = h + "px";
+        pendingInlineHeight = h;
+        if (!isFullscreen) {
+          iframe.style.height = h + "px";
+        }
+        return;
+      }
+
+      if (d.type === "aiw:fullscreen") {
+        if (d.instanceId && d.instanceId !== instanceId) return;
+        const next = (typeof d.value === "boolean") ? d.value : !isFullscreen;
+        setFullscreen(next);
+        return;
+      }
+
+      if (d.type === "aiw:fullscreen:get-state") {
+        if (d.instanceId && d.instanceId !== instanceId) return;
+        postFullscreenStateToFrame();
         return;
       }
 
@@ -419,19 +539,23 @@ function startFling(vy) {
       if (d.type === "aiw:scroll") {
         // если используешь instanceId — можно фильтровать
         if (d.instanceId && d.instanceId !== instanceId) return;
+        if (isFullscreen) return;
         scrollParentBy(d.deltaY, d.deltaX, d.source);
         return;
       }
       if (d.type === "aiw:fling") {
         if (d.instanceId && d.instanceId !== instanceId) return;
+        if (isFullscreen) return;
         startFling(d.velocityY);
         return;
       }
     }
 
     window.addEventListener("message", onFrameMessage, { passive: true });
+    iframe.addEventListener("load", () => { postFullscreenStateToFrame(); }, { passive: true });
 
     mount.appendChild(iframe);
+    postFullscreenStateToFrame();
 
     let scrollTarget = pickBestScroller(mount);
     let lastRepickAt = 0;

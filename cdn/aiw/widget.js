@@ -21,6 +21,7 @@ const FONT_CSS_URL    = (CFG.fontCssUrl || "").trim() || null;
   const IS_TABLET = !IS_MOBILE && VIEWPORT_W <= 768; // планшеты
   const UA = navigator.userAgent || "";
   const IS_IOS = /iPad|iPhone|iPod/.test(UA) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+  const QUERY = new URLSearchParams(location.search);
 
 // имя, под которым мы реально используем шрифт
 const EFFECTIVE_FONT_NAME = RAW_FONT_FAMILY || (FONT_FILE_URL ? "__aiw_custom" : null);
@@ -29,10 +30,12 @@ const BASE_FONT_STACK = EFFECTIVE_FONT_NAME
   ? `'${EFFECTIVE_FONT_NAME}', system-ui,-apple-system,Segoe UI,Roboto,sans-serif`
   : 'system-ui,-apple-system,Segoe UI,Roboto,sans-serif';
   // ▼ NEW: режим рендера
-const MODE   = (CFG.mode || new URLSearchParams(location.search).get("mode") || "float").toLowerCase();
+const MODE   = (CFG.mode || QUERY.get("mode") || "float").toLowerCase();
 const INLINE = MODE === "inline";
-const FIT_MODE = (new URLSearchParams(location.search).get("fit") || "container").toLowerCase();
+const FIT_MODE = (QUERY.get("fit") || "container").toLowerCase();
 const FILL_CONTAINER = INLINE && FIT_MODE === "container";
+const PARENT_ORIGIN = QUERY.get("parentOrigin") || "*";
+const INSTANCE_ID = QUERY.get("instanceId") || "";
 const MAX_LEN = 1000;
 let FIRST_BOOT = true; // первый старт виджета за эту загрузку страницы
 
@@ -451,6 +454,54 @@ style.textContent = `
   font-size:18px;
   cursor:pointer;
 }
+
+.aiw-fs-toggle{
+  width:34px;
+  height:34px;
+  border-radius:12px !important;
+  border:1px solid rgba(148,163,184,.25) !important;
+  background:rgba(15,23,42,.55) !important;
+  color:#dbe4f0 !important;
+  display:inline-flex !important;
+  align-items:center;
+  justify-content:center;
+  padding:0 !important;
+  line-height:1;
+}
+
+.aiw-fs-toggle:hover{
+  background:rgba(15,23,42,.72) !important;
+}
+
+.aiw-fs-toggle:focus-visible{
+  outline:2px solid rgba(148,163,184,.45);
+  outline-offset:1px;
+}
+
+.aiw-fs-toggle svg{
+  width:16px;
+  height:16px;
+  display:block;
+  stroke:currentColor;
+  fill:none;
+  stroke-width:1.8;
+  stroke-linecap:round;
+  stroke-linejoin:round;
+}
+
+.aiw-panel.aiw-panel-fullscreen{
+  border-radius:0 !important;
+  border-width:0 !important;
+}
+
+.aiw-panel.aiw-panel-fullscreen .aiw-header{
+  padding-top:calc(12px + env(safe-area-inset-top));
+}
+
+.aiw-panel.aiw-panel-fullscreen .aiw-footer{
+  padding-bottom:calc(20px + env(safe-area-inset-bottom));
+}
+
 .aiw-footer{
   position:relative;                   
   padding:10px 16px;
@@ -1089,9 +1140,72 @@ const resetBtn = document.createElement("button");
 resetBtn.title = LANG.startsWith("ru") ? "Сбросить диалог" : "Reset chat";
 resetBtn.textContent = "↺";
 
+const fsBtn = document.createElement("button");
+fsBtn.className = "aiw-fs-toggle";
+fsBtn.type = "button";
+
+const FS_ENTER_ICON = `
+  <svg viewBox="0 0 24 24" aria-hidden="true">
+    <path d="M14 10L20 4"></path>
+    <path d="M15 4H20V9"></path>
+    <path d="M10 14L4 20"></path>
+    <path d="M9 20H4V15"></path>
+  </svg>
+`;
+
+const FS_EXIT_ICON = `
+  <svg viewBox="0 0 24 24" aria-hidden="true">
+    <path d="M6 6L18 18"></path>
+    <path d="M18 6L6 18"></path>
+  </svg>
+`;
+
+let inlineFullscreen = false;
+
+function setInlineFullscreenState(next) {
+  inlineFullscreen = !!next;
+  fsBtn.innerHTML = inlineFullscreen ? FS_EXIT_ICON : FS_ENTER_ICON;
+  fsBtn.title = inlineFullscreen
+    ? (LANG.startsWith("ru") ? "\u0412\u044b\u0439\u0442\u0438 \u0438\u0437 \u043f\u043e\u043b\u043d\u043e\u0433\u043e \u044d\u043a\u0440\u0430\u043d\u0430" : "Exit fullscreen")
+    : (LANG.startsWith("ru") ? "\u041d\u0430 \u0432\u0435\u0441\u044c \u044d\u043a\u0440\u0430\u043d" : "Fullscreen");
+  fsBtn.setAttribute("aria-label", fsBtn.title);
+  fsBtn.setAttribute("aria-pressed", inlineFullscreen ? "true" : "false");
+  panel.classList.toggle("aiw-panel-fullscreen", inlineFullscreen);
+}
+
+function postInlineFullscreen(next) {
+  if (!INLINE || window.parent === window) return;
+  try {
+    window.parent.postMessage(
+      { type: "aiw:fullscreen", instanceId: INSTANCE_ID, value: !!next },
+      PARENT_ORIGIN
+    );
+  } catch {}
+}
+
+function requestInlineFullscreenState() {
+  if (!INLINE || window.parent === window) return;
+  try {
+    window.parent.postMessage(
+      { type: "aiw:fullscreen:get-state", instanceId: INSTANCE_ID },
+      PARENT_ORIGIN
+    );
+  } catch {}
+}
+
+setInlineFullscreenState(false);
+fsBtn.addEventListener("click", (e) => {
+  e.preventDefault();
+  const next = !inlineFullscreen;
+  // Optimistic UI update so the user can always toggle back immediately.
+  setInlineFullscreenState(next);
+  postInlineFullscreen(next);
+});
+
 const actions = document.createElement("div");
 actions.className = "aiw-actions";
 actions.appendChild(resetBtn);
+if (INLINE) actions.appendChild(fsBtn);
 actions.appendChild(close);
 
 // собираем хедер
@@ -1536,6 +1650,29 @@ if (!INLINE) {
 } else {
   // в inline закрывашку можно спрятать или оставить — на твой вкус
   close.style.display = "none";
+
+  if (window.parent && window.parent !== window) {
+    window.addEventListener("message", (e) => {
+      if (PARENT_ORIGIN !== "*" && e.origin !== PARENT_ORIGIN) return;
+      const d = e.data || {};
+      if (!d || typeof d !== "object") return;
+      if (d.type !== "aiw:fullscreen-state") return;
+      if (d.instanceId && INSTANCE_ID && d.instanceId !== INSTANCE_ID) return;
+      setInlineFullscreenState(!!d.value);
+    }, { passive: true });
+
+    window.addEventListener("keydown", (e) => {
+      if (e.key !== "Escape") return;
+      if (!inlineFullscreen) return;
+      e.preventDefault();
+      postInlineFullscreen(false);
+    });
+
+    // If the iframe was reparented/reloaded, request the current state from parent.
+    requestInlineFullscreenState();
+    setTimeout(requestInlineFullscreenState, 120);
+    setTimeout(requestInlineFullscreenState, 400);
+  }
 }
 
 resetBtn.addEventListener("click", (e) => {
