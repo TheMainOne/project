@@ -172,7 +172,7 @@
       };
 
       // Live activity tracking log (for debugging ONLY!!!!)
-      window.__AIW_ACTIVITY__.on((e) => console.log("[AIW][live]", e));
+      // window.__AIW_ACTIVITY__.on((e) => console.log("[AIW][live]", e));
 
 
       function getShortText(text) {
