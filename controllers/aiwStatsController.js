@@ -160,7 +160,7 @@ export async function sessionsList(req, res) {
     const match = { startedAt: { $gte: since } };
     if (siteIds) match.siteId = { $in: siteIds };
 
-    const [items, total] = await Promise.all([
+    const [rows, total] = await Promise.all([
       AiwSession
         .find(match, {
           _id: 0,
@@ -169,6 +169,7 @@ export async function sessionsList(req, res) {
           visitorId: 1,
           pageUrl: 1,
           referrer: 1,
+          tz: 1,
           startedAt: 1,
           endedAt: 1,
           messagesCount: 1,
@@ -183,6 +184,11 @@ export async function sessionsList(req, res) {
         .lean(),
       AiwSession.countDocuments(match)
     ]);
+
+    const items = rows.map(({ tz, ...row }) => ({
+      ...row,
+      country: tz || null
+    }));
 
     return res.json({
       page, limit, total,
