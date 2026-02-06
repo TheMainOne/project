@@ -635,29 +635,6 @@
     let preFullscreenStyleText = null;
     let pendingInlineHeight = null;
     let hostScrollLockState = null;
-    const HUBSPOT_CONTAINER_SELECTOR = "#hubspot-messages-iframe-container";
-    const HUBSPOT_HIDE_CLASS = "aiw-hide-hubspot-widget";
-    let hubspotHideStyleEl = null;
-
-    function ensureHubspotHideStyle() {
-      if (hubspotHideStyleEl) return;
-      const style = document.createElement("style");
-      style.setAttribute("data-aiw-hubspot-hide", "1");
-      style.textContent = `.${HUBSPOT_HIDE_CLASS} ${HUBSPOT_CONTAINER_SELECTOR} { display: none !important; }`;
-      (document.head || document.documentElement).appendChild(style);
-      hubspotHideStyleEl = style;
-    }
-
-    function setHubspotHidden(hidden) {
-      const root = document.documentElement || document.body;
-      if (!root) return;
-      if (hidden) {
-        ensureHubspotHideStyle();
-        root.classList.add(HUBSPOT_HIDE_CLASS);
-      } else {
-        root.classList.remove(HUBSPOT_HIDE_CLASS);
-      }
-    }
 
   if (fitMode === "container") {
       iframe.style.height = "100%";
@@ -797,7 +774,6 @@ function enterFullscreen() {
     lockHostScroll();
 
     isFullscreen = true;
-    setHubspotHidden(true);
     postFullscreenStateToFrame();
     return true;
   } catch {
@@ -832,7 +808,6 @@ function exitFullscreen() {
     unlockHostScroll();
 
     isFullscreen = false;
-    setHubspotHidden(false);
     fullscreenOverlay = null;
     fullscreenPlaceholder = null;
     preFullscreenStyleText = null;
