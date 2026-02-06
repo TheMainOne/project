@@ -29,6 +29,34 @@ mongoose.set("debug", false);
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
+function setAiwStaticCacheHeaders(res, filePath) {
+  const normalized = String(filePath || "").replace(/\\/g, "/");
+
+  const isCriticalEntry =
+    normalized.endsWith("/widget-loader.js") ||
+    normalized.endsWith("/widget-frame.html") ||
+    (normalized.endsWith("/widget.js") && !normalized.includes("/releases/"));
+
+  if (isCriticalEntry) {
+    res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate");
+    res.setHeader("Pragma", "no-cache");
+    res.setHeader("Expires", "0");
+    return;
+  }
+
+  if (normalized.includes("/releases/")) {
+    res.setHeader("Cache-Control", "public, max-age=31536000, immutable");
+    return;
+  }
+
+  if (normalized.includes("/assets/")) {
+    res.setHeader("Cache-Control", "public, max-age=86400");
+    return;
+  }
+
+  res.setHeader("Cache-Control", "public, max-age=3600");
+}
+
 /* ======================
    Bot env/config
 ====================== */
@@ -135,7 +163,11 @@ aiwRouter.use(retrieveRouter); // /search, ...
 aiwRouter.use(widgetRouter);   // /widget-config и т.п.
 
 
-app.use("/aiw", express.static(path.join(__dirname, "cdn/aiw")));
+app.use("/aiw", express.static(path.join(__dirname, "cdn/aiw"), {
+  etag: true,
+  lastModified: true,
+  setHeaders: setAiwStaticCacheHeaders,
+}));
 app.use("/aiw", aiwRouter);
 app.use("/api/aiw", aiwRouter);
     
