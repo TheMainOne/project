@@ -574,8 +574,12 @@
   const mode = (explicitMode || "float").toLowerCase();
   const isInline = mode === "inline";
 
-  const iHeight = parseInt(s.getAttribute("data-height") || "600", 10);
-  const fitMode = (s.getAttribute("data-fit") || "container").toLowerCase(); // "container" | "content"
+  const rawInlineHeight = parseInt(s.getAttribute("data-height") || "600", 10);
+  const iHeight = Number.isFinite(rawInlineHeight) ? rawInlineHeight : 600;
+  const inlineMinHeight = Math.max(200, iHeight);
+  const requestedFitMode = ((s.getAttribute("data-fit") || "container").toLowerCase() === "content")
+    ? "content"
+    : "container";
 
   // ================= INLINE-РЕЖИМ ЧЕРЕЗ IFRAME =================
   if (isInline) {
@@ -602,6 +606,27 @@
       } else {
         document.body.appendChild(mount);
       }
+    }
+
+    function hasUsableMountHeight(el) {
+      if (!el || el.nodeType !== 1) return false;
+      try {
+        const rect = el.getBoundingClientRect();
+        if (rect && rect.height > 1) return true;
+      } catch {}
+      try {
+        const st = window.getComputedStyle(el);
+        const h = parseFloat(st.height) || 0;
+        const minH = parseFloat(st.minHeight) || 0;
+        if (h > 1 || minH > 1) return true;
+      } catch {}
+      return false;
+    }
+
+    let fitMode = requestedFitMode;
+    if (fitMode === "container" && !hasUsableMountHeight(mount)) {
+      fitMode = "content";
+      console.warn("[AIW] inline mount has no explicit height, fallback to data-fit='content'");
     }
 
     const iframe = document.createElement("iframe");
@@ -664,7 +689,7 @@
       iframe.style.height = "100%";
     } else {
       // fit=content → фрейм сам сообщит высоту
-      iframe.style.height = Math.max(200, iHeight) + "px";
+      iframe.style.height = inlineMinHeight + "px";
       // window.addEventListener("message", (e) => {
       //   if (!e?.data || e.data.type !== "aiw:resize") return;
       //   if (e.source === iframe.contentWindow) {
@@ -1094,7 +1119,7 @@ function startFling(vy) {
 
       // --- resize (у тебя уже было)
       if (d.type === "aiw:resize" && fitMode !== "container") {
-        const minH = Math.max(200, iHeight);
+        const minH = inlineMinHeight;
         const h = Math.max(minH, parseInt(d.height || "0", 10) || 0);
         pendingInlineHeight = h;
         if (!isFullscreen) {
