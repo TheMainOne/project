@@ -5,6 +5,7 @@ import {
   countSessionsRaw,
   sessionsTimeseries,
   sessionsList,
+  deleteSessionConversation,
   // Messages
   messagesSummary,
   messagesTimeseries,
@@ -16,6 +17,8 @@ import {
   topUnresolvedGaps,
   gapsList          
 } from "../controllers/aiwStatsController.js";
+import { requireAuth, requireRoles } from "../middlewares/auth.js";
+import { attachAccessScope } from "../middlewares/accessScope.js";
 
 const aiwStatsRouter = express.Router();
 
@@ -24,6 +27,13 @@ aiwStatsRouter.get("/sessions/active/count", countActiveSessions);
 aiwStatsRouter.get("/sessions/count", countSessionsRaw);
 aiwStatsRouter.get("/sessions/timeseries", sessionsTimeseries);
 aiwStatsRouter.get("/sessions/list", sessionsList);
+aiwStatsRouter.delete(
+  "/sessions/:sessionId",
+  requireAuth,
+  attachAccessScope,
+  requireRoles(["admin", "superadmin"]),
+  deleteSessionConversation
+);
 
 // ===== Messages =====
 aiwStatsRouter.get("/messages/summary", messagesSummary);

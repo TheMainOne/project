@@ -45,6 +45,13 @@ function pagination(req, { defLimit = 20, maxLimit = 100 } = {}) {
   return { page, limit, skip };
 }
 
+function canAccessSite(scope, siteId) {
+  if (!scope) return false;
+  if (scope.isSuperadmin) return true;
+  const sid = String(siteId || "").trim();
+  return !!sid && Array.isArray(scope.allowedSiteIds) && scope.allowedSiteIds.includes(sid);
+}
+
 /* =========================
    1) СЕССИИ
    ========================= */
@@ -195,6 +202,54 @@ export async function sessionsList(req, res) {
       days,
       scope: siteIds ? { sites: siteIds } : { sites: "all" },
       items
+    });
+  } catch (e) {
+    return res.status(500).json({ error: e.message });
+  }
+}
+
+// DELETE /api/statistic/sessions/:sessionId
+// Removes the whole conversation: all AiwMessage + AiwSession for this sessionId.
+export async function deleteSessionConversation(req, res) {
+  try {
+    const sessionId = String(req.params.sessionId || "").trim();
+    if (!sessionId) {
+      return res.status(400).json({ error: "sessionId is required" });
+    }
+
+    const scope = req.accessScope;
+    if (!scope) {
+      return res.status(500).json({ error: "Access scope is not initialized" });
+    }
+
+    const [sessionDoc, sampleMessage] = await Promise.all([
+      AiwSession.findOne({ sessionId }).select("siteId sessionId").lean(),
+      AiwMessage.findOne({ sessionId }).select("siteId").lean(),
+    ]);
+
+    const resolvedSiteId = String(sessionDoc?.siteId || sampleMessage?.siteId || "").trim();
+    if (!resolvedSiteId) {
+      return res.status(404).json({ error: "Conversation not found" });
+    }
+
+    if (!canAccessSite(scope, resolvedSiteId)) {
+      return res.status(403).json({ error: "Forbidden" });
+    }
+
+    const filter = { sessionId, siteId: resolvedSiteId };
+    const [messagesResult, sessionResult] = await Promise.all([
+      AiwMessage.deleteMany(filter),
+      AiwSession.deleteOne(filter),
+    ]);
+
+    return res.json({
+      ok: true,
+      sessionId,
+      siteId: resolvedSiteId,
+      deleted: {
+        messages: messagesResult?.deletedCount || 0,
+        sessions: sessionResult?.deletedCount || 0,
+      },
     });
   } catch (e) {
     return res.status(500).json({ error: e.message });
