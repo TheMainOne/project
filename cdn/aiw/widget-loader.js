@@ -636,6 +636,30 @@
     let pendingInlineHeight = null;
     let hostScrollLockState = null;
 
+     const HUBSPOT_CONTAINER_SELECTOR = "#hubspot-messages-iframe-container";
+    const HUBSPOT_HIDE_CLASS = "aiw-hide-hubspot-widget";
+    let hubspotHideStyleEl = null;
+
+    function ensureHubspotHideStyle() {
+      if (hubspotHideStyleEl) return;
+      const style = document.createElement("style");
+      style.setAttribute("data-aiw-hubspot-hide", "1");
+      style.textContent = `.${HUBSPOT_HIDE_CLASS} ${HUBSPOT_CONTAINER_SELECTOR} { display: none !important; }`;
+      (document.head || document.documentElement).appendChild(style);
+      hubspotHideStyleEl = style;
+    }
+
+    function setHubspotHidden(hidden) {
+      const root = document.documentElement || document.body;
+      if (!root) return;
+      if (hidden) {
+        ensureHubspotHideStyle();
+        root.classList.add(HUBSPOT_HIDE_CLASS);
+      } else {
+        root.classList.remove(HUBSPOT_HIDE_CLASS);
+      }
+    }
+
   if (fitMode === "container") {
       iframe.style.height = "100%";
     } else {
@@ -668,6 +692,57 @@ function postFullscreenStateToFrame() {
       frameOrigin
     );
   } catch {}
+}
+
+function restoreIframeAfterFullscreen() {
+  try {
+    const placeholderParent = fullscreenPlaceholder && fullscreenPlaceholder.parentNode;
+    if (placeholderParent && placeholderParent.isConnected) {
+      placeholderParent.insertBefore(iframe, fullscreenPlaceholder);
+      fullscreenPlaceholder.remove();
+      return;
+    }
+  } catch {}
+
+  try {
+    if (mount && iframe.parentNode !== mount) {
+      mount.appendChild(iframe);
+    }
+  } catch {}
+}
+
+function cleanupFullscreenDomState() {
+  restoreIframeAfterFullscreen();
+
+  try {
+    if (fullscreenOverlay && fullscreenOverlay.parentNode) {
+      fullscreenOverlay.parentNode.removeChild(fullscreenOverlay);
+    }
+  } catch {}
+
+  if (typeof preFullscreenStyleText === "string") {
+    try {
+      iframe.style.cssText = preFullscreenStyleText;
+    } catch {}
+  }
+
+  if (fitMode !== "container" && pendingInlineHeight != null) {
+    try {
+      iframe.style.height = pendingInlineHeight + "px";
+    } catch {}
+  }
+
+  fullscreenOverlay = null;
+  fullscreenPlaceholder = null;
+  preFullscreenStyleText = null;
+}
+
+function forceExitFullscreenState() {
+  cleanupFullscreenDomState();
+  unlockHostScroll();
+  isFullscreen = false;
+  setHubspotHidden(false);
+  postFullscreenStateToFrame();
 }
 
 function lockHostScroll() {
@@ -736,10 +811,16 @@ function enterFullscreen() {
 
   try {
     const hostNode = document.body || document.documentElement;
-    if (!hostNode) return false;
+    if (!hostNode) {
+      forceExitFullscreenState();
+      return false;
+    }
 
     const parent = iframe.parentNode;
-    if (!parent) return false;
+    if (!parent) {
+      forceExitFullscreenState();
+      return false;
+    }
 
     preFullscreenStyleText = iframe.style.cssText;
     fullscreenPlaceholder = document.createComment("aiw-inline-fullscreen-anchor");
@@ -774,49 +855,18 @@ function enterFullscreen() {
     lockHostScroll();
 
     isFullscreen = true;
+    setHubspotHidden(true);
     postFullscreenStateToFrame();
     return true;
   } catch {
-    unlockHostScroll();
+    forceExitFullscreenState();
     return false;
   }
 }
 
 function exitFullscreen() {
-  if (!isFullscreen) return true;
-
-  try {
-    if (fullscreenPlaceholder && fullscreenPlaceholder.parentNode) {
-      fullscreenPlaceholder.parentNode.insertBefore(iframe, fullscreenPlaceholder);
-      fullscreenPlaceholder.remove();
-    } else if (mount) {
-      mount.appendChild(iframe);
-    }
-
-    if (fullscreenOverlay && fullscreenOverlay.parentNode) {
-      fullscreenOverlay.parentNode.removeChild(fullscreenOverlay);
-    }
-
-    if (typeof preFullscreenStyleText === "string") {
-      iframe.style.cssText = preFullscreenStyleText;
-    }
-
-    if (fitMode !== "container" && pendingInlineHeight != null) {
-      iframe.style.height = pendingInlineHeight + "px";
-    }
-
-    unlockHostScroll();
-
-    isFullscreen = false;
-    fullscreenOverlay = null;
-    fullscreenPlaceholder = null;
-    preFullscreenStyleText = null;
-    postFullscreenStateToFrame();
-    return true;
-  } catch {
-    unlockHostScroll();
-    return false;
-  }
+  forceExitFullscreenState();
+  return true;
 }
 
 function setFullscreen(next) {
@@ -1037,6 +1087,7 @@ function startFling(vy) {
     function onFrameMessage(e) {
       // безопасность + гарантия что это наш iframe
       if (e.origin !== frameOrigin) return;
+      if (e.source !== iframe.contentWindow) return;
 
       const d = e.data || {};
       if (!d || typeof d !== "object") return;
