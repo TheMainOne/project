@@ -1713,8 +1713,7 @@ function bindIdleDemoStopListeners() {
   idleDemoListenersBound = true;
 
   const onUserAction = (evt) => handleWidgetUserInteraction(evt, { hard: false });
-  shadow.addEventListener("pointerdown", onUserAction, true);
-  shadow.addEventListener("touchstart", onUserAction, { capture: true, passive: true });
+  shadow.addEventListener("click", onUserAction, true);
   shadow.addEventListener("keydown", onUserAction, true);
   input.addEventListener("focusin", onUserAction, true);
 }
