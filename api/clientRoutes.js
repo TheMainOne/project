@@ -13,6 +13,13 @@ import {
   listClientUsers
 } from "../controllers/clientController.js";
 import { getWidgetConfig, upsertWidgetConfig, getPublicWidgetConfig, uploadWidgetFont } from "../controllers/widgetConfigController.js";
+import {
+  listWidgetDemoScripts,
+  getWidgetDemoScript,
+  upsertWidgetDemoScript,
+  setWidgetDemoScriptEnabled,
+  deleteWidgetDemoScript,
+} from "../controllers/widgetDemoScriptController.js";
 import { telemetryEventsByClient, telemetrySummaryByClient } from "../controllers/telemetryController.js";
 
 const clientRouter = express.Router();
@@ -26,6 +33,7 @@ clientRouter.param("idOrSlug", enforceClientAccessByParam());
 clientRouter.post("/", createClient);              // POST /api/clients
 clientRouter.get("/", getAllClients);              // GET /api/clients
 clientRouter.get("/documents/count", countAllClientDocuments); // count all documents across clients
+clientRouter.get("/widget-demo-scripts", listWidgetDemoScripts);
 clientRouter.get("/:id", getClient);         // GET /api/clients/:idOrSlug
 clientRouter.post("/:id/documents", upload.single("file"), createClientDocument);
 clientRouter.get("/:id/documents", listClientDocuments);
@@ -42,5 +50,9 @@ clientRouter.delete("/:id/documents/:docId", deleteClientDocument); // DELETE /a
 clientRouter.get("/:idOrSlug/widget-config", getWidgetConfig);
 clientRouter.put("/:idOrSlug/widget-config", upload.single("logo"), upsertWidgetConfig);
 clientRouter.post("/:idOrSlug/widget-font", upload.single("font"), uploadWidgetFont);
+clientRouter.get("/:idOrSlug/widget-demo-script", getWidgetDemoScript);
+clientRouter.put("/:idOrSlug/widget-demo-script", upsertWidgetDemoScript);
+clientRouter.patch("/:idOrSlug/widget-demo-script/enabled", setWidgetDemoScriptEnabled);
+clientRouter.delete("/:idOrSlug/widget-demo-script", deleteWidgetDemoScript);
 
 export default clientRouter;

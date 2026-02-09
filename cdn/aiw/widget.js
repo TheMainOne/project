@@ -82,6 +82,8 @@ const ACCENT = CFG.primaryColor || CFG.accent || "#6D28D9";
   const AUTO_COOLDOWN_HOURS = Math.max(0, (CFG.autostartCooldownHours ?? 12));
   const INLINE_AUTOSTART_CFG = CFG.inlineAutostart || null;
   const USER_INTERACTED_KEY = `aiw:userInteracted:session:${SITE_ID}`;
+  const IDLE_DEMO_LOOP_GAP_MS = 1500;
+  const IDLE_DEMO_BADGE_TEXT = "Example conversation";
 let showWelcomeHint = true;
 const PRESERVE_HISTORY   = INLINE ? true : (CFG.preserveHistory !== false);
 const RESET_HISTORY_ON_OPEN = !INLINE && CFG.resetHistoryOnOpen === true;
@@ -212,6 +214,12 @@ function alreadyInteracted() {
   } catch {
     return false;
   }
+}
+
+function markUserInteracted() {
+  try {
+    sessionStorage.setItem(USER_INTERACTED_KEY, "1");
+  } catch {}
 }
 
 function shouldAutoGreetNow() {
@@ -598,6 +606,16 @@ ${(INLINE && IS_IOS) ? `
   display:flex;
   align-items:center;
   opacity:.8;
+}
+.aiw-typing-bubble.me{
+  align-self:flex-end;
+  background:${THEME.bubbleUser};
+  color:${THEME.userText};
+}
+.aiw-typing-bubble.ai{
+  align-self:flex-start;
+  background:${THEME.bubbleAI};
+  color:${THEME.text};
 }
 
 .aiw-typing-dots{
@@ -1168,16 +1186,37 @@ const FS_EXIT_ICON = `
 `;
 
 let inlineFullscreen = false;
+let inlineBusy = false;
+
+function getInlineFullscreenBaseTitle() {
+  return inlineFullscreen
+    ? (LANG.startsWith("ru") ? "\u0412\u044b\u0439\u0442\u0438 \u0438\u0437 \u043f\u043e\u043b\u043d\u043e\u0433\u043e \u044d\u043a\u0440\u0430\u043d\u0430" : "Exit fullscreen")
+    : (LANG.startsWith("ru") ? "\u041d\u0430 \u0432\u0435\u0441\u044c \u044d\u043a\u0440\u0430\u043d" : "Fullscreen");
+}
+
+function syncInlineFullscreenControl() {
+  fsBtn.innerHTML = inlineFullscreen ? FS_EXIT_ICON : FS_ENTER_ICON;
+  const baseTitle = getInlineFullscreenBaseTitle();
+  const busyTitle = LANG.startsWith("ru")
+    ? "\u0414\u043e\u0436\u0434\u0438\u0442\u0435\u0441\u044c \u043e\u0442\u0432\u0435\u0442\u0430"
+    : "Wait for response";
+
+  fsBtn.title = inlineBusy ? busyTitle : baseTitle;
+  fsBtn.setAttribute("aria-label", fsBtn.title);
+  fsBtn.setAttribute("aria-pressed", inlineFullscreen ? "true" : "false");
+  fsBtn.setAttribute("aria-disabled", inlineBusy ? "true" : "false");
+  fsBtn.disabled = inlineBusy;
+  panel.classList.toggle("aiw-panel-fullscreen", inlineFullscreen);
+}
 
 function setInlineFullscreenState(next) {
   inlineFullscreen = !!next;
-  fsBtn.innerHTML = inlineFullscreen ? FS_EXIT_ICON : FS_ENTER_ICON;
-  fsBtn.title = inlineFullscreen
-    ? (LANG.startsWith("ru") ? "\u0412\u044b\u0439\u0442\u0438 \u0438\u0437 \u043f\u043e\u043b\u043d\u043e\u0433\u043e \u044d\u043a\u0440\u0430\u043d\u0430" : "Exit fullscreen")
-    : (LANG.startsWith("ru") ? "\u041d\u0430 \u0432\u0435\u0441\u044c \u044d\u043a\u0440\u0430\u043d" : "Fullscreen");
-  fsBtn.setAttribute("aria-label", fsBtn.title);
-  fsBtn.setAttribute("aria-pressed", inlineFullscreen ? "true" : "false");
-  panel.classList.toggle("aiw-panel-fullscreen", inlineFullscreen);
+  syncInlineFullscreenControl();
+}
+
+function setInlineBusyState(next) {
+  inlineBusy = !!next;
+  syncInlineFullscreenControl();
 }
 
 function postInlineFullscreen(next) {
@@ -1200,9 +1239,21 @@ function requestInlineFullscreenState() {
   } catch {}
 }
 
+function postInlineBusyState(next) {
+  if (!INLINE || window.parent === window) return;
+  try {
+    window.parent.postMessage(
+      { type: "aiw:busy", instanceId: INSTANCE_ID, value: !!next },
+      PARENT_ORIGIN
+    );
+  } catch {}
+}
+
 setInlineFullscreenState(false);
+setInlineBusyState(false);
 fsBtn.addEventListener("click", (e) => {
   e.preventDefault();
+  if (inlineBusy) return;
   const next = !inlineFullscreen;
   // Optimistic UI update so the user can always toggle back immediately.
   setInlineFullscreenState(next);
@@ -1225,6 +1276,24 @@ const messagesWrap = document.createElement("div");
 messagesWrap.style.display = "flex";
 messagesWrap.style.flexDirection = "column";
 body.appendChild(messagesWrap);
+let demoMessages = [];
+let demoActive = false;
+let demoTypingActive = false;
+const demoBadge = document.createElement("div");
+demoBadge.style.cssText = `
+  display:none;
+  align-self:flex-start;
+  margin:6px 0 10px;
+  padding:4px 10px;
+  border-radius:999px;
+  border:1px solid ${THEME.bubbleBorder};
+  background:${THEME.bubbleAI};
+  color:${THEME.time};
+  font-size:12px;
+  letter-spacing:.01em;
+`;
+demoBadge.textContent = "";
+body.insertBefore(demoBadge, messagesWrap);
 // пустой хинт (виден только когда нет сообщений)
 const emptyHint = document.createElement("div");
 emptyHint.style.cssText = `
@@ -1235,10 +1304,20 @@ emptyHint.style.cssText = `
 emptyHint.textContent = WELCOME;
 body.appendChild(emptyHint);
 
+function visibleMessages() {
+  if (INLINE && demoActive) return demoMessages;
+  return history;
+}
+
 function updateEmptyHint() {
-  const hasHistory = Array.isArray(history) && history.length > 0;
-  const shouldShow = showWelcomeHint && !hasHistory;
+  const shownMessages = visibleMessages();
+  const hasMessages = Array.isArray(shownMessages) && shownMessages.length > 0;
+  const shouldShow = showWelcomeHint && !hasMessages && !demoTypingActive;
   emptyHint.style.display = shouldShow ? "block" : "none";
+}
+
+function updateDemoBadge() {
+  demoBadge.style.display = "none";
 }
 
 const footer = document.createElement("div");
@@ -1333,8 +1412,11 @@ wrap.appendChild(panel);
       <span class="aiw-typing-dot"></span>
     </span>
   `;
-function showTyping() {
+function showTyping(role = "assistant") {
   if (panel.style.display === "none") return;
+  const isUserRole = role === "user";
+  typing.classList.toggle("me", isUserRole);
+  typing.classList.toggle("ai", !isUserRole);
   if (!typing.isConnected) messagesWrap.appendChild(typing);
   typing.style.visibility = "visible";
    scrollToBottom();
@@ -1343,6 +1425,17 @@ function showTyping() {
 function hideTyping() {
   typing.style.visibility = "hidden";
     postHeight();
+}
+
+function getCurrentDemoTypingRole() {
+  if (!INLINE || !demoActive || !idleDemoScript || !demoTypingActive) return "assistant";
+  const steps = Array.isArray(idleDemoScript.messages) ? idleDemoScript.messages : [];
+  const step = steps[idleDemoStepIndex];
+  return step?.role === "user" ? "user" : "assistant";
+}
+
+function hasRenderableAssistantContent(text) {
+  return String(text || "").replace(/\u200B/g, "").trim().length > 0;
 }
 
 function dedupeAutogreetAtTail() {
@@ -1382,11 +1475,26 @@ function autoResizeInput() {
   postHeight();
 }
 
-input.addEventListener("input", () => {
+function handleWidgetUserInteraction(evt, { hard = false } = {}) {
+  if ((evt?.type === "scroll" || evt?.type === "wheel") && ignoreScroll) return;
+  if (hard) markUserInteracted();
   cancelAllAutogreetTimers();
-  try { sessionStorage.setItem(USER_INTERACTED_KEY, "1"); } catch {}
+  if (INLINE) {
+    const hasIdleDemoState =
+      demoActive ||
+      demoTypingActive ||
+      !!idleDemoScript ||
+      (Array.isArray(demoMessages) && demoMessages.length > 0);
+    if (hasIdleDemoState) {
+      stopIdleDemo({ clearMessages: true, restoreWelcome: true });
+    }
+  }
+}
+
+input.addEventListener("input", () => {
+  handleWidgetUserInteraction({ type: "input" }, { hard: false });
   updateCounter();
-    autoResizeInput();
+  autoResizeInput();
 });
 updateCounter(); // начальное значение
 setTimeout(autoResizeInput, 0);
@@ -1416,12 +1524,217 @@ function cancelAllAutogreetTimers() {
   } catch {}
 }
 
+let idleDemoScript = null;
+let idleDemoStepIndex = 0;
+let idleDemoTimerId = null;
+let idleDemoListenersBound = false;
+
+function toNonNegativeMs(value, fallback) {
+  const n = Number(value);
+  if (!Number.isFinite(n) || n < 0) return fallback;
+  return Math.round(n);
+}
+
+function clearIdleDemoTimer() {
+  if (idleDemoTimerId === null) return;
+  clearTimeout(idleDemoTimerId);
+  idleDemoTimerId = null;
+}
+
+function scheduleIdleDemo(nextFn, delayMs) {
+  clearIdleDemoTimer();
+  idleDemoTimerId = setTimeout(() => {
+    idleDemoTimerId = null;
+    nextFn();
+  }, toNonNegativeMs(delayMs, 0));
+}
+
+function stopIdleDemo({ clearMessages = true, restoreWelcome = false } = {}) {
+  const hadDemoState =
+    demoActive ||
+    demoTypingActive ||
+    !!idleDemoScript ||
+    (Array.isArray(demoMessages) && demoMessages.length > 0);
+
+  clearIdleDemoTimer();
+  demoActive = false;
+  demoTypingActive = false;
+  idleDemoScript = null;
+  idleDemoStepIndex = 0;
+  if (clearMessages) demoMessages = [];
+  hideTyping();
+
+  if (restoreWelcome && (!history || history.length === 0)) {
+    showWelcomeHint = true;
+  }
+
+  if (hadDemoState) {
+    renderAll();
+  }
+}
+
+function playIdleDemoStep() {
+  if (!demoActive || !idleDemoScript) return;
+
+  const scriptMessages = Array.isArray(idleDemoScript.messages) ? idleDemoScript.messages : [];
+  if (!scriptMessages.length) {
+    stopIdleDemo({ clearMessages: true, restoreWelcome: true });
+    return;
+  }
+
+  const step = scriptMessages[idleDemoStepIndex];
+  if (!step) {
+    idleDemoStepIndex = 0;
+    scheduleIdleDemo(playIdleDemoStep, IDLE_DEMO_LOOP_GAP_MS);
+    return;
+  }
+
+  demoTypingActive = true;
+  renderAll();
+
+  scheduleIdleDemo(() => {
+    if (!demoActive || !idleDemoScript) return;
+
+    demoTypingActive = false;
+    demoMessages.push({
+      role: step.role,
+      content: step.text,
+      meta: { kind: "idleDemo" },
+      ts: Date.now(),
+    });
+    if (demoMessages.length > 30) {
+      demoMessages = demoMessages.slice(-30);
+    }
+    renderAll();
+
+    scheduleIdleDemo(() => {
+      if (!demoActive || !idleDemoScript) return;
+
+      idleDemoStepIndex += 1;
+      if (idleDemoStepIndex >= scriptMessages.length) {
+        if (idleDemoScript.loop === false) {
+          demoTypingActive = false;
+          renderAll();
+          return;
+        }
+        idleDemoStepIndex = 0;
+        demoTypingActive = false;
+        demoMessages = [];
+        renderAll();
+        scheduleIdleDemo(playIdleDemoStep, IDLE_DEMO_LOOP_GAP_MS);
+        return;
+      }
+
+      playIdleDemoStep();
+    }, toNonNegativeMs(step.delayAfterMs, 1200));
+  }, toNonNegativeMs(step.typingMs, 800));
+}
+
+function normalizeIdleDemoScript(raw) {
+  if (!raw || raw.enabled !== true) return null;
+
+  const lang = String(raw.lang || "en").toLowerCase();
+  if (!lang.startsWith("en")) return null;
+
+  const messages = Array.isArray(raw.messages)
+    ? raw.messages
+      .map((step) => {
+        const role = String(step?.role || "").trim();
+        const text = sanitize(step?.text || "").trim();
+        if (!text) return null;
+        if (role !== "user" && role !== "assistant") return null;
+        return {
+          role,
+          text,
+          typingMs: toNonNegativeMs(step?.typingMs, 800),
+          delayAfterMs: toNonNegativeMs(step?.delayAfterMs, 1200),
+        };
+      })
+      .filter(Boolean)
+    : [];
+
+  if (!messages.length) return null;
+
+  return {
+    enabled: true,
+    lang: "en",
+    loop: raw.loop !== false,
+    startDelayMs: toNonNegativeMs(raw.startDelayMs, 1200),
+    messages,
+  };
+}
+
+async function fetchIdleDemoScript() {
+  const url = new URL("/api/widget/demo-script", API_ORIGIN);
+  url.searchParams.set("siteId", SITE_ID);
+
+  const res = await fetch(url.toString(), {
+    method: "GET",
+    credentials: "omit",
+    mode: "cors",
+  });
+
+  if (!res.ok) return null;
+  const data = await res.json().catch(() => null);
+  return normalizeIdleDemoScript(data);
+}
+
+async function maybeStartIdleDemo() {
+  if (!INLINE) return false;
+  if (alreadyInteracted()) return false;
+  if (history && history.length > 0) return false;
+
+  let script = null;
+  try {
+    script = await fetchIdleDemoScript();
+  } catch (err) {
+    log("idleDemo: fetch failed", err?.message || err);
+    return false;
+  }
+
+  if (!script) return false;
+  if (alreadyInteracted()) return false;
+  if (history && history.length > 0) return false;
+
+  idleDemoScript = script;
+  idleDemoStepIndex = 0;
+  demoMessages = [];
+  demoTypingActive = false;
+  demoActive = true;
+  showWelcomeHint = false;
+  renderAll();
+
+  scheduleIdleDemo(playIdleDemoStep, script.startDelayMs);
+  return true;
+}
+
+function bindIdleDemoStopListeners() {
+  if (!INLINE || idleDemoListenersBound) return;
+  idleDemoListenersBound = true;
+
+  const onUserAction = (evt) => handleWidgetUserInteraction(evt, { hard: false });
+  shadow.addEventListener("pointerdown", onUserAction, true);
+  shadow.addEventListener("touchstart", onUserAction, { capture: true, passive: true });
+  shadow.addEventListener("keydown", onUserAction, true);
+  input.addEventListener("focusin", onUserAction, true);
+  body.addEventListener("wheel", onUserAction, { passive: true });
+  body.addEventListener("scroll", onUserAction, { passive: true });
+}
+
 function runInlineAutostart(cfg) {
   if (!INLINE) return;                               // только для inline
   if (!cfg || cfg.enabled !== true) return;
 
   const script = Array.isArray(cfg.script) ? cfg.script : [];
   if (!script.length) return;
+
+  // Если уже было реальное взаимодействие в сессии — не запускаем сценарий,
+  // оставляем обычный приветственный placeholder.
+  if (alreadyInteracted()) {
+    showWelcomeHint = true;
+    updateEmptyHint();
+    return;
+  }
 
   // если уже есть история – не спамим (приветствие только когда чат "чистый")
   if (history && history.length > 0) return;
@@ -1608,9 +1921,13 @@ bubble.innerHTML = renderMarkdownBasic(m.content);
 // полный рендер — используем только когда реально нужно всё перерисовать
 function renderAll() {
   while (messagesWrap.firstChild) messagesWrap.removeChild(messagesWrap.firstChild);
-  for (const m of history) {
+  const messagesToRender = visibleMessages();
+  for (const m of messagesToRender) {
     appendMessageDOM(m);
   }
+  updateDemoBadge();
+  if (INLINE && demoActive && demoTypingActive) showTyping(getCurrentDemoTypingRole());
+  else hideTyping();
   updateEmptyHint();
   // при полном перерендере: скроллим только если юзер был pinned
 scrollToBottom(false);
@@ -1671,6 +1988,7 @@ if (!INLINE) {
     window.addEventListener("keydown", (e) => {
       if (e.key !== "Escape") return;
       if (!inlineFullscreen) return;
+      if (inlineBusy) return;
       e.preventDefault();
       postInlineFullscreen(false);
     });
@@ -1684,6 +2002,7 @@ if (!INLINE) {
 
 resetBtn.addEventListener("click", (e) => {
   e.preventDefault();
+  stopIdleDemo({ clearMessages: true, restoreWelcome: false });
 
   try {
     if (STORAGE) STORAGE.removeItem(storeKey);
@@ -1816,7 +2135,7 @@ await pumpSSE(reader, (data) => {
     const chunk = data.replace(/\\n/g, "\n");
   msg.content += chunk;
 
-  if (!rendered) {
+  if (!rendered && hasRenderableAssistantContent(msg.content)) {
     // первый кусок — убираем точки и рисуем пузырь
     hideTyping();
     const dom = appendMessageDOM(msg);
@@ -1831,6 +2150,19 @@ await pumpSSE(reader, (data) => {
     postHeight();
   }
 });
+
+if (!rendered) {
+  msg.content = hasRenderableAssistantContent(msg.content)
+    ? msg.content
+    : (LANG.startsWith("ru") ? "â€¦" : "â€¦");
+  hideTyping();
+  const dom = appendMessageDOM(msg);
+  bubble = dom.bubble;
+  updateEmptyHint();
+  rendered = true;
+  if (wasPinnedAtStart) scrollToBottom();
+  postHeight();
+}
 
 writeHistory(history);
 
@@ -1889,10 +2221,7 @@ function scheduleAutoGreet() {
     const text = sanitize(input.value).trim();
     if (!text || inflight) return;
 
-      try {
-    sessionStorage.setItem(USER_INTERACTED_KEY, "1");
-  } catch {}
-  cancelAllAutogreetTimers();
+    handleWidgetUserInteraction({ type: "send" }, { hard: true });
 
 
     history.push({ role: "user", content: text, ts: Date.now() });
@@ -1905,6 +2234,8 @@ function scheduleAutoGreet() {
     const safeMsgs = history.map(({ role, content }) => ({ role, content })).slice(-30);
     const controller = new AbortController();
     inflight = controller;
+    setInlineBusyState(true);
+    postInlineBusyState(true);
 const wasPinnedAtStart = userPinnedToBottom;
     try {
       
@@ -1968,7 +2299,7 @@ await pumpSSE(reader, (data) => {
   const chunk = data.replace(/\\n/g, "\n");
   msg.content += chunk;
 
-  if (!rendered) {
+  if (!rendered && hasRenderableAssistantContent(msg.content)) {
     // первый кусок — скрываем индикатор набора и добавляем пузырь
     hideTyping();
     const dom = appendMessageDOM(msg);
@@ -1984,6 +2315,19 @@ if (bubble) {
 }
 });
 
+if (!rendered) {
+  msg.content = hasRenderableAssistantContent(msg.content)
+    ? msg.content
+    : (LANG.startsWith("ru") ? "â€¦" : "â€¦");
+  hideTyping();
+  const dom = appendMessageDOM(msg);
+  bubble = dom.bubble;
+  updateEmptyHint();
+  rendered = true;
+  if (wasPinnedAtStart) scrollToBottom();
+  postHeight();
+}
+
 writeHistory(history);
 
     } catch (err) {
@@ -1992,6 +2336,8 @@ writeHistory(history);
     } finally {
       hideTyping();
       inflight = null;
+      setInlineBusyState(false);
+      postInlineBusyState(false);
     }
   }
 
@@ -2004,38 +2350,50 @@ writeHistory(history);
   window.addEventListener("aiw:toggle", aiwToggle);
   window.__AIW__ = { open: aiwOpen, close: aiwClose, toggle: aiwToggle };
 
-    try {
-    if (INLINE && INLINE_AUTOSTART_CFG && INLINE_AUTOSTART_CFG.enabled) {
-      // НОВАЯ логика для inline-сценария
-      log("init: inlineAutostart enabled");
-      runInlineAutostart(INLINE_AUTOSTART_CFG);
-    } else {
-      // старый автостарт (float-виджет и inline без сценария)
-      scheduleAutoGreet();
+function initClassicAutostart() {
+  scheduleAutoGreet();
 
-      // Сразу логнем текущее состояние (до любых событий)
-      log("init", {
+  log("init", {
+    sessionFlag: sessionStorage.getItem(AUTO_KEY_SESSION),
+    userInteracted: sessionStorage.getItem(USER_INTERACTED_KEY),
+    lastTs: +localStorage.getItem(AUTO_KEY_LAST_TS) || 0,
+    historyLen: (Array.isArray(history) ? history.length : -1)
+  });
+
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "visible") {
+      scheduleAutoGreet();
+      log("visible: recheck", {
         sessionFlag: sessionStorage.getItem(AUTO_KEY_SESSION),
         userInteracted: sessionStorage.getItem(USER_INTERACTED_KEY),
         lastTs: +localStorage.getItem(AUTO_KEY_LAST_TS) || 0,
         historyLen: (Array.isArray(history) ? history.length : -1)
       });
-
-      // если вкладка стала видимой (вернулись на страницу) — пробуем ещё раз
-      document.addEventListener("visibilitychange", () => {
-        if (document.visibilityState === "visible") {
-          scheduleAutoGreet();
-          log("visible: recheck", {
-            sessionFlag: sessionStorage.getItem(AUTO_KEY_SESSION),
-            userInteracted: sessionStorage.getItem(USER_INTERACTED_KEY),
-            lastTs: +localStorage.getItem(AUTO_KEY_LAST_TS) || 0,
-            historyLen: (Array.isArray(history) ? history.length : -1)
-          });
-        }
-      });
     }
-  } catch (e) {
-    console.debug("[AIW][autogreet] trigger error:", e);
+  });
+}
+
+async function initGreetingFlows() {
+  if (INLINE) {
+    bindIdleDemoStopListeners();
+    const demoStarted = await maybeStartIdleDemo();
+    if (demoStarted) {
+      log("init: idle demo started");
+      return;
+    }
+
+    if (INLINE_AUTOSTART_CFG && INLINE_AUTOSTART_CFG.enabled) {
+      log("init: inlineAutostart enabled");
+      runInlineAutostart(INLINE_AUTOSTART_CFG);
+      return;
+    }
   }
+
+  initClassicAutostart();
+}
+
+initGreetingFlows().catch((e) => {
+  console.debug("[AIW][autogreet] trigger error:", e);
+});
 })();
 

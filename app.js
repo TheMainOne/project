@@ -14,6 +14,7 @@ import sendTelegramMessage from "./services/telegramNotify.js";
 import widgetRouter from "./api/widget/widget.js";
 import retrieveRouter from "./api/widget/aiwSearch.js";
 import chatRouter from "./api/widget/aiwChat.js";
+import widgetDemoScriptRouter from "./api/widget/demoScript.js";
 import notificationDestinationsRouter from "./api/notificationDestinations.js";
 import Notification from "./models/Notification.js";
 import NotificationDestination from "./models/NotificationDestination.js";
@@ -155,6 +156,7 @@ mongoose
     app.use("/api/notification-destinations", notificationDestinationsRouter);
     app.use("/api/telemetry", telemetryRouter);
     app.use("/api/leads", leadsRouter);
+    app.use("/api/widget", widgetDemoScriptRouter);
 
 const aiwRouter = express.Router();
 

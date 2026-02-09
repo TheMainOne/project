@@ -660,6 +660,7 @@
     let preFullscreenStyleText = null;
     let pendingInlineHeight = null;
     let hostScrollLockState = null;
+    let frameBusy = false;
 
      const HUBSPOT_CONTAINER_SELECTOR = "#hubspot-messages-iframe-container";
     const HUBSPOT_HIDE_CLASS = "aiw-hide-hubspot-widget";
@@ -1138,6 +1139,12 @@ function startFling(vy) {
       if (d.type === "aiw:fullscreen:get-state") {
         if (d.instanceId && d.instanceId !== instanceId) return;
         postFullscreenStateToFrame();
+        return;
+      }
+
+      if (d.type === "aiw:busy") {
+        if (d.instanceId && d.instanceId !== instanceId) return;
+        frameBusy = !!d.value;
         return;
       }
 
