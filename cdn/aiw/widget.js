@@ -1717,8 +1717,6 @@ function bindIdleDemoStopListeners() {
   shadow.addEventListener("touchstart", onUserAction, { capture: true, passive: true });
   shadow.addEventListener("keydown", onUserAction, true);
   input.addEventListener("focusin", onUserAction, true);
-  body.addEventListener("wheel", onUserAction, { passive: true });
-  body.addEventListener("scroll", onUserAction, { passive: true });
 }
 
 function runInlineAutostart(cfg) {

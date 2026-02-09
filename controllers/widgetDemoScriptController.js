@@ -1,6 +1,7 @@
 import mongoose from "mongoose";
 import Client from "../models/Client.js";
 import WidgetDemoScript from "../models/WidgetDemoScript.js";
+import { invalidateWidgetDemoScriptCache } from "../services/widgetDemoScript/cache.js";
 
 function resolveClientFilter(idOrSlug) {
   if (!idOrSlug) return null;
@@ -280,6 +281,7 @@ export async function upsertWidgetDemoScript(req, res) {
       { $set: payload, $setOnInsert: { siteId: client.siteId } },
       { new: true, upsert: true, runValidators: true }
     );
+    invalidateWidgetDemoScriptCache(client.siteId);
 
     return res.json({
       ok: true,
@@ -333,6 +335,7 @@ export async function setWidgetDemoScriptEnabled(req, res) {
           error: "Script does not exist. Create it with messages before enabling",
         });
       }
+      invalidateWidgetDemoScriptCache(client.siteId);
       return res.json({
         ok: true,
         client: {
@@ -354,6 +357,7 @@ export async function setWidgetDemoScriptEnabled(req, res) {
 
     doc.enabled = enabled;
     await doc.save();
+    invalidateWidgetDemoScriptCache(client.siteId);
 
     return res.json({
       ok: true,
@@ -381,6 +385,7 @@ export async function deleteWidgetDemoScript(req, res) {
     if (!client) return res.status(404).json({ ok: false, error: "Client not found" });
 
     const result = await WidgetDemoScript.deleteOne({ siteId: client.siteId });
+    invalidateWidgetDemoScriptCache(client.siteId);
     return res.json({
       ok: true,
       siteId: client.siteId,
