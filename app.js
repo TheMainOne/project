@@ -112,6 +112,9 @@ const corsOptions = {
     "X-Requested-With",
     "Origin",
     "Accept",
+    "X-AIW-Site",
+    "X-AIW-Visitor",
+    "X-AIW-Session",
   ],
   credentials: false,
 };

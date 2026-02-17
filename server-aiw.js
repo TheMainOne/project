@@ -19,6 +19,25 @@ app.use(express.json({ limit: '1mb' }));
 // чтобы корректно брать IP из X-Forwarded-For за Nginx
 app.set('trust proxy', true);
 
+const corsOptions = {
+  origin: true,
+  methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+  allowedHeaders: [
+    "Content-Type",
+    "Authorization",
+    "X-Requested-With",
+    "Origin",
+    "Accept",
+    "X-AIW-Site",
+    "X-AIW-Visitor",
+    "X-AIW-Session",
+  ],
+  credentials: false,
+};
+
+app.use(cors(corsOptions));
+app.options("*", cors(corsOptions));
+
 // ===== CORS (ДО всех роутов) =====
 const ALLOWED_ORIGINS = [
   'https://themainone.github.io',      // твой фронт

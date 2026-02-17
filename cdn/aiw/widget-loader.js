@@ -116,8 +116,24 @@
         trackAttr === "1" ||
         trackAttr === "true";
 
+      function attachLiveActivityLogger() {
+        try {
+          const activity = window.__AIW_ACTIVITY__;
+          if (!activity || typeof activity.on !== "function") return false;
+          if (window.__AIW_ACTIVITY_LIVE_LOGGER_ATTACHED__) return true;
+          activity.on((e) => console.log("[AIW][live]", e));
+          window.__AIW_ACTIVITY_LIVE_LOGGER_ATTACHED__ = true;
+          return true;
+        } catch {
+          return false;
+        }
+      }
+
       if (!trackEnabled) return;
-      if (window.__AIW_ACTIVITY_TRACKER__) return;
+      const hasExistingTracker = !!window.__AIW_ACTIVITY_TRACKER__;
+      if (hasExistingTracker) {
+        attachLiveActivityLogger();
+      }
 
       const isDebug = (() => {
         try {
@@ -141,11 +157,447 @@
         sectionObserver: null,
         tabObserver: null,
         scrollHandler: null,
+        resizeHandler: null,
+        resizeTimer: null,
         mutationObserver: null,
         lastDepthStep: 0,
         visibleSince: document.visibilityState === "visible" ? Date.now() : null,
         totalVisibleMs: 0
       };
+
+      const MAX_ACTIVITY_EVENTS = 500;
+
+      function toBool(value, fallback) {
+        if (value == null || value === "") return !!fallback;
+        const norm = String(value).trim().toLowerCase();
+        if (norm === "1" || norm === "true" || norm === "yes" || norm === "on") return true;
+        if (norm === "0" || norm === "false" || norm === "no" || norm === "off") return false;
+        return !!fallback;
+      }
+
+      function toNum(value, fallback) {
+        const n = Number(value);
+        return Number.isFinite(n) ? n : fallback;
+      }
+
+      function toText(value) {
+        return value == null ? "" : String(value);
+      }
+
+      function normToken(value) {
+        return toText(value).trim().toLowerCase();
+      }
+
+      function safeJsonParse(raw) {
+        if (typeof raw !== "string" || !raw.trim()) return null;
+        try {
+          return JSON.parse(raw);
+        } catch {
+          return null;
+        }
+      }
+
+      function normalizeNotifyRule(rule, index) {
+        if (!rule || typeof rule !== "object") return null;
+
+        const event = toText(rule.event || rule.when).trim();
+        const message = toText(rule.message || rule.text).trim();
+        if (!event || !message) return null;
+
+        return {
+          id: toText(rule.id || ("rule_" + String(index))).trim() || ("rule_" + String(index)),
+          event,
+          section: toText(rule.section || "").trim(),
+          tab: toText(rule.tab || "").trim(),
+          path: toText(rule.path || "").trim(),
+          minDurationMs: toNum(rule.minDurationMs, 0),
+          minScrollDepth: toNum(rule.minScrollDepth, 0),
+          minVisibleMs: toNum(rule.minVisibleMs, 0),
+          once: toBool(rule.once, true),
+          cooldownMs: Math.max(0, toNum(rule.cooldownMs, 45000)),
+          maxShows: Math.max(0, toNum(rule.maxShows, 1)),
+          title: toText(rule.title || "AI Assistant").trim() || "AI Assistant",
+          message,
+          variant: toText(rule.variant || "info").trim() || "info",
+          durationMs: Math.max(0, toNum(rule.durationMs, 6000)),
+          ctaLabel: toText(rule.ctaLabel || "").trim(),
+          ctaUrl: toText(rule.ctaUrl || "").trim(),
+          position: toText(rule.position || "").trim(),
+          allowWhileVisible: toBool(rule.allowWhileVisible, false)
+        };
+      }
+
+      function parseNotifyRules(rawRules) {
+        if (!rawRules) return [];
+        let source = rawRules;
+
+        if (typeof source === "string") {
+          const parsed = safeJsonParse(source);
+          source = parsed;
+        }
+
+        if (!Array.isArray(source)) return [];
+
+        const list = [];
+        for (let i = 0; i < source.length; i += 1) {
+          const normalized = normalizeNotifyRule(source[i], i);
+          if (normalized) list.push(normalized);
+        }
+        return list;
+      }
+
+      function createActivityNotifier() {
+        const attrDebug = toBool(s && s.getAttribute("data-notify-debug"), false);
+
+        const initialRules = [];
+
+        let rules = initialRules.slice();
+        const stats = {};
+        let runtimeEnabled = false;
+        const context = {
+          section: "",
+          tab: "",
+          scrollDepth: 0,
+          totalVisibleMs: 0,
+          visible: document.visibilityState === "visible",
+          pagePath: window.location.pathname || "/"
+        };
+
+        const variantMap = { info: 1, success: 1, warning: 1, danger: 1 };
+        const positionMap = { br: 1, bl: 1, tr: 1, tl: 1 };
+        const queue = [];
+        const maxQueue = 5;
+        let rootEl = null;
+        let styleEl = null;
+        let activeToastEl = null;
+        let toastSeq = 0;
+        let lastAnyShownAt = 0;
+        let globalCooldownMs = 8000;
+        let maxPerSession = 3;
+        let totalShown = 0;
+        let configApplied = false;
+        let defaultNotifyPosition = "br";
+
+        function isNotifyDebug() {
+          return attrDebug || isDebug;
+        }
+
+        function logNotify(msg, payload) {
+          if (!isNotifyDebug() || !window.console || typeof console.debug !== "function") return;
+          console.debug("[AIW][notify]", msg, payload || "");
+        }
+
+        function applyConfigObject(config) {
+          configApplied = true;
+
+          const notifications = config && config.behavior && config.behavior.notifications
+            ? config.behavior.notifications
+            : (config && config.notifications ? config.notifications : null);
+
+          if (!notifications || typeof notifications !== "object") {
+            runtimeEnabled = false;
+            rules = [];
+            logNotify("config_missing_notifications", {});
+            return false;
+          }
+
+          runtimeEnabled = notifications.enabled !== false;
+
+          const limits = notifications.limits || {};
+          globalCooldownMs = Math.max(0, toNum(limits.globalCooldownMs, globalCooldownMs));
+          maxPerSession = Math.max(0, toNum(limits.maxPerSession, maxPerSession));
+
+          const notifyPosition =
+            toText(notifications.position || notifications.defaultPosition || config.position || "").trim().toLowerCase();
+          defaultNotifyPosition = positionMap[notifyPosition] ? notifyPosition : "br";
+
+          rules = parseNotifyRules(notifications.rules);
+
+          logNotify("config_applied", {
+            enabled: runtimeEnabled,
+            rules: rules.length,
+            globalCooldownMs,
+            maxPerSession,
+            defaultNotifyPosition
+          });
+          return true;
+        }
+
+        function ensureNotifyStyle() {
+          if (styleEl) return;
+          styleEl = document.createElement("style");
+          styleEl.setAttribute("data-aiw-notify-style", "1");
+          styleEl.textContent = ""
+            + ".aiw-notify-root{position:fixed;display:flex;flex-direction:column;gap:10px;z-index:2147483644;pointer-events:none;max-width:min(360px,calc(100vw - 24px));}"
+            + ".aiw-notify-pos-br{right:12px;bottom:12px;align-items:flex-end;}"
+            + ".aiw-notify-pos-bl{left:12px;bottom:12px;align-items:flex-start;}"
+            + ".aiw-notify-pos-tr{right:12px;top:12px;align-items:flex-end;}"
+            + ".aiw-notify-pos-tl{left:12px;top:12px;align-items:flex-start;}"
+            + ".aiw-notify-toast{pointer-events:auto;background:#111418;color:#f4f6f8;border:1px solid rgba(255,255,255,.16);border-radius:12px;box-shadow:0 10px 30px rgba(0,0,0,.35);padding:10px 12px;min-width:220px;max-width:360px;opacity:0;transform:translateY(8px);transition:opacity .18s ease,transform .18s ease;}"
+            + ".aiw-notify-toast.aiw-open{opacity:1;transform:translateY(0);}"
+            + ".aiw-notify-title{font:600 13px/1.35 system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif;margin:0 20px 4px 0;color:#fff;}"
+            + ".aiw-notify-text{font:400 13px/1.45 system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif;margin:0;white-space:pre-wrap;}"
+            + ".aiw-notify-close{position:absolute;top:6px;right:8px;background:transparent;border:0;color:#cbd3dc;font-size:16px;line-height:1;cursor:pointer;padding:2px;}"
+            + ".aiw-notify-row{margin-top:8px;display:flex;gap:8px;align-items:center;}"
+            + ".aiw-notify-cta{display:inline-flex;align-items:center;justify-content:center;padding:5px 10px;border-radius:8px;text-decoration:none;font:600 12px/1.2 system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif;background:#2b6df8;color:#fff;}"
+            + ".aiw-notify-info{border-left:3px solid #2b6df8;}"
+            + ".aiw-notify-success{border-left:3px solid #1f9d5a;}"
+            + ".aiw-notify-warning{border-left:3px solid #d08700;}"
+            + ".aiw-notify-danger{border-left:3px solid #d64141;}"
+            + "@media (max-width:640px){.aiw-notify-root{max-width:calc(100vw - 16px)}.aiw-notify-pos-br,.aiw-notify-pos-bl{right:8px;left:8px;bottom:8px;align-items:stretch}.aiw-notify-pos-tr,.aiw-notify-pos-tl{right:8px;left:8px;top:8px;align-items:stretch}.aiw-notify-toast{max-width:none;width:100%}}";
+          (document.head || document.documentElement).appendChild(styleEl);
+        }
+
+        function ensureRoot(position) {
+          if (!rootEl) {
+            rootEl = document.createElement("div");
+            rootEl.className = "aiw-notify-root";
+            (document.body || document.documentElement).appendChild(rootEl);
+          }
+          const pos = positionMap[position] ? position : defaultNotifyPosition;
+          rootEl.className = "aiw-notify-root aiw-notify-pos-" + pos;
+        }
+
+        function closeToast(node, immediate) {
+          if (!node || !node.parentNode) return;
+          if (node.__aiw_closed) return;
+          node.__aiw_closed = true;
+          if (immediate) {
+            node.remove();
+          } else {
+            node.classList.remove("aiw-open");
+            setTimeout(() => {
+              try { node.remove(); } catch {}
+            }, 180);
+          }
+          if (activeToastEl === node) activeToastEl = null;
+          if (!activeToastEl && queue.length > 0) {
+            const next = queue.shift();
+            renderToast(next);
+          }
+        }
+
+        function renderToast(payload) {
+          ensureNotifyStyle();
+          ensureRoot(payload.position);
+
+          const toast = document.createElement("div");
+          const variant = variantMap[payload.variant] ? payload.variant : "info";
+          toast.className = "aiw-notify-toast aiw-notify-" + variant;
+          toast.style.position = "relative";
+          toast.setAttribute("role", "status");
+          toast.setAttribute("aria-live", "polite");
+          toast.setAttribute("data-aiw-notify-id", payload.id || ("n_" + String(++toastSeq)));
+
+          const titleEl = document.createElement("p");
+          titleEl.className = "aiw-notify-title";
+          titleEl.textContent = payload.title || "AI Assistant";
+          toast.appendChild(titleEl);
+
+          const textEl = document.createElement("p");
+          textEl.className = "aiw-notify-text";
+          textEl.textContent = payload.message || "";
+          toast.appendChild(textEl);
+
+          const closeBtn = document.createElement("button");
+          closeBtn.type = "button";
+          closeBtn.className = "aiw-notify-close";
+          closeBtn.setAttribute("aria-label", "Close");
+          closeBtn.textContent = "x";
+          closeBtn.addEventListener("click", () => closeToast(toast, false), { passive: true });
+          toast.appendChild(closeBtn);
+
+          if (payload.ctaLabel && payload.ctaUrl) {
+            const row = document.createElement("div");
+            row.className = "aiw-notify-row";
+            const cta = document.createElement("a");
+            cta.className = "aiw-notify-cta";
+            cta.href = payload.ctaUrl;
+            cta.target = "_self";
+            cta.rel = "noopener";
+            cta.textContent = payload.ctaLabel;
+            row.appendChild(cta);
+            toast.appendChild(row);
+          }
+
+          rootEl.appendChild(toast);
+          requestAnimationFrame(() => {
+            toast.classList.add("aiw-open");
+          });
+
+          activeToastEl = toast;
+          const closeAfter = Math.max(0, toNum(payload.durationMs, 6000));
+          if (closeAfter > 0) {
+            setTimeout(() => closeToast(toast, false), closeAfter);
+          }
+        }
+
+        function enqueueToast(payload) {
+          if (!payload || !payload.message) return false;
+          if (activeToastEl && payload.allowWhileVisible !== true) {
+            if (queue.length < maxQueue) queue.push(payload);
+            return true;
+          }
+          renderToast(payload);
+          return true;
+        }
+
+        function isRuleMatch(rule, evt) {
+          if (!rule || !evt) return false;
+          if (rule.event !== evt.type) return false;
+
+          if (rule.section && normToken(rule.section) !== normToken(evt.section || context.section)) return false;
+          if (rule.tab && normToken(rule.tab) !== normToken(evt.tab || context.tab)) return false;
+          if (rule.path && normToken(rule.path) !== normToken(context.pagePath)) return false;
+
+          const durationMs = toNum(evt.durationMs, 0);
+          if (rule.minDurationMs > 0 && durationMs < rule.minDurationMs) return false;
+
+          if (rule.minScrollDepth > 0 && toNum(context.scrollDepth, 0) < rule.minScrollDepth) return false;
+
+          const visibleMs = Math.max(toNum(context.totalVisibleMs, 0), toNum(evt.totalVisibleMs, 0));
+          if (rule.minVisibleMs > 0 && visibleMs < rule.minVisibleMs) return false;
+
+          return true;
+        }
+
+        function ruleCanShow(rule) {
+          if (!runtimeEnabled) return false;
+          const now = Date.now();
+          const item = stats[rule.id] || { count: 0, lastAt: 0 };
+
+          if (maxPerSession > 0 && totalShown >= maxPerSession) return false;
+          if (rule.once && item.count > 0) return false;
+          if (rule.maxShows > 0 && item.count >= rule.maxShows) return false;
+          if (rule.cooldownMs > 0 && item.lastAt > 0 && (now - item.lastAt) < rule.cooldownMs) return false;
+          if ((now - lastAnyShownAt) < globalCooldownMs) return false;
+
+          return true;
+        }
+
+        function markRuleShown(rule) {
+          const now = Date.now();
+          const item = stats[rule.id] || { count: 0, lastAt: 0 };
+          item.count += 1;
+          item.lastAt = now;
+          stats[rule.id] = item;
+          lastAnyShownAt = now;
+          totalShown += 1;
+        }
+
+        function updateContext(evt) {
+          context.pagePath = window.location.pathname || "/";
+          if (evt.section) context.section = toText(evt.section);
+          if (evt.type === "tab_active" && evt.tab) context.tab = toText(evt.tab);
+          if (evt.type === "scroll_depth") context.scrollDepth = Math.max(context.scrollDepth, toNum(evt.percent, 0));
+          if (evt.type === "page_visible") context.visible = true;
+          if (evt.type === "page_hidden" || evt.type === "page_unload") {
+            context.visible = false;
+            context.totalVisibleMs = Math.max(context.totalVisibleMs, toNum(evt.totalVisibleMs, 0));
+          }
+        }
+
+        function handleEvent(evt) {
+          updateContext(evt);
+          if (!runtimeEnabled) return;
+          if (!rules.length) return;
+
+          for (let i = 0; i < rules.length; i += 1) {
+            const rule = rules[i];
+            if (!isRuleMatch(rule, evt)) continue;
+            if (!ruleCanShow(rule)) continue;
+
+            const displayed = enqueueToast({
+              id: rule.id,
+              title: rule.title,
+              message: rule.message,
+              variant: rule.variant,
+              durationMs: rule.durationMs,
+              ctaLabel: rule.ctaLabel,
+              ctaUrl: rule.ctaUrl,
+              position: rule.position,
+              allowWhileVisible: rule.allowWhileVisible
+            });
+            if (!displayed) continue;
+
+            markRuleShown(rule);
+            logNotify("shown", { ruleId: rule.id, event: evt.type });
+            break;
+          }
+        }
+
+        const api = {
+          enabled: true,
+          show: (payload) => enqueueToast({
+            id: payload && payload.id ? String(payload.id) : "",
+            title: payload && payload.title ? String(payload.title) : "AI Assistant",
+            message: payload && payload.message ? String(payload.message) : "",
+            variant: payload && payload.variant ? String(payload.variant) : "info",
+            durationMs: payload && payload.durationMs,
+            ctaLabel: payload && payload.ctaLabel ? String(payload.ctaLabel) : "",
+            ctaUrl: payload && payload.ctaUrl ? String(payload.ctaUrl) : "",
+            position: payload && payload.position ? String(payload.position) : "",
+            allowWhileVisible: payload && payload.allowWhileVisible === true
+          }),
+          setRules: (nextRules) => {
+            logNotify("setRules_ignored_config_only", {
+              provided: Array.isArray(nextRules) ? nextRules.length : 0
+            });
+            return rules.slice();
+          },
+          getRules: () => rules.slice(),
+          applyConfig: (config) => applyConfigObject(config),
+          reset: () => {
+            for (const key in stats) {
+              if (Object.prototype.hasOwnProperty.call(stats, key)) delete stats[key];
+            }
+            queue.length = 0;
+            lastAnyShownAt = 0;
+            totalShown = 0;
+          },
+          context: () => ({ ...context })
+        };
+
+        if (host && siteId) {
+          (async () => {
+            if (configApplied) return;
+            try {
+              const cfgUrl = new URL(host.replace(/\/$/, "") + "/api/clients/widget-config");
+              cfgUrl.searchParams.set("siteId", siteId);
+              if (clientId) cfgUrl.searchParams.set("clientId", clientId);
+
+              const resp = await fetch(cfgUrl.toString(), {
+                method: "GET",
+                credentials: "omit",
+                mode: "cors"
+              });
+              if (!resp.ok) return;
+
+              const json = await resp.json();
+              const config = (json && (json.config || json)) || null;
+              if (config) applyConfigObject(config);
+            } catch {}
+          })();
+        }
+
+        return { api, handleEvent };
+      }
+
+      const notifier = createActivityNotifier();
+      if (notifier && notifier.api) {
+        window.__AIW_NOTIFIER__ = notifier.api;
+      }
+      if (hasExistingTracker && notifier && typeof notifier.handleEvent === "function") {
+        try {
+          const activity = window.__AIW_ACTIVITY__;
+          if (activity && typeof activity.on === "function" && !window.__AIW_NOTIFIER_BRIDGE_ATTACHED__) {
+            activity.on((evt) => {
+              try { notifier.handleEvent(evt); } catch {}
+            });
+            window.__AIW_NOTIFIER_BRIDGE_ATTACHED__ = true;
+          }
+        } catch {}
+      }
 
       function emit(type, payload) {
         const evt = {
@@ -154,6 +606,12 @@
           ...(payload || {})
         };
         state.events.push(evt);
+        if (state.events.length > MAX_ACTIVITY_EVENTS) {
+          state.events.splice(0, state.events.length - MAX_ACTIVITY_EVENTS);
+        }
+        if (notifier && typeof notifier.handleEvent === "function") {
+          try { notifier.handleEvent(evt); } catch {}
+        }
         for (const fn of state.listeners) {
           try { fn(evt); } catch {}
         }
@@ -172,7 +630,7 @@
       };
 
       // Live activity tracking log (for debugging ONLY!!!!)
-      // window.__AIW_ACTIVITY__.on((e) => console.log("[AIW][live]", e));
+      attachLiveActivityLogger();
 
 
       function getShortText(text) {
@@ -249,8 +707,31 @@
         return list;
       }
 
-      const VISIBLE_RATIO = 0.35;
-      const MIN_VIEW_MS = 1000;
+      function getViewportWidth() {
+        const vv = window.visualViewport && Number(window.visualViewport.width);
+        if (Number.isFinite(vv) && vv > 0) return vv;
+        const w = window.innerWidth || document.documentElement.clientWidth || 0;
+        return Math.max(0, Number(w) || 0);
+      }
+
+      function getVisibleRatioThreshold() {
+        const vw = getViewportWidth();
+        if (vw > 0 && vw <= 768) return 0.12;   // mobile
+        if (vw > 0 && vw <= 1024) return 0.2;   // tablet
+        return 0.35;                            // desktop
+      }
+
+      function getMinViewMs() {
+        const vw = getViewportWidth();
+        if (vw > 0 && vw <= 768) return 700;    // mobile
+        if (vw > 0 && vw <= 1024) return 850;   // tablet
+        return 1000;                            // desktop
+      }
+
+      function buildSectionThresholds(visibleRatio) {
+        const raw = [0, visibleRatio, 0.6, 0.9];
+        return Array.from(new Set(raw.map((v) => Number(Math.min(1, Math.max(0, v)).toFixed(2))))).sort((a, b) => a - b);
+      }
 
       function observeSections() {
         if (typeof IntersectionObserver !== "function") return;
@@ -261,6 +742,8 @@
 
         const sections = collectSections();
         if (!sections.length) return;
+        const visibleRatio = getVisibleRatioThreshold();
+        const minViewMs = getMinViewMs();
 
         state.sectionObserver = new IntersectionObserver((entries) => {
           const now = Date.now();
@@ -270,7 +753,7 @@
             if (!meta) continue;
 
             const ratio = entry.intersectionRatio || 0;
-            const isVisible = entry.isIntersecting && ratio >= VISIBLE_RATIO;
+            const isVisible = entry.isIntersecting && ratio >= visibleRatio;
 
             if (isVisible) {
               if (!meta.visibleSince) {
@@ -292,13 +775,13 @@
                       durationMs: Date.now() - meta.visibleSince
                     });
                   }
-                }, MIN_VIEW_MS);
+                }, minViewMs);
               } else {
                 meta.maxRatio = Math.max(meta.maxRatio || 0, ratio);
               }
             } else if (meta.visibleSince) {
               const duration = now - meta.visibleSince;
-              if (!meta.viewEmitted && duration >= MIN_VIEW_MS) {
+              if (!meta.viewEmitted && duration >= minViewMs) {
                 meta.viewEmitted = true;
                 emit("section_view", {
                   section: meta.label,
@@ -321,7 +804,7 @@
               }
             }
           }
-        }, { threshold: [0, VISIBLE_RATIO, 0.6, 0.9] });
+        }, { threshold: buildSectionThresholds(visibleRatio) });
 
         sections.forEach((el, idx) => {
           if (!state.sections.has(el)) {
@@ -340,11 +823,12 @@
       }
 
       function flushSectionDurations(reason) {
+        const minViewMs = getMinViewMs();
         const now = Date.now();
         state.sections.forEach((meta) => {
           if (!meta.visibleSince) return;
           const duration = now - meta.visibleSince;
-          if (!meta.viewEmitted && duration >= MIN_VIEW_MS) {
+          if (!meta.viewEmitted && duration >= minViewMs) {
             meta.viewEmitted = true;
             emit("section_view", {
               section: meta.label,
@@ -523,6 +1007,17 @@
         window.addEventListener("scroll", state.scrollHandler, { passive: true });
         trackScrollDepth();
 
+        // Recompute section thresholds for mobile/tablet/desktop transitions.
+        state.resizeHandler = () => {
+          if (state.resizeTimer) return;
+          state.resizeTimer = setTimeout(() => {
+            state.resizeTimer = null;
+            observeSections();
+          }, 220);
+        };
+        window.addEventListener("resize", state.resizeHandler, { passive: true });
+        window.addEventListener("orientationchange", state.resizeHandler, { passive: true });
+
         document.addEventListener("visibilitychange", onVisibilityChange, { passive: true });
         window.addEventListener("beforeunload", onBeforeUnload, { passive: true });
 
@@ -553,26 +1048,31 @@
         try { state.mutationObserver && state.mutationObserver.disconnect(); } catch {}
         try { document.removeEventListener("click", trackTabClick, true); } catch {}
         try { window.removeEventListener("scroll", state.scrollHandler); } catch {}
+        try { window.removeEventListener("resize", state.resizeHandler); } catch {}
+        try { window.removeEventListener("orientationchange", state.resizeHandler); } catch {}
         try { document.removeEventListener("visibilitychange", onVisibilityChange); } catch {}
         try { window.removeEventListener("beforeunload", onBeforeUnload); } catch {}
+        if (state.resizeTimer) {
+          clearTimeout(state.resizeTimer);
+          state.resizeTimer = null;
+        }
         flushSectionDurations("stop");
       }
 
-      window.__AIW_ACTIVITY_TRACKER__ = { stop };
+      if (!hasExistingTracker) {
+        window.__AIW_ACTIVITY_TRACKER__ = { stop };
 
-      if (document.readyState === "loading") {
-        document.addEventListener("DOMContentLoaded", start, { once: true, passive: true });
-      } else {
-        start();
+        if (document.readyState === "loading") {
+          document.addEventListener("DOMContentLoaded", start, { once: true, passive: true });
+        } else {
+          start();
+        }
       }
     } catch {}
   })();
 
   // --- режим рендера ---
-  // если явно data-mode не задан, но скрипт стоит внутри контейнера → считаем inline
-  const explicitMode = s.getAttribute("data-mode");
-  const mode = (explicitMode || "float").toLowerCase();
-  const isInline = mode === "inline";
+  // режим выбирается из widget-config (behavior.renderMode / renderMode / mode)
 
   const rawInlineHeight = parseInt(s.getAttribute("data-height") || "600", 10);
   const iHeight = Number.isFinite(rawInlineHeight) ? rawInlineHeight : 600;
@@ -581,9 +1081,196 @@
     ? "content"
     : "container";
 
+  function isPlainObject(value) {
+    return !!value && typeof value === "object";
+  }
+
+  function fetchWidgetConfig(base) {
+    if (!base || !siteId) return Promise.resolve(null);
+
+    const key = [base, siteId, clientId || ""].join("|");
+    const cacheKey = "__AIW_WIDGET_CONFIG_PROMISES__";
+    const map = (window[cacheKey] && typeof window[cacheKey] === "object") ? window[cacheKey] : {};
+    window[cacheKey] = map;
+    if (map[key]) return map[key];
+
+    map[key] = (async () => {
+      try {
+        const url = new URL(base + "/api/clients/widget-config");
+        url.searchParams.set("siteId", siteId);
+        if (clientId) url.searchParams.set("clientId", clientId);
+
+        const r = await fetch(url.toString(), {
+          method: "GET",
+          credentials: "omit",
+          mode: "cors"
+        });
+        if (!r.ok) throw new Error("HTTP " + r.status);
+        const j = await r.json();
+        return (j && (j.config || j)) || null;
+      } catch (e) {
+        console.warn("[AIW] config fetch failed:", e);
+        return null;
+      }
+    })();
+
+    return map[key];
+  }
+
+  function applyNotifierConfig(config) {
+    if (window.__AIW_NOTIFIER__ && typeof window.__AIW_NOTIFIER__.applyConfig === "function") {
+      try { window.__AIW_NOTIFIER__.applyConfig(config); } catch {}
+    }
+  }
+
+  function buildFloatRuntimeConfig(base, config) {
+    const renderMode = resolveRenderMode(config) || "float";
+    return {
+      endpoint: base + "/api/aiw/chat",
+      siteId,
+      renderMode,
+      hybridHistorySync: renderMode === "hybrid",
+      title: (config && (config.widgetTitle || config.title)) || "AI Assistant",
+      position: (config && config.position) || "br",
+      primaryColor: (config && (config.primaryColor || config.accent)) || "#6D28D9",
+      accent: (config && (config.primaryColor || config.accent)) || "#6D28D9",
+      welcome: (config && (config.welcomeMessage || config.welcome)) || "Hi! How can I help?",
+      lang: (config && config.lang) || "en",
+      backgroundColor: (config && config.backgroundColor) || "#0f0f0f",
+      textColor: (config && config.textColor) || "#ffffff",
+      borderColor: (config && (config.borderColor || config.primaryColor)) || "#6D28D9",
+      headerBackgroundColor: (config && config.headerBackgroundColor) || null,
+      headerTextColor: (config && config.headerTextColor) || null,
+      assistantBubbleColor: (config && config.assistantBubbleColor) || null,
+      assistantBubbleTextColor: (config && config.assistantBubbleTextColor) || null,
+      userBubbleColor: (config && config.userBubbleColor) || null,
+      userBubbleTextColor: (config && config.userBubbleTextColor) || null,
+      bubbleBorderColor: (config && config.bubbleBorderColor) || null,
+      inputPlaceholder: (config && config.inputPlaceholder) || "",
+      inputBackgroundColor: (config && config.inputBackgroundColor) || null,
+      inputTextColor: (config && config.inputTextColor) || null,
+      inputBorderColor: (config && config.inputBorderColor) || null,
+      sendButtonBackgroundColor: (config && config.sendButtonBackgroundColor) || null,
+      sendButtonIconColor: (config && config.sendButtonIconColor) || null,
+      showAvatars: config ? config.showAvatars !== false : true,
+      showTimestamps: config ? config.showTimestamps !== false : true,
+      logo: config?.logo?.url || config?.logoUrl || (typeof config?.logo === "string" ? config.logo : null),
+
+      fontFamily:  config?.fontFamily  || "",
+      fontCssUrl:  config?.fontCssUrl  || "",
+      fontFileUrl: config?.fontFileUrl || "",
+      baseFontSize: Number(config?.baseFontSize ?? 14),
+
+      autostart: !!(config && config.autostart),
+      autostartDelay: Number(config?.autostartDelay ?? 5000),
+      autostartMode: (config?.autostartMode ?? "local").toLowerCase(),
+      autostartMessage: (config && config.autostartMessage) || "",
+      autostartPrompt: (config && config.autostartPrompt) || "",
+      autostartCooldownHours: Number(config?.autostartCooldownHours ?? 12),
+
+      preserveHistory: (config ? config.preserveHistory !== false : true),
+      resetHistoryOnOpen: !!(config && config.resetHistoryOnOpen),
+      floatLauncher: config?.behavior?.floatLauncher || config?.floatLauncher || null,
+
+      inlineAutostart: config?.inlineAutostart || null,
+
+      // stream: берём из БД, если явно задано true/false, иначе по умолчанию true
+      stream: (typeof config?.stream === "boolean") ? config.stream : true
+    };
+  }
+
+  function appendWidgetScriptWithVersion(base, config) {
+    const rawVer = String(config?.resolvedWidgetVersion || "").trim();
+    const safeVer = /^[0-9A-Za-z._-]{1,50}$/.test(rawVer) ? rawVer : "";
+
+    const versionedSrc = (!hasDataSrc && safeVer)
+      ? `${base}/aiw/releases/${encodeURIComponent(safeVer)}/widget.js`
+      : jsSrc;
+
+    // the fallback is always to the regular widget.js with cache-busting
+    const fallbackSrc = jsSrc + (jsSrc.includes("?") ? "&" : "?") + "v=" + Date.now();
+
+    function appendScriptWithFallback(src, fallback) {
+      const js = document.createElement("script");
+      js.async = true;
+      js.crossOrigin = "anonymous";
+      js.src = src;
+
+      js.onerror = () => {
+        // if this is a data-src override, we don't perform a fallback (to avoid breaking the manual override)
+        if (!fallback) return;
+
+        console.warn("[AIW] Script failed:", src, "-> fallback:", fallback);
+        js.remove();
+
+        const js2 = document.createElement("script");
+        js2.async = true;
+        js2.crossOrigin = "anonymous";
+        js2.src = fallback;
+        document.head.appendChild(js2);
+      };
+
+      document.head.appendChild(js);
+    }
+
+    if (versionedSrc === jsSrc) {
+      // if this was a manual override (data-src), then a fallback is NOT needed
+      appendScriptWithFallback(hasDataSrc ? jsSrc : fallbackSrc, null);
+    } else {
+      // version first, then fallback
+      appendScriptWithFallback(versionedSrc, fallbackSrc);
+    }
+  }
+
+  function startFloatWidget(base, config) {
+    if (!host || !siteId || !base) {
+      console.error("[AIW] missing data-site-id or host");
+      return false;
+    }
+    if (window.__AIW_LOADED__) return false;
+    window.__AIW_LOADED__ = true;
+
+    applyNotifierConfig(config);
+    window.__AIW_CONFIG__ = buildFloatRuntimeConfig(base, config);
+    appendWidgetScriptWithVersion(base, config);
+    return true;
+  }
+
+  function isHybridFloatEnabledFromConfig(config) {
+    if (!isPlainObject(config)) return false;
+
+    const behavior = isPlainObject(config.behavior) ? config.behavior : null;
+    const hybrid = (behavior && isPlainObject(behavior.hybrid))
+      ? behavior.hybrid
+      : (isPlainObject(config.hybrid) ? config.hybrid : null);
+    if (!hybrid) return false;
+
+    const floatCfg = isPlainObject(hybrid.float) ? hybrid.float : hybrid;
+    if (typeof floatCfg.enabled === "boolean") return floatCfg.enabled;
+    if (typeof hybrid.enabled === "boolean") return hybrid.enabled;
+    return false;
+  }
+
+  function maybeStartHybridFloat(base, configPromise) {
+    (async () => {
+      let config = null;
+      try {
+        if (configPromise && typeof configPromise.then === "function") {
+          config = await configPromise;
+        } else {
+          config = await fetchWidgetConfig(base);
+        }
+      } catch {}
+
+      applyNotifierConfig(config);
+
+      if (!isHybridFloatEnabledFromConfig(config)) return;
+      startFloatWidget(base, config);
+    })();
+  }
+
   // ================= INLINE-РЕЖИМ ЧЕРЕЗ IFRAME =================
-  if (isInline) {
-    const base = host.replace(/\/$/, "");
+  function mountInlineMode(base, configPromise) {
 
     // 1) data-target как CSS-селектор (если задан)
     // 2) родительский элемент скрипта, если это не <head>/<body>
@@ -709,12 +1396,45 @@ const frameOrigin = (() => {
     try { return new URL(base).origin; } catch { return base; }
   }
 })();
+let hybridHistoryBridgeEnabled = false;
+
+(() => {
+  (async () => {
+    try {
+      let cfg = null;
+      if (configPromise && typeof configPromise.then === "function") {
+        cfg = await configPromise;
+      } else {
+        cfg = await fetchWidgetConfig(base);
+      }
+      const mode = resolveRenderMode(cfg);
+      hybridHistoryBridgeEnabled = mode === "hybrid" && isHybridFloatEnabledFromConfig(cfg);
+    } catch {
+      hybridHistoryBridgeEnabled = false;
+    }
+  })();
+})();
 
 function postFullscreenStateToFrame() {
   try {
     if (!iframe.contentWindow) return;
     iframe.contentWindow.postMessage(
       { type: "aiw:fullscreen-state", instanceId, value: isFullscreen },
+      frameOrigin
+    );
+  } catch {}
+}
+
+function postHistorySyncToFrame(snapshot) {
+  try {
+    if (!iframe.contentWindow) return;
+    iframe.contentWindow.postMessage(
+      {
+        type: "aiw:history-sync",
+        siteId,
+        instanceId,
+        snapshot: typeof snapshot === "string" ? snapshot : "[]",
+      },
       frameOrigin
     );
   } catch {}
@@ -1148,6 +1868,23 @@ function startFling(vy) {
         return;
       }
 
+      if (d.type === "aiw:history-sync") {
+        if (!hybridHistoryBridgeEnabled) return;
+        if (d.instanceId && d.instanceId !== instanceId) return;
+        if (d.siteId && d.siteId !== siteId) return;
+        try {
+          window.dispatchEvent(new CustomEvent("aiw:history-sync", {
+            detail: {
+              siteId,
+              instanceId,
+              snapshot: typeof d.snapshot === "string" ? d.snapshot : "[]",
+              source: "inline",
+            },
+          }));
+        } catch {}
+        return;
+      }
+
       // --- NEW: scroll passthrough
       if (d.type === "aiw:scroll") {
         // если используешь instanceId — можно фильтровать
@@ -1164,7 +1901,17 @@ function startFling(vy) {
       }
     }
 
+    function onParentHistorySync(evt) {
+      if (!hybridHistoryBridgeEnabled) return;
+      const d = evt && evt.detail ? evt.detail : null;
+      if (!d || typeof d !== "object") return;
+      if (d.siteId && d.siteId !== siteId) return;
+      if (d.source === "inline") return;
+      postHistorySyncToFrame(d.snapshot || "[]");
+    }
+
     window.addEventListener("message", onFrameMessage, { passive: true });
+    window.addEventListener("aiw:history-sync", onParentHistorySync);
     iframe.addEventListener("load", () => { postFullscreenStateToFrame(); }, { passive: true });
 
     mount.appendChild(iframe);
@@ -1173,115 +1920,57 @@ function startFling(vy) {
     let scrollTarget = pickBestScroller(mount);
     let lastRepickAt = 0;
 
+    // Optional hybrid mode: keep inline widget + add floating widget from widget-config.
+    maybeStartHybridFloat(base, configPromise);
+
     // в inline-режиме ВЫХОДИМ — дальше скрипт ничего не делает
-    return;
+    return true;
   }
 
-  // ================= FLOAT-РЕЖИМ (ПЛАВАЮЩАЯ КНОПКА) =================
-
-  if (!host || !siteId) {
-    console.error("[AIW] missing data-site-id or host");
-    return;
+  function normalizeRenderMode(value) {
+    const mode = String(value || "").trim().toLowerCase();
+    if (!mode) return "";
+    if (mode === "inline") return "inline";
+    if (mode === "float" || mode === "floating") return "float";
+    if (
+      mode === "hybrid" ||
+      mode === "both" ||
+      mode === "inline+float" ||
+      mode === "float+inline"
+    ) return "hybrid";
+    return "";
   }
-  if (window.__AIW_LOADED__) return;
-  window.__AIW_LOADED__ = true;
 
-  const base = host.replace(/\/$/, "");
-  const url  = new URL(base + "/api/clients/widget-config");
-  url.searchParams.set("siteId", siteId);
-  if (clientId) url.searchParams.set("clientId", clientId);
+  function resolveRenderMode(config) {
+    const behavior = isPlainObject(config && config.behavior) ? config.behavior : null;
+    const candidates = [
+      behavior && behavior.renderMode,
+      config && config.renderMode,
+      behavior && behavior.mode,
+      config && config.mode
+    ];
 
-  (async () => {
-    let config = null;
-    try {
-      const r = await fetch(url.toString(), {
-        method: "GET",
-        credentials: "omit",
-        mode: "cors"
-      });
-      if (!r.ok) throw new Error("HTTP " + r.status);
-      const j = await r.json();
-      config = (j && (j.config || j)) || null;
-    } catch (e) {
-      console.warn("[AIW] config fetch failed:", e);
+    for (let i = 0; i < candidates.length; i += 1) {
+      const next = normalizeRenderMode(candidates[i]);
+      if (next) return next;
     }
 
-    const cfg = {
-      endpoint: base + "/api/aiw/chat",
-      siteId,
-      title: (config && (config.widgetTitle || config.title)) || "AI Assistant",
-      position: (config && config.position) || "br",
-      accent: (config && (config.primaryColor || config.accent)) || "#6D28D9",
-      welcome: (config && (config.welcomeMessage || config.welcome)) || "Hi! How can I help?",
-      lang: (config && config.lang) || "en",
-      backgroundColor: (config && config.backgroundColor) || "#0f0f0f",
-      textColor: (config && config.textColor) || "#ffffff",
-      borderColor: (config && (config.borderColor || config.primaryColor)) || "#6D28D9",
-      logo: config?.logo?.url || config?.logoUrl || (typeof config?.logo === "string" ? config.logo : null),
+    if (isHybridFloatEnabledFromConfig(config)) return "hybrid";
+    return "float";
+  }
 
-      fontFamily:  config?.fontFamily  || "",
-      fontCssUrl:  config?.fontCssUrl  || "",
-      fontFileUrl: config?.fontFileUrl || "",
-      baseFontSize: Number(config?.baseFontSize ?? 14),
+  // ================= BOOTSTRAP РЕЖИМА ИЗ КОНФИГА =================
+  const base = host.replace(/\/$/, "");
+  (async () => {
+    const config = await fetchWidgetConfig(base);
+    const configPromise = Promise.resolve(config);
+    const renderMode = resolveRenderMode(config);
 
-      autostart: !!(config && config.autostart),
-      autostartDelay: Number(config?.autostartDelay ?? 5000),
-      autostartMode: (config?.autostartMode ?? "local").toLowerCase(),
-      autostartMessage: (config && config.autostartMessage) || "",
-      autostartPrompt: (config && config.autostartPrompt) || "",
-      autostartCooldownHours: Number(config?.autostartCooldownHours ?? 12),
+    if (renderMode === "inline" || renderMode === "hybrid") {
+      mountInlineMode(base, configPromise);
+      return;
+    }
 
-      preserveHistory: (config ? config.preserveHistory !== false : true),
-      resetHistoryOnOpen: !!(config && config.resetHistoryOnOpen),
-
-      inlineAutostart: config?.inlineAutostart || null,
-
-      // stream: берём из БД, если явно задано true/false, иначе по умолчанию true
-      stream: (typeof config?.stream === "boolean") ? config.stream : true,
-    };
-
-    window.__AIW_CONFIG__ = cfg;
-
-   // ===== Versioned widget.js =====
-const rawVer = String(config?.resolvedWidgetVersion || "").trim();
-const safeVer = /^[0-9A-Za-z._-]{1,50}$/.test(rawVer) ? rawVer : "";
-
-const versionedSrc = (!hasDataSrc && safeVer)
-  ? `${base}/aiw/releases/${encodeURIComponent(safeVer)}/widget.js`
-  : jsSrc;
-
-// the fallback is always to the regular widget.js with cache-busting
-const fallbackSrc = jsSrc + (jsSrc.includes("?") ? "&" : "?") + "v=" + Date.now();
-
-function appendScriptWithFallback(src, fallback) {
-  const js = document.createElement("script");
-  js.async = true;
-  js.crossOrigin = "anonymous";
-  js.src = src;
-
-  js.onerror = () => {
-    // if this is a data-src override, we don't perform a fallback (to avoid breaking the manual override)
-    if (!fallback) return;
-
-    console.warn("[AIW] Script failed:", src, "→ fallback:", fallback);
-    js.remove();
-
-    const js2 = document.createElement("script");
-    js2.async = true;
-    js2.crossOrigin = "anonymous";
-    js2.src = fallback;
-    document.head.appendChild(js2);
-  };
-
-  document.head.appendChild(js);
-}
-
-if (versionedSrc === jsSrc) {
-  // if this was a manual override (data-src), then a fallback is NOT needed
-  appendScriptWithFallback(hasDataSrc ? jsSrc : fallbackSrc, null);
-} else {
-  // version first, then fallback
-  appendScriptWithFallback(versionedSrc, fallbackSrc);
-}
+    startFloatWidget(base, config);
   })();
 })();

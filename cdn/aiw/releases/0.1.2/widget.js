@@ -1,43 +1,49 @@
-/*
+﻿/*
 ====================================================
-aiw widget v0.1.2 
+aiw widget v0.1.2 -
 ====================================================
 */
 (function widget () {
   const CFG = (window.__AIW_CONFIG__ || {});
   const STREAM = (typeof CFG.stream === "boolean") ? CFG.stream : true;
-const RAW_FONT_FAMILY = (CFG.fontFamily || "").trim();       // может быть ""
+const RAW_FONT_FAMILY = (CFG.fontFamily || "").trim();       // ÃƒÂÃ‚Â¼ÃƒÂÃ‚Â¾ÃƒÂÃ‚Â¶ÃƒÂÃ‚ÂµÃƒâ€˜Ã¢â‚¬Å¡ ÃƒÂÃ‚Â±Ãƒâ€˜Ã¢â‚¬Â¹Ãƒâ€˜Ã¢â‚¬Å¡Ãƒâ€˜Ã…â€™ ""
 const FONT_FILE_URL   = (CFG.fontFileUrl || "").trim() || null;
 const FONT_CSS_URL    = (CFG.fontCssUrl || "").trim() || null;
 
-  // --- НОВОЕ: ширина окна (для inline это ширина iframe) ---
+  // --- ÃƒÂÃ‚ÂÃƒÂÃ…Â¾ÃƒÂÃ¢â‚¬â„¢ÃƒÂÃ…Â¾ÃƒÂÃ¢â‚¬Â¢: Ãƒâ€˜Ã‹â€ ÃƒÂÃ‚Â¸Ãƒâ€˜Ã¢â€šÂ¬ÃƒÂÃ‚Â¸ÃƒÂÃ‚Â½ÃƒÂÃ‚Â° ÃƒÂÃ‚Â¾ÃƒÂÃ‚ÂºÃƒÂÃ‚Â½ÃƒÂÃ‚Â° (ÃƒÂÃ‚Â´ÃƒÂÃ‚Â»Ãƒâ€˜Ã‚Â inline Ãƒâ€˜Ã‚ÂÃƒâ€˜Ã¢â‚¬Å¡ÃƒÂÃ‚Â¾ Ãƒâ€˜Ã‹â€ ÃƒÂÃ‚Â¸Ãƒâ€˜Ã¢â€šÂ¬ÃƒÂÃ‚Â¸ÃƒÂÃ‚Â½ÃƒÂÃ‚Â° iframe) ---
   const VIEWPORT_W =
     window.innerWidth ||
     document.documentElement?.clientWidth ||
     document.body?.clientWidth ||
     0;
 
-  const IS_MOBILE = VIEWPORT_W <= 480;         // телефоны
-  const IS_TABLET = !IS_MOBILE && VIEWPORT_W <= 768; // планшеты
+  const IS_MOBILE = VIEWPORT_W <= 480;         // Ãƒâ€˜Ã¢â‚¬Å¡ÃƒÂÃ‚ÂµÃƒÂÃ‚Â»ÃƒÂÃ‚ÂµÃƒâ€˜Ã¢â‚¬Å¾ÃƒÂÃ‚Â¾ÃƒÂÃ‚Â½Ãƒâ€˜Ã¢â‚¬Â¹
+  const IS_TABLET = !IS_MOBILE && VIEWPORT_W <= 768; // ÃƒÂÃ‚Â¿ÃƒÂÃ‚Â»ÃƒÂÃ‚Â°ÃƒÂÃ‚Â½Ãƒâ€˜Ã‹â€ ÃƒÂÃ‚ÂµÃƒâ€˜Ã¢â‚¬Å¡Ãƒâ€˜Ã¢â‚¬Â¹
   const UA = navigator.userAgent || "";
   const IS_IOS = /iPad|iPhone|iPod/.test(UA) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
   const QUERY = new URLSearchParams(location.search);
 
-// имя, под которым мы реально используем шрифт
+// ÃƒÂÃ‚Â¸ÃƒÂÃ‚Â¼Ãƒâ€˜Ã‚Â, ÃƒÂÃ‚Â¿ÃƒÂÃ‚Â¾ÃƒÂÃ‚Â´ ÃƒÂÃ‚ÂºÃƒÂÃ‚Â¾Ãƒâ€˜Ã¢â‚¬Å¡ÃƒÂÃ‚Â¾Ãƒâ€˜Ã¢â€šÂ¬Ãƒâ€˜Ã¢â‚¬Â¹ÃƒÂÃ‚Â¼ ÃƒÂÃ‚Â¼Ãƒâ€˜Ã¢â‚¬Â¹ Ãƒâ€˜Ã¢â€šÂ¬ÃƒÂÃ‚ÂµÃƒÂÃ‚Â°ÃƒÂÃ‚Â»Ãƒâ€˜Ã…â€™ÃƒÂÃ‚Â½ÃƒÂÃ‚Â¾ ÃƒÂÃ‚Â¸Ãƒâ€˜Ã‚ÂÃƒÂÃ‚Â¿ÃƒÂÃ‚Â¾ÃƒÂÃ‚Â»Ãƒâ€˜Ã…â€™ÃƒÂÃ‚Â·Ãƒâ€˜Ã†â€™ÃƒÂÃ‚ÂµÃƒÂÃ‚Â¼ Ãƒâ€˜Ã‹â€ Ãƒâ€˜Ã¢â€šÂ¬ÃƒÂÃ‚Â¸Ãƒâ€˜Ã¢â‚¬Å¾Ãƒâ€˜Ã¢â‚¬Å¡
 const EFFECTIVE_FONT_NAME = RAW_FONT_FAMILY || (FONT_FILE_URL ? "__aiw_custom" : null);
 
 const BASE_FONT_STACK = EFFECTIVE_FONT_NAME
   ? `'${EFFECTIVE_FONT_NAME}', system-ui,-apple-system,Segoe UI,Roboto,sans-serif`
   : 'system-ui,-apple-system,Segoe UI,Roboto,sans-serif';
-  // ▼ NEW: режим рендера
+  // ÃƒÂ¢Ã¢â‚¬â€œÃ‚Â¼ NEW: Ãƒâ€˜Ã¢â€šÂ¬ÃƒÂÃ‚ÂµÃƒÂÃ‚Â¶ÃƒÂÃ‚Â¸ÃƒÂÃ‚Â¼ Ãƒâ€˜Ã¢â€šÂ¬ÃƒÂÃ‚ÂµÃƒÂÃ‚Â½ÃƒÂÃ‚Â´ÃƒÂÃ‚ÂµÃƒâ€˜Ã¢â€šÂ¬ÃƒÂÃ‚Â°
 const MODE   = (CFG.mode || QUERY.get("mode") || "float").toLowerCase();
 const INLINE = MODE === "inline";
+const RENDER_MODE = String(
+  CFG.renderMode ||
+  (CFG.behavior && (CFG.behavior.renderMode || CFG.behavior.mode)) ||
+  ""
+).trim().toLowerCase();
+const HYBRID_HISTORY_SYNC = (CFG.hybridHistorySync === true) || RENDER_MODE === "hybrid";
 const FIT_MODE = (QUERY.get("fit") || "container").toLowerCase();
 const FILL_CONTAINER = INLINE && FIT_MODE === "container";
 const PARENT_ORIGIN = QUERY.get("parentOrigin") || "*";
 const INSTANCE_ID = QUERY.get("instanceId") || "";
 const MAX_LEN = 1000;
-let FIRST_BOOT = true; // первый старт виджета за эту загрузку страницы
+let FIRST_BOOT = true; // ÃƒÂÃ‚Â¿ÃƒÂÃ‚ÂµÃƒâ€˜Ã¢â€šÂ¬ÃƒÂÃ‚Â²Ãƒâ€˜Ã¢â‚¬Â¹ÃƒÂÃ‚Â¹ Ãƒâ€˜Ã‚ÂÃƒâ€˜Ã¢â‚¬Å¡ÃƒÂÃ‚Â°Ãƒâ€˜Ã¢â€šÂ¬Ãƒâ€˜Ã¢â‚¬Å¡ ÃƒÂÃ‚Â²ÃƒÂÃ‚Â¸ÃƒÂÃ‚Â´ÃƒÂÃ‚Â¶ÃƒÂÃ‚ÂµÃƒâ€˜Ã¢â‚¬Å¡ÃƒÂÃ‚Â° ÃƒÂÃ‚Â·ÃƒÂÃ‚Â° Ãƒâ€˜Ã‚ÂÃƒâ€˜Ã¢â‚¬Å¡Ãƒâ€˜Ã†â€™ ÃƒÂÃ‚Â·ÃƒÂÃ‚Â°ÃƒÂÃ‚Â³Ãƒâ€˜Ã¢â€šÂ¬Ãƒâ€˜Ã†â€™ÃƒÂÃ‚Â·ÃƒÂÃ‚ÂºÃƒâ€˜Ã†â€™ Ãƒâ€˜Ã‚ÂÃƒâ€˜Ã¢â‚¬Å¡Ãƒâ€˜Ã¢â€šÂ¬ÃƒÂÃ‚Â°ÃƒÂÃ‚Â½ÃƒÂÃ‚Â¸Ãƒâ€˜Ã¢â‚¬Â Ãƒâ€˜Ã¢â‚¬Â¹
 
 
   if (INLINE) {
@@ -66,12 +72,171 @@ let FIRST_BOOT = true; // первый старт виджета за эту з�
     }
   }
 
-  const ENDPOINT = CFG.endpoint;
+const ENDPOINT = CFG.endpoint;
   const API_ORIGIN = ENDPOINT ? new URL(ENDPOINT).origin : location.origin;
   const SITE_ID  = CFG.siteId || (location.host + "::default");
   const TITLE    = CFG.title || "AI Assistant";
 const ACCENT = CFG.primaryColor || CFG.accent || "#6D28D9";
-  const POSITION = CFG.position === "bl" ? "bl" : "br";
+  function toText(value) {
+    if (value === undefined || value === null) return "";
+    return String(value);
+  }
+  function toNum(value, fallback) {
+    const n = Number(value);
+    return Number.isFinite(n) ? n : fallback;
+  }
+  function toBool(value, fallback) {
+    if (typeof value === "boolean") return value;
+    if (typeof value === "number") return value !== 0;
+    const text = toText(value).trim().toLowerCase();
+    if (!text) return fallback;
+    if (["1", "true", "yes", "on"].includes(text)) return true;
+    if (["0", "false", "no", "off"].includes(text)) return false;
+    return fallback;
+  }
+  function normToken(value) {
+    return toText(value).trim().toLowerCase();
+  }
+  function clamp(value, min, max) {
+    return Math.max(min, Math.min(max, value));
+  }
+  function normalizeLauncherVariant(raw) {
+    return normToken(raw) === "pill" ? "pill" : "circle";
+  }
+  function normalizeLauncherAction(rawAction) {
+    const action = rawAction && typeof rawAction === "object" ? rawAction : {};
+    const hasOwn = (key) => Object.prototype.hasOwnProperty.call(action, key);
+    const normalized = {};
+
+    const variantRaw = normToken(action.variant);
+    if (variantRaw === "pill" || variantRaw === "circle") normalized.variant = variantRaw;
+
+    if (hasOwn("text")) {
+      const v = toText(action.text).trim();
+      if (v) normalized.text = v;
+    }
+    if (hasOwn("iconText")) {
+      const v = toText(action.iconText).trim();
+      if (v) normalized.iconText = v;
+    }
+
+    if (hasOwn("widthPx") && action.widthPx !== null && action.widthPx !== "") {
+      const widthRaw = Number(action.widthPx);
+      if (Number.isFinite(widthRaw)) normalized.widthPx = clamp(Math.round(widthRaw), 160, 900);
+    }
+    if (hasOwn("heightPx") && action.heightPx !== null && action.heightPx !== "") {
+      const heightRaw = Number(action.heightPx);
+      if (Number.isFinite(heightRaw)) normalized.heightPx = clamp(Math.round(heightRaw), 40, 120);
+    }
+
+    if (hasOwn("bgColor")) {
+      const v = toText(action.bgColor).trim();
+      if (v) normalized.bgColor = v;
+    }
+    if (hasOwn("textColor")) {
+      const v = toText(action.textColor).trim();
+      if (v) normalized.textColor = v;
+    }
+    if (hasOwn("iconBgColor")) {
+      const v = toText(action.iconBgColor).trim();
+      if (v) normalized.iconBgColor = v;
+    }
+    if (hasOwn("iconTextColor")) {
+      const v = toText(action.iconTextColor).trim();
+      if (v) normalized.iconTextColor = v;
+    }
+    if (hasOwn("borderColor")) {
+      const v = toText(action.borderColor).trim();
+      if (v) normalized.borderColor = v;
+    }
+    if (hasOwn("shadow")) {
+      const v = toText(action.shadow).trim();
+      if (v) normalized.shadow = v;
+    }
+
+    return Object.keys(normalized).length > 0 ? normalized : null;
+  }
+  function normalizeLauncherDynamicRule(rawRule, index) {
+    if (!rawRule || typeof rawRule !== "object") return null;
+    const event = toText(rawRule.event || rawRule.when).trim();
+    if (!event) return null;
+    return {
+      id: toText(rawRule.id || ("rule_" + String(index))).trim() || ("rule_" + String(index)),
+      event,
+      section: toText(rawRule.section || "").trim(),
+      tab: toText(rawRule.tab || "").trim(),
+      path: toText(rawRule.path || "").trim(),
+      minDurationMs: Math.max(0, toNum(rawRule.minDurationMs, 0)),
+      minScrollDepth: Math.max(0, toNum(rawRule.minScrollDepth, 0)),
+      minVisibleMs: Math.max(0, toNum(rawRule.minVisibleMs, 0)),
+      priority: toNum(rawRule.priority, 0),
+      once: toBool(rawRule.once, false),
+      cooldownMs: Math.max(0, toNum(rawRule.cooldownMs, 0)),
+      maxShows: Math.max(0, toNum(rawRule.maxShows, 0)),
+      action: normalizeLauncherAction(rawRule.action || rawRule.style || rawRule.patch || rawRule)
+    };
+  }
+  const POSITION = (() => {
+    const raw = String(CFG.position || "").trim().toLowerCase();
+    if (raw === "bl") return "bl";
+    if (raw === "center" || raw === "bc") return "center";
+    return "br";
+  })();
+  const FLOAT_LAUNCHER = (() => {
+    const raw = CFG.floatLauncher && typeof CFG.floatLauncher === "object" ? CFG.floatLauncher : {};
+    const variant = normalizeLauncherVariant(raw.variant);
+    const iconText = toText(raw.iconText || "AI").trim() || "AI";
+    const text = toText(raw.text || "").trim();
+    const widthPx = clamp(toNum(raw.widthPx, 420), 160, 900);
+    const heightPx = clamp(toNum(raw.heightPx, 56), 40, 120);
+    const clickActionRaw = normToken(raw.clickAction || raw.clickMode || raw.onClick);
+    const clickAction = clickActionRaw === "toggle" ? "toggle" : "anchor";
+    const anchorTarget = toText(raw.anchorTarget || raw.anchorSelector || raw.anchorId || "").trim();
+    const anchorBehaviorRaw = normToken(raw.anchorBehavior || raw.scrollBehavior || "");
+    const anchorBehavior = anchorBehaviorRaw === "auto" ? "auto" : "smooth";
+    const anchorBlockRaw = normToken(raw.anchorBlock || raw.scrollBlock || "");
+    const anchorBlock = ["start", "center", "end", "nearest"].includes(anchorBlockRaw) ? anchorBlockRaw : "start";
+    const anchorOffsetPx = clamp(Math.round(toNum(raw.anchorOffsetPx, 0)), -5000, 5000);
+    const dynamicRaw = raw.dynamic && typeof raw.dynamic === "object" ? raw.dynamic : {};
+    const sourceRules = Array.isArray(dynamicRaw.rules) ? dynamicRaw.rules : [];
+    const dynamicRules = [];
+    for (let i = 0; i < sourceRules.length; i += 1) {
+      const normalized = normalizeLauncherDynamicRule(sourceRules[i], i);
+      if (!normalized) continue;
+      if (!normalized.action) continue;
+      dynamicRules.push(normalized);
+    }
+    dynamicRules.sort((a, b) => {
+      const pDiff = toNum(b.priority, 0) - toNum(a.priority, 0);
+      if (pDiff !== 0) return pDiff;
+      return String(a.id).localeCompare(String(b.id));
+    });
+    return {
+      variant,
+      iconText,
+      text,
+      hideLabelWhenEmpty: toBool(raw.hideLabelWhenEmpty, false),
+      widthPx,
+      heightPx,
+      bgColor: toText(raw.bgColor || "").trim(),
+      textColor: toText(raw.textColor || "").trim(),
+      iconBgColor: toText(raw.iconBgColor || "").trim(),
+      iconTextColor: toText(raw.iconTextColor || "").trim(),
+      borderColor: toText(raw.borderColor || "").trim(),
+      shadow: toText(raw.shadow || "").trim(),
+      clickAction,
+      anchorTarget,
+      anchorBehavior,
+      anchorBlock,
+      anchorOffsetPx,
+      dynamic: {
+        enabled: dynamicRules.length > 0 && toBool(dynamicRaw.enabled, false),
+        resetOnNoMatch: toBool(dynamicRaw.resetOnNoMatch, true),
+        transitionMs: clamp(Math.round(toNum(dynamicRaw.transitionMs, 220)), 80, 1200),
+        rules: dynamicRules
+      }
+    };
+  })();
   const WELCOME  = CFG.welcome || "Hi! How can I help?";
   const LANG     = CFG.lang || "en";
   const AUTOSTART   = CFG.autostart === true;
@@ -85,22 +250,22 @@ const ACCENT = CFG.primaryColor || CFG.accent || "#6D28D9";
   const IDLE_DEMO_LOOP_GAP_MS = 1500;
   const IDLE_DEMO_BADGE_TEXT = "Example conversation";
 let showWelcomeHint = true;
-const PRESERVE_HISTORY   = INLINE ? true : (CFG.preserveHistory !== false);
+const PRESERVE_HISTORY   = HYBRID_HISTORY_SYNC ? true : (INLINE ? true : (CFG.preserveHistory !== false));
 const RESET_HISTORY_ON_OPEN = !INLINE && CFG.resetHistoryOnOpen === true;
 
 const STORAGE = (() => {
   try {
-    if (INLINE && typeof sessionStorage !== "undefined") return sessionStorage;
+    if ((INLINE || HYBRID_HISTORY_SYNC) && typeof sessionStorage !== "undefined") return sessionStorage;
     if (typeof localStorage !== "undefined") return localStorage;
   } catch {}
   return null;
 })();
 
-// логотип для аватарки ассистента
+// ÃƒÂÃ‚Â»ÃƒÂÃ‚Â¾ÃƒÂÃ‚Â³ÃƒÂÃ‚Â¾Ãƒâ€˜Ã¢â‚¬Å¡ÃƒÂÃ‚Â¸ÃƒÂÃ‚Â¿ ÃƒÂÃ‚Â´ÃƒÂÃ‚Â»Ãƒâ€˜Ã‚Â ÃƒÂÃ‚Â°ÃƒÂÃ‚Â²ÃƒÂÃ‚Â°Ãƒâ€˜Ã¢â‚¬Å¡ÃƒÂÃ‚Â°Ãƒâ€˜Ã¢â€šÂ¬ÃƒÂÃ‚ÂºÃƒÂÃ‚Â¸ ÃƒÂÃ‚Â°Ãƒâ€˜Ã‚ÂÃƒâ€˜Ã‚ÂÃƒÂÃ‚Â¸Ãƒâ€˜Ã‚ÂÃƒâ€˜Ã¢â‚¬Å¡ÃƒÂÃ‚ÂµÃƒÂÃ‚Â½Ãƒâ€˜Ã¢â‚¬Å¡ÃƒÂÃ‚Â°
 const LOGO =
-  CFG.logoUrl ||                              // из loader'а
-  (typeof CFG.logo === "string" ? CFG.logo :  // если положили строку
-   CFG.logo && CFG.logo.url) ||               // если положили объект { url }
+  CFG.logoUrl ||                              // ÃƒÂÃ‚Â¸ÃƒÂÃ‚Â· loader'ÃƒÂÃ‚Â°
+  (typeof CFG.logo === "string" ? CFG.logo :  // ÃƒÂÃ‚ÂµÃƒâ€˜Ã‚ÂÃƒÂÃ‚Â»ÃƒÂÃ‚Â¸ ÃƒÂÃ‚Â¿ÃƒÂÃ‚Â¾ÃƒÂÃ‚Â»ÃƒÂÃ‚Â¾ÃƒÂÃ‚Â¶ÃƒÂÃ‚Â¸ÃƒÂÃ‚Â»ÃƒÂÃ‚Â¸ Ãƒâ€˜Ã‚ÂÃƒâ€˜Ã¢â‚¬Å¡Ãƒâ€˜Ã¢â€šÂ¬ÃƒÂÃ‚Â¾ÃƒÂÃ‚ÂºÃƒâ€˜Ã†â€™
+   CFG.logo && CFG.logo.url) ||               // ÃƒÂÃ‚ÂµÃƒâ€˜Ã‚ÂÃƒÂÃ‚Â»ÃƒÂÃ‚Â¸ ÃƒÂÃ‚Â¿ÃƒÂÃ‚Â¾ÃƒÂÃ‚Â»ÃƒÂÃ‚Â¾ÃƒÂÃ‚Â¶ÃƒÂÃ‚Â¸ÃƒÂÃ‚Â»ÃƒÂÃ‚Â¸ ÃƒÂÃ‚Â¾ÃƒÂÃ‚Â±Ãƒâ€˜Ã…Â ÃƒÂÃ‚ÂµÃƒÂÃ‚ÂºÃƒâ€˜Ã¢â‚¬Å¡ { url }
   null;
 
 const DEBUG = (CFG.debugAutostart === true) || /\baiwDebug=1\b/.test(location.search);
@@ -112,39 +277,104 @@ log("CFG", {
   resetHistoryOnOpen: RESET_HISTORY_ON_OPEN
 });
 
-// тема (тёмная) — всё, что можно, берём из уже существующих полей конфига
+// Ãƒâ€˜Ã¢â‚¬Å¡ÃƒÂÃ‚ÂµÃƒÂÃ‚Â¼ÃƒÂÃ‚Â° (Ãƒâ€˜Ã¢â‚¬Å¡Ãƒâ€˜Ã¢â‚¬ËœÃƒÂÃ‚Â¼ÃƒÂÃ‚Â½ÃƒÂÃ‚Â°Ãƒâ€˜Ã‚Â) ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â ÃƒÂÃ‚Â²Ãƒâ€˜Ã‚ÂÃƒâ€˜Ã¢â‚¬Ëœ, Ãƒâ€˜Ã¢â‚¬Â¡Ãƒâ€˜Ã¢â‚¬Å¡ÃƒÂÃ‚Â¾ ÃƒÂÃ‚Â¼ÃƒÂÃ‚Â¾ÃƒÂÃ‚Â¶ÃƒÂÃ‚Â½ÃƒÂÃ‚Â¾, ÃƒÂÃ‚Â±ÃƒÂÃ‚ÂµÃƒâ€˜Ã¢â€šÂ¬Ãƒâ€˜Ã¢â‚¬ËœÃƒÂÃ‚Â¼ ÃƒÂÃ‚Â¸ÃƒÂÃ‚Â· Ãƒâ€˜Ã†â€™ÃƒÂÃ‚Â¶ÃƒÂÃ‚Âµ Ãƒâ€˜Ã‚ÂÃƒâ€˜Ã†â€™Ãƒâ€˜Ã¢â‚¬Â°ÃƒÂÃ‚ÂµÃƒâ€˜Ã‚ÂÃƒâ€˜Ã¢â‚¬Å¡ÃƒÂÃ‚Â²Ãƒâ€˜Ã†â€™Ãƒâ€˜Ã…Â½Ãƒâ€˜Ã¢â‚¬Â°ÃƒÂÃ‚Â¸Ãƒâ€˜Ã¢â‚¬Â¦ ÃƒÂÃ‚Â¿ÃƒÂÃ‚Â¾ÃƒÂÃ‚Â»ÃƒÂÃ‚ÂµÃƒÂÃ‚Â¹ ÃƒÂÃ‚ÂºÃƒÂÃ‚Â¾ÃƒÂÃ‚Â½Ãƒâ€˜Ã¢â‚¬Å¾ÃƒÂÃ‚Â¸ÃƒÂÃ‚Â³ÃƒÂÃ‚Â°
 const THEME = {
-  // фон всего inline-виджета / панели
+  // Ãƒâ€˜Ã¢â‚¬Å¾ÃƒÂÃ‚Â¾ÃƒÂÃ‚Â½ ÃƒÂÃ‚Â²Ãƒâ€˜Ã‚ÂÃƒÂÃ‚ÂµÃƒÂÃ‚Â³ÃƒÂÃ‚Â¾ inline-ÃƒÂÃ‚Â²ÃƒÂÃ‚Â¸ÃƒÂÃ‚Â´ÃƒÂÃ‚Â¶ÃƒÂÃ‚ÂµÃƒâ€˜Ã¢â‚¬Å¡ÃƒÂÃ‚Â° / ÃƒÂÃ‚Â¿ÃƒÂÃ‚Â°ÃƒÂÃ‚Â½ÃƒÂÃ‚ÂµÃƒÂÃ‚Â»ÃƒÂÃ‚Â¸
   bg: CFG.backgroundColor || "#0b0c0f",
-  // основной цвет текста (сообщения, подписи, подсказки)
+  // ÃƒÂÃ‚Â¾Ãƒâ€˜Ã‚ÂÃƒÂÃ‚Â½ÃƒÂÃ‚Â¾ÃƒÂÃ‚Â²ÃƒÂÃ‚Â½ÃƒÂÃ‚Â¾ÃƒÂÃ‚Â¹ Ãƒâ€˜Ã¢â‚¬Â ÃƒÂÃ‚Â²ÃƒÂÃ‚ÂµÃƒâ€˜Ã¢â‚¬Å¡ Ãƒâ€˜Ã¢â‚¬Å¡ÃƒÂÃ‚ÂµÃƒÂÃ‚ÂºÃƒâ€˜Ã‚ÂÃƒâ€˜Ã¢â‚¬Å¡ÃƒÂÃ‚Â° (Ãƒâ€˜Ã‚ÂÃƒÂÃ‚Â¾ÃƒÂÃ‚Â¾ÃƒÂÃ‚Â±Ãƒâ€˜Ã¢â‚¬Â°ÃƒÂÃ‚ÂµÃƒÂÃ‚Â½ÃƒÂÃ‚Â¸Ãƒâ€˜Ã‚Â, ÃƒÂÃ‚Â¿ÃƒÂÃ‚Â¾ÃƒÂÃ‚Â´ÃƒÂÃ‚Â¿ÃƒÂÃ‚Â¸Ãƒâ€˜Ã‚ÂÃƒÂÃ‚Â¸, ÃƒÂÃ‚Â¿ÃƒÂÃ‚Â¾ÃƒÂÃ‚Â´Ãƒâ€˜Ã‚ÂÃƒÂÃ‚ÂºÃƒÂÃ‚Â°ÃƒÂÃ‚Â·ÃƒÂÃ‚ÂºÃƒÂÃ‚Â¸)
   text: CFG.textColor || "#e5e7eb",
-  // фон панели и инпута — по умолчанию такой же, как backgroundColor
+  // Ãƒâ€˜Ã¢â‚¬Å¾ÃƒÂÃ‚Â¾ÃƒÂÃ‚Â½ ÃƒÂÃ‚Â¿ÃƒÂÃ‚Â°ÃƒÂÃ‚Â½ÃƒÂÃ‚ÂµÃƒÂÃ‚Â»ÃƒÂÃ‚Â¸ ÃƒÂÃ‚Â¸ ÃƒÂÃ‚Â¸ÃƒÂÃ‚Â½ÃƒÂÃ‚Â¿Ãƒâ€˜Ã†â€™Ãƒâ€˜Ã¢â‚¬Å¡ÃƒÂÃ‚Â° ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â ÃƒÂÃ‚Â¿ÃƒÂÃ‚Â¾ Ãƒâ€˜Ã†â€™ÃƒÂÃ‚Â¼ÃƒÂÃ‚Â¾ÃƒÂÃ‚Â»Ãƒâ€˜Ã¢â‚¬Â¡ÃƒÂÃ‚Â°ÃƒÂÃ‚Â½ÃƒÂÃ‚Â¸Ãƒâ€˜Ã…Â½ Ãƒâ€˜Ã¢â‚¬Å¡ÃƒÂÃ‚Â°ÃƒÂÃ‚ÂºÃƒÂÃ‚Â¾ÃƒÂÃ‚Â¹ ÃƒÂÃ‚Â¶ÃƒÂÃ‚Âµ, ÃƒÂÃ‚ÂºÃƒÂÃ‚Â°ÃƒÂÃ‚Âº backgroundColor
   panel: CFG.backgroundColor || "#0f1318",
-  // цвет границ — сначала borderColor, иначе акцент
+  // Ãƒâ€˜Ã¢â‚¬Â ÃƒÂÃ‚Â²ÃƒÂÃ‚ÂµÃƒâ€˜Ã¢â‚¬Å¡ ÃƒÂÃ‚Â³Ãƒâ€˜Ã¢â€šÂ¬ÃƒÂÃ‚Â°ÃƒÂÃ‚Â½ÃƒÂÃ‚Â¸Ãƒâ€˜Ã¢â‚¬Â  ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â Ãƒâ€˜Ã‚ÂÃƒÂÃ‚Â½ÃƒÂÃ‚Â°Ãƒâ€˜Ã¢â‚¬Â¡ÃƒÂÃ‚Â°ÃƒÂÃ‚Â»ÃƒÂÃ‚Â° borderColor, ÃƒÂÃ‚Â¸ÃƒÂÃ‚Â½ÃƒÂÃ‚Â°Ãƒâ€˜Ã¢â‚¬Â¡ÃƒÂÃ‚Âµ ÃƒÂÃ‚Â°ÃƒÂÃ‚ÂºÃƒâ€˜Ã¢â‚¬Â ÃƒÂÃ‚ÂµÃƒÂÃ‚Â½Ãƒâ€˜Ã¢â‚¬Å¡
   border: CFG.borderColor || ACCENT,
-  // акцент (хедер, кнопка send, плавающая кнопка)
+  // ÃƒÂÃ‚Â°ÃƒÂÃ‚ÂºÃƒâ€˜Ã¢â‚¬Â ÃƒÂÃ‚ÂµÃƒÂÃ‚Â½Ãƒâ€˜Ã¢â‚¬Å¡ (Ãƒâ€˜Ã¢â‚¬Â¦ÃƒÂÃ‚ÂµÃƒÂÃ‚Â´ÃƒÂÃ‚ÂµÃƒâ€˜Ã¢â€šÂ¬, ÃƒÂÃ‚ÂºÃƒÂÃ‚Â½ÃƒÂÃ‚Â¾ÃƒÂÃ‚Â¿ÃƒÂÃ‚ÂºÃƒÂÃ‚Â° send, ÃƒÂÃ‚Â¿ÃƒÂÃ‚Â»ÃƒÂÃ‚Â°ÃƒÂÃ‚Â²ÃƒÂÃ‚Â°Ãƒâ€˜Ã…Â½Ãƒâ€˜Ã¢â‚¬Â°ÃƒÂÃ‚Â°Ãƒâ€˜Ã‚Â ÃƒÂÃ‚ÂºÃƒÂÃ‚Â½ÃƒÂÃ‚Â¾ÃƒÂÃ‚Â¿ÃƒÂÃ‚ÂºÃƒÂÃ‚Â°)
   accent: ACCENT,
-  // цвет текста на акцентном фоне (хедер, иконка send, launcher)
-  // НОВЫХ полей в конфиге не нужно — берём textColor
+  // Ãƒâ€˜Ã¢â‚¬Â ÃƒÂÃ‚Â²ÃƒÂÃ‚ÂµÃƒâ€˜Ã¢â‚¬Å¡ Ãƒâ€˜Ã¢â‚¬Å¡ÃƒÂÃ‚ÂµÃƒÂÃ‚ÂºÃƒâ€˜Ã‚ÂÃƒâ€˜Ã¢â‚¬Å¡ÃƒÂÃ‚Â° ÃƒÂÃ‚Â½ÃƒÂÃ‚Â° ÃƒÂÃ‚Â°ÃƒÂÃ‚ÂºÃƒâ€˜Ã¢â‚¬Â ÃƒÂÃ‚ÂµÃƒÂÃ‚Â½Ãƒâ€˜Ã¢â‚¬Å¡ÃƒÂÃ‚Â½ÃƒÂÃ‚Â¾ÃƒÂÃ‚Â¼ Ãƒâ€˜Ã¢â‚¬Å¾ÃƒÂÃ‚Â¾ÃƒÂÃ‚Â½ÃƒÂÃ‚Âµ (Ãƒâ€˜Ã¢â‚¬Â¦ÃƒÂÃ‚ÂµÃƒÂÃ‚Â´ÃƒÂÃ‚ÂµÃƒâ€˜Ã¢â€šÂ¬, ÃƒÂÃ‚Â¸ÃƒÂÃ‚ÂºÃƒÂÃ‚Â¾ÃƒÂÃ‚Â½ÃƒÂÃ‚ÂºÃƒÂÃ‚Â° send, launcher)
+  // ÃƒÂÃ‚ÂÃƒÂÃ…Â¾ÃƒÂÃ¢â‚¬â„¢ÃƒÂÃ‚Â«ÃƒÂÃ‚Â¥ ÃƒÂÃ‚Â¿ÃƒÂÃ‚Â¾ÃƒÂÃ‚Â»ÃƒÂÃ‚ÂµÃƒÂÃ‚Â¹ ÃƒÂÃ‚Â² ÃƒÂÃ‚ÂºÃƒÂÃ‚Â¾ÃƒÂÃ‚Â½Ãƒâ€˜Ã¢â‚¬Å¾ÃƒÂÃ‚Â¸ÃƒÂÃ‚Â³ÃƒÂÃ‚Âµ ÃƒÂÃ‚Â½ÃƒÂÃ‚Âµ ÃƒÂÃ‚Â½Ãƒâ€˜Ã†â€™ÃƒÂÃ‚Â¶ÃƒÂÃ‚Â½ÃƒÂÃ‚Â¾ ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â ÃƒÂÃ‚Â±ÃƒÂÃ‚ÂµÃƒâ€˜Ã¢â€šÂ¬Ãƒâ€˜Ã¢â‚¬ËœÃƒÂÃ‚Â¼ textColor
   accentText: CFG.textColor || "#ffffff",
-  // фон пузыря ассистента (оставляем нейтральным, чтобы всегда читалось)
-  bubbleAI: "rgba(255,255,255,.06)",
-  // фон пузыря пользователя — привязываем к primaryColor
-  bubbleUser: CFG.primaryColor || "#2b2f36",
-  // граница пузырей — если есть borderColor, используем его, иначе дефолт
-  bubbleBorder: CFG.borderColor || "rgba(255,255,255,.08)",
-  // цвет текста в пузыре пользователя
-  userText: CFG.textColor || "#ffffff",
-  // цвет для времени и подсказок
+  // Ãƒâ€˜Ã¢â‚¬Â ÃƒÂÃ‚Â²ÃƒÂÃ‚ÂµÃƒâ€˜Ã¢â‚¬Å¡ÃƒÂÃ‚Â° ÃƒÂÃ‚Â¾Ãƒâ€˜Ã¢â‚¬Å¡ÃƒÂÃ‚ÂºÃƒâ€˜Ã¢â‚¬â‚¬Ãƒâ€˜Ã¢â‚¬Â¹Ãƒâ€˜Ã¢â‚¬Å¡ÃƒÂÃ‚Â¾ÃƒÂÃ‚Â³ÃƒÂÃ‚Â¾ Ãƒâ€˜Ã¢â‚¬Â¡ÃƒÂÃ‚Â°Ãƒâ€˜Ã¢â‚¬Å¡ÃƒÂÃ‚Â° ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬â€œ ÃƒÂÃ‚Â¾ÃƒÂÃ‚Â´ÃƒÂÃ‚Â¸ÃƒÂÃ‚Â½ÃƒÂÃ‚Â°ÃƒÂÃ‚ÂºÃƒÂÃ‚Â¾ÃƒÂÃ‚Â²Ãƒâ€¹Ã‚Âµ ÃƒÂÃ‚Â´ÃƒÂÃ‚Â»Ãƒâ€˜Ã‚Â float ÃƒÂÃ‚Â¸ inline
+  headerBg: CFG.headerBackgroundColor || CFG.backgroundColor || "#0f1318",
+  headerText: CFG.headerTextColor || CFG.textColor || "#ffffff",
+  bubbleAI: CFG.assistantBubbleColor || "rgba(255,255,255,.06)",
+  bubbleUser: CFG.userBubbleColor || "#2b2f36",
+  bubbleBorder: CFG.bubbleBorderColor || CFG.borderColor || "rgba(255,255,255,.08)",
+  userText: CFG.userBubbleTextColor || CFG.textColor || "#ffffff",
+  aiText: CFG.assistantBubbleTextColor || CFG.textColor || "#e5e7eb",
+  inputBg: CFG.inputBackgroundColor || CFG.backgroundColor || "#0f1318",
+  inputText: CFG.inputTextColor || CFG.textColor || "#e5e7eb",
+  inputBorder: CFG.inputBorderColor || CFG.borderColor || ACCENT,
+  sendBg: CFG.sendButtonBackgroundColor || CFG.borderColor || ACCENT,
+  // Ãƒâ€˜Ã¢â‚¬Â ÃƒÂÃ‚Â²ÃƒÂÃ‚ÂµÃƒâ€˜Ã¢â‚¬Å¡ ÃƒÂÃ‚Â´ÃƒÂÃ‚Â»Ãƒâ€˜Ã‚Â ÃƒÂÃ‚Â²Ãƒâ€˜Ã¢â€šÂ¬ÃƒÂÃ‚ÂµÃƒÂÃ‚Â¼ÃƒÂÃ‚ÂµÃƒÂÃ‚Â½ÃƒÂÃ‚Â¸ ÃƒÂÃ‚Â¸ ÃƒÂÃ‚Â¿ÃƒÂÃ‚Â¾ÃƒÂÃ‚Â´Ãƒâ€˜Ã‚ÂÃƒÂÃ‚ÂºÃƒÂÃ‚Â°ÃƒÂÃ‚Â·ÃƒÂÃ‚Â¾ÃƒÂÃ‚Âº
   time: "rgba(229,231,235,.6)"
 };
+
+function colorWithAlpha(color, alpha, fallback) {
+  const a = clamp(toNum(alpha, 1), 0, 1);
+  const safeFallback = toText(fallback).trim() || `rgba(0,0,0,${a})`;
+  const raw = toText(color).trim();
+  if (!raw) return safeFallback;
+
+  const hex = raw.match(/^#([0-9a-f]{3,4}|[0-9a-f]{6}|[0-9a-f]{8})$/i);
+  if (hex) {
+    const token = hex[1];
+    let r = 0;
+    let g = 0;
+    let b = 0;
+    if (token.length === 3 || token.length === 4) {
+      r = parseInt(token[0] + token[0], 16);
+      g = parseInt(token[1] + token[1], 16);
+      b = parseInt(token[2] + token[2], 16);
+    } else {
+      r = parseInt(token.slice(0, 2), 16);
+      g = parseInt(token.slice(2, 4), 16);
+      b = parseInt(token.slice(4, 6), 16);
+    }
+    return `rgba(${r},${g},${b},${a})`;
+  }
+
+  const rgb = raw.match(/^rgba?\(\s*([0-9.]+%?)\s*[, ]\s*([0-9.]+%?)\s*[, ]\s*([0-9.]+%?)(?:\s*[,/]\s*([0-9.]+%?))?\s*\)$/i);
+  if (rgb) {
+    const toChannel = (v) => {
+      const token = String(v || "").trim();
+      if (!token) return 0;
+      if (token.endsWith("%")) return clamp(Math.round(parseFloat(token) * 2.55), 0, 255);
+      return clamp(Math.round(parseFloat(token)), 0, 255);
+    };
+    const r = toChannel(rgb[1]);
+    const g = toChannel(rgb[2]);
+    const b = toChannel(rgb[3]);
+    return `rgba(${r},${g},${b},${a})`;
+  }
+
+  return safeFallback;
+}
+
+const GLASS_BORDER_42 = colorWithAlpha(THEME.border, 0.42, "rgba(148,163,184,.42)");
+const GLASS_BORDER_35 = colorWithAlpha(THEME.border, 0.35, "rgba(148,163,184,.35)");
+const GLASS_BORDER_34 = colorWithAlpha(THEME.border, 0.34, "rgba(148,163,184,.34)");
+const GLASS_BORDER_32 = colorWithAlpha(THEME.border, 0.32, "rgba(148,163,184,.32)");
+const GLASS_BORDER_24 = colorWithAlpha(THEME.border, 0.24, "rgba(148,163,184,.24)");
+const GLASS_BORDER_22 = colorWithAlpha(THEME.border, 0.22, "rgba(148,163,184,.22)");
+const GLASS_BORDER_15 = colorWithAlpha(THEME.border, 0.15, "rgba(148,163,184,.15)");
+const GLASS_ACCENT_00 = colorWithAlpha(THEME.accent, 0, "rgba(0,0,0,0)");
+const GLASS_ACCENT_09 = colorWithAlpha(THEME.accent, 0.09, "rgba(37,99,235,.09)");
+const GLASS_ACCENT_14 = colorWithAlpha(THEME.accent, 0.14, "rgba(37,99,235,.14)");
+const GLASS_ACCENT_20 = colorWithAlpha(THEME.accent, 0.20, "rgba(37,99,235,.20)");
+const GLASS_ACCENT_24 = colorWithAlpha(THEME.accent, 0.24, "rgba(37,99,235,.24)");
+const GLASS_ACCENT_32 = colorWithAlpha(THEME.accent, 0.32, "rgba(37,99,235,.32)");
+const GLASS_PANEL_TOP = colorWithAlpha(THEME.panel, 0.95, "rgba(9,12,18,.95)");
+const GLASS_PANEL_BOTTOM = colorWithAlpha(THEME.bg, 0.97, "rgba(4,7,13,.97)");
+const GLASS_PANEL_SOFT_TOP = colorWithAlpha(THEME.panel, 0.90, "rgba(15,23,42,.9)");
+const GLASS_PANEL_SOFT_BOTTOM = colorWithAlpha(THEME.bg, 0.92, "rgba(2,6,23,.92)");
+const GLASS_SURFACE_44 = colorWithAlpha(THEME.inputBg || THEME.panel, 0.44, "rgba(15,23,42,.44)");
+const GLASS_INPUT_PLACEHOLDER = colorWithAlpha(THEME.inputText, 0.78, "rgba(203,213,225,.78)");
 
   let baseSize = Number(CFG.baseFontSize || 14);
 
   if (IS_MOBILE) {
-    baseSize -= 2;      // телефоны – чуть меньше
+    baseSize -= 2;      // Ãƒâ€˜Ã¢â‚¬Å¡ÃƒÂÃ‚ÂµÃƒÂÃ‚Â»ÃƒÂÃ‚ÂµÃƒâ€˜Ã¢â‚¬Å¾ÃƒÂÃ‚Â¾ÃƒÂÃ‚Â½Ãƒâ€˜Ã¢â‚¬Â¹ ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Å“ Ãƒâ€˜Ã¢â‚¬Â¡Ãƒâ€˜Ã†â€™Ãƒâ€˜Ã¢â‚¬Å¡Ãƒâ€˜Ã…â€™ ÃƒÂÃ‚Â¼ÃƒÂÃ‚ÂµÃƒÂÃ‚Â½Ãƒâ€˜Ã…â€™Ãƒâ€˜Ã‹â€ ÃƒÂÃ‚Âµ
   } else if (IS_TABLET) {
-    baseSize -= 1;      // планшеты – тоже немного меньше
+    baseSize -= 1;      // ÃƒÂÃ‚Â¿ÃƒÂÃ‚Â»ÃƒÂÃ‚Â°ÃƒÂÃ‚Â½Ãƒâ€˜Ã‹â€ ÃƒÂÃ‚ÂµÃƒâ€˜Ã¢â‚¬Å¡Ãƒâ€˜Ã¢â‚¬Â¹ ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Å“ Ãƒâ€˜Ã¢â‚¬Å¡ÃƒÂÃ‚Â¾ÃƒÂÃ‚Â¶ÃƒÂÃ‚Âµ ÃƒÂÃ‚Â½ÃƒÂÃ‚ÂµÃƒÂÃ‚Â¼ÃƒÂÃ‚Â½ÃƒÂÃ‚Â¾ÃƒÂÃ‚Â³ÃƒÂÃ‚Â¾ ÃƒÂÃ‚Â¼ÃƒÂÃ‚ÂµÃƒÂÃ‚Â½Ãƒâ€˜Ã…â€™Ãƒâ€˜Ã‹â€ ÃƒÂÃ‚Âµ
   }
 
   const BASE_FONT_SIZE = Math.max(
@@ -177,12 +407,12 @@ function newSessionId() {
 }
 
 
-// создаём/переиспользуем идентификаторы
+// Ãƒâ€˜Ã‚ÂÃƒÂÃ‚Â¾ÃƒÂÃ‚Â·ÃƒÂÃ‚Â´ÃƒÂÃ‚Â°Ãƒâ€˜Ã¢â‚¬ËœÃƒÂÃ‚Â¼/ÃƒÂÃ‚Â¿ÃƒÂÃ‚ÂµÃƒâ€˜Ã¢â€šÂ¬ÃƒÂÃ‚ÂµÃƒÂÃ‚Â¸Ãƒâ€˜Ã‚ÂÃƒÂÃ‚Â¿ÃƒÂÃ‚Â¾ÃƒÂÃ‚Â»Ãƒâ€˜Ã…â€™ÃƒÂÃ‚Â·Ãƒâ€˜Ã†â€™ÃƒÂÃ‚ÂµÃƒÂÃ‚Â¼ ÃƒÂÃ‚Â¸ÃƒÂÃ‚Â´ÃƒÂÃ‚ÂµÃƒÂÃ‚Â½Ãƒâ€˜Ã¢â‚¬Å¡ÃƒÂÃ‚Â¸Ãƒâ€˜Ã¢â‚¬Å¾ÃƒÂÃ‚Â¸ÃƒÂÃ‚ÂºÃƒÂÃ‚Â°Ãƒâ€˜Ã¢â‚¬Å¡ÃƒÂÃ‚Â¾Ãƒâ€˜Ã¢â€šÂ¬Ãƒâ€˜Ã¢â‚¬Â¹
 const VISITOR_ID = getVisitorId();
-// сессию создаём при загрузке виджета (сбросится кнопкой Reset)
+// Ãƒâ€˜Ã‚ÂÃƒÂÃ‚ÂµÃƒâ€˜Ã‚ÂÃƒâ€˜Ã‚ÂÃƒÂÃ‚Â¸Ãƒâ€˜Ã…Â½ Ãƒâ€˜Ã‚ÂÃƒÂÃ‚Â¾ÃƒÂÃ‚Â·ÃƒÂÃ‚Â´ÃƒÂÃ‚Â°Ãƒâ€˜Ã¢â‚¬ËœÃƒÂÃ‚Â¼ ÃƒÂÃ‚Â¿Ãƒâ€˜Ã¢â€šÂ¬ÃƒÂÃ‚Â¸ ÃƒÂÃ‚Â·ÃƒÂÃ‚Â°ÃƒÂÃ‚Â³Ãƒâ€˜Ã¢â€šÂ¬Ãƒâ€˜Ã†â€™ÃƒÂÃ‚Â·ÃƒÂÃ‚ÂºÃƒÂÃ‚Âµ ÃƒÂÃ‚Â²ÃƒÂÃ‚Â¸ÃƒÂÃ‚Â´ÃƒÂÃ‚Â¶ÃƒÂÃ‚ÂµÃƒâ€˜Ã¢â‚¬Å¡ÃƒÂÃ‚Â° (Ãƒâ€˜Ã‚ÂÃƒÂÃ‚Â±Ãƒâ€˜Ã¢â€šÂ¬ÃƒÂÃ‚Â¾Ãƒâ€˜Ã‚ÂÃƒÂÃ‚Â¸Ãƒâ€˜Ã¢â‚¬Å¡Ãƒâ€˜Ã‚ÂÃƒâ€˜Ã‚Â ÃƒÂÃ‚ÂºÃƒÂÃ‚Â½ÃƒÂÃ‚Â¾ÃƒÂÃ‚Â¿ÃƒÂÃ‚ÂºÃƒÂÃ‚Â¾ÃƒÂÃ‚Â¹ Reset)
 let SESSION_ID = newSessionId();
 
-// [AIW-LOGGING] сбор метаданных страницы и UTM
+// [AIW-LOGGING] Ãƒâ€˜Ã‚ÂÃƒÂÃ‚Â±ÃƒÂÃ‚Â¾Ãƒâ€˜Ã¢â€šÂ¬ ÃƒÂÃ‚Â¼ÃƒÂÃ‚ÂµÃƒâ€˜Ã¢â‚¬Å¡ÃƒÂÃ‚Â°ÃƒÂÃ‚Â´ÃƒÂÃ‚Â°ÃƒÂÃ‚Â½ÃƒÂÃ‚Â½Ãƒâ€˜Ã¢â‚¬Â¹Ãƒâ€˜Ã¢â‚¬Â¦ Ãƒâ€˜Ã‚ÂÃƒâ€˜Ã¢â‚¬Å¡Ãƒâ€˜Ã¢â€šÂ¬ÃƒÂÃ‚Â°ÃƒÂÃ‚Â½ÃƒÂÃ‚Â¸Ãƒâ€˜Ã¢â‚¬Â Ãƒâ€˜Ã¢â‚¬Â¹ ÃƒÂÃ‚Â¸ UTM
 function collectMeta() {
   const url = new URL(location.href);
   const utm = {
@@ -251,21 +481,90 @@ function markAutoGreetUsed() {
 
   // ---------- Utilities ----------
 const storeKey = `aiw_hist_${SITE_ID}`;
+let historySnapshot = "[]";
+const HISTORY_SYNC_CHANNEL = (() => {
+  if (!HYBRID_HISTORY_SYNC || typeof BroadcastChannel !== "function") return null;
+  try { return new BroadcastChannel(`aiw:history:${SITE_ID}`); } catch { return null; }
+})();
+
+function historyToSnapshot(arr) {
+  try {
+    return JSON.stringify((Array.isArray(arr) ? arr : []).slice(-30));
+  } catch {
+    return "[]";
+  }
+}
+
+function snapshotToHistory(snapshot) {
+  try {
+    const parsed = JSON.parse(snapshot || "[]");
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
 
 const readHistory = () => {
-  if (PRESERVE_HISTORY === false || !STORAGE) return [];
+  if (PRESERVE_HISTORY === false || !STORAGE) {
+    historySnapshot = "[]";
+    return [];
+  }
   try {
-    return JSON.parse(STORAGE.getItem(storeKey) || "[]");
+    const rawSnapshot = STORAGE.getItem(storeKey) || "[]";
+    const parsed = snapshotToHistory(rawSnapshot);
+    historySnapshot = historyToSnapshot(parsed);
+    return parsed;
   } catch {
+    historySnapshot = "[]";
     return [];
   }
 };
 
 const writeHistory = (arr) => {
-  if (PRESERVE_HISTORY === false || !STORAGE) return; // no-op
-  try {
-    STORAGE.setItem(storeKey, JSON.stringify(arr.slice(-30)));
-  } catch {}
+  const snapshot = historyToSnapshot(arr);
+  historySnapshot = snapshot;
+  if (PRESERVE_HISTORY !== false && STORAGE) {
+    try {
+      STORAGE.setItem(storeKey, snapshot);
+    } catch {}
+  }
+  if (HYBRID_HISTORY_SYNC && HISTORY_SYNC_CHANNEL) {
+    try {
+      HISTORY_SYNC_CHANNEL.postMessage({
+        type: "history:update",
+        key: storeKey,
+        snapshot,
+        instanceId: INSTANCE_ID || "",
+      });
+    } catch {}
+  }
+  if (HYBRID_HISTORY_SYNC) {
+    if (INLINE && window.parent && window.parent !== window) {
+      try {
+        window.parent.postMessage(
+          {
+            type: "aiw:history-sync",
+            siteId: SITE_ID,
+            instanceId: INSTANCE_ID || "",
+            snapshot,
+            source: "inline",
+          },
+          PARENT_ORIGIN || "*"
+        );
+      } catch {}
+    } else if (!INLINE) {
+      try {
+        window.dispatchEvent(new CustomEvent("aiw:history-sync", {
+          detail: {
+            siteId: SITE_ID,
+            instanceId: INSTANCE_ID || "",
+            snapshot,
+            source: "float",
+          },
+        }));
+      } catch {}
+    }
+  }
 };
 
 if (PRESERVE_HISTORY === false && STORAGE) {
@@ -277,7 +576,7 @@ const sanitize = (s) => (s || "").toString().slice(0, MAX_LEN);
 
   // ---------- DOM ----------
   const root = document.createElement("div");
- // host должен уметь растянуться на высоту iframe
+ // host ÃƒÂÃ‚Â´ÃƒÂÃ‚Â¾ÃƒÂÃ‚Â»ÃƒÂÃ‚Â¶ÃƒÂÃ‚ÂµÃƒÂÃ‚Â½ Ãƒâ€˜Ã†â€™ÃƒÂÃ‚Â¼ÃƒÂÃ‚ÂµÃƒâ€˜Ã¢â‚¬Å¡Ãƒâ€˜Ã…â€™ Ãƒâ€˜Ã¢â€šÂ¬ÃƒÂÃ‚Â°Ãƒâ€˜Ã‚ÂÃƒâ€˜Ã¢â‚¬Å¡Ãƒâ€˜Ã‚ÂÃƒÂÃ‚Â½Ãƒâ€˜Ã†â€™Ãƒâ€˜Ã¢â‚¬Å¡Ãƒâ€˜Ã…â€™Ãƒâ€˜Ã‚ÂÃƒâ€˜Ã‚Â ÃƒÂÃ‚Â½ÃƒÂÃ‚Â° ÃƒÂÃ‚Â²Ãƒâ€˜Ã¢â‚¬Â¹Ãƒâ€˜Ã‚ÂÃƒÂÃ‚Â¾Ãƒâ€˜Ã¢â‚¬Å¡Ãƒâ€˜Ã†â€™ iframe
  root.style.cssText = "display:block;";
   if (INLINE) {
     root.style.width = "100%";
@@ -323,6 +622,12 @@ style.textContent = `
    40%{transform:scale(1);opacity:1}
  }
 
+@keyframes aiw-pill-live-dot {
+  0% { box-shadow:0 0 0 0 rgba(34,197,94,.38); opacity:.95; }
+  70% { box-shadow:0 0 0 10px rgba(34,197,94,0); opacity:.55; }
+  100% { box-shadow:0 0 0 0 rgba(34,197,94,0); opacity:.95; }
+}
+
  .aiw-wrap{
    position:fixed;
    z-index:2147483000;
@@ -335,7 +640,189 @@ style.textContent = `
   background:${THEME.accent};
   color:${THEME.accentText};
   font-weight:700;font-size:16px;
-    font-family:${BASE_FONT_STACK};
+  font-family:${BASE_FONT_STACK};
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  padding:0;
+  transition:
+    background-color var(--aiw-pill-transition-ms, 220ms) ease,
+    color var(--aiw-pill-transition-ms, 220ms) ease,
+    border-color var(--aiw-pill-transition-ms, 220ms) ease,
+    box-shadow var(--aiw-pill-transition-ms, 220ms) ease,
+    width var(--aiw-pill-transition-ms, 220ms) ease,
+    height var(--aiw-pill-transition-ms, 220ms) ease,
+    transform var(--aiw-pill-transition-ms, 220ms) ease;
+}
+
+.aiw-btn.aiw-btn-pill{
+  width:min(var(--aiw-pill-width, 420px), 92vw);
+  height:var(--aiw-pill-height, 56px);
+  border-radius:999px;
+  border:1px solid var(--aiw-pill-border, rgba(16,18,22,.18));
+  background:var(--aiw-pill-bg, #ffffff);
+  color:var(--aiw-pill-text, #101216);
+  box-shadow:var(--aiw-pill-shadow, 0 8px 20px rgba(0,0,0,.2));
+  padding:0 16px 0 10px;
+  gap:10px;
+  justify-content:flex-start;
+  font-weight:600;
+  font-size:16px;
+  transition:
+    background-color var(--aiw-pill-transition-ms, 220ms) ease,
+    color var(--aiw-pill-transition-ms, 220ms) ease,
+    border-color var(--aiw-pill-transition-ms, 220ms) ease,
+    box-shadow var(--aiw-pill-transition-ms, 220ms) ease,
+    width var(--aiw-pill-transition-ms, 220ms) ease,
+    height var(--aiw-pill-transition-ms, 220ms) ease,
+    padding var(--aiw-pill-transition-ms, 220ms) ease,
+    gap var(--aiw-pill-transition-ms, 220ms) ease;
+}
+
+.aiw-btn.aiw-btn-pill.aiw-btn-pill-compact{
+  padding:0 10px;
+  gap:0;
+  justify-content:flex-start;
+}
+
+.aiw-btn.aiw-btn-pill .aiw-btn-icon{
+  min-width:46px;
+  height:30px;
+  border-radius:999px;
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  background:var(--aiw-pill-icon-bg, #0f1217);
+  color:var(--aiw-pill-icon-text, #ffffff);
+  font-weight:700;
+  font-size:14px;
+  letter-spacing:.01em;
+  padding:0 7px;
+  box-sizing:border-box;
+  white-space:nowrap;
+  line-height:1;
+  overflow:hidden;
+  transition:
+    background-color var(--aiw-pill-transition-ms, 220ms) ease,
+    color var(--aiw-pill-transition-ms, 220ms) ease,
+    min-width var(--aiw-pill-transition-ms, 220ms) ease,
+    height var(--aiw-pill-transition-ms, 220ms) ease;
+}
+
+.aiw-btn.aiw-btn-pill .aiw-btn-label{
+  display:block;
+  min-width:0;
+  max-width:100%;
+  overflow:hidden;
+  text-overflow:ellipsis;
+  white-space:nowrap;
+  line-height:1.2;
+  font-weight:600;
+  font-size:22px;
+  transition:
+    color var(--aiw-pill-transition-ms, 220ms) ease,
+    font-size var(--aiw-pill-transition-ms, 220ms) ease,
+    max-width var(--aiw-pill-transition-ms, 220ms) ease,
+    opacity var(--aiw-pill-transition-ms, 220ms) ease,
+    transform var(--aiw-pill-transition-ms, 220ms) ease;
+}
+
+.aiw-btn.aiw-btn-pill .aiw-btn-label.aiw-btn-label-exit{
+  opacity:0;
+  transform:translateY(2px);
+  max-width:0;
+}
+
+.aiw-btn.aiw-btn-open{
+  transform:translateY(0);
+}
+
+.aiw-btn.aiw-btn-closed,
+.aiw-btn.aiw-btn-open{
+  position:relative;
+}
+
+.aiw-btn.aiw-btn-closed:hover,
+.aiw-btn.aiw-btn-open:hover{
+  transform:translateY(-1px);
+}
+
+.aiw-btn.aiw-btn-closed:active,
+.aiw-btn.aiw-btn-open:active{
+  transform:translateY(0);
+}
+
+.aiw-btn.aiw-btn-closed:focus-visible,  
+.aiw-btn.aiw-btn-open:focus-visible{
+  outline:2px solid rgba(37,99,235,.45);
+  outline-offset:3px;
+}
+
+.aiw-btn.aiw-btn-pill.aiw-btn-closed,
+.aiw-btn.aiw-btn-pill.aiw-btn-open{
+  width:min(var(--aiw-pill-width, 268px), 92vw);
+  padding:0 22px 0 8px;
+  gap:10px;
+  border-color:var(--aiw-pill-border, rgba(16,18,22,.12));
+  box-shadow:
+    var(--aiw-pill-shadow, 0 10px 24px rgba(15,23,42,.16)),
+    inset 0 1px 0 rgba(255,255,255,.86);
+  backdrop-filter:blur(8px);
+  justify-content:flex-start;
+}
+
+.aiw-btn.aiw-btn-pill.aiw-btn-closed .aiw-btn-icon,
+.aiw-btn.aiw-btn-pill.aiw-btn-open .aiw-btn-icon{
+  min-width:42px;
+  width:42px;
+  height:42px;
+  border-radius:14px;
+  padding:0;
+  font-size:16px;
+  box-shadow:0 6px 14px rgba(15,23,42,.22);
+}
+
+.aiw-btn.aiw-btn-pill.aiw-btn-closed .aiw-btn-label,
+.aiw-btn.aiw-btn-pill.aiw-btn-open .aiw-btn-label{
+  display:block;
+  font-size:16px;
+  font-weight:600;
+  letter-spacing:-.01em;
+  line-height:1.1;
+  max-width:calc(100% - 70px);
+}
+
+.aiw-btn.aiw-btn-pill.aiw-btn-pill-compact.aiw-btn-closed,
+.aiw-btn.aiw-btn-pill.aiw-btn-pill-compact.aiw-btn-open{
+  padding:0 22px 0 8px;
+}
+
+.aiw-btn.aiw-btn-pill.aiw-btn-pill-compact.aiw-btn-closed .aiw-btn-icon,
+.aiw-btn.aiw-btn-pill.aiw-btn-pill-compact.aiw-btn-open .aiw-btn-icon{
+  min-width:42px;
+  width:42px;
+  height:42px;
+}
+
+.aiw-btn.aiw-btn-pill.aiw-btn-closed::after,
+.aiw-btn.aiw-btn-pill.aiw-btn-open::after{
+  content:"";
+  position:absolute;
+  right:9px;
+  top:50%;
+  width:10px;
+  height:10px;
+  margin-top:-5px;
+  border-radius:50%;
+  background:#000000;
+  box-shadow:0 0 0 0 rgba(34,197,94,.38);
+  animation:aiw-pill-live-dot 2.2s ease-out infinite;
+  pointer-events:none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .aiw-btn.aiw-btn-pill.aiw-btn-closed::after,
+  .aiw-btn.aiw-btn-pill.aiw-btn-open::after { animation:none; }
 }
 
  .aiw-panel{
@@ -374,25 +861,25 @@ style.textContent = `
     display:inline-flex;
     align-items:center;
 
-    /* меньше бейдж */
+    /* ÃƒÂÃ‚Â¼ÃƒÂÃ‚ÂµÃƒÂÃ‚Â½Ãƒâ€˜Ã…â€™Ãƒâ€˜Ã‹â€ ÃƒÂÃ‚Âµ ÃƒÂÃ‚Â±ÃƒÂÃ‚ÂµÃƒÂÃ‚Â¹ÃƒÂÃ‚Â´ÃƒÂÃ‚Â¶ */
     padding:1px 5px;
     border-radius:9999px;
     border:1px solid rgba(255,255,255,0.28);
     background:rgba(255,255,255,0.08);
 
-    /* меньше шрифт, как в референсе */
+    /* ÃƒÂÃ‚Â¼ÃƒÂÃ‚ÂµÃƒÂÃ‚Â½Ãƒâ€˜Ã…â€™Ãƒâ€˜Ã‹â€ ÃƒÂÃ‚Âµ Ãƒâ€˜Ã‹â€ Ãƒâ€˜Ã¢â€šÂ¬ÃƒÂÃ‚Â¸Ãƒâ€˜Ã¢â‚¬Å¾Ãƒâ€˜Ã¢â‚¬Å¡, ÃƒÂÃ‚ÂºÃƒÂÃ‚Â°ÃƒÂÃ‚Âº ÃƒÂÃ‚Â² Ãƒâ€˜Ã¢â€šÂ¬ÃƒÂÃ‚ÂµÃƒâ€˜Ã¢â‚¬Å¾ÃƒÂÃ‚ÂµÃƒâ€˜Ã¢â€šÂ¬ÃƒÂÃ‚ÂµÃƒÂÃ‚Â½Ãƒâ€˜Ã‚ÂÃƒÂÃ‚Âµ */
     font-size:8px;
     letter-spacing:0.08em;
     text-transform:uppercase;
-    color:${THEME.accentText};
+    color:${THEME.headerText};
     white-space:nowrap;
     line-height:1;
 
     opacity:0;
-    /* чуть более медленное появление */
+    /* Ãƒâ€˜Ã¢â‚¬Â¡Ãƒâ€˜Ã†â€™Ãƒâ€˜Ã¢â‚¬Å¡Ãƒâ€˜Ã…â€™ ÃƒÂÃ‚Â±ÃƒÂÃ‚Â¾ÃƒÂÃ‚Â»ÃƒÂÃ‚ÂµÃƒÂÃ‚Âµ ÃƒÂÃ‚Â¼ÃƒÂÃ‚ÂµÃƒÂÃ‚Â´ÃƒÂÃ‚Â»ÃƒÂÃ‚ÂµÃƒÂÃ‚Â½ÃƒÂÃ‚Â½ÃƒÂÃ‚Â¾ÃƒÂÃ‚Âµ ÃƒÂÃ‚Â¿ÃƒÂÃ‚Â¾Ãƒâ€˜Ã‚ÂÃƒÂÃ‚Â²ÃƒÂÃ‚Â»ÃƒÂÃ‚ÂµÃƒÂÃ‚Â½ÃƒÂÃ‚Â¸ÃƒÂÃ‚Âµ */
     animation: aiw-badge-fade 1.1s ease-out .35s forwards;
 
-    /* немного ПОВЫШЕ относительно текста */
+    /* ÃƒÂÃ‚Â½ÃƒÂÃ‚ÂµÃƒÂÃ‚Â¼ÃƒÂÃ‚Â½ÃƒÂÃ‚Â¾ÃƒÂÃ‚Â³ÃƒÂÃ‚Â¾ ÃƒÂÃ…Â¸ÃƒÂÃ…Â¾ÃƒÂÃ¢â‚¬â„¢ÃƒÂÃ‚Â«ÃƒÂÃ‚Â¨ÃƒÂÃ¢â‚¬Â¢ ÃƒÂÃ‚Â¾Ãƒâ€˜Ã¢â‚¬Å¡ÃƒÂÃ‚Â½ÃƒÂÃ‚Â¾Ãƒâ€˜Ã‚ÂÃƒÂÃ‚Â¸Ãƒâ€˜Ã¢â‚¬Å¡ÃƒÂÃ‚ÂµÃƒÂÃ‚Â»Ãƒâ€˜Ã…â€™ÃƒÂÃ‚Â½ÃƒÂÃ‚Â¾ Ãƒâ€˜Ã¢â‚¬Å¡ÃƒÂÃ‚ÂµÃƒÂÃ‚ÂºÃƒâ€˜Ã‚ÂÃƒâ€˜Ã¢â‚¬Å¡ÃƒÂÃ‚Â° */
     transform:translateY(-1px);
   }
 
@@ -435,14 +922,14 @@ style.textContent = `
 .aiw-header button{
   background:transparent;
   border:none;
-  color:#fff;
+  color:${THEME.headerText};
   font-size:18px;
   cursor:pointer;
 }
 .aiw-header{
   padding:12px 16px;
-  background:${THEME.accent};
-  color:${THEME.accentText};
+  background:${THEME.headerBg};
+  color:${THEME.headerText};
   font-weight:700;
   display:flex;
   align-items:center;
@@ -458,7 +945,7 @@ style.textContent = `
 .aiw-header button{
   background:transparent;
   border:none;
-  color:${THEME.accentText};
+  color:${THEME.headerText};
   font-size:18px;
   cursor:pointer;
 }
@@ -509,6 +996,80 @@ style.textContent = `
   border-width:0 !important;
 }
 
+${!INLINE ? `
+.aiw-wrap.aiw-wrap-fullscreen{
+  top:0 !important;
+  right:0 !important;
+  bottom:0 !important;
+  left:0 !important;
+  width:100vw !important;
+  height:100vh !important;
+  height:100dvh !important;
+  transform:none !important;
+  z-index:2147483646 !important;
+}
+
+.aiw-wrap.aiw-wrap-fullscreen .aiw-panel.aiw-panel-fullscreen{
+  position:absolute !important;
+  top:0 !important;
+  right:0 !important;
+  bottom:0 !important;
+  left:0 !important;
+  width:100% !important;
+  max-width:100% !important;
+  height:100% !important;
+  max-height:100% !important;
+  transform:none !important;
+  margin:0 !important;
+}
+
+.aiw-wrap.aiw-wrap-fullscreen .aiw-header{
+  padding:calc(14px + env(safe-area-inset-top)) 24px 14px;
+  background:${THEME.headerBg};
+  color:${THEME.headerText};
+  border-bottom:1px solid ${THEME.border};
+}
+
+.aiw-wrap.aiw-wrap-fullscreen .aiw-body{
+  padding:24px 24px 14px;
+  background:${THEME.bg};
+}
+
+.aiw-wrap.aiw-wrap-fullscreen .aiw-footer{
+  padding:20px 24px calc(20px + env(safe-area-inset-bottom));
+  border-top:none;
+  background:${THEME.bg};
+  justify-content:stretch;
+}
+
+.aiw-wrap.aiw-wrap-fullscreen .aiw-footer-meta{
+  display:none !important;
+}
+
+.aiw-wrap.aiw-wrap-fullscreen .aiw-input-wrap{
+  flex:1 1 auto;
+  width:100%;
+  max-width:none;
+  margin:0;
+  border-radius:9999px;
+}
+
+.aiw-wrap.aiw-wrap-fullscreen .aiw-input{
+  padding:12px 60px 12px 16px;
+}
+
+.aiw-wrap.aiw-wrap-fullscreen .aiw-send{
+  right:12px;
+  width:40px;
+  height:40px;
+  box-shadow:none;
+}
+
+.aiw-wrap.aiw-wrap-fullscreen .aiw-close-btn{
+  display:none;
+}
+` : ""}
+
 .aiw-panel.aiw-panel-fullscreen .aiw-header{
   padding-top:calc(12px + env(safe-area-inset-top));
 }
@@ -525,8 +1086,8 @@ style.textContent = `
   align-items:center;
   background:${THEME.panel};
 
-  --aiw-input-min-h: 44px; /* 1 строка */
-  --aiw-input-max-h: 92px; /* до ~3 строк */
+  --aiw-input-min-h: 44px; /* 1 Ãƒâ€˜Ã‚ÂÃƒâ€˜Ã¢â‚¬Å¡Ãƒâ€˜Ã¢â€šÂ¬ÃƒÂÃ‚Â¾ÃƒÂÃ‚ÂºÃƒÂÃ‚Â° */
+  --aiw-input-max-h: 92px; /* ÃƒÂÃ‚Â´ÃƒÂÃ‚Â¾ ~3 Ãƒâ€˜Ã‚ÂÃƒâ€˜Ã¢â‚¬Å¡Ãƒâ€˜Ã¢â€šÂ¬ÃƒÂÃ‚Â¾ÃƒÂÃ‚Âº */
 }
 
 .aiw-footer-meta{
@@ -561,9 +1122,9 @@ style.textContent = `
   width:8px;
 }
 
-/* ===== textarea scrollbar (когда overflow-y:auto) ===== */
+/* ===== textarea scrollbar (ÃƒÂÃ‚ÂºÃƒÂÃ‚Â¾ÃƒÂÃ‚Â³ÃƒÂÃ‚Â´ÃƒÂÃ‚Â° overflow-y:auto) ===== */
 .aiw-input{
-  scrollbar-width: none;          /* скрывает полосу */
+  scrollbar-width: none;          /* Ãƒâ€˜Ã‚ÂÃƒÂÃ‚ÂºÃƒâ€˜Ã¢â€šÂ¬Ãƒâ€˜Ã¢â‚¬Â¹ÃƒÂÃ‚Â²ÃƒÂÃ‚Â°ÃƒÂÃ‚ÂµÃƒâ€˜Ã¢â‚¬Å¡ ÃƒÂÃ‚Â¿ÃƒÂÃ‚Â¾ÃƒÂÃ‚Â»ÃƒÂÃ‚Â¾Ãƒâ€˜Ã‚ÂÃƒâ€˜Ã†â€™ */
 }
 
 .aiw-input::-webkit-scrollbar{
@@ -602,7 +1163,7 @@ ${(INLINE && IS_IOS) ? `
   padding:6px 10px;
   border-radius:9999px;
   background:${THEME.bubbleAI};
-  color:${THEME.text};
+  color:${THEME.aiText};
   display:flex;
   align-items:center;
   opacity:.8;
@@ -615,7 +1176,7 @@ ${(INLINE && IS_IOS) ? `
 .aiw-typing-bubble.ai{
   align-self:flex-start;
   background:${THEME.bubbleAI};
-  color:${THEME.text};
+  color:${THEME.aiText};
 }
 
 .aiw-typing-dots{
@@ -632,7 +1193,7 @@ ${(INLINE && IS_IOS) ? `
   animation: aiw-dot 1s infinite ease-in-out;
 }
 
-/* анимация точек */
+/* ÃƒÂÃ‚Â°ÃƒÂÃ‚Â½ÃƒÂÃ‚Â¸ÃƒÂÃ‚Â¼ÃƒÂÃ‚Â°Ãƒâ€˜Ã¢â‚¬Â ÃƒÂÃ‚Â¸Ãƒâ€˜Ã‚Â Ãƒâ€˜Ã¢â‚¬Å¡ÃƒÂÃ‚Â¾Ãƒâ€˜Ã¢â‚¬Â¡ÃƒÂÃ‚ÂµÃƒÂÃ‚Âº */
 @keyframes aiw-dot{
   0%, 80%, 100%{
     transform:scale(.6);
@@ -674,13 +1235,13 @@ ${(INLINE && IS_IOS) ? `
     font-family:${BASE_FONT_STACK};
 }
 
-/* аватар ассистента */
+/* ÃƒÂÃ‚Â°ÃƒÂÃ‚Â²ÃƒÂÃ‚Â°Ãƒâ€˜Ã¢â‚¬Å¡ÃƒÂÃ‚Â°Ãƒâ€˜Ã¢â€šÂ¬ ÃƒÂÃ‚Â°Ãƒâ€˜Ã‚ÂÃƒâ€˜Ã‚ÂÃƒÂÃ‚Â¸Ãƒâ€˜Ã‚ÂÃƒâ€˜Ã¢â‚¬Å¡ÃƒÂÃ‚ÂµÃƒÂÃ‚Â½Ãƒâ€˜Ã¢â‚¬Å¡ÃƒÂÃ‚Â° */
 .aiw-ava.ai{
   background:${THEME.bubbleAI};
-  color:${THEME.text};
+  color:${THEME.aiText};
 }
 
-/* аватар пользователя */
+/* ÃƒÂÃ‚Â°ÃƒÂÃ‚Â²ÃƒÂÃ‚Â°Ãƒâ€˜Ã¢â‚¬Å¡ÃƒÂÃ‚Â°Ãƒâ€˜Ã¢â€šÂ¬ ÃƒÂÃ‚Â¿ÃƒÂÃ‚Â¾ÃƒÂÃ‚Â»Ãƒâ€˜Ã…â€™ÃƒÂÃ‚Â·ÃƒÂÃ‚Â¾ÃƒÂÃ‚Â²ÃƒÂÃ‚Â°Ãƒâ€˜Ã¢â‚¬Å¡ÃƒÂÃ‚ÂµÃƒÂÃ‚Â»Ãƒâ€˜Ã‚Â */
 .aiw-ava.me{
   background:${THEME.bubbleUser};
   color:${THEME.userText};
@@ -710,7 +1271,7 @@ ${(INLINE && IS_IOS) ? `
 .aiw-h3{ font-size:1.02em; font-weight:800; margin:6px 0 4px; }
 
 .aiw-bubble a {
-  color: ${INLINE ? "#60a5fa" : THEME.accent};
+  color: ${THEME.accent};
   text-decoration: underline;
   word-break: break-all;
 }
@@ -727,7 +1288,7 @@ ${(INLINE && IS_IOS) ? `
 
 .aiw-row.ai .aiw-bubble{
   background:${THEME.bubbleAI};
-  color:${THEME.text};
+  color:${THEME.aiText};
   border-color:${THEME.bubbleBorder};
 }
   .aiw-bubble-wrap{
@@ -742,12 +1303,12 @@ ${(INLINE && IS_IOS) ? `
   color:${THEME.time};
 }
 
-/* для сообщений ассистента — время слева под пузырём */
+/* ÃƒÂÃ‚Â´ÃƒÂÃ‚Â»Ãƒâ€˜Ã‚Â Ãƒâ€˜Ã‚ÂÃƒÂÃ‚Â¾ÃƒÂÃ‚Â¾ÃƒÂÃ‚Â±Ãƒâ€˜Ã¢â‚¬Â°ÃƒÂÃ‚ÂµÃƒÂÃ‚Â½ÃƒÂÃ‚Â¸ÃƒÂÃ‚Â¹ ÃƒÂÃ‚Â°Ãƒâ€˜Ã‚ÂÃƒâ€˜Ã‚ÂÃƒÂÃ‚Â¸Ãƒâ€˜Ã‚ÂÃƒâ€˜Ã¢â‚¬Å¡ÃƒÂÃ‚ÂµÃƒÂÃ‚Â½Ãƒâ€˜Ã¢â‚¬Å¡ÃƒÂÃ‚Â° ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â ÃƒÂÃ‚Â²Ãƒâ€˜Ã¢â€šÂ¬ÃƒÂÃ‚ÂµÃƒÂÃ‚Â¼Ãƒâ€˜Ã‚Â Ãƒâ€˜Ã‚ÂÃƒÂÃ‚Â»ÃƒÂÃ‚ÂµÃƒÂÃ‚Â²ÃƒÂÃ‚Â° ÃƒÂÃ‚Â¿ÃƒÂÃ‚Â¾ÃƒÂÃ‚Â´ ÃƒÂÃ‚Â¿Ãƒâ€˜Ã†â€™ÃƒÂÃ‚Â·Ãƒâ€˜Ã¢â‚¬Â¹Ãƒâ€˜Ã¢â€šÂ¬Ãƒâ€˜Ã¢â‚¬ËœÃƒÂÃ‚Â¼ */
 .aiw-row.ai .aiw-bubble-wrap{
   align-items:flex-start;
 }
 
-/* для сообщений пользователя — время справа под пузырём */
+/* ÃƒÂÃ‚Â´ÃƒÂÃ‚Â»Ãƒâ€˜Ã‚Â Ãƒâ€˜Ã‚ÂÃƒÂÃ‚Â¾ÃƒÂÃ‚Â¾ÃƒÂÃ‚Â±Ãƒâ€˜Ã¢â‚¬Â°ÃƒÂÃ‚ÂµÃƒÂÃ‚Â½ÃƒÂÃ‚Â¸ÃƒÂÃ‚Â¹ ÃƒÂÃ‚Â¿ÃƒÂÃ‚Â¾ÃƒÂÃ‚Â»Ãƒâ€˜Ã…â€™ÃƒÂÃ‚Â·ÃƒÂÃ‚Â¾ÃƒÂÃ‚Â²ÃƒÂÃ‚Â°Ãƒâ€˜Ã¢â‚¬Å¡ÃƒÂÃ‚ÂµÃƒÂÃ‚Â»Ãƒâ€˜Ã‚Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â ÃƒÂÃ‚Â²Ãƒâ€˜Ã¢â€šÂ¬ÃƒÂÃ‚ÂµÃƒÂÃ‚Â¼Ãƒâ€˜Ã‚Â Ãƒâ€˜Ã‚ÂÃƒÂÃ‚Â¿Ãƒâ€˜Ã¢â€šÂ¬ÃƒÂÃ‚Â°ÃƒÂÃ‚Â²ÃƒÂÃ‚Â° ÃƒÂÃ‚Â¿ÃƒÂÃ‚Â¾ÃƒÂÃ‚Â´ ÃƒÂÃ‚Â¿Ãƒâ€˜Ã†â€™ÃƒÂÃ‚Â·Ãƒâ€˜Ã¢â‚¬Â¹Ãƒâ€˜Ã¢â€šÂ¬Ãƒâ€˜Ã¢â‚¬ËœÃƒÂÃ‚Â¼ */
 .aiw-row.me .aiw-bubble-wrap{
   align-items:flex-end;
 }
@@ -755,13 +1316,14 @@ ${(INLINE && IS_IOS) ? `
 
 
 /* textarea autosize */
-/* wrapper клипает скролл по скруглению */
+/* wrapper ÃƒÂÃ‚ÂºÃƒÂÃ‚Â»ÃƒÂÃ‚Â¸ÃƒÂÃ‚Â¿ÃƒÂÃ‚Â°ÃƒÂÃ‚ÂµÃƒâ€˜Ã¢â‚¬Å¡ Ãƒâ€˜Ã‚ÂÃƒÂÃ‚ÂºÃƒâ€˜Ã¢â€šÂ¬ÃƒÂÃ‚Â¾ÃƒÂÃ‚Â»ÃƒÂÃ‚Â» ÃƒÂÃ‚Â¿ÃƒÂÃ‚Â¾ Ãƒâ€˜Ã‚ÂÃƒÂÃ‚ÂºÃƒâ€˜Ã¢â€šÂ¬Ãƒâ€˜Ã†â€™ÃƒÂÃ‚Â³ÃƒÂÃ‚Â»ÃƒÂÃ‚ÂµÃƒÂÃ‚Â½ÃƒÂÃ‚Â¸Ãƒâ€˜Ã…Â½ */
 .aiw-input-wrap{
+  position: relative;
   flex: 1 1 auto;
   border-radius: 12px;
-  overflow: hidden;                 /* <-- главное: скролл не "вылазит" */
-  border: 1px solid ${THEME.bubbleBorder};
-  background: ${THEME.panel};
+  overflow: hidden;                 /* <-- ÃƒÂÃ‚Â³ÃƒÂÃ‚Â»ÃƒÂÃ‚Â°ÃƒÂÃ‚Â²ÃƒÂÃ‚Â½ÃƒÂÃ‚Â¾ÃƒÂÃ‚Âµ: Ãƒâ€˜Ã‚ÂÃƒÂÃ‚ÂºÃƒâ€˜Ã¢â€šÂ¬ÃƒÂÃ‚Â¾ÃƒÂÃ‚Â»ÃƒÂÃ‚Â» ÃƒÂÃ‚Â½ÃƒÂÃ‚Âµ "ÃƒÂÃ‚Â²Ãƒâ€˜Ã¢â‚¬Â¹ÃƒÂÃ‚Â»ÃƒÂÃ‚Â°ÃƒÂÃ‚Â·ÃƒÂÃ‚Â¸Ãƒâ€˜Ã¢â‚¬Å¡" */
+  border: 1px solid ${THEME.inputBorder};
+  background: ${THEME.inputBg};
   box-sizing: border-box;
 }
 
@@ -771,35 +1333,35 @@ ${(INLINE && IS_IOS) ? `
   display: block;
 
   resize: none;
-  border: none;                     /* рамка на wrapper */
-  background: transparent;          /* фон на wrapper */
-  color: ${THEME.text};
+  border: none;                     /* Ãƒâ€˜Ã¢â€šÂ¬ÃƒÂÃ‚Â°ÃƒÂÃ‚Â¼ÃƒÂÃ‚ÂºÃƒÂÃ‚Â° ÃƒÂÃ‚Â½ÃƒÂÃ‚Â° wrapper */
+  background: transparent;          /* Ãƒâ€˜Ã¢â‚¬Å¾ÃƒÂÃ‚Â¾ÃƒÂÃ‚Â½ ÃƒÂÃ‚Â½ÃƒÂÃ‚Â° wrapper */
+  color: ${THEME.inputText};
   outline: none;
   box-sizing: border-box;
 
   font-family: ${BASE_FONT_STACK};
   font-size: ${BASE_FONT_SIZE}px;
 
-  /* многострочный режим */
+  /* ÃƒÂÃ‚Â¼ÃƒÂÃ‚Â½ÃƒÂÃ‚Â¾ÃƒÂÃ‚Â³ÃƒÂÃ‚Â¾Ãƒâ€˜Ã‚ÂÃƒâ€˜Ã¢â‚¬Å¡Ãƒâ€˜Ã¢â€šÂ¬ÃƒÂÃ‚Â¾Ãƒâ€˜Ã¢â‚¬Â¡ÃƒÂÃ‚Â½Ãƒâ€˜Ã¢â‚¬Â¹ÃƒÂÃ‚Â¹ Ãƒâ€˜Ã¢â€šÂ¬ÃƒÂÃ‚ÂµÃƒÂÃ‚Â¶ÃƒÂÃ‚Â¸ÃƒÂÃ‚Â¼ */
   line-height: 1.35;
 
-  /* autosize: растём от min до max */
+  /* autosize: Ãƒâ€˜Ã¢â€šÂ¬ÃƒÂÃ‚Â°Ãƒâ€˜Ã‚ÂÃƒâ€˜Ã¢â‚¬Å¡Ãƒâ€˜Ã¢â‚¬ËœÃƒÂÃ‚Â¼ ÃƒÂÃ‚Â¾Ãƒâ€˜Ã¢â‚¬Å¡ min ÃƒÂÃ‚Â´ÃƒÂÃ‚Â¾ max */
   height: auto;
   min-height: var(--aiw-input-min-h);
   max-height: var(--aiw-input-max-h);
 
-  /* паддинги (место под кнопку в float справа) */
+  /* ÃƒÂÃ‚Â¿ÃƒÂÃ‚Â°ÃƒÂÃ‚Â´ÃƒÂÃ‚Â´ÃƒÂÃ‚Â¸ÃƒÂÃ‚Â½ÃƒÂÃ‚Â³ÃƒÂÃ‚Â¸ (ÃƒÂÃ‚Â¼ÃƒÂÃ‚ÂµÃƒâ€˜Ã‚ÂÃƒâ€˜Ã¢â‚¬Å¡ÃƒÂÃ‚Â¾ ÃƒÂÃ‚Â¿ÃƒÂÃ‚Â¾ÃƒÂÃ‚Â´ ÃƒÂÃ‚ÂºÃƒÂÃ‚Â½ÃƒÂÃ‚Â¾ÃƒÂÃ‚Â¿ÃƒÂÃ‚ÂºÃƒâ€˜Ã†â€™ ÃƒÂÃ‚Â² float Ãƒâ€˜Ã‚ÂÃƒÂÃ‚Â¿Ãƒâ€˜Ã¢â€šÂ¬ÃƒÂÃ‚Â°ÃƒÂÃ‚Â²ÃƒÂÃ‚Â°) */
   padding: 10px 52px 10px 16px;
 
-  /* до max — без скролла, после max — включим через JS */
+  /* ÃƒÂÃ‚Â´ÃƒÂÃ‚Â¾ max ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â ÃƒÂÃ‚Â±ÃƒÂÃ‚ÂµÃƒÂÃ‚Â· Ãƒâ€˜Ã‚ÂÃƒÂÃ‚ÂºÃƒâ€˜Ã¢â€šÂ¬ÃƒÂÃ‚Â¾ÃƒÂÃ‚Â»ÃƒÂÃ‚Â»ÃƒÂÃ‚Â°, ÃƒÂÃ‚Â¿ÃƒÂÃ‚Â¾Ãƒâ€˜Ã‚ÂÃƒÂÃ‚Â»ÃƒÂÃ‚Âµ max ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â ÃƒÂÃ‚Â²ÃƒÂÃ‚ÂºÃƒÂÃ‚Â»Ãƒâ€˜Ã…Â½Ãƒâ€˜Ã¢â‚¬Â¡ÃƒÂÃ‚Â¸ÃƒÂÃ‚Â¼ Ãƒâ€˜Ã¢â‚¬Â¡ÃƒÂÃ‚ÂµÃƒâ€˜Ã¢â€šÂ¬ÃƒÂÃ‚ÂµÃƒÂÃ‚Â· JS */
   overflow-y: hidden;
 }
 
 
-/* лимиты по умолчанию (desktop) */
+/* ÃƒÂÃ‚Â»ÃƒÂÃ‚Â¸ÃƒÂÃ‚Â¼ÃƒÂÃ‚Â¸Ãƒâ€˜Ã¢â‚¬Å¡Ãƒâ€˜Ã¢â‚¬Â¹ ÃƒÂÃ‚Â¿ÃƒÂÃ‚Â¾ Ãƒâ€˜Ã†â€™ÃƒÂÃ‚Â¼ÃƒÂÃ‚Â¾ÃƒÂÃ‚Â»Ãƒâ€˜Ã¢â‚¬Â¡ÃƒÂÃ‚Â°ÃƒÂÃ‚Â½ÃƒÂÃ‚Â¸Ãƒâ€˜Ã…Â½ (desktop) */
 .aiw-footer{
-  --aiw-input-min-h: 44px;  /* 1 строка */
-  --aiw-input-max-h: 68px;  /* ~2 строки */
+  --aiw-input-min-h: 44px;  /* 1 Ãƒâ€˜Ã‚ÂÃƒâ€˜Ã¢â‚¬Å¡Ãƒâ€˜Ã¢â€šÂ¬ÃƒÂÃ‚Â¾ÃƒÂÃ‚ÂºÃƒÂÃ‚Â° */
+  --aiw-input-max-h: 68px;  /* ~2 Ãƒâ€˜Ã‚ÂÃƒâ€˜Ã¢â‚¬Å¡Ãƒâ€˜Ã¢â€šÂ¬ÃƒÂÃ‚Â¾ÃƒÂÃ‚ÂºÃƒÂÃ‚Â¸ */
 }
 
 
@@ -814,9 +1376,8 @@ ${(INLINE && IS_IOS) ? `
   border:none;
   border-radius:9999px;
 
-  /* белый круг для FLOAT-режима */
-  background:#ffffff;
-  color:#000000;
+  background:${THEME.sendBg};
+  color:${THEME.accentText};
 
   cursor:pointer;
   display:flex;
@@ -838,6 +1399,213 @@ ${(INLINE && IS_IOS) ? `
   opacity:.6;
   cursor:default;
 }
+
+${!INLINE ? `
+@keyframes aiw-clean-pop {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes aiw-clean-pop-center {
+  from {
+    opacity: 0;
+    transform: translate(-50%, 8px);
+  }
+  to {
+    opacity: 1;
+    transform: translate(-50%, 0);
+  }
+}
+
+.aiw-btn:not(.aiw-btn-pill){
+  border:1px solid ${THEME.border};
+  background:${THEME.bg};
+  color:${THEME.headerText};
+  box-shadow:0 10px 22px rgba(0,0,0,.24);
+}
+
+.aiw-btn.aiw-btn-pill.aiw-btn-closed,
+.aiw-btn.aiw-btn-pill.aiw-btn-open{
+  border-color:var(--aiw-pill-border, ${THEME.border});
+  background:var(--aiw-pill-bg, #ffffff);
+  color:var(--aiw-pill-text, #000000);
+  box-shadow:var(--aiw-pill-shadow, 0 10px 24px rgba(0,0,0,.24));
+  backdrop-filter:none;
+}
+
+.aiw-btn.aiw-btn-pill.aiw-btn-closed .aiw-btn-icon,
+.aiw-btn.aiw-btn-pill.aiw-btn-open .aiw-btn-icon{
+  background:var(--aiw-pill-icon-bg, #000000);
+  color:var(--aiw-pill-icon-text, #ffffff);
+  box-shadow:none;
+}
+
+.aiw-btn.aiw-btn-pill.aiw-btn-closed::after,
+.aiw-btn.aiw-btn-pill.aiw-btn-open::after{
+  background:#000000;
+  box-shadow:0 0 0 0 ${colorWithAlpha(THEME.headerText, 0.28, "rgba(255,255,255,.28)")};
+}
+
+.aiw-panel{
+  width:min(392px, 86vw);
+  height:min(620px, 76vh);
+  max-height:76vh;
+  border-radius:24px;
+  border:1px solid ${THEME.border};
+  background:${THEME.bg};
+  box-shadow:0 20px 56px rgba(0,0,0,.28);
+  animation:aiw-clean-pop .18s ease-out;
+  transform-origin:100% 100%;
+  color:${THEME.text};
+}
+
+.aiw-panel.aiw-panel-center{
+  animation:aiw-clean-pop-center .18s ease-out;
+  transform-origin:50% 100%;
+}
+
+.aiw-header{
+  padding:14px 16px;
+  background:${THEME.headerBg};
+  border-bottom:1px solid ${THEME.border};
+  color:${THEME.headerText};
+}
+
+.aiw-header-title-text{
+  font-weight:650;
+  letter-spacing:.01em;
+  color:${THEME.headerText};
+}
+
+.aiw-header-logo{
+  width:28px;
+  height:28px;
+  flex:0 0 28px;
+  background:${colorWithAlpha(THEME.headerText, 0.12, "rgba(255,255,255,.12)")};
+  border:1px solid ${THEME.border};
+}
+
+.aiw-header button{
+  width:32px;
+  height:32px;
+  border-radius:8px;
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  color:${THEME.headerText};
+}
+
+.aiw-close-btn{
+  padding:0;
+}
+
+.aiw-close-btn svg{
+  width:16px;
+  height:16px;
+  display:block;
+  stroke:currentColor;
+  fill:none;
+  stroke-width:1.8;
+  stroke-linecap:round;
+  stroke-linejoin:round;
+}
+
+.aiw-header button:hover{
+  background:${colorWithAlpha(THEME.border, 0.2, "rgba(255,255,255,.12)")};
+}
+
+.aiw-header .aiw-fs-toggle{
+  color:${THEME.headerText} !important;
+}
+
+.aiw-header .aiw-fs-toggle:hover{
+  color:${THEME.headerText} !important;
+  background:${colorWithAlpha(THEME.border, 0.22, "rgba(255,255,255,.14)")} !important;
+  box-shadow:none !important;
+}
+
+.aiw-header .aiw-fs-toggle:active{
+  color:${THEME.headerText} !important;
+  background:${colorWithAlpha(THEME.border, 0.3, "rgba(255,255,255,.2)")} !important;
+}
+
+.aiw-beta-badge{
+  border-color:${THEME.border};
+  background:${colorWithAlpha(THEME.headerText, 0.08, "rgba(255,255,255,.08)")};
+  color:${colorWithAlpha(THEME.headerText, 0.8, "rgba(255,255,255,.8)")};
+}
+
+.aiw-body{
+  padding:14px 14px 10px;
+  background:${THEME.bg};
+  color:${THEME.text};
+}
+
+.aiw-ava{
+  display:none;
+}
+
+.aiw-time{
+  display:none;
+}
+
+.aiw-bubble{
+  border-radius:16px;
+  box-shadow:none;
+}
+
+.aiw-row.ai .aiw-bubble{
+  background:${THEME.bubbleAI};
+  color:${THEME.aiText};
+  border-color:${THEME.bubbleBorder};
+}
+
+.aiw-row.me .aiw-bubble{
+  background:${THEME.bubbleUser};
+  color:${THEME.userText};
+  border-color:transparent;
+}
+
+.aiw-footer{
+  padding:12px 14px;
+  background:${THEME.bg};
+  border-top:none;
+}
+
+.aiw-footer-meta{
+  padding:4px 14px 10px;
+}
+
+.aiw-input-wrap{
+  border-radius:9999px;
+  border-color:${THEME.inputBorder};
+  background:${THEME.inputBg};
+  box-shadow:none;
+}
+
+.aiw-input{
+  padding:12px 60px 12px 16px;
+  color:${THEME.inputText};
+}
+
+.aiw-input::placeholder{
+  color:${colorWithAlpha(THEME.inputText, 0.75, "rgba(249,250,251,.75)")};
+}
+
+.aiw-send{
+  right:12px;
+  width:40px;
+  height:40px;
+  background:${THEME.sendBg};
+  box-shadow:none;
+}
+` : ""}
 
 
  ${FILL_CONTAINER ? `
@@ -871,7 +1639,7 @@ ${(INLINE && IS_IOS) ? `
  .aiw-footer { flex: 0 0 auto; }
  ` : ""}
 
- /* INLINE overrides — стиль как на макете, но цвета из THEME */
+ /* INLINE overrides ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â Ãƒâ€˜Ã‚ÂÃƒâ€˜Ã¢â‚¬Å¡ÃƒÂÃ‚Â¸ÃƒÂÃ‚Â»Ãƒâ€˜Ã…â€™ ÃƒÂÃ‚ÂºÃƒÂÃ‚Â°ÃƒÂÃ‚Âº ÃƒÂÃ‚Â½ÃƒÂÃ‚Â° ÃƒÂÃ‚Â¼ÃƒÂÃ‚Â°ÃƒÂÃ‚ÂºÃƒÂÃ‚ÂµÃƒâ€˜Ã¢â‚¬Å¡ÃƒÂÃ‚Âµ, ÃƒÂÃ‚Â½ÃƒÂÃ‚Â¾ Ãƒâ€˜Ã¢â‚¬Â ÃƒÂÃ‚Â²ÃƒÂÃ‚ÂµÃƒâ€˜Ã¢â‚¬Å¡ÃƒÂÃ‚Â° ÃƒÂÃ‚Â¸ÃƒÂÃ‚Â· THEME */
 ${INLINE ? `
   .aiw-wrap {
     position: relative !important;
@@ -882,7 +1650,7 @@ ${INLINE ? `
     border-radius: 0 !important;
     box-shadow: none !important;
 
-    /* чтобы не было «второго» прямоугольника вокруг панели */
+    /* Ãƒâ€˜Ã¢â‚¬Â¡Ãƒâ€˜Ã¢â‚¬Å¡ÃƒÂÃ‚Â¾ÃƒÂÃ‚Â±Ãƒâ€˜Ã¢â‚¬Â¹ ÃƒÂÃ‚Â½ÃƒÂÃ‚Âµ ÃƒÂÃ‚Â±Ãƒâ€˜Ã¢â‚¬Â¹ÃƒÂÃ‚Â»ÃƒÂÃ‚Â¾ Ãƒâ€šÃ‚Â«ÃƒÂÃ‚Â²Ãƒâ€˜Ã¢â‚¬Å¡ÃƒÂÃ‚Â¾Ãƒâ€˜Ã¢â€šÂ¬ÃƒÂÃ‚Â¾ÃƒÂÃ‚Â³ÃƒÂÃ‚Â¾Ãƒâ€šÃ‚Â» ÃƒÂÃ‚Â¿Ãƒâ€˜Ã¢â€šÂ¬Ãƒâ€˜Ã‚ÂÃƒÂÃ‚Â¼ÃƒÂÃ‚Â¾Ãƒâ€˜Ã†â€™ÃƒÂÃ‚Â³ÃƒÂÃ‚Â¾ÃƒÂÃ‚Â»Ãƒâ€˜Ã…â€™ÃƒÂÃ‚Â½ÃƒÂÃ‚Â¸ÃƒÂÃ‚ÂºÃƒÂÃ‚Â° ÃƒÂÃ‚Â²ÃƒÂÃ‚Â¾ÃƒÂÃ‚ÂºÃƒâ€˜Ã¢â€šÂ¬Ãƒâ€˜Ã†â€™ÃƒÂÃ‚Â³ ÃƒÂÃ‚Â¿ÃƒÂÃ‚Â°ÃƒÂÃ‚Â½ÃƒÂÃ‚ÂµÃƒÂÃ‚Â»ÃƒÂÃ‚Â¸ */
     background: transparent !important;
 
     display:flex;
@@ -910,10 +1678,10 @@ ${INLINE ? `
 
 
 
-  /* HEADER + полоска под тайтлом = borderColor */
+  /* HEADER + ÃƒÂÃ‚Â¿ÃƒÂÃ‚Â¾ÃƒÂÃ‚Â»ÃƒÂÃ‚Â¾Ãƒâ€˜Ã‚ÂÃƒÂÃ‚ÂºÃƒÂÃ‚Â° ÃƒÂÃ‚Â¿ÃƒÂÃ‚Â¾ÃƒÂÃ‚Â´ Ãƒâ€˜Ã¢â‚¬Å¡ÃƒÂÃ‚Â°ÃƒÂÃ‚Â¹Ãƒâ€˜Ã¢â‚¬Å¡ÃƒÂÃ‚Â»ÃƒÂÃ‚Â¾ÃƒÂÃ‚Â¼ = borderColor */
   .aiw-header {
-    background: ${THEME.bg} !important;
-    color: ${THEME.accentText} !important;
+    background: ${THEME.headerBg} !important;
+    color: ${THEME.headerText} !important;
     border-bottom: 1px solid ${THEME.border};
     padding: 12px 24px;
   }
@@ -922,12 +1690,12 @@ ${INLINE ? `
     gap: 10px;
   }
 
-  /* ЧАТ-ОБЛАСТЬ */
+  /* ÃƒÂÃ‚Â§ÃƒÂÃ‚ÂÃƒÂÃ‚Â¢-ÃƒÂÃ…Â¾ÃƒÂÃ¢â‚¬ËœÃƒÂÃ¢â‚¬ÂºÃƒÂÃ‚ÂÃƒÂÃ‚Â¡ÃƒÂÃ‚Â¢ÃƒÂÃ‚Â¬ */
   .aiw-body {
     padding: 32px 40px 16px;
   }
 
-  /* без аватарок и времени */
+  /* ÃƒÂÃ‚Â±ÃƒÂÃ‚ÂµÃƒÂÃ‚Â· ÃƒÂÃ‚Â°ÃƒÂÃ‚Â²ÃƒÂÃ‚Â°Ãƒâ€˜Ã¢â‚¬Å¡ÃƒÂÃ‚Â°Ãƒâ€˜Ã¢â€šÂ¬ÃƒÂÃ‚Â¾ÃƒÂÃ‚Âº ÃƒÂÃ‚Â¸ ÃƒÂÃ‚Â²Ãƒâ€˜Ã¢â€šÂ¬ÃƒÂÃ‚ÂµÃƒÂÃ‚Â¼ÃƒÂÃ‚ÂµÃƒÂÃ‚Â½ÃƒÂÃ‚Â¸ */
   .aiw-ava {
     display: none !important;
   }
@@ -944,26 +1712,26 @@ ${INLINE ? `
     max-width: 75%;
   }
 
-  /* ассистент — тёмный пузырь слева */
+  /* ÃƒÂÃ‚Â°Ãƒâ€˜Ã‚ÂÃƒâ€˜Ã‚ÂÃƒÂÃ‚Â¸Ãƒâ€˜Ã‚ÂÃƒâ€˜Ã¢â‚¬Å¡ÃƒÂÃ‚ÂµÃƒÂÃ‚Â½Ãƒâ€˜Ã¢â‚¬Å¡ ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â Ãƒâ€˜Ã¢â‚¬Å¡Ãƒâ€˜Ã¢â‚¬ËœÃƒÂÃ‚Â¼ÃƒÂÃ‚Â½Ãƒâ€˜Ã¢â‚¬Â¹ÃƒÂÃ‚Â¹ ÃƒÂÃ‚Â¿Ãƒâ€˜Ã†â€™ÃƒÂÃ‚Â·Ãƒâ€˜Ã¢â‚¬Â¹Ãƒâ€˜Ã¢â€šÂ¬Ãƒâ€˜Ã…â€™ Ãƒâ€˜Ã‚ÂÃƒÂÃ‚Â»ÃƒÂÃ‚ÂµÃƒÂÃ‚Â²ÃƒÂÃ‚Â° */
   .aiw-row.ai .aiw-bubble {
     background: ${THEME.bubbleAI};
-    color: ${THEME.text};
+    color: ${THEME.aiText};
     border-radius: 16px;
     border-color: ${THEME.bubbleBorder};
   }
 
-  /* пользователь — светлый пузырь справа */
+  /* ÃƒÂÃ‚Â¿ÃƒÂÃ‚Â¾ÃƒÂÃ‚Â»Ãƒâ€˜Ã…â€™ÃƒÂÃ‚Â·ÃƒÂÃ‚Â¾ÃƒÂÃ‚Â²ÃƒÂÃ‚Â°Ãƒâ€˜Ã¢â‚¬Å¡ÃƒÂÃ‚ÂµÃƒÂÃ‚Â»Ãƒâ€˜Ã…â€™ ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â Ãƒâ€˜Ã‚ÂÃƒÂÃ‚Â²ÃƒÂÃ‚ÂµÃƒâ€˜Ã¢â‚¬Å¡ÃƒÂÃ‚Â»Ãƒâ€˜Ã¢â‚¬Â¹ÃƒÂÃ‚Â¹ ÃƒÂÃ‚Â¿Ãƒâ€˜Ã†â€™ÃƒÂÃ‚Â·Ãƒâ€˜Ã¢â‚¬Â¹Ãƒâ€˜Ã¢â€šÂ¬Ãƒâ€˜Ã…â€™ Ãƒâ€˜Ã‚ÂÃƒÂÃ‚Â¿Ãƒâ€˜Ã¢â€šÂ¬ÃƒÂÃ‚Â°ÃƒÂÃ‚Â²ÃƒÂÃ‚Â° */
   .aiw-row.me {
     justify-content:flex-end;
   }
   .aiw-row.me .aiw-bubble {
-    background: #ffffff;
-    color: #111827;
+    background: ${THEME.bubbleUser};
+    color: ${THEME.userText};
     border-radius: 16px;
     border-color: transparent;
   }
 
-  /* FOOTER: без белой полоски сверху */
+  /* FOOTER: ÃƒÂÃ‚Â±ÃƒÂÃ‚ÂµÃƒÂÃ‚Â· ÃƒÂÃ‚Â±ÃƒÂÃ‚ÂµÃƒÂÃ‚Â»ÃƒÂÃ‚Â¾ÃƒÂÃ‚Â¹ ÃƒÂÃ‚Â¿ÃƒÂÃ‚Â¾ÃƒÂÃ‚Â»ÃƒÂÃ‚Â¾Ãƒâ€˜Ã‚ÂÃƒÂÃ‚ÂºÃƒÂÃ‚Â¸ Ãƒâ€˜Ã‚ÂÃƒÂÃ‚Â²ÃƒÂÃ‚ÂµÃƒâ€˜Ã¢â€šÂ¬Ãƒâ€˜Ã¢â‚¬Â¦Ãƒâ€˜Ã†â€™ */
 .aiw-footer{
   position: relative;
   padding: 20px 32px;
@@ -979,27 +1747,27 @@ ${INLINE ? `
     display:none !important;
   }
 
-/* инпут (INLINE): рамка и фон на wrapper */
+/* ÃƒÂÃ‚Â¸ÃƒÂÃ‚Â½ÃƒÂÃ‚Â¿Ãƒâ€˜Ã†â€™Ãƒâ€˜Ã¢â‚¬Å¡ (INLINE): Ãƒâ€˜Ã¢â€šÂ¬ÃƒÂÃ‚Â°ÃƒÂÃ‚Â¼ÃƒÂÃ‚ÂºÃƒÂÃ‚Â° ÃƒÂÃ‚Â¸ Ãƒâ€˜Ã¢â‚¬Å¾ÃƒÂÃ‚Â¾ÃƒÂÃ‚Â½ ÃƒÂÃ‚Â½ÃƒÂÃ‚Â° wrapper */
 .aiw-input-wrap{
   position: relative;
   flex: 1 1 auto;
   border-radius: 9999px;
-  background: rgba(255,255,255,0.04);
-  border: 1px solid ${THEME.border};
+  background: ${THEME.inputBg};
+  border: 1px solid ${THEME.inputBorder};
   overflow: hidden;
 }
 
-/* textarea внутри: просто паддинги */
+/* textarea ÃƒÂÃ‚Â²ÃƒÂÃ‚Â½Ãƒâ€˜Ã†â€™Ãƒâ€˜Ã¢â‚¬Å¡Ãƒâ€˜Ã¢â€šÂ¬ÃƒÂÃ‚Â¸: ÃƒÂÃ‚Â¿Ãƒâ€˜Ã¢â€šÂ¬ÃƒÂÃ‚Â¾Ãƒâ€˜Ã‚ÂÃƒâ€˜Ã¢â‚¬Å¡ÃƒÂÃ‚Â¾ ÃƒÂÃ‚Â¿ÃƒÂÃ‚Â°ÃƒÂÃ‚Â´ÃƒÂÃ‚Â´ÃƒÂÃ‚Â¸ÃƒÂÃ‚Â½ÃƒÂÃ‚Â³ÃƒÂÃ‚Â¸ */
 
 .aiw-input{
-  padding: 12px 60px 12px 16px; /* справа место под кнопку */
+  padding: 12px 60px 12px 16px; /* Ãƒâ€˜Ã‚ÂÃƒÂÃ‚Â¿Ãƒâ€˜Ã¢â€šÂ¬ÃƒÂÃ‚Â°ÃƒÂÃ‚Â²ÃƒÂÃ‚Â° ÃƒÂÃ‚Â¼ÃƒÂÃ‚ÂµÃƒâ€˜Ã‚ÂÃƒâ€˜Ã¢â‚¬Å¡ÃƒÂÃ‚Â¾ ÃƒÂÃ‚Â¿ÃƒÂÃ‚Â¾ÃƒÂÃ‚Â´ ÃƒÂÃ‚ÂºÃƒÂÃ‚Â½ÃƒÂÃ‚Â¾ÃƒÂÃ‚Â¿ÃƒÂÃ‚ÂºÃƒâ€˜Ã†â€™ */
 }
 
   .aiw-input::placeholder {
     color: rgba(249,250,251,0.75);
   }
 
-  /* кнопка: белый круг с чёрной стрелкой */
+  /* ÃƒÂÃ‚ÂºÃƒÂÃ‚Â½ÃƒÂÃ‚Â¾ÃƒÂÃ‚Â¿ÃƒÂÃ‚ÂºÃƒÂÃ‚Â°: ÃƒÂÃ‚Â±ÃƒÂÃ‚ÂµÃƒÂÃ‚Â»Ãƒâ€˜Ã¢â‚¬Â¹ÃƒÂÃ‚Â¹ ÃƒÂÃ‚ÂºÃƒâ€˜Ã¢â€šÂ¬Ãƒâ€˜Ã†â€™ÃƒÂÃ‚Â³ Ãƒâ€˜Ã‚Â Ãƒâ€˜Ã¢â‚¬Â¡Ãƒâ€˜Ã¢â‚¬ËœÃƒâ€˜Ã¢â€šÂ¬ÃƒÂÃ‚Â½ÃƒÂÃ‚Â¾ÃƒÂÃ‚Â¹ Ãƒâ€˜Ã‚ÂÃƒâ€˜Ã¢â‚¬Å¡Ãƒâ€˜Ã¢â€šÂ¬ÃƒÂÃ‚ÂµÃƒÂÃ‚Â»ÃƒÂÃ‚ÂºÃƒÂÃ‚Â¾ÃƒÂÃ‚Â¹ */
 .aiw-send{
   position: absolute !important;
   right: 12px !important;
@@ -1010,7 +1778,7 @@ ${INLINE ? `
   height: 40px !important;
   border-radius: 9999px !important;
 
-  background: ${THEME.border} !important;
+  background: ${THEME.sendBg} !important;
   box-shadow: none !important;
   padding: 0 !important;
 }
@@ -1021,15 +1789,19 @@ ${INLINE ? `
 }
 
 ` : ""}
-/* --- RESPONSIVE (работает и в float, и в inline) --- */
+/* --- RESPONSIVE (Ãƒâ€˜Ã¢â€šÂ¬ÃƒÂÃ‚Â°ÃƒÂÃ‚Â±ÃƒÂÃ‚Â¾Ãƒâ€˜Ã¢â‚¬Å¡ÃƒÂÃ‚Â°ÃƒÂÃ‚ÂµÃƒâ€˜Ã¢â‚¬Å¡ ÃƒÂÃ‚Â¸ ÃƒÂÃ‚Â² float, ÃƒÂÃ‚Â¸ ÃƒÂÃ‚Â² inline) --- */
 @media (max-width: 480px) {
  .aiw-body { font-size: 14px !important; }
   .aiw-header { font-size: 18px !important; }
 
-  .aiw-footer { --aiw-input-min-h: 44px; --aiw-input-max-h: 64px; } /* ~2 строки */
+  .aiw-footer { --aiw-input-min-h: 44px; --aiw-input-max-h: 64px; } /* ~2 Ãƒâ€˜Ã‚ÂÃƒâ€˜Ã¢â‚¬Å¡Ãƒâ€˜Ã¢â€šÂ¬ÃƒÂÃ‚Â¾ÃƒÂÃ‚ÂºÃƒÂÃ‚Â¸ */
   .aiw-send-icon { width:18px; height:18px; }
 
-  .aiw-btn { width:48px; height:48px; }
+  .aiw-btn:not(.aiw-btn-pill) { width:48px; height:48px; }
+  .aiw-btn.aiw-btn-pill { width:min(var(--aiw-pill-width, 420px), 94vw); }
+  .aiw-btn.aiw-btn-pill .aiw-btn-label { font-size:17px; }
+  .aiw-btn.aiw-btn-pill.aiw-btn-closed,
+  .aiw-btn.aiw-btn-pill.aiw-btn-open { width:min(var(--aiw-pill-width, 268px), 94vw); }
   .aiw-panel { max-width: 96vw; }
 }
 
@@ -1037,10 +1809,11 @@ ${INLINE ? `
   .aiw-body { font-size: 15px !important; }
   .aiw-header { font-size: 19px !important; }
 
-  .aiw-footer { --aiw-input-min-h: 46px; --aiw-input-max-h: 68px; } /* ~2 строки */
+  .aiw-footer { --aiw-input-min-h: 46px; --aiw-input-max-h: 68px; } /* ~2 Ãƒâ€˜Ã‚ÂÃƒâ€˜Ã¢â‚¬Å¡Ãƒâ€˜Ã¢â€šÂ¬ÃƒÂÃ‚Â¾ÃƒÂÃ‚ÂºÃƒÂÃ‚Â¸ */
   .aiw-send-icon { width:20px; height:20px; }
 
-  .aiw-btn { width:52px; height:52px; }
+  .aiw-btn:not(.aiw-btn-pill) { width:52px; height:52px; }
+  .aiw-btn.aiw-btn-pill .aiw-btn-label { font-size:17px; }
 }
 
 `;
@@ -1069,9 +1842,9 @@ if (INLINE && FIT_MODE === "content") {
 const wrap = document.createElement("div");
 wrap.className = "aiw-wrap";
 
-// ▼ NEW: позиционирование зависит от режима
+// ÃƒÂ¢Ã¢â‚¬â€œÃ‚Â¼ NEW: ÃƒÂÃ‚Â¿ÃƒÂÃ‚Â¾ÃƒÂÃ‚Â·ÃƒÂÃ‚Â¸Ãƒâ€˜Ã¢â‚¬Â ÃƒÂÃ‚Â¸ÃƒÂÃ‚Â¾ÃƒÂÃ‚Â½ÃƒÂÃ‚Â¸Ãƒâ€˜Ã¢â€šÂ¬ÃƒÂÃ‚Â¾ÃƒÂÃ‚Â²ÃƒÂÃ‚Â°ÃƒÂÃ‚Â½ÃƒÂÃ‚Â¸ÃƒÂÃ‚Âµ ÃƒÂÃ‚Â·ÃƒÂÃ‚Â°ÃƒÂÃ‚Â²ÃƒÂÃ‚Â¸Ãƒâ€˜Ã‚ÂÃƒÂÃ‚Â¸Ãƒâ€˜Ã¢â‚¬Å¡ ÃƒÂÃ‚Â¾Ãƒâ€˜Ã¢â‚¬Å¡ Ãƒâ€˜Ã¢â€šÂ¬ÃƒÂÃ‚ÂµÃƒÂÃ‚Â¶ÃƒÂÃ‚Â¸ÃƒÂÃ‚Â¼ÃƒÂÃ‚Â°
 if (INLINE) {
-  // внутри iframe/inline — это обычный блочный контейнер
+  // ÃƒÂÃ‚Â²ÃƒÂÃ‚Â½Ãƒâ€˜Ã†â€™Ãƒâ€˜Ã¢â‚¬Å¡Ãƒâ€˜Ã¢â€šÂ¬ÃƒÂÃ‚Â¸ iframe/inline ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â Ãƒâ€˜Ã‚ÂÃƒâ€˜Ã¢â‚¬Å¡ÃƒÂÃ‚Â¾ ÃƒÂÃ‚Â¾ÃƒÂÃ‚Â±Ãƒâ€˜Ã¢â‚¬Â¹Ãƒâ€˜Ã¢â‚¬Â¡ÃƒÂÃ‚Â½Ãƒâ€˜Ã¢â‚¬Â¹ÃƒÂÃ‚Â¹ ÃƒÂÃ‚Â±ÃƒÂÃ‚Â»ÃƒÂÃ‚Â¾Ãƒâ€˜Ã¢â‚¬Â¡ÃƒÂÃ‚Â½Ãƒâ€˜Ã¢â‚¬Â¹ÃƒÂÃ‚Â¹ ÃƒÂÃ‚ÂºÃƒÂÃ‚Â¾ÃƒÂÃ‚Â½Ãƒâ€˜Ã¢â‚¬Å¡ÃƒÂÃ‚ÂµÃƒÂÃ‚Â¹ÃƒÂÃ‚Â½ÃƒÂÃ‚ÂµÃƒâ€˜Ã¢â€šÂ¬
   wrap.style.position = "relative";
   wrap.style.bottom   = "auto";
   wrap.style.right    = "auto";
@@ -1086,19 +1859,640 @@ if (INLINE) {
 } else {
   wrap.style.position = "fixed";
   wrap.style.bottom = "20px";
-  wrap.style[POSITION === "br" ? "right" : "left"] = "20px";
+  if (POSITION === "center") {
+    wrap.style.left = "50%";
+    wrap.style.right = "auto";
+    wrap.style.transform = "translateX(-50%)";
+  } else {
+    wrap.style.transform = "";
+    wrap.style.left = POSITION === "bl" ? "20px" : "auto";
+    wrap.style.right = POSITION === "br" ? "20px" : "auto";
+  }
 }
 
 shadow.appendChild(wrap);
 
- const btn = document.createElement("button");
+const btn = document.createElement("button");
 btn.className = "aiw-btn";
-btn.textContent = "AI";
+btn.type = "button";
+btn.setAttribute("aria-haspopup", "dialog");
+btn.setAttribute("aria-expanded", "false");
+
+const BASE_FLOAT_LAUNCHER_STATE = {
+  variant: FLOAT_LAUNCHER.variant,
+  iconText: FLOAT_LAUNCHER.iconText || "AI",
+  text: FLOAT_LAUNCHER.text || "",
+  hideLabelWhenEmpty: !!FLOAT_LAUNCHER.hideLabelWhenEmpty,
+  widthPx: clamp(toNum(FLOAT_LAUNCHER.widthPx, 420), 160, 900),
+  heightPx: clamp(toNum(FLOAT_LAUNCHER.heightPx, 56), 40, 120),
+  bgColor: toText(FLOAT_LAUNCHER.bgColor || "").trim(),
+  textColor: toText(FLOAT_LAUNCHER.textColor || "").trim(),
+  iconBgColor: toText(FLOAT_LAUNCHER.iconBgColor || "").trim(),
+  iconTextColor: toText(FLOAT_LAUNCHER.iconTextColor || "").trim(),
+  borderColor: toText(FLOAT_LAUNCHER.borderColor || "").trim(),
+  shadow: toText(FLOAT_LAUNCHER.shadow || "").trim()
+};
+const DYNAMIC_FLOAT_LAUNCHER = FLOAT_LAUNCHER.dynamic || { enabled: false, resetOnNoMatch: true, rules: [] };
+const dynamicLauncherStats = {};
+const dynamicLauncherRuleById = {};
+for (let i = 0; i < DYNAMIC_FLOAT_LAUNCHER.rules.length; i += 1) {
+  const rule = DYNAMIC_FLOAT_LAUNCHER.rules[i];
+  if (!rule || !rule.id) continue;
+  dynamicLauncherRuleById[rule.id] = rule;
+}
+let currentFloatLauncherState = { ...BASE_FLOAT_LAUNCHER_STATE };
+let activeDynamicLauncherRuleId = "";
+let dynamicLauncherSubscribed = false;
+const dynamicLauncherContext = {
+  section: "",
+  tab: "",
+  scrollDepth: 0,
+  totalVisibleMs: 0,
+  pagePath: window.location.pathname || "/"
+};
+let pillLabelFitRaf = 0;
+let pillLabelFitTimer = 0;
+let pillCompactFitRaf = 0;
+let pillLabelHideTimer = 0;
+let pillCloseCompactTimer = 0;
+let pillLabelExitSeq = 0;
+
+function animatePillLabel(labelEl, durationMs) {
+  if (!labelEl || typeof labelEl.animate !== "function") return;
+  try {
+    // Stop previous label animations so show/hide animations don't fight.
+    if (typeof labelEl.getAnimations === "function") {
+      labelEl.getAnimations().forEach((a) => a.cancel());
+    }
+    labelEl.animate(
+      [
+        { opacity: 0.72, transform: "translateY(2px)" },
+        { opacity: 1, transform: "translateY(0)" }
+      ],
+      {
+        duration: Math.max(80, Number(durationMs) || 220),
+        easing: "cubic-bezier(0.2, 0.75, 0.2, 1)"
+      }
+    );
+  } catch {}
+}
+
+function animatePillLabelOut(labelEl, durationMs, onDone) {
+  const dur = Math.max(80, Number(durationMs) || 220);
+  let settled = false;
+  const done = () => {
+    if (settled) return;
+    settled = true;
+    if (typeof onDone === "function") onDone();
+  };
+  if (!labelEl) {
+    done();
+    return;
+  }
+  try {
+    if (typeof labelEl.getAnimations === "function") {
+      labelEl.getAnimations().forEach((a) => a.cancel());
+    }
+    if (typeof labelEl.animate === "function") {
+      const anim = labelEl.animate(
+        [
+          { opacity: 1, transform: "translateY(0)" },
+          { opacity: 0.72, transform: "translateY(2px)" }
+        ],
+        {
+          duration: dur,
+          easing: "cubic-bezier(0.2, 0.75, 0.2, 1)",
+          fill: "forwards"
+        }
+      );
+      anim.addEventListener("finish", done, { once: true });
+      anim.addEventListener("cancel", done, { once: true });
+      setTimeout(done, dur + 60);
+      return;
+    }
+  } catch {}
+  setTimeout(done, dur);
+}
+
+function ensurePillButtonChildren(iconEl, labelEl) {
+  if (!btn) return;
+  const nodes = btn.childNodes;
+  if (nodes.length === 2 && nodes[0] === iconEl && nodes[1] === labelEl) return;
+  btn.replaceChildren(iconEl, labelEl);
+}
+
+function fitPillLabelToWidth() {
+  if (INLINE) return;
+  if (!btn || !btn.classList.contains("aiw-btn-pill")) return;
+
+  const label = btn.querySelector(".aiw-btn-label");
+  const icon = btn.querySelector(".aiw-btn-icon");
+  if (!label || !icon) return;
+
+  const btnRect = btn.getBoundingClientRect();
+  if (!btnRect || btnRect.width <= 0) return;
+
+  const cs = getComputedStyle(btn);
+  const padLeft = parseFloat(cs.paddingLeft) || 0;
+  const padRight = parseFloat(cs.paddingRight) || 0;
+  const gap = parseFloat(cs.columnGap || cs.gap) || 0;
+  const iconRect = icon.getBoundingClientRect();
+  let available = Math.max(48, btnRect.width - padLeft - padRight - gap - iconRect.width);
+
+  label.style.maxWidth = `${Math.floor(available)}px`;
+
+  const controlHeight = Math.max(40, Number(currentFloatLauncherState.heightPx) || 56);
+  const minFont = Math.max(12, Math.min(15, Math.round(controlHeight * 0.24)));
+  const preferredFont = Math.max(minFont, Math.min(24, Math.round(controlHeight * 0.42)));
+
+  let fontSize = preferredFont;
+  label.style.fontSize = `${fontSize}px`;
+
+  let guard = 0;
+  while (label.scrollWidth > available && fontSize > minFont && guard < 40) {
+    fontSize -= 1;
+    label.style.fontSize = `${fontSize}px`;
+    guard += 1;
+  }
+
+  const canGrowForText = btn.classList.contains("aiw-btn-open")
+    || (btn.classList.contains("aiw-btn-closed") && !!toText(label.textContent).trim());
+
+  if (label.scrollWidth > available && canGrowForText) {
+    const viewportWidth = Math.max(
+      0,
+      toNum(window.visualViewport && window.visualViewport.width, 0),
+      toNum(window.innerWidth, 0),
+      toNum(document.documentElement && document.documentElement.clientWidth, 0)
+    );
+    const maxBtnWidth = Math.floor(Math.max(260, viewportWidth * 0.94));
+    const baseMinWidth = btn.classList.contains("aiw-btn-closed")
+      ? Math.max(268, toNum(currentFloatLauncherState.widthPx, 268))
+      : toNum(currentFloatLauncherState.widthPx, 420);
+    const currentMinWidth = clamp(Math.round(baseMinWidth), 160, 900);
+    const neededWidth = Math.ceil(label.scrollWidth + padLeft + padRight + gap + iconRect.width + 8);
+    const expandedWidth = Math.min(maxBtnWidth, Math.max(currentMinWidth, neededWidth));
+
+    if (expandedWidth > btnRect.width + 2) {
+      btn.style.setProperty("--aiw-pill-width", `${expandedWidth}px`);
+      available = Math.max(48, expandedWidth - padLeft - padRight - gap - iconRect.width);
+      label.style.maxWidth = `${Math.floor(available)}px`;
+      guard = 0;
+      while (label.scrollWidth > available && fontSize > minFont && guard < 40) {
+        fontSize -= 1;
+        label.style.fontSize = `${fontSize}px`;
+        guard += 1;
+      }
+    }
+  }
+}
+
+function schedulePillLabelFit(transitionMs) {
+  if (pillLabelFitRaf) {
+    try { cancelAnimationFrame(pillLabelFitRaf); } catch {}
+  }
+  if (pillLabelFitTimer) {
+    try { clearTimeout(pillLabelFitTimer); } catch {}
+    pillLabelFitTimer = 0;
+  }
+  pillLabelFitRaf = requestAnimationFrame(() => {
+    pillLabelFitRaf = 0;
+    fitPillLabelToWidth();
+  });
+  const settleDelay = Math.max(0, Number(transitionMs) || 0);
+  if (settleDelay > 0) {
+    pillLabelFitTimer = setTimeout(() => {
+      pillLabelFitTimer = 0;
+      fitPillLabelToWidth();
+    }, settleDelay + 40);
+  }
+}
+
+function getCompactPillWidth(iconEl, heightPx, iconText) {
+  let iconWidth = 0;
+  try {
+    if (iconEl) {
+      if (Number.isFinite(iconEl.scrollWidth) && iconEl.scrollWidth > 0) {
+        iconWidth = Math.max(iconWidth, iconEl.scrollWidth);
+      }
+      if (typeof iconEl.getBoundingClientRect === "function") {
+        const rect = iconEl.getBoundingClientRect();
+        if (rect && Number.isFinite(rect.width) && rect.width > 0) {
+          iconWidth = Math.max(iconWidth, rect.width);
+        }
+      }
+    }
+  } catch {}
+  if (iconWidth <= 0) {
+    const safeText = toText(iconText || "AI").trim() || "AI";
+    iconWidth = Math.max(46, safeText.length * 9 + 14);
+  } else {
+    iconWidth = Math.max(iconWidth, 46);
+  }
+  const sidePadding = 14;
+  const controlHeight = Math.max(40, Number(heightPx) || 56);
+  return Math.max(Math.ceil(iconWidth + sidePadding * 2), controlHeight);
+}
+
+function scheduleCompactPillFit(iconEl, heightPx, iconText) {
+  if (pillCompactFitRaf) {
+    try { cancelAnimationFrame(pillCompactFitRaf); } catch {}
+  }
+  pillCompactFitRaf = requestAnimationFrame(() => {
+    pillCompactFitRaf = 0;
+    if (!btn || !btn.classList.contains("aiw-btn-pill") || !btn.classList.contains("aiw-btn-pill-compact")) return;
+    btn.style.setProperty("--aiw-pill-width", `${getCompactPillWidth(iconEl, heightPx, iconText)}px`);
+  });
+}
+
+function hasOwn(obj, key) {
+  return !!obj && Object.prototype.hasOwnProperty.call(obj, key);
+}
+
+function buildFloatLauncherState(baseState, patch) {
+  const next = { ...(baseState || BASE_FLOAT_LAUNCHER_STATE) };
+  if (!patch || typeof patch !== "object") return next;
+
+  if (hasOwn(patch, "variant")) {
+    const variantRaw = normToken(patch.variant);
+    if (variantRaw === "pill" || variantRaw === "circle") next.variant = variantRaw;
+  }
+  if (hasOwn(patch, "iconText")) {
+    const v = toText(patch.iconText).trim();
+    if (v) next.iconText = v;
+  }
+  if (hasOwn(patch, "text")) {
+    const v = toText(patch.text).trim();
+    if (v) next.text = v;
+  }
+  if (hasOwn(patch, "hideLabelWhenEmpty")) {
+    next.hideLabelWhenEmpty = toBool(patch.hideLabelWhenEmpty, next.hideLabelWhenEmpty);
+  }
+  if (hasOwn(patch, "widthPx") && patch.widthPx !== null && patch.widthPx !== "") {
+    const widthRaw = Number(patch.widthPx);
+    if (Number.isFinite(widthRaw)) next.widthPx = clamp(Math.round(widthRaw), 160, 900);
+  }
+  if (hasOwn(patch, "heightPx") && patch.heightPx !== null && patch.heightPx !== "") {
+    const heightRaw = Number(patch.heightPx);
+    if (Number.isFinite(heightRaw)) next.heightPx = clamp(Math.round(heightRaw), 40, 120);
+  }
+  if (hasOwn(patch, "bgColor")) {
+    const v = toText(patch.bgColor).trim();
+    if (v) next.bgColor = v;
+  }
+  if (hasOwn(patch, "textColor")) {
+    const v = toText(patch.textColor).trim();
+    if (v) next.textColor = v;
+  }
+  if (hasOwn(patch, "iconBgColor")) {
+    const v = toText(patch.iconBgColor).trim();
+    if (v) next.iconBgColor = v;
+  }
+  if (hasOwn(patch, "iconTextColor")) {
+    const v = toText(patch.iconTextColor).trim();
+    if (v) next.iconTextColor = v;
+  }
+  if (hasOwn(patch, "borderColor")) {
+    const v = toText(patch.borderColor).trim();
+    if (v) next.borderColor = v;
+  }
+  if (hasOwn(patch, "shadow")) {
+    const v = toText(patch.shadow).trim();
+    if (v) next.shadow = v;
+  }
+  return next;
+}
+
+function resetFloatLauncherButtonStyles() {
+  if (pillLabelFitTimer) {
+    try { clearTimeout(pillLabelFitTimer); } catch {}
+    pillLabelFitTimer = 0;
+  }
+  if (pillLabelHideTimer) {
+    try { clearTimeout(pillLabelHideTimer); } catch {}
+    pillLabelHideTimer = 0;
+  }
+  if (pillCloseCompactTimer) {
+    try { clearTimeout(pillCloseCompactTimer); } catch {}
+    pillCloseCompactTimer = 0;
+  }
+  pillLabelExitSeq += 1;
+  if (pillCompactFitRaf) {
+    try { cancelAnimationFrame(pillCompactFitRaf); } catch {}
+    pillCompactFitRaf = 0;
+  }
+  btn.classList.remove("aiw-btn-pill-compact");
+  btn.style.removeProperty("--aiw-pill-width");
+  btn.style.removeProperty("--aiw-pill-height");
+  btn.style.removeProperty("--aiw-pill-bg");
+  btn.style.removeProperty("--aiw-pill-text");
+  btn.style.removeProperty("--aiw-pill-icon-bg");
+  btn.style.removeProperty("--aiw-pill-icon-text");
+  btn.style.removeProperty("--aiw-pill-border");
+  btn.style.removeProperty("--aiw-pill-shadow");
+  btn.style.background = "";
+  btn.style.color = "";
+  btn.style.border = "";
+  btn.style.boxShadow = "";
+  btn.style.gap = "";
+}
+
+function applyFloatLauncherState(nextState) {
+  const state = buildFloatLauncherState(BASE_FLOAT_LAUNCHER_STATE, nextState);
+  currentFloatLauncherState = state;
+  const transitionMs = DYNAMIC_FLOAT_LAUNCHER.transitionMs || 220;
+  const exitTransitionMs = transitionMs;
+  btn.style.setProperty("--aiw-pill-transition-ms", `${transitionMs}ms`);
+
+  resetFloatLauncherButtonStyles();
+
+  if (!INLINE && state.variant === "pill") {
+    btn.classList.add("aiw-btn-pill");
+    btn.style.setProperty("--aiw-pill-height", `${state.heightPx}px`);
+    btn.style.setProperty("--aiw-pill-bg", state.bgColor || "#ffffff");
+    btn.style.setProperty("--aiw-pill-text", state.textColor || "#000000");
+    btn.style.setProperty("--aiw-pill-icon-bg", state.iconBgColor || "#000000");
+    btn.style.setProperty("--aiw-pill-icon-text", state.iconTextColor || "#ffffff");
+    if (state.borderColor) btn.style.setProperty("--aiw-pill-border", state.borderColor);
+    if (state.shadow) btn.style.setProperty("--aiw-pill-shadow", state.shadow);
+
+    let icon = btn.querySelector(".aiw-btn-icon");
+    if (!icon) {
+      icon = document.createElement("span");
+      icon.className = "aiw-btn-icon";
+    }
+    const isClosedLauncher = btn.classList.contains("aiw-btn-closed");
+
+    let label = btn.querySelector(".aiw-btn-label");
+    if (!label) {
+      label = document.createElement("span");
+      label.className = "aiw-btn-label";
+    }
+    const hasExplicitText = typeof state.text === "string" && state.text.trim().length > 0;
+    const nextTextBase = hasExplicitText
+      ? state.text
+      : (state.hideLabelWhenEmpty ? "" : "Ask AI assistant...");
+    const showClosedText = isClosedLauncher && hasExplicitText && !!activeDynamicLauncherRuleId;
+    const nextText = isClosedLauncher ? (showClosedText ? state.text : "") : nextTextBase;
+    const hasTextSlot = !!nextText;
+    const keepClosedVisualStyle = isClosedLauncher || !hasTextSlot;
+    const iconText = keepClosedVisualStyle
+      ? "AI"
+      : (state.iconText || "AI");
+    icon.textContent = iconText;
+    const prevText = toText(label.textContent || "").trim();
+    const changed = label.textContent !== nextText;
+    const shouldAnimateExit = false;
+    if (pillLabelHideTimer) {
+      try { clearTimeout(pillLabelHideTimer); } catch {}
+      pillLabelHideTimer = 0;
+    }
+    if (pillCloseCompactTimer) {
+      try { clearTimeout(pillCloseCompactTimer); } catch {}
+      pillCloseCompactTimer = 0;
+    }
+    label.classList.remove("aiw-btn-label-exit");
+    ensurePillButtonChildren(icon, label);
+    if (hasTextSlot) {
+      pillLabelExitSeq += 1;
+      try {
+        if (typeof label.getAnimations === "function") {
+          label.getAnimations().forEach((a) => a.cancel());
+        }
+      } catch {}
+      label.textContent = nextText;
+      label.style.display = "block";
+      label.setAttribute("aria-hidden", "false");
+    } else if (shouldAnimateExit) {
+      const exitSeq = ++pillLabelExitSeq;
+      label.textContent = prevText;
+      label.style.display = "block";
+      label.setAttribute("aria-hidden", "true");
+      animatePillLabelOut(label, exitTransitionMs, () => {
+        if (exitSeq !== pillLabelExitSeq) return;
+        if (!label.isConnected) return;
+        label.textContent = "";
+        label.style.display = "none";
+        label.setAttribute("aria-hidden", "true");
+      });
+      // Collapse the pill only after the label fade-out completes.
+      pillCloseCompactTimer = setTimeout(() => {
+        if (exitSeq !== pillLabelExitSeq) return;
+        pillCloseCompactTimer = 0;
+        if (!btn.isConnected) return;
+        if (!btn.classList.contains("aiw-btn-pill")) return;
+        if (btn.classList.contains("aiw-btn-open")) return;
+        btn.style.setProperty("--aiw-pill-width", "268px");
+        btn.style.gap = "0";
+      }, Math.max(80, Number(exitTransitionMs) || 220));
+    } else {
+      pillLabelExitSeq += 1;
+      try {
+        if (typeof label.getAnimations === "function") {
+          label.getAnimations().forEach((a) => a.cancel());
+        }
+      } catch {}
+      label.textContent = "";
+      label.style.display = "none";
+      label.setAttribute("aria-hidden", "true");
+    }
+    if (keepClosedVisualStyle) {
+      btn.classList.remove("aiw-btn-pill-compact");
+      if (hasTextSlot || shouldAnimateExit) {
+        btn.style.setProperty("--aiw-pill-width", `${state.widthPx}px`);
+        btn.style.gap = "";
+      } else {
+        btn.style.setProperty("--aiw-pill-width", "268px");
+        btn.style.gap = "0";
+      }
+    } else if (hasTextSlot) {
+      btn.classList.remove("aiw-btn-pill-compact");
+      btn.style.setProperty("--aiw-pill-width", `${state.widthPx}px`);
+      btn.style.gap = "";
+    } else {
+      btn.classList.add("aiw-btn-pill-compact");
+      btn.style.gap = "0";
+      btn.style.setProperty("--aiw-pill-width", `${getCompactPillWidth(icon, state.heightPx, iconText)}px`);
+    }
+    if (changed && hasTextSlot) animatePillLabel(label, transitionMs);
+    if (hasTextSlot) {
+      schedulePillLabelFit(transitionMs);
+    } else if (!keepClosedVisualStyle) {
+      scheduleCompactPillFit(icon, state.heightPx, iconText);
+    }
+    return;
+  }
+
+  btn.classList.remove("aiw-btn-pill");
+  btn.classList.remove("aiw-btn-pill-compact");
+  btn.textContent = state.iconText || "AI";
+  if (!INLINE) {
+    if (state.bgColor) btn.style.background = state.bgColor;
+    if (state.textColor) btn.style.color = state.textColor;
+    if (state.borderColor) btn.style.border = `1px solid ${state.borderColor}`;
+    if (state.shadow) btn.style.boxShadow = state.shadow;
+  }
+}
+
+function updateDynamicLauncherContext(evt) {
+  if (!evt || typeof evt !== "object") return;
+  dynamicLauncherContext.pagePath = window.location.pathname || "/";
+  if (evt.section) dynamicLauncherContext.section = toText(evt.section);
+  if (evt.type === "tab_active" && evt.tab) dynamicLauncherContext.tab = toText(evt.tab);
+  if (evt.type === "scroll_depth") {
+    dynamicLauncherContext.scrollDepth = Math.max(
+      dynamicLauncherContext.scrollDepth,
+      toNum(evt.percent, 0)
+    );
+  }
+  if (evt.type === "page_hidden" || evt.type === "page_unload") {
+    dynamicLauncherContext.totalVisibleMs = Math.max(
+      dynamicLauncherContext.totalVisibleMs,
+      toNum(evt.totalVisibleMs, 0)
+    );
+  }
+}
+
+function isDynamicLauncherRuleMatch(rule, evt) {
+  if (!rule || !evt) return false;
+  if (rule.event !== evt.type) return false;
+
+  if (rule.section && normToken(rule.section) !== normToken(evt.section || dynamicLauncherContext.section)) return false;
+  if (rule.tab && normToken(rule.tab) !== normToken(evt.tab || dynamicLauncherContext.tab)) return false;
+  if (rule.path && normToken(rule.path) !== normToken(dynamicLauncherContext.pagePath)) return false;
+
+  if (rule.minDurationMs > 0 && toNum(evt.durationMs, 0) < rule.minDurationMs) return false;
+  if (rule.minScrollDepth > 0 && toNum(dynamicLauncherContext.scrollDepth, 0) < rule.minScrollDepth) return false;
+
+  const visibleMs = Math.max(
+    toNum(dynamicLauncherContext.totalVisibleMs, 0),
+    toNum(evt.totalVisibleMs, 0)
+  );
+  if (rule.minVisibleMs > 0 && visibleMs < rule.minVisibleMs) return false;
+
+  return true;
+}
+
+function canUseDynamicLauncherRule(rule) {
+  const item = dynamicLauncherStats[rule.id] || { count: 0, lastAt: 0 };
+  const now = Date.now();
+  if (rule.once && item.count > 0) return false;
+  if (rule.maxShows > 0 && item.count >= rule.maxShows) return false;
+  if (rule.cooldownMs > 0 && item.lastAt > 0 && (now - item.lastAt) < rule.cooldownMs) return false;
+  return true;
+}
+
+function markDynamicLauncherRuleUsed(rule) {
+  const item = dynamicLauncherStats[rule.id] || { count: 0, lastAt: 0 };
+  item.count += 1;
+  item.lastAt = Date.now();
+  dynamicLauncherStats[rule.id] = item;
+}
+
+function resetDynamicLauncherToBase() {
+  activeDynamicLauncherRuleId = "";
+  applyFloatLauncherState(BASE_FLOAT_LAUNCHER_STATE);
+}
+
+function handleDynamicLauncherEvent(evt) {
+  updateDynamicLauncherContext(evt);
+  if (INLINE) return;
+  if (!DYNAMIC_FLOAT_LAUNCHER.enabled || !DYNAMIC_FLOAT_LAUNCHER.rules.length) return;
+
+  let selectedRule = null;
+  for (let i = 0; i < DYNAMIC_FLOAT_LAUNCHER.rules.length; i += 1) {
+    const rule = DYNAMIC_FLOAT_LAUNCHER.rules[i];
+    if (!isDynamicLauncherRuleMatch(rule, evt)) continue;
+    if (!canUseDynamicLauncherRule(rule)) continue;
+    selectedRule = rule;
+    break;
+  }
+
+  if (selectedRule) {
+    activeDynamicLauncherRuleId = selectedRule.id;
+    applyFloatLauncherState(buildFloatLauncherState(BASE_FLOAT_LAUNCHER_STATE, selectedRule.action));
+    markDynamicLauncherRuleUsed(selectedRule);
+    return;
+  }
+
+  if (!DYNAMIC_FLOAT_LAUNCHER.resetOnNoMatch) return;
+  if (!activeDynamicLauncherRuleId) return;
+
+  const activeRule = dynamicLauncherRuleById[activeDynamicLauncherRuleId];
+  if (!activeRule) {
+    resetDynamicLauncherToBase();
+    return;
+  }
+
+  if (evt && evt.type === "section_leave") {
+    const leaving = normToken(evt.section);
+    if (!activeRule.section || normToken(activeRule.section) === leaving) {
+      resetDynamicLauncherToBase();
+    }
+    return;
+  }
+
+  if (evt && evt.type === "section_enter" && activeRule.section) {
+    if (normToken(evt.section) !== normToken(activeRule.section)) {
+      resetDynamicLauncherToBase();
+    }
+    return;
+  }
+
+  if (evt && (evt.type === "page_hidden" || evt.type === "page_unload")) {
+    resetDynamicLauncherToBase();
+  }
+}
+
+function subscribeDynamicFloatLauncher() {
+  if (INLINE) return;
+  if (!DYNAMIC_FLOAT_LAUNCHER.enabled || !DYNAMIC_FLOAT_LAUNCHER.rules.length) return;
+  if (dynamicLauncherSubscribed) return;
+
+  const tryAttach = () => {
+    const activity = window.__AIW_ACTIVITY__;
+    if (!activity || typeof activity.on !== "function") return false;
+    activity.on(handleDynamicLauncherEvent);
+    dynamicLauncherSubscribed = true;
+    if (typeof activity.last === "function") {
+      const lastEvt = activity.last();
+      if (lastEvt) {
+        try { handleDynamicLauncherEvent(lastEvt); } catch {}
+      }
+    }
+    return true;
+  };
+
+  if (tryAttach()) return;
+
+  let attempts = 0;
+  const timerId = setInterval(() => {
+    attempts += 1;
+    if (tryAttach() || attempts >= 40) {
+      clearInterval(timerId);
+    }
+  }, 250);
+}
+
+window.__AIW_FLOAT_LAUNCHER__ = {
+  getBase: () => ({ ...BASE_FLOAT_LAUNCHER_STATE }),
+  getCurrent: () => ({ ...currentFloatLauncherState }),
+  getRules: () => DYNAMIC_FLOAT_LAUNCHER.rules.slice(),
+  reset: () => resetDynamicLauncherToBase()
+};
+
+applyFloatLauncherState(BASE_FLOAT_LAUNCHER_STATE);
+subscribeDynamicFloatLauncher();
+window.addEventListener("resize", schedulePillLabelFit, { passive: true });
+if (window.visualViewport && typeof window.visualViewport.addEventListener === "function") {
+  window.visualViewport.addEventListener("resize", schedulePillLabelFit, { passive: true });
+}
 
 const panel = document.createElement("div");
 panel.className = "aiw-panel";
+if (!INLINE && POSITION === "center") panel.classList.add("aiw-panel-center");
 
-// ▼ NEW: размеры/позиция под inline
+// ÃƒÂ¢Ã¢â‚¬â€œÃ‚Â¼ NEW: Ãƒâ€˜Ã¢â€šÂ¬ÃƒÂÃ‚Â°ÃƒÂÃ‚Â·ÃƒÂÃ‚Â¼ÃƒÂÃ‚ÂµÃƒâ€˜Ã¢â€šÂ¬Ãƒâ€˜Ã¢â‚¬Â¹/ÃƒÂÃ‚Â¿ÃƒÂÃ‚Â¾ÃƒÂÃ‚Â·ÃƒÂÃ‚Â¸Ãƒâ€˜Ã¢â‚¬Â ÃƒÂÃ‚Â¸Ãƒâ€˜Ã‚Â ÃƒÂÃ‚Â¿ÃƒÂÃ‚Â¾ÃƒÂÃ‚Â´ inline
 if (INLINE) {
   panel.style.position = "relative";
   panel.style.bottom = "auto";
@@ -1108,14 +2502,22 @@ if (INLINE) {
   panel.style.maxWidth = "100%";
   panel.style.height = FILL_CONTAINER ? "100%" : "auto";
   panel.style.maxHeight = FILL_CONTAINER ? "100%" : "none";
-  panel.style.display = "flex";   // сразу видимая
+  panel.style.display = "flex";   // Ãƒâ€˜Ã‚ÂÃƒâ€˜Ã¢â€šÂ¬ÃƒÂÃ‚Â°ÃƒÂÃ‚Â·Ãƒâ€˜Ã†â€™ ÃƒÂÃ‚Â²ÃƒÂÃ‚Â¸ÃƒÂÃ‚Â´ÃƒÂÃ‚Â¸ÃƒÂÃ‚Â¼ÃƒÂÃ‚Â°Ãƒâ€˜Ã‚Â
   panel.style.flex = "1 1 auto";
   panel.style.minHeight = "0";
 } else {
   panel.style.position = "absolute";
   panel.style.bottom = "70px";
-  panel.style[POSITION === "br" ? "right" : "left"] = "0";
-  panel.style.display = "none";   // открывается по кнопке
+  if (POSITION === "center") {
+    panel.style.left = "50%";
+    panel.style.right = "auto";
+    panel.style.transform = "translateX(-50%)";
+  } else {
+    panel.style.transform = "";
+    panel.style.left = POSITION === "bl" ? "0" : "auto";
+    panel.style.right = POSITION === "br" ? "0" : "auto";
+  }
+  panel.style.display = "none";   // ÃƒÂÃ‚Â¾Ãƒâ€˜Ã¢â‚¬Å¡ÃƒÂÃ‚ÂºÃƒâ€˜Ã¢â€šÂ¬Ãƒâ€˜Ã¢â‚¬Â¹ÃƒÂÃ‚Â²ÃƒÂÃ‚Â°ÃƒÂÃ‚ÂµÃƒâ€˜Ã¢â‚¬Å¡Ãƒâ€˜Ã‚ÂÃƒâ€˜Ã‚Â ÃƒÂÃ‚Â¿ÃƒÂÃ‚Â¾ ÃƒÂÃ‚ÂºÃƒÂÃ‚Â½ÃƒÂÃ‚Â¾ÃƒÂÃ‚Â¿ÃƒÂÃ‚ÂºÃƒÂÃ‚Âµ
 }
 
 if (INLINE && FIT_MODE === "content") {
@@ -1126,7 +2528,7 @@ if (INLINE && FIT_MODE === "content") {
 const header = document.createElement("div");
 header.className = "aiw-header";
 
-// блок с брендом: логотип + текст
+// ÃƒÂÃ‚Â±ÃƒÂÃ‚Â»ÃƒÂÃ‚Â¾ÃƒÂÃ‚Âº Ãƒâ€˜Ã‚Â ÃƒÂÃ‚Â±Ãƒâ€˜Ã¢â€šÂ¬ÃƒÂÃ‚ÂµÃƒÂÃ‚Â½ÃƒÂÃ‚Â´ÃƒÂÃ‚Â¾ÃƒÂÃ‚Â¼: ÃƒÂÃ‚Â»ÃƒÂÃ‚Â¾ÃƒÂÃ‚Â³ÃƒÂÃ‚Â¾Ãƒâ€˜Ã¢â‚¬Å¡ÃƒÂÃ‚Â¸ÃƒÂÃ‚Â¿ + Ãƒâ€˜Ã¢â‚¬Å¡ÃƒÂÃ‚ÂµÃƒÂÃ‚ÂºÃƒâ€˜Ã‚ÂÃƒâ€˜Ã¢â‚¬Å¡
 const brand = document.createElement("div");
 brand.className = "aiw-header-brand";
 
@@ -1139,7 +2541,7 @@ if (LOGO) {
   brandLogo.appendChild(img);
 }
 
-// обёртка для текста + бейджа
+// ÃƒÂÃ‚Â¾ÃƒÂÃ‚Â±Ãƒâ€˜Ã¢â‚¬ËœÃƒâ€˜Ã¢â€šÂ¬Ãƒâ€˜Ã¢â‚¬Å¡ÃƒÂÃ‚ÂºÃƒÂÃ‚Â° ÃƒÂÃ‚Â´ÃƒÂÃ‚Â»Ãƒâ€˜Ã‚Â Ãƒâ€˜Ã¢â‚¬Å¡ÃƒÂÃ‚ÂµÃƒÂÃ‚ÂºÃƒâ€˜Ã‚ÂÃƒâ€˜Ã¢â‚¬Å¡ÃƒÂÃ‚Â° + ÃƒÂÃ‚Â±ÃƒÂÃ‚ÂµÃƒÂÃ‚Â¹ÃƒÂÃ‚Â´ÃƒÂÃ‚Â¶ÃƒÂÃ‚Â°
 const titleWrap = document.createElement("div");
 titleWrap.className = "aiw-header-title";
 
@@ -1147,7 +2549,7 @@ const brandTitle = document.createElement("span");
 brandTitle.className = "aiw-header-title-text";
 brandTitle.textContent = TITLE;
 
-// сам бейдж
+// Ãƒâ€˜Ã‚ÂÃƒÂÃ‚Â°ÃƒÂÃ‚Â¼ ÃƒÂÃ‚Â±ÃƒÂÃ‚ÂµÃƒÂÃ‚Â¹ÃƒÂÃ‚Â´ÃƒÂÃ‚Â¶
 const betaBadge = document.createElement("span");
 betaBadge.className = "aiw-beta-badge";
 betaBadge.textContent = "Beta";
@@ -1160,10 +2562,12 @@ brand.appendChild(titleWrap);
 
 
 const close = document.createElement("button");
-close.textContent = "×";
+close.className = "aiw-close-btn";
+close.setAttribute("aria-label", LANG.startsWith("ru") ? "\u0417\u0430\u043a\u0440\u044b\u0442\u044c" : "Close");
 const resetBtn = document.createElement("button");
-resetBtn.title = LANG.startsWith("ru") ? "Сбросить диалог" : "Reset chat";
-resetBtn.textContent = "↺";
+resetBtn.className = "aiw-reset-btn";
+resetBtn.title = LANG.startsWith("ru") ? "\u0421\u0431\u0440\u043e\u0441\u0438\u0442\u044c \u0434\u0438\u0430\u043b\u043e\u0433" : "Reset chat";
+resetBtn.innerHTML = "&#8635;";
 
 const fsBtn = document.createElement("button");
 fsBtn.className = "aiw-fs-toggle";
@@ -1184,6 +2588,7 @@ const FS_EXIT_ICON = `
     <path d="M18 6L6 18"></path>
   </svg>
 `;
+close.innerHTML = FS_EXIT_ICON;
 
 let inlineFullscreen = false;
 let inlineBusy = false;
@@ -1200,13 +2605,18 @@ function syncInlineFullscreenControl() {
   const busyTitle = LANG.startsWith("ru")
     ? "\u0414\u043e\u0436\u0434\u0438\u0442\u0435\u0441\u044c \u043e\u0442\u0432\u0435\u0442\u0430"
     : "Wait for response";
+  const disableByBusy = INLINE && inlineBusy;
 
-  fsBtn.title = inlineBusy ? busyTitle : baseTitle;
+  fsBtn.title = disableByBusy ? busyTitle : baseTitle;
   fsBtn.setAttribute("aria-label", fsBtn.title);
   fsBtn.setAttribute("aria-pressed", inlineFullscreen ? "true" : "false");
-  fsBtn.setAttribute("aria-disabled", inlineBusy ? "true" : "false");
-  fsBtn.disabled = inlineBusy;
+  fsBtn.setAttribute("aria-disabled", disableByBusy ? "true" : "false");
+  fsBtn.disabled = disableByBusy;
   panel.classList.toggle("aiw-panel-fullscreen", inlineFullscreen);
+  if (!INLINE) {
+    wrap.classList.toggle("aiw-wrap-fullscreen", inlineFullscreen);
+    close.style.display = inlineFullscreen ? "none" : "";
+  }
 }
 
 function setInlineFullscreenState(next) {
@@ -1253,7 +2663,7 @@ setInlineFullscreenState(false);
 setInlineBusyState(false);
 fsBtn.addEventListener("click", (e) => {
   e.preventDefault();
-  if (inlineBusy) return;
+  if (INLINE && inlineBusy) return;
   const next = !inlineFullscreen;
   // Optimistic UI update so the user can always toggle back immediately.
   setInlineFullscreenState(next);
@@ -1263,10 +2673,10 @@ fsBtn.addEventListener("click", (e) => {
 const actions = document.createElement("div");
 actions.className = "aiw-actions";
 actions.appendChild(resetBtn);
-if (INLINE) actions.appendChild(fsBtn);
+actions.appendChild(fsBtn);
 actions.appendChild(close);
 
-// собираем хедер
+// Ãƒâ€˜Ã‚ÂÃƒÂÃ‚Â¾ÃƒÂÃ‚Â±ÃƒÂÃ‚Â¸Ãƒâ€˜Ã¢â€šÂ¬ÃƒÂÃ‚Â°ÃƒÂÃ‚ÂµÃƒÂÃ‚Â¼ Ãƒâ€˜Ã¢â‚¬Â¦ÃƒÂÃ‚ÂµÃƒÂÃ‚Â´ÃƒÂÃ‚ÂµÃƒâ€˜Ã¢â€šÂ¬
 header.appendChild(brand);
 header.appendChild(actions);
 
@@ -1298,7 +2708,7 @@ body.insertBefore(demoBadge, messagesWrap);
 const emptyHint = document.createElement("div");
 emptyHint.style.cssText = `
   align-self:flex-start; max-width:85%; margin:8px 0; padding:10px 12px;
-  border-radius:12px; background:${THEME.bubbleAI}; color:${THEME.text}; opacity:.7; display:none;
+  border-radius:12px; background:${THEME.bubbleAI}; color:${THEME.aiText}; opacity:.7; display:none;
 `;
 
 emptyHint.textContent = WELCOME;
@@ -1325,7 +2735,8 @@ footer.className = "aiw-footer";
 
 const input = document.createElement("textarea");
 input.rows = 1;
-input.placeholder = LANG.startsWith("ru") ? "Спросите что-нибудь…" : "Ask anything…";
+const defaultInputPlaceholder = LANG.startsWith("ru") ? "\u0421\u043f\u0440\u043e\u0441\u0438\u0442\u0435 \u0447\u0442\u043e-\u043d\u0438\u0431\u0443\u0434\u044c..." : "Ask anything...";
+input.placeholder = toText(CFG.inputPlaceholder).trim() || defaultInputPlaceholder;
 input.className = "aiw-input";
 input.maxLength = MAX_LEN;
 
@@ -1354,8 +2765,8 @@ footer.appendChild(inputWrap);
 const SCROLL_STICKY_THRESHOLD = 24; 
 let userPinnedToBottom = true;
 
-let ignoreScroll = false;   // чтобы scroll от наших scrollTop не сбивал флаг
-let scrollRaf = null;       // чтобы не дергать scroll на каждый чанк
+let ignoreScroll = false;   // Ãƒâ€˜Ã¢â‚¬Â¡Ãƒâ€˜Ã¢â‚¬Å¡ÃƒÂÃ‚Â¾ÃƒÂÃ‚Â±Ãƒâ€˜Ã¢â‚¬Â¹ scroll ÃƒÂÃ‚Â¾Ãƒâ€˜Ã¢â‚¬Å¡ ÃƒÂÃ‚Â½ÃƒÂÃ‚Â°Ãƒâ€˜Ã‹â€ ÃƒÂÃ‚Â¸Ãƒâ€˜Ã¢â‚¬Â¦ scrollTop ÃƒÂÃ‚Â½ÃƒÂÃ‚Âµ Ãƒâ€˜Ã‚ÂÃƒÂÃ‚Â±ÃƒÂÃ‚Â¸ÃƒÂÃ‚Â²ÃƒÂÃ‚Â°ÃƒÂÃ‚Â» Ãƒâ€˜Ã¢â‚¬Å¾ÃƒÂÃ‚Â»ÃƒÂÃ‚Â°ÃƒÂÃ‚Â³
+let scrollRaf = null;       // Ãƒâ€˜Ã¢â‚¬Â¡Ãƒâ€˜Ã¢â‚¬Å¡ÃƒÂÃ‚Â¾ÃƒÂÃ‚Â±Ãƒâ€˜Ã¢â‚¬Â¹ ÃƒÂÃ‚Â½ÃƒÂÃ‚Âµ ÃƒÂÃ‚Â´ÃƒÂÃ‚ÂµÃƒâ€˜Ã¢â€šÂ¬ÃƒÂÃ‚Â³ÃƒÂÃ‚Â°Ãƒâ€˜Ã¢â‚¬Å¡Ãƒâ€˜Ã…â€™ scroll ÃƒÂÃ‚Â½ÃƒÂÃ‚Â° ÃƒÂÃ‚ÂºÃƒÂÃ‚Â°ÃƒÂÃ‚Â¶ÃƒÂÃ‚Â´Ãƒâ€˜Ã¢â‚¬Â¹ÃƒÂÃ‚Â¹ Ãƒâ€˜Ã¢â‚¬Â¡ÃƒÂÃ‚Â°ÃƒÂÃ‚Â½ÃƒÂÃ‚Âº
 
 function isNearBottom() {
   return (body.scrollHeight - (body.scrollTop + body.clientHeight)) <= SCROLL_STICKY_THRESHOLD;
@@ -1386,7 +2797,7 @@ footerMeta.className = "aiw-footer-meta";
 
 const footerHint = document.createElement("div");
 footerHint.textContent = LANG.startsWith("ru")
-  ? "Enter — отправить, Shift+Enter — новая строка"
+  ? "Enter ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â ÃƒÂÃ‚Â¾Ãƒâ€˜Ã¢â‚¬Å¡ÃƒÂÃ‚Â¿Ãƒâ€˜Ã¢â€šÂ¬ÃƒÂÃ‚Â°ÃƒÂÃ‚Â²ÃƒÂÃ‚Â¸Ãƒâ€˜Ã¢â‚¬Å¡Ãƒâ€˜Ã…â€™, Shift+Enter ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â ÃƒÂÃ‚Â½ÃƒÂÃ‚Â¾ÃƒÂÃ‚Â²ÃƒÂÃ‚Â°Ãƒâ€˜Ã‚Â Ãƒâ€˜Ã‚ÂÃƒâ€˜Ã¢â‚¬Å¡Ãƒâ€˜Ã¢â€šÂ¬ÃƒÂÃ‚Â¾ÃƒÂÃ‚ÂºÃƒÂÃ‚Â°"
   : "Press Enter to send, Shift+Enter for new line";
 
 const footerCounter = document.createElement("div");
@@ -1396,8 +2807,8 @@ footerCounter.textContent = `0/${MAX_LEN}`;
 footerMeta.appendChild(footerHint);
 footerMeta.appendChild(footerCounter);
 
-panel.appendChild(footerMeta);
-// в inline кнопка не нужна
+if (INLINE) panel.appendChild(footerMeta);
+// ÃƒÂÃ‚Â² inline ÃƒÂÃ‚ÂºÃƒÂÃ‚Â½ÃƒÂÃ‚Â¾ÃƒÂÃ‚Â¿ÃƒÂÃ‚ÂºÃƒÂÃ‚Â° ÃƒÂÃ‚Â½ÃƒÂÃ‚Âµ ÃƒÂÃ‚Â½Ãƒâ€˜Ã†â€™ÃƒÂÃ‚Â¶ÃƒÂÃ‚Â½ÃƒÂÃ‚Â°
 if (!INLINE) wrap.appendChild(btn);
 wrap.appendChild(panel);
   document.body.appendChild(root);
@@ -1444,12 +2855,12 @@ function dedupeAutogreetAtTail() {
     const m = history[k];
     if (m && m.meta && m.meta.kind === "autogreet") {
       if (seen) {
-        history.splice(k, 1); // убрать лишние автоприветы перед последним
+        history.splice(k, 1); // Ãƒâ€˜Ã†â€™ÃƒÂÃ‚Â±Ãƒâ€˜Ã¢â€šÂ¬ÃƒÂÃ‚Â°Ãƒâ€˜Ã¢â‚¬Å¡Ãƒâ€˜Ã…â€™ ÃƒÂÃ‚Â»ÃƒÂÃ‚Â¸Ãƒâ€˜Ã‹â€ ÃƒÂÃ‚Â½ÃƒÂÃ‚Â¸ÃƒÂÃ‚Âµ ÃƒÂÃ‚Â°ÃƒÂÃ‚Â²Ãƒâ€˜Ã¢â‚¬Å¡ÃƒÂÃ‚Â¾ÃƒÂÃ‚Â¿Ãƒâ€˜Ã¢â€šÂ¬ÃƒÂÃ‚Â¸ÃƒÂÃ‚Â²ÃƒÂÃ‚ÂµÃƒâ€˜Ã¢â‚¬Å¡Ãƒâ€˜Ã¢â‚¬Â¹ ÃƒÂÃ‚Â¿ÃƒÂÃ‚ÂµÃƒâ€˜Ã¢â€šÂ¬ÃƒÂÃ‚ÂµÃƒÂÃ‚Â´ ÃƒÂÃ‚Â¿ÃƒÂÃ‚Â¾Ãƒâ€˜Ã‚ÂÃƒÂÃ‚Â»ÃƒÂÃ‚ÂµÃƒÂÃ‚Â´ÃƒÂÃ‚Â½ÃƒÂÃ‚Â¸ÃƒÂÃ‚Â¼
       } else {
-        seen = true; // сохраняем самый последний автопривет
+        seen = true; // Ãƒâ€˜Ã‚ÂÃƒÂÃ‚Â¾Ãƒâ€˜Ã¢â‚¬Â¦Ãƒâ€˜Ã¢â€šÂ¬ÃƒÂÃ‚Â°ÃƒÂÃ‚Â½Ãƒâ€˜Ã‚ÂÃƒÂÃ‚ÂµÃƒÂÃ‚Â¼ Ãƒâ€˜Ã‚ÂÃƒÂÃ‚Â°ÃƒÂÃ‚Â¼Ãƒâ€˜Ã¢â‚¬Â¹ÃƒÂÃ‚Â¹ ÃƒÂÃ‚Â¿ÃƒÂÃ‚Â¾Ãƒâ€˜Ã‚ÂÃƒÂÃ‚Â»ÃƒÂÃ‚ÂµÃƒÂÃ‚Â´ÃƒÂÃ‚Â½ÃƒÂÃ‚Â¸ÃƒÂÃ‚Â¹ ÃƒÂÃ‚Â°ÃƒÂÃ‚Â²Ãƒâ€˜Ã¢â‚¬Å¡ÃƒÂÃ‚Â¾ÃƒÂÃ‚Â¿Ãƒâ€˜Ã¢â€šÂ¬ÃƒÂÃ‚Â¸ÃƒÂÃ‚Â²ÃƒÂÃ‚ÂµÃƒâ€˜Ã¢â‚¬Å¡
       }
     } else {
-      break; // как только дошли до не-автоприветствия — стоп
+      break; // ÃƒÂÃ‚ÂºÃƒÂÃ‚Â°ÃƒÂÃ‚Âº Ãƒâ€˜Ã¢â‚¬Å¡ÃƒÂÃ‚Â¾ÃƒÂÃ‚Â»Ãƒâ€˜Ã…â€™ÃƒÂÃ‚ÂºÃƒÂÃ‚Â¾ ÃƒÂÃ‚Â´ÃƒÂÃ‚Â¾Ãƒâ€˜Ã‹â€ ÃƒÂÃ‚Â»ÃƒÂÃ‚Â¸ ÃƒÂÃ‚Â´ÃƒÂÃ‚Â¾ ÃƒÂÃ‚Â½ÃƒÂÃ‚Âµ-ÃƒÂÃ‚Â°ÃƒÂÃ‚Â²Ãƒâ€˜Ã¢â‚¬Å¡ÃƒÂÃ‚Â¾ÃƒÂÃ‚Â¿Ãƒâ€˜Ã¢â€šÂ¬ÃƒÂÃ‚Â¸ÃƒÂÃ‚Â²ÃƒÂÃ‚ÂµÃƒâ€˜Ã¢â‚¬Å¡Ãƒâ€˜Ã‚ÂÃƒâ€˜Ã¢â‚¬Å¡ÃƒÂÃ‚Â²ÃƒÂÃ‚Â¸Ãƒâ€˜Ã‚Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â Ãƒâ€˜Ã‚ÂÃƒâ€˜Ã¢â‚¬Å¡ÃƒÂÃ‚Â¾ÃƒÂÃ‚Â¿
     }
   }
 }
@@ -1460,7 +2871,7 @@ function updateCounter() {
 }
 
 function autoResizeInput() {
-  // сбрасываем, чтобы scrollHeight считался корректно
+  // Ãƒâ€˜Ã‚ÂÃƒÂÃ‚Â±Ãƒâ€˜Ã¢â€šÂ¬ÃƒÂÃ‚Â°Ãƒâ€˜Ã‚ÂÃƒâ€˜Ã¢â‚¬Â¹ÃƒÂÃ‚Â²ÃƒÂÃ‚Â°ÃƒÂÃ‚ÂµÃƒÂÃ‚Â¼, Ãƒâ€˜Ã¢â‚¬Â¡Ãƒâ€˜Ã¢â‚¬Å¡ÃƒÂÃ‚Â¾ÃƒÂÃ‚Â±Ãƒâ€˜Ã¢â‚¬Â¹ scrollHeight Ãƒâ€˜Ã‚ÂÃƒâ€˜Ã¢â‚¬Â¡ÃƒÂÃ‚Â¸Ãƒâ€˜Ã¢â‚¬Å¡ÃƒÂÃ‚Â°ÃƒÂÃ‚Â»Ãƒâ€˜Ã‚ÂÃƒâ€˜Ã‚Â ÃƒÂÃ‚ÂºÃƒÂÃ‚Â¾Ãƒâ€˜Ã¢â€šÂ¬Ãƒâ€˜Ã¢â€šÂ¬ÃƒÂÃ‚ÂµÃƒÂÃ‚ÂºÃƒâ€˜Ã¢â‚¬Å¡ÃƒÂÃ‚Â½ÃƒÂÃ‚Â¾
   input.style.height = "auto";
 
   const cs = getComputedStyle(input);
@@ -1469,7 +2880,7 @@ function autoResizeInput() {
   const next = Math.min(input.scrollHeight, maxH);
   input.style.height = next + "px";
 
-  // если упёрлись — включаем скролл внутри textarea
+  // ÃƒÂÃ‚ÂµÃƒâ€˜Ã‚ÂÃƒÂÃ‚Â»ÃƒÂÃ‚Â¸ Ãƒâ€˜Ã†â€™ÃƒÂÃ‚Â¿Ãƒâ€˜Ã¢â‚¬ËœÃƒâ€˜Ã¢â€šÂ¬ÃƒÂÃ‚Â»ÃƒÂÃ‚Â¸Ãƒâ€˜Ã‚ÂÃƒâ€˜Ã…â€™ ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â ÃƒÂÃ‚Â²ÃƒÂÃ‚ÂºÃƒÂÃ‚Â»Ãƒâ€˜Ã…Â½Ãƒâ€˜Ã¢â‚¬Â¡ÃƒÂÃ‚Â°ÃƒÂÃ‚ÂµÃƒÂÃ‚Â¼ Ãƒâ€˜Ã‚ÂÃƒÂÃ‚ÂºÃƒâ€˜Ã¢â€šÂ¬ÃƒÂÃ‚Â¾ÃƒÂÃ‚Â»ÃƒÂÃ‚Â» ÃƒÂÃ‚Â²ÃƒÂÃ‚Â½Ãƒâ€˜Ã†â€™Ãƒâ€˜Ã¢â‚¬Å¡Ãƒâ€˜Ã¢â€šÂ¬ÃƒÂÃ‚Â¸ textarea
   input.style.overflowY = (input.scrollHeight > maxH) ? "auto" : "hidden";
 
   postHeight();
@@ -1496,22 +2907,74 @@ input.addEventListener("input", () => {
   updateCounter();
   autoResizeInput();
 });
-updateCounter(); // начальное значение
+updateCounter(); // ÃƒÂÃ‚Â½ÃƒÂÃ‚Â°Ãƒâ€˜Ã¢â‚¬Â¡ÃƒÂÃ‚Â°ÃƒÂÃ‚Â»Ãƒâ€˜Ã…â€™ÃƒÂÃ‚Â½ÃƒÂÃ‚Â¾ÃƒÂÃ‚Âµ ÃƒÂÃ‚Â·ÃƒÂÃ‚Â½ÃƒÂÃ‚Â°Ãƒâ€˜Ã¢â‚¬Â¡ÃƒÂÃ‚ÂµÃƒÂÃ‚Â½ÃƒÂÃ‚Â¸ÃƒÂÃ‚Âµ
 setTimeout(autoResizeInput, 0);
 
   // ---------- Chat logic ----------
 let history = readHistory();
 
-// ===== INLINE AUTOSTART (сценарий из нескольких сообщений) =====
+function syncHistoryFromSnapshot(snapshot) {
+  if (!HYBRID_HISTORY_SYNC) return;
+  const nextHistory = snapshotToHistory(snapshot || "[]");
+  const nextSnapshot = historyToSnapshot(nextHistory);
+  if (nextSnapshot === historySnapshot) return;
+
+  historySnapshot = nextSnapshot;
+  history = nextHistory;
+  if (PRESERVE_HISTORY !== false && STORAGE) {
+    try { STORAGE.setItem(storeKey, nextSnapshot); } catch {}
+  }
+
+  if (INLINE && history.length > 0) {
+    handleWidgetUserInteraction({ type: "history-sync" }, { hard: false });
+  }
+  renderAll();
+}
+
+if (HYBRID_HISTORY_SYNC) {
+  window.addEventListener("aiw:history-sync", (evt) => {
+    const data = evt && evt.detail ? evt.detail : null;
+    if (!data || typeof data !== "object") return;
+    if (data.siteId && data.siteId !== SITE_ID) return;
+    syncHistoryFromSnapshot(data.snapshot || "[]");
+  });
+
+  window.addEventListener("storage", (evt) => {
+    if (!evt || evt.key !== storeKey) return;
+    syncHistoryFromSnapshot(evt.newValue || "[]");
+  });
+
+  if (HISTORY_SYNC_CHANNEL) {
+    HISTORY_SYNC_CHANNEL.addEventListener("message", (evt) => {
+      const data = evt && evt.data ? evt.data : null;
+      if (!data || data.type !== "history:update" || data.key !== storeKey) return;
+      syncHistoryFromSnapshot(data.snapshot || "[]");
+    });
+  }
+
+  if (INLINE && window.parent && window.parent !== window) {
+    window.addEventListener("message", (evt) => {
+      if (PARENT_ORIGIN !== "*" && evt.origin !== PARENT_ORIGIN) return;
+      const data = evt && evt.data ? evt.data : null;
+      if (!data || typeof data !== "object") return;
+      if (data.type !== "aiw:history-sync") return;
+      if (data.siteId && data.siteId !== SITE_ID) return;
+      if (data.instanceId && INSTANCE_ID && data.instanceId !== INSTANCE_ID) return;
+      syncHistoryFromSnapshot(data.snapshot || "[]");
+    });
+  }
+}
+
+// ===== INLINE AUTOSTART (Ãƒâ€˜Ã‚ÂÃƒâ€˜Ã¢â‚¬Â ÃƒÂÃ‚ÂµÃƒÂÃ‚Â½ÃƒÂÃ‚Â°Ãƒâ€˜Ã¢â€šÂ¬ÃƒÂÃ‚Â¸ÃƒÂÃ‚Â¹ ÃƒÂÃ‚Â¸ÃƒÂÃ‚Â· ÃƒÂÃ‚Â½ÃƒÂÃ‚ÂµÃƒâ€˜Ã‚ÂÃƒÂÃ‚ÂºÃƒÂÃ‚Â¾ÃƒÂÃ‚Â»Ãƒâ€˜Ã…â€™ÃƒÂÃ‚ÂºÃƒÂÃ‚Â¸Ãƒâ€˜Ã¢â‚¬Â¦ Ãƒâ€˜Ã‚ÂÃƒÂÃ‚Â¾ÃƒÂÃ‚Â¾ÃƒÂÃ‚Â±Ãƒâ€˜Ã¢â‚¬Â°ÃƒÂÃ‚ÂµÃƒÂÃ‚Â½ÃƒÂÃ‚Â¸ÃƒÂÃ‚Â¹) =====
 const INLINE_AUTO_SESSION_KEY  = `aiw:inlineAutoGreet:session:${SITE_ID}`;
 const INLINE_AUTO_COOLDOWN_KEY = `aiw:inlineAutoGreet:lastTs:${SITE_ID}`;
 
-// таймеры автогрита (float + inline)
-let AUTO_TIMER_ID = null;          // одиночный таймер scheduleAutoGreet
-const INLINE_AUTO_TIMEOUTS = [];   // массив таймеров для inline-скрипта
+// Ãƒâ€˜Ã¢â‚¬Å¡ÃƒÂÃ‚Â°ÃƒÂÃ‚Â¹ÃƒÂÃ‚Â¼ÃƒÂÃ‚ÂµÃƒâ€˜Ã¢â€šÂ¬Ãƒâ€˜Ã¢â‚¬Â¹ ÃƒÂÃ‚Â°ÃƒÂÃ‚Â²Ãƒâ€˜Ã¢â‚¬Å¡ÃƒÂÃ‚Â¾ÃƒÂÃ‚Â³Ãƒâ€˜Ã¢â€šÂ¬ÃƒÂÃ‚Â¸Ãƒâ€˜Ã¢â‚¬Å¡ÃƒÂÃ‚Â° (float + inline)
+let AUTO_TIMER_ID = null;          // ÃƒÂÃ‚Â¾ÃƒÂÃ‚Â´ÃƒÂÃ‚Â¸ÃƒÂÃ‚Â½ÃƒÂÃ‚Â¾Ãƒâ€˜Ã¢â‚¬Â¡ÃƒÂÃ‚Â½Ãƒâ€˜Ã¢â‚¬Â¹ÃƒÂÃ‚Â¹ Ãƒâ€˜Ã¢â‚¬Å¡ÃƒÂÃ‚Â°ÃƒÂÃ‚Â¹ÃƒÂÃ‚Â¼ÃƒÂÃ‚ÂµÃƒâ€˜Ã¢â€šÂ¬ scheduleAutoGreet
+const INLINE_AUTO_TIMEOUTS = [];   // ÃƒÂÃ‚Â¼ÃƒÂÃ‚Â°Ãƒâ€˜Ã‚ÂÃƒâ€˜Ã‚ÂÃƒÂÃ‚Â¸ÃƒÂÃ‚Â² Ãƒâ€˜Ã¢â‚¬Å¡ÃƒÂÃ‚Â°ÃƒÂÃ‚Â¹ÃƒÂÃ‚Â¼ÃƒÂÃ‚ÂµÃƒâ€˜Ã¢â€šÂ¬ÃƒÂÃ‚Â¾ÃƒÂÃ‚Â² ÃƒÂÃ‚Â´ÃƒÂÃ‚Â»Ãƒâ€˜Ã‚Â inline-Ãƒâ€˜Ã‚ÂÃƒÂÃ‚ÂºÃƒâ€˜Ã¢â€šÂ¬ÃƒÂÃ‚Â¸ÃƒÂÃ‚Â¿Ãƒâ€˜Ã¢â‚¬Å¡ÃƒÂÃ‚Â°
 
 function cancelAllAutogreetTimers() {
-  // общий стоп для всех приветствий
+  // ÃƒÂÃ‚Â¾ÃƒÂÃ‚Â±Ãƒâ€˜Ã¢â‚¬Â°ÃƒÂÃ‚Â¸ÃƒÂÃ‚Â¹ Ãƒâ€˜Ã‚ÂÃƒâ€˜Ã¢â‚¬Å¡ÃƒÂÃ‚Â¾ÃƒÂÃ‚Â¿ ÃƒÂÃ‚Â´ÃƒÂÃ‚Â»Ãƒâ€˜Ã‚Â ÃƒÂÃ‚Â²Ãƒâ€˜Ã‚ÂÃƒÂÃ‚ÂµÃƒâ€˜Ã¢â‚¬Â¦ ÃƒÂÃ‚Â¿Ãƒâ€˜Ã¢â€šÂ¬ÃƒÂÃ‚Â¸ÃƒÂÃ‚Â²ÃƒÂÃ‚ÂµÃƒâ€˜Ã¢â‚¬Å¡Ãƒâ€˜Ã‚ÂÃƒâ€˜Ã¢â‚¬Å¡ÃƒÂÃ‚Â²ÃƒÂÃ‚Â¸ÃƒÂÃ‚Â¹
   try {
     if (AUTO_TIMER_ID !== null) {
       clearTimeout(AUTO_TIMER_ID);
@@ -1719,7 +3182,7 @@ function bindIdleDemoStopListeners() {
 }
 
 function runInlineAutostart(cfg) {
-  if (!INLINE) return;                               // только для inline
+  if (!INLINE) return;                               // Ãƒâ€˜Ã¢â‚¬Å¡ÃƒÂÃ‚Â¾ÃƒÂÃ‚Â»Ãƒâ€˜Ã…â€™ÃƒÂÃ‚ÂºÃƒÂÃ‚Â¾ ÃƒÂÃ‚Â´ÃƒÂÃ‚Â»Ãƒâ€˜Ã‚Â inline
   if (!cfg || cfg.enabled !== true) return;
 
   const script = Array.isArray(cfg.script) ? cfg.script : [];
@@ -1740,8 +3203,8 @@ function runInlineAutostart(cfg) {
   const cooldownMinutes = Math.max(0, cfg.cooldownMinutes || 0);
   const now = Date.now();
 
-  // если сценарий не запустится (session/cooldown), а чат пустой —
-  // хотим вернуться к обычному приветственному пузырю
+  // ÃƒÂÃ‚ÂµÃƒâ€˜Ã‚ÂÃƒÂÃ‚Â»ÃƒÂÃ‚Â¸ Ãƒâ€˜Ã‚ÂÃƒâ€˜Ã¢â‚¬Â ÃƒÂÃ‚ÂµÃƒÂÃ‚Â½ÃƒÂÃ‚Â°Ãƒâ€˜Ã¢â€šÂ¬ÃƒÂÃ‚Â¸ÃƒÂÃ‚Â¹ ÃƒÂÃ‚Â½ÃƒÂÃ‚Âµ ÃƒÂÃ‚Â·ÃƒÂÃ‚Â°ÃƒÂÃ‚Â¿Ãƒâ€˜Ã†â€™Ãƒâ€˜Ã‚ÂÃƒâ€˜Ã¢â‚¬Å¡ÃƒÂÃ‚Â¸Ãƒâ€˜Ã¢â‚¬Å¡Ãƒâ€˜Ã‚ÂÃƒâ€˜Ã‚Â (session/cooldown), ÃƒÂÃ‚Â° Ãƒâ€˜Ã¢â‚¬Â¡ÃƒÂÃ‚Â°Ãƒâ€˜Ã¢â‚¬Å¡ ÃƒÂÃ‚Â¿Ãƒâ€˜Ã†â€™Ãƒâ€˜Ã‚ÂÃƒâ€˜Ã¢â‚¬Å¡ÃƒÂÃ‚Â¾ÃƒÂÃ‚Â¹ ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â
+  // Ãƒâ€˜Ã¢â‚¬Â¦ÃƒÂÃ‚Â¾Ãƒâ€˜Ã¢â‚¬Å¡ÃƒÂÃ‚Â¸ÃƒÂÃ‚Â¼ ÃƒÂÃ‚Â²ÃƒÂÃ‚ÂµÃƒâ€˜Ã¢â€šÂ¬ÃƒÂÃ‚Â½Ãƒâ€˜Ã†â€™Ãƒâ€˜Ã¢â‚¬Å¡Ãƒâ€˜Ã…â€™Ãƒâ€˜Ã‚ÂÃƒâ€˜Ã‚Â ÃƒÂÃ‚Âº ÃƒÂÃ‚Â¾ÃƒÂÃ‚Â±Ãƒâ€˜Ã¢â‚¬Â¹Ãƒâ€˜Ã¢â‚¬Â¡ÃƒÂÃ‚Â½ÃƒÂÃ‚Â¾ÃƒÂÃ‚Â¼Ãƒâ€˜Ã†â€™ ÃƒÂÃ‚Â¿Ãƒâ€˜Ã¢â€šÂ¬ÃƒÂÃ‚Â¸ÃƒÂÃ‚Â²ÃƒÂÃ‚ÂµÃƒâ€˜Ã¢â‚¬Å¡Ãƒâ€˜Ã‚ÂÃƒâ€˜Ã¢â‚¬Å¡ÃƒÂÃ‚Â²ÃƒÂÃ‚ÂµÃƒÂÃ‚Â½ÃƒÂÃ‚Â½ÃƒÂÃ‚Â¾ÃƒÂÃ‚Â¼Ãƒâ€˜Ã†â€™ ÃƒÂÃ‚Â¿Ãƒâ€˜Ã†â€™ÃƒÂÃ‚Â·Ãƒâ€˜Ã¢â‚¬Â¹Ãƒâ€˜Ã¢â€šÂ¬Ãƒâ€˜Ã…Â½
   function fallbackToWelcome() {
     if (!history || !history.length) {
       showWelcomeHint = true;
@@ -1751,7 +3214,7 @@ function runInlineAutostart(cfg) {
 
   if (mode === "session") {
     if (sessionStorage.getItem(INLINE_AUTO_SESSION_KEY) === "1") {
-      // автопривет уже был в этой вкладке → включаем плейсхолдер
+      // ÃƒÂÃ‚Â°ÃƒÂÃ‚Â²Ãƒâ€˜Ã¢â‚¬Å¡ÃƒÂÃ‚Â¾ÃƒÂÃ‚Â¿Ãƒâ€˜Ã¢â€šÂ¬ÃƒÂÃ‚Â¸ÃƒÂÃ‚Â²ÃƒÂÃ‚ÂµÃƒâ€˜Ã¢â‚¬Å¡ Ãƒâ€˜Ã†â€™ÃƒÂÃ‚Â¶ÃƒÂÃ‚Âµ ÃƒÂÃ‚Â±Ãƒâ€˜Ã¢â‚¬Â¹ÃƒÂÃ‚Â» ÃƒÂÃ‚Â² Ãƒâ€˜Ã‚ÂÃƒâ€˜Ã¢â‚¬Å¡ÃƒÂÃ‚Â¾ÃƒÂÃ‚Â¹ ÃƒÂÃ‚Â²ÃƒÂÃ‚ÂºÃƒÂÃ‚Â»ÃƒÂÃ‚Â°ÃƒÂÃ‚Â´ÃƒÂÃ‚ÂºÃƒÂÃ‚Âµ ÃƒÂ¢Ã¢â‚¬Â Ã¢â‚¬â„¢ ÃƒÂÃ‚Â²ÃƒÂÃ‚ÂºÃƒÂÃ‚Â»Ãƒâ€˜Ã…Â½Ãƒâ€˜Ã¢â‚¬Â¡ÃƒÂÃ‚Â°ÃƒÂÃ‚ÂµÃƒÂÃ‚Â¼ ÃƒÂÃ‚Â¿ÃƒÂÃ‚Â»ÃƒÂÃ‚ÂµÃƒÂÃ‚Â¹Ãƒâ€˜Ã‚ÂÃƒâ€˜Ã¢â‚¬Â¦ÃƒÂÃ‚Â¾ÃƒÂÃ‚Â»ÃƒÂÃ‚Â´ÃƒÂÃ‚ÂµÃƒâ€˜Ã¢â€šÂ¬
       fallbackToWelcome();
       return;
     }
@@ -1765,9 +3228,9 @@ function runInlineAutostart(cfg) {
     }
     localStorage.setItem(INLINE_AUTO_COOLDOWN_KEY, String(now));
   }
-  // mode === "always" — без ограничений
+  // mode === "always" ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â ÃƒÂÃ‚Â±ÃƒÂÃ‚ÂµÃƒÂÃ‚Â· ÃƒÂÃ‚Â¾ÃƒÂÃ‚Â³Ãƒâ€˜Ã¢â€šÂ¬ÃƒÂÃ‚Â°ÃƒÂÃ‚Â½ÃƒÂÃ‚Â¸Ãƒâ€˜Ã¢â‚¬Â¡ÃƒÂÃ‚ÂµÃƒÂÃ‚Â½ÃƒÂÃ‚Â¸ÃƒÂÃ‚Â¹
 
-  // Если дошли сюда — сценарий действительно будет выполняться → плейсхолдер убираем
+  // ÃƒÂÃ¢â‚¬Â¢Ãƒâ€˜Ã‚ÂÃƒÂÃ‚Â»ÃƒÂÃ‚Â¸ ÃƒÂÃ‚Â´ÃƒÂÃ‚Â¾Ãƒâ€˜Ã‹â€ ÃƒÂÃ‚Â»ÃƒÂÃ‚Â¸ Ãƒâ€˜Ã‚ÂÃƒâ€˜Ã…Â½ÃƒÂÃ‚Â´ÃƒÂÃ‚Â° ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â Ãƒâ€˜Ã‚ÂÃƒâ€˜Ã¢â‚¬Â ÃƒÂÃ‚ÂµÃƒÂÃ‚Â½ÃƒÂÃ‚Â°Ãƒâ€˜Ã¢â€šÂ¬ÃƒÂÃ‚Â¸ÃƒÂÃ‚Â¹ ÃƒÂÃ‚Â´ÃƒÂÃ‚ÂµÃƒÂÃ‚Â¹Ãƒâ€˜Ã‚ÂÃƒâ€˜Ã¢â‚¬Å¡ÃƒÂÃ‚Â²ÃƒÂÃ‚Â¸Ãƒâ€˜Ã¢â‚¬Å¡ÃƒÂÃ‚ÂµÃƒÂÃ‚Â»Ãƒâ€˜Ã…â€™ÃƒÂÃ‚Â½ÃƒÂÃ‚Â¾ ÃƒÂÃ‚Â±Ãƒâ€˜Ã†â€™ÃƒÂÃ‚Â´ÃƒÂÃ‚ÂµÃƒâ€˜Ã¢â‚¬Å¡ ÃƒÂÃ‚Â²Ãƒâ€˜Ã¢â‚¬Â¹ÃƒÂÃ‚Â¿ÃƒÂÃ‚Â¾ÃƒÂÃ‚Â»ÃƒÂÃ‚Â½Ãƒâ€˜Ã‚ÂÃƒâ€˜Ã¢â‚¬Å¡Ãƒâ€˜Ã…â€™Ãƒâ€˜Ã‚ÂÃƒâ€˜Ã‚Â ÃƒÂ¢Ã¢â‚¬Â Ã¢â‚¬â„¢ ÃƒÂÃ‚Â¿ÃƒÂÃ‚Â»ÃƒÂÃ‚ÂµÃƒÂÃ‚Â¹Ãƒâ€˜Ã‚ÂÃƒâ€˜Ã¢â‚¬Â¦ÃƒÂÃ‚Â¾ÃƒÂÃ‚Â»ÃƒÂÃ‚Â´ÃƒÂÃ‚ÂµÃƒâ€˜Ã¢â€šÂ¬ Ãƒâ€˜Ã†â€™ÃƒÂÃ‚Â±ÃƒÂÃ‚Â¸Ãƒâ€˜Ã¢â€šÂ¬ÃƒÂÃ‚Â°ÃƒÂÃ‚ÂµÃƒÂÃ‚Â¼
   showWelcomeHint = false;
   updateEmptyHint();
 
@@ -1782,7 +3245,7 @@ function runInlineAutostart(cfg) {
     totalDelay += delay;
 
     const tid = setTimeout(() => {
-      // если пользователь уже успел что-то отправить — не спамим
+      // ÃƒÂÃ‚ÂµÃƒâ€˜Ã‚ÂÃƒÂÃ‚Â»ÃƒÂÃ‚Â¸ ÃƒÂÃ‚Â¿ÃƒÂÃ‚Â¾ÃƒÂÃ‚Â»Ãƒâ€˜Ã…â€™ÃƒÂÃ‚Â·ÃƒÂÃ‚Â¾ÃƒÂÃ‚Â²ÃƒÂÃ‚Â°Ãƒâ€˜Ã¢â‚¬Å¡ÃƒÂÃ‚ÂµÃƒÂÃ‚Â»Ãƒâ€˜Ã…â€™ Ãƒâ€˜Ã†â€™ÃƒÂÃ‚Â¶ÃƒÂÃ‚Âµ Ãƒâ€˜Ã†â€™Ãƒâ€˜Ã‚ÂÃƒÂÃ‚Â¿ÃƒÂÃ‚ÂµÃƒÂÃ‚Â» Ãƒâ€˜Ã¢â‚¬Â¡Ãƒâ€˜Ã¢â‚¬Å¡ÃƒÂÃ‚Â¾-Ãƒâ€˜Ã¢â‚¬Å¡ÃƒÂÃ‚Â¾ ÃƒÂÃ‚Â¾Ãƒâ€˜Ã¢â‚¬Å¡ÃƒÂÃ‚Â¿Ãƒâ€˜Ã¢â€šÂ¬ÃƒÂÃ‚Â°ÃƒÂÃ‚Â²ÃƒÂÃ‚Â¸Ãƒâ€˜Ã¢â‚¬Å¡Ãƒâ€˜Ã…â€™ ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â ÃƒÂÃ‚Â½ÃƒÂÃ‚Âµ Ãƒâ€˜Ã‚ÂÃƒÂÃ‚Â¿ÃƒÂÃ‚Â°ÃƒÂÃ‚Â¼ÃƒÂÃ‚Â¸ÃƒÂÃ‚Â¼
       if (alreadyInteracted()) return;
 
       history.push({
@@ -1817,22 +3280,22 @@ function escapeHtml(str) {
 function linkify(html) {
   if (!html) return "";
 
-  // URL: http(s)://... или www....
+  // URL: http(s)://... ÃƒÂÃ‚Â¸ÃƒÂÃ‚Â»ÃƒÂÃ‚Â¸ www....
   const urlPattern = /\b((https?:\/\/|www\.)[^\s<]+[^\s<\.)])/gi;
 
   // email
   const emailPattern = /\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b/gi;
 
-  // сначала URL
+  // Ãƒâ€˜Ã‚ÂÃƒÂÃ‚Â½ÃƒÂÃ‚Â°Ãƒâ€˜Ã¢â‚¬Â¡ÃƒÂÃ‚Â°ÃƒÂÃ‚Â»ÃƒÂÃ‚Â° URL
   let out = html.replace(urlPattern, (match, url) => {
     let href = url;
     if (!/^https?:\/\//i.test(href)) {
-      href = "https://" + href;        // для www. добавим https://
+      href = "https://" + href;        // ÃƒÂÃ‚Â´ÃƒÂÃ‚Â»Ãƒâ€˜Ã‚Â www. ÃƒÂÃ‚Â´ÃƒÂÃ‚Â¾ÃƒÂÃ‚Â±ÃƒÂÃ‚Â°ÃƒÂÃ‚Â²ÃƒÂÃ‚Â¸ÃƒÂÃ‚Â¼ https://
     }
     return `<a href="${href}" target="_blank" rel="noopener noreferrer">${url}</a>`;
   });
 
-  // потом email
+  // ÃƒÂÃ‚Â¿ÃƒÂÃ‚Â¾Ãƒâ€˜Ã¢â‚¬Å¡ÃƒÂÃ‚Â¾ÃƒÂÃ‚Â¼ email
   out = out.replace(emailPattern, (email) => {
     return `<a href="mailto:${email}">${email}</a>`;
   });
@@ -1844,7 +3307,7 @@ function renderMarkdownBasic(text) {
   const cleaned = String(text || "").replace(/\s+$/g, "");
   let html = escapeHtml(cleaned);
 
-  // Заголовки markdown: ###, ##, #
+  // ÃƒÂÃ¢â‚¬â€ÃƒÂÃ‚Â°ÃƒÂÃ‚Â³ÃƒÂÃ‚Â¾ÃƒÂÃ‚Â»ÃƒÂÃ‚Â¾ÃƒÂÃ‚Â²ÃƒÂÃ‚ÂºÃƒÂÃ‚Â¸ markdown: ###, ##, #
   html = html.replace(/^###\s+(.+)$/gm, "<div class=\"aiw-h3\">$1</div>");
   html = html.replace(/^##\s+(.+)$/gm, "<div class=\"aiw-h2\">$1</div>");
   html = html.replace(/^#\s+(.+)$/gm, "<div class=\"aiw-h1\">$1</div>");
@@ -1855,28 +3318,28 @@ function renderMarkdownBasic(text) {
   // `code`
   html = html.replace(/`([^`]+)`/g, "<code>$1</code>");
 
-  // переносы строк
+  // ÃƒÂÃ‚Â¿ÃƒÂÃ‚ÂµÃƒâ€˜Ã¢â€šÂ¬ÃƒÂÃ‚ÂµÃƒÂÃ‚Â½ÃƒÂÃ‚Â¾Ãƒâ€˜Ã‚ÂÃƒâ€˜Ã¢â‚¬Â¹ Ãƒâ€˜Ã‚ÂÃƒâ€˜Ã¢â‚¬Å¡Ãƒâ€˜Ã¢â€šÂ¬ÃƒÂÃ‚Â¾ÃƒÂÃ‚Âº
   html = html.replace(/\n/g, "<br>");
 
-  // авто-линковка URL и email
+  // ÃƒÂÃ‚Â°ÃƒÂÃ‚Â²Ãƒâ€˜Ã¢â‚¬Å¡ÃƒÂÃ‚Â¾-ÃƒÂÃ‚Â»ÃƒÂÃ‚Â¸ÃƒÂÃ‚Â½ÃƒÂÃ‚ÂºÃƒÂÃ‚Â¾ÃƒÂÃ‚Â²ÃƒÂÃ‚ÂºÃƒÂÃ‚Â° URL ÃƒÂÃ‚Â¸ email
   html = linkify(html);
 
   return html;
 }
 
-// создаём DOM для одного сообщения и сразу добавляем его в messagesWrap
+// Ãƒâ€˜Ã‚ÂÃƒÂÃ‚Â¾ÃƒÂÃ‚Â·ÃƒÂÃ‚Â´ÃƒÂÃ‚Â°Ãƒâ€˜Ã¢â‚¬ËœÃƒÂÃ‚Â¼ DOM ÃƒÂÃ‚Â´ÃƒÂÃ‚Â»Ãƒâ€˜Ã‚Â ÃƒÂÃ‚Â¾ÃƒÂÃ‚Â´ÃƒÂÃ‚Â½ÃƒÂÃ‚Â¾ÃƒÂÃ‚Â³ÃƒÂÃ‚Â¾ Ãƒâ€˜Ã‚ÂÃƒÂÃ‚Â¾ÃƒÂÃ‚Â¾ÃƒÂÃ‚Â±Ãƒâ€˜Ã¢â‚¬Â°ÃƒÂÃ‚ÂµÃƒÂÃ‚Â½ÃƒÂÃ‚Â¸Ãƒâ€˜Ã‚Â ÃƒÂÃ‚Â¸ Ãƒâ€˜Ã‚ÂÃƒâ€˜Ã¢â€šÂ¬ÃƒÂÃ‚Â°ÃƒÂÃ‚Â·Ãƒâ€˜Ã†â€™ ÃƒÂÃ‚Â´ÃƒÂÃ‚Â¾ÃƒÂÃ‚Â±ÃƒÂÃ‚Â°ÃƒÂÃ‚Â²ÃƒÂÃ‚Â»Ãƒâ€˜Ã‚ÂÃƒÂÃ‚ÂµÃƒÂÃ‚Â¼ ÃƒÂÃ‚ÂµÃƒÂÃ‚Â³ÃƒÂÃ‚Â¾ ÃƒÂÃ‚Â² messagesWrap
 function appendMessageDOM(m) {
   const isUser = m.role === "user";
 
   const row = document.createElement("div");
   row.className = "aiw-row " + (isUser ? "me" : "ai");
 
-  // аватар
+  // ÃƒÂÃ‚Â°ÃƒÂÃ‚Â²ÃƒÂÃ‚Â°Ãƒâ€˜Ã¢â‚¬Å¡ÃƒÂÃ‚Â°Ãƒâ€˜Ã¢â€šÂ¬
   const ava = document.createElement("div");
   ava.className = "aiw-ava " + (isUser ? "me" : "ai");
 
   if (!isUser && LOGO) {
-    // один логотип — одна загрузка, браузер потом закэширует
+    // ÃƒÂÃ‚Â¾ÃƒÂÃ‚Â´ÃƒÂÃ‚Â¸ÃƒÂÃ‚Â½ ÃƒÂÃ‚Â»ÃƒÂÃ‚Â¾ÃƒÂÃ‚Â³ÃƒÂÃ‚Â¾Ãƒâ€˜Ã¢â‚¬Å¡ÃƒÂÃ‚Â¸ÃƒÂÃ‚Â¿ ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â ÃƒÂÃ‚Â¾ÃƒÂÃ‚Â´ÃƒÂÃ‚Â½ÃƒÂÃ‚Â° ÃƒÂÃ‚Â·ÃƒÂÃ‚Â°ÃƒÂÃ‚Â³Ãƒâ€˜Ã¢â€šÂ¬Ãƒâ€˜Ã†â€™ÃƒÂÃ‚Â·ÃƒÂÃ‚ÂºÃƒÂÃ‚Â°, ÃƒÂÃ‚Â±Ãƒâ€˜Ã¢â€šÂ¬ÃƒÂÃ‚Â°Ãƒâ€˜Ã†â€™ÃƒÂÃ‚Â·ÃƒÂÃ‚ÂµÃƒâ€˜Ã¢â€šÂ¬ ÃƒÂÃ‚Â¿ÃƒÂÃ‚Â¾Ãƒâ€˜Ã¢â‚¬Å¡ÃƒÂÃ‚Â¾ÃƒÂÃ‚Â¼ ÃƒÂÃ‚Â·ÃƒÂÃ‚Â°ÃƒÂÃ‚ÂºÃƒâ€˜Ã‚ÂÃƒâ€˜Ã‹â€ ÃƒÂÃ‚Â¸Ãƒâ€˜Ã¢â€šÂ¬Ãƒâ€˜Ã†â€™ÃƒÂÃ‚ÂµÃƒâ€˜Ã¢â‚¬Å¡
     const img = document.createElement("img");
     img.src = LOGO;
     img.alt = "logo";
@@ -1892,7 +3355,7 @@ function appendMessageDOM(m) {
 
   if (!isUser) row.appendChild(ava);
 
-  // пузырь + время
+  // ÃƒÂÃ‚Â¿Ãƒâ€˜Ã†â€™ÃƒÂÃ‚Â·Ãƒâ€˜Ã¢â‚¬Â¹Ãƒâ€˜Ã¢â€šÂ¬Ãƒâ€˜Ã…â€™ + ÃƒÂÃ‚Â²Ãƒâ€˜Ã¢â€šÂ¬ÃƒÂÃ‚ÂµÃƒÂÃ‚Â¼Ãƒâ€˜Ã‚Â
   const bubbleWrap = document.createElement("div");
   bubbleWrap.className = "aiw-bubble-wrap";
 
@@ -1915,7 +3378,7 @@ bubble.innerHTML = renderMarkdownBasic(m.content);
   return { row, bubble, time };
 }
 
-// полный рендер — используем только когда реально нужно всё перерисовать
+// ÃƒÂÃ‚Â¿ÃƒÂÃ‚Â¾ÃƒÂÃ‚Â»ÃƒÂÃ‚Â½Ãƒâ€˜Ã¢â‚¬Â¹ÃƒÂÃ‚Â¹ Ãƒâ€˜Ã¢â€šÂ¬ÃƒÂÃ‚ÂµÃƒÂÃ‚Â½ÃƒÂÃ‚Â´ÃƒÂÃ‚ÂµÃƒâ€˜Ã¢â€šÂ¬ ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â ÃƒÂÃ‚Â¸Ãƒâ€˜Ã‚ÂÃƒÂÃ‚Â¿ÃƒÂÃ‚Â¾ÃƒÂÃ‚Â»Ãƒâ€˜Ã…â€™ÃƒÂÃ‚Â·Ãƒâ€˜Ã†â€™ÃƒÂÃ‚ÂµÃƒÂÃ‚Â¼ Ãƒâ€˜Ã¢â‚¬Å¡ÃƒÂÃ‚Â¾ÃƒÂÃ‚Â»Ãƒâ€˜Ã…â€™ÃƒÂÃ‚ÂºÃƒÂÃ‚Â¾ ÃƒÂÃ‚ÂºÃƒÂÃ‚Â¾ÃƒÂÃ‚Â³ÃƒÂÃ‚Â´ÃƒÂÃ‚Â° Ãƒâ€˜Ã¢â€šÂ¬ÃƒÂÃ‚ÂµÃƒÂÃ‚Â°ÃƒÂÃ‚Â»Ãƒâ€˜Ã…â€™ÃƒÂÃ‚Â½ÃƒÂÃ‚Â¾ ÃƒÂÃ‚Â½Ãƒâ€˜Ã†â€™ÃƒÂÃ‚Â¶ÃƒÂÃ‚Â½ÃƒÂÃ‚Â¾ ÃƒÂÃ‚Â²Ãƒâ€˜Ã‚ÂÃƒâ€˜Ã¢â‚¬Ëœ ÃƒÂÃ‚Â¿ÃƒÂÃ‚ÂµÃƒâ€˜Ã¢â€šÂ¬ÃƒÂÃ‚ÂµÃƒâ€˜Ã¢â€šÂ¬ÃƒÂÃ‚Â¸Ãƒâ€˜Ã‚ÂÃƒÂÃ‚Â¾ÃƒÂÃ‚Â²ÃƒÂÃ‚Â°Ãƒâ€˜Ã¢â‚¬Å¡Ãƒâ€˜Ã…â€™
 function renderAll() {
   while (messagesWrap.firstChild) messagesWrap.removeChild(messagesWrap.firstChild);
   const messagesToRender = visibleMessages();
@@ -1926,7 +3389,7 @@ function renderAll() {
   if (INLINE && demoActive && demoTypingActive) showTyping(getCurrentDemoTypingRole());
   else hideTyping();
   updateEmptyHint();
-  // при полном перерендере: скроллим только если юзер был pinned
+  // ÃƒÂÃ‚Â¿Ãƒâ€˜Ã¢â€šÂ¬ÃƒÂÃ‚Â¸ ÃƒÂÃ‚Â¿ÃƒÂÃ‚Â¾ÃƒÂÃ‚Â»ÃƒÂÃ‚Â½ÃƒÂÃ‚Â¾ÃƒÂÃ‚Â¼ ÃƒÂÃ‚Â¿ÃƒÂÃ‚ÂµÃƒâ€˜Ã¢â€šÂ¬ÃƒÂÃ‚ÂµÃƒâ€˜Ã¢â€šÂ¬ÃƒÂÃ‚ÂµÃƒÂÃ‚Â½ÃƒÂÃ‚Â´ÃƒÂÃ‚ÂµÃƒâ€˜Ã¢â€šÂ¬ÃƒÂÃ‚Âµ: Ãƒâ€˜Ã‚ÂÃƒÂÃ‚ÂºÃƒâ€˜Ã¢â€šÂ¬ÃƒÂÃ‚Â¾ÃƒÂÃ‚Â»ÃƒÂÃ‚Â»ÃƒÂÃ‚Â¸ÃƒÂÃ‚Â¼ Ãƒâ€˜Ã¢â‚¬Å¡ÃƒÂÃ‚Â¾ÃƒÂÃ‚Â»Ãƒâ€˜Ã…â€™ÃƒÂÃ‚ÂºÃƒÂÃ‚Â¾ ÃƒÂÃ‚ÂµÃƒâ€˜Ã‚ÂÃƒÂÃ‚Â»ÃƒÂÃ‚Â¸ Ãƒâ€˜Ã…Â½ÃƒÂÃ‚Â·ÃƒÂÃ‚ÂµÃƒâ€˜Ã¢â€šÂ¬ ÃƒÂÃ‚Â±Ãƒâ€˜Ã¢â‚¬Â¹ÃƒÂÃ‚Â» pinned
 scrollToBottom(false);
   postHeight();
 }
@@ -1934,7 +3397,7 @@ scrollToBottom(false);
 
 function postHeight() {
   try {
-    if (FIT_MODE === "container") return; // родитель сам управляет высотой
+    if (FIT_MODE === "container") return; // Ãƒâ€˜Ã¢â€šÂ¬ÃƒÂÃ‚Â¾ÃƒÂÃ‚Â´ÃƒÂÃ‚Â¸Ãƒâ€˜Ã¢â‚¬Å¡ÃƒÂÃ‚ÂµÃƒÂÃ‚Â»Ãƒâ€˜Ã…â€™ Ãƒâ€˜Ã‚ÂÃƒÂÃ‚Â°ÃƒÂÃ‚Â¼ Ãƒâ€˜Ã†â€™ÃƒÂÃ‚Â¿Ãƒâ€˜Ã¢â€šÂ¬ÃƒÂÃ‚Â°ÃƒÂÃ‚Â²ÃƒÂÃ‚Â»Ãƒâ€˜Ã‚ÂÃƒÂÃ‚ÂµÃƒâ€˜Ã¢â‚¬Å¡ ÃƒÂÃ‚Â²Ãƒâ€˜Ã¢â‚¬Â¹Ãƒâ€˜Ã‚ÂÃƒÂÃ‚Â¾Ãƒâ€˜Ã¢â‚¬Å¡ÃƒÂÃ‚Â¾ÃƒÂÃ‚Â¹
     if (window.parent && window.parent !== window) {
       const h = document.documentElement.scrollHeight;
       window.parent.postMessage({ type: "aiw:resize", height: h }, "*");
@@ -1951,25 +3414,159 @@ function postHeight() {
 } catch {}
 
 let open = INLINE ? true : false;
+const FLOAT_LAUNCHER_CLICK_ACTION = (!INLINE && FLOAT_LAUNCHER.clickAction === "anchor") ? "anchor" : "toggle";
+
+function querySelectorSafe(selector) {
+  const normalized = toText(selector || "").trim();
+  if (!normalized) return null;
+  try {
+    return document.querySelector(normalized);
+  } catch {
+    return null;
+  }
+}
+
+function resolveFloatLauncherAnchorTarget() {
+  const configuredTarget = toText(FLOAT_LAUNCHER.anchorTarget || "").trim();
+  if (configuredTarget) {
+    if (configuredTarget.startsWith("#")) {
+      const byHash = querySelectorSafe(configuredTarget);
+      if (byHash) return byHash;
+      const byId = document.getElementById(configuredTarget.slice(1));
+      if (byId) return byId;
+    }
+    const bySelector = querySelectorSafe(configuredTarget);
+    if (bySelector) return bySelector;
+    const byId = document.getElementById(configuredTarget);
+    if (byId) return byId;
+  }
+
+  const fallbackSelectors = [
+    "[data-aiw-inline-anchor]",
+    "[data-aiw-inline-widget]",
+    "[data-aiw-mode=\"inline\"]",
+    "iframe[data-aiw-mode=\"inline\"]",
+    "iframe[src*=\"mode=inline\"]"
+  ];
+  for (let i = 0; i < fallbackSelectors.length; i += 1) {
+    const found = querySelectorSafe(fallbackSelectors[i]);
+    if (found) return found;
+  }
+  return null;
+}
+
+function navigateFloatLauncherToInlineTarget() {
+  if (INLINE) return false;
+  const configuredTarget = toText(FLOAT_LAUNCHER.anchorTarget || "").trim();
+  const target = resolveFloatLauncherAnchorTarget();
+  if (!target) {
+    if (configuredTarget.startsWith("#")) {
+      try {
+        if (location.hash !== configuredTarget) location.hash = configuredTarget;
+        return true;
+      } catch {}
+    }
+    return false;
+  }
+
+  const behavior = FLOAT_LAUNCHER.anchorBehavior === "auto" ? "auto" : "smooth";
+  const block = FLOAT_LAUNCHER.anchorBlock || "start";
+  const offsetPx = Number(FLOAT_LAUNCHER.anchorOffsetPx) || 0;
+  if (offsetPx !== 0) {
+    const top = target.getBoundingClientRect().top + window.pageYOffset + offsetPx;
+    window.scrollTo({ top, behavior });
+  } else {
+    target.scrollIntoView({ behavior, block });
+  }
+
+  const targetHash = target.id ? `#${target.id}` : (configuredTarget.startsWith("#") ? configuredTarget : "");
+  if (targetHash && location.hash !== targetHash) {
+    try {
+      window.history.replaceState(null, "", targetHash);
+    } catch {}
+  }
+  return true;
+}
+
+function openFloatPanel() {
+  if (INLINE) return;
+  if (open) return;
+  open = true;
+  panel.style.display = "flex";
+  syncFloatLauncherOpenState();
+  if (RESET_HISTORY_ON_OPEN) {
+    try { if (STORAGE) STORAGE.removeItem(storeKey); } catch {}
+    try { sessionStorage.removeItem(USER_INTERACTED_KEY); } catch {}
+    history = [];
+    writeHistory(history);
+    renderAll();
+  }
+  setTimeout(() => input.focus(), 0);
+}
+
+function closeFloatPanel() {
+  if (INLINE) return;
+  if (!open) return;
+  open = false;
+  if (inlineFullscreen) {
+    setInlineFullscreenState(false);
+  }
+  panel.style.display = "none";
+  syncFloatLauncherOpenState();
+}
+
+function toggleFloatPanel() {
+  if (INLINE) return;
+  if (open) {
+    closeFloatPanel();
+    return;
+  }
+  openFloatPanel();
+}
+
+function syncFloatLauncherOpenState() {
+  if (INLINE) return;
+  btn.classList.toggle("aiw-btn-open", open);
+  btn.classList.toggle("aiw-btn-closed", !open);
+  btn.setAttribute("aria-expanded", open ? "true" : "false");
+  const collapsedLabel = FLOAT_LAUNCHER_CLICK_ACTION === "anchor"
+    ? (LANG.startsWith("ru") ? "\u041f\u0435\u0440\u0435\u0439\u0442\u0438 \u043a \u0447\u0430\u0442\u0443" : "Go to chat")
+    : (LANG.startsWith("ru") ? "\u041e\u0442\u043a\u0440\u044b\u0442\u044c \u0447\u0430\u0442" : "Open chat");
+  btn.setAttribute(
+    "aria-label",
+    open
+      ? (LANG.startsWith("ru") ? "\u0421\u0432\u0435\u0440\u043d\u0443\u0442\u044c \u0447\u0430\u0442" : "Collapse chat")
+      : collapsedLabel
+  );
+  if (btn.classList.contains("aiw-btn-pill")) {
+    applyFloatLauncherState(currentFloatLauncherState);
+  }
+}
 
 if (!INLINE) {
   btn.addEventListener("click", () => {
-    open = !open;
-    panel.style.display = open ? "flex" : "none";
-    if (open) {
-      if (RESET_HISTORY_ON_OPEN) {
-        try { localStorage.removeItem(storeKey); } catch {}
-        try { sessionStorage.removeItem(USER_INTERACTED_KEY); } catch {}
-        history = [];
-        writeHistory(history);
-        renderAll();
-      }
-      setTimeout(() => input.focus(), 0);
+    if (FLOAT_LAUNCHER_CLICK_ACTION === "anchor") {
+      const navigated = navigateFloatLauncherToInlineTarget();
+      if (navigated) return;
     }
+    toggleFloatPanel();
   });
-    close.addEventListener("click", () => { open = false; panel.style.display = "none"; });
+  close.addEventListener("click", () => {
+    closeFloatPanel();
+  });
+  window.addEventListener("keydown", (e) => {
+    if (e.key !== "Escape") return;
+    if (!open) return;
+    e.preventDefault();
+    if (inlineFullscreen) {
+      setInlineFullscreenState(false);
+      return;
+    }
+    closeFloatPanel();
+  });
+  syncFloatLauncherOpenState();
 } else {
-  // в inline закрывашку можно спрятать или оставить — на твой вкус
+  // ÃƒÂÃ‚Â² inline ÃƒÂÃ‚Â·ÃƒÂÃ‚Â°ÃƒÂÃ‚ÂºÃƒâ€˜Ã¢â€šÂ¬Ãƒâ€˜Ã¢â‚¬Â¹ÃƒÂÃ‚Â²ÃƒÂÃ‚Â°Ãƒâ€˜Ã‹â€ ÃƒÂÃ‚ÂºÃƒâ€˜Ã†â€™ ÃƒÂÃ‚Â¼ÃƒÂÃ‚Â¾ÃƒÂÃ‚Â¶ÃƒÂÃ‚Â½ÃƒÂÃ‚Â¾ Ãƒâ€˜Ã‚ÂÃƒÂÃ‚Â¿Ãƒâ€˜Ã¢â€šÂ¬Ãƒâ€˜Ã‚ÂÃƒâ€˜Ã¢â‚¬Å¡ÃƒÂÃ‚Â°Ãƒâ€˜Ã¢â‚¬Å¡Ãƒâ€˜Ã…â€™ ÃƒÂÃ‚Â¸ÃƒÂÃ‚Â»ÃƒÂÃ‚Â¸ ÃƒÂÃ‚Â¾Ãƒâ€˜Ã‚ÂÃƒâ€˜Ã¢â‚¬Å¡ÃƒÂÃ‚Â°ÃƒÂÃ‚Â²ÃƒÂÃ‚Â¸Ãƒâ€˜Ã¢â‚¬Å¡Ãƒâ€˜Ã…â€™ ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â ÃƒÂÃ‚Â½ÃƒÂÃ‚Â° Ãƒâ€˜Ã¢â‚¬Å¡ÃƒÂÃ‚Â²ÃƒÂÃ‚Â¾ÃƒÂÃ‚Â¹ ÃƒÂÃ‚Â²ÃƒÂÃ‚ÂºÃƒâ€˜Ã†â€™Ãƒâ€˜Ã‚Â
   close.style.display = "none";
 
   if (window.parent && window.parent !== window) {
@@ -2006,7 +3603,7 @@ resetBtn.addEventListener("click", (e) => {
   } catch {}
   try { sessionStorage.removeItem(USER_INTERACTED_KEY); } catch {}
 
-  // после ресета хотим видеть приветственный пузырь
+  // ÃƒÂÃ‚Â¿ÃƒÂÃ‚Â¾Ãƒâ€˜Ã‚ÂÃƒÂÃ‚Â»ÃƒÂÃ‚Âµ Ãƒâ€˜Ã¢â€šÂ¬ÃƒÂÃ‚ÂµÃƒâ€˜Ã‚ÂÃƒÂÃ‚ÂµÃƒâ€˜Ã¢â‚¬Å¡ÃƒÂÃ‚Â° Ãƒâ€˜Ã¢â‚¬Â¦ÃƒÂÃ‚Â¾Ãƒâ€˜Ã¢â‚¬Å¡ÃƒÂÃ‚Â¸ÃƒÂÃ‚Â¼ ÃƒÂÃ‚Â²ÃƒÂÃ‚Â¸ÃƒÂÃ‚Â´ÃƒÂÃ‚ÂµÃƒâ€˜Ã¢â‚¬Å¡Ãƒâ€˜Ã…â€™ ÃƒÂÃ‚Â¿Ãƒâ€˜Ã¢â€šÂ¬ÃƒÂÃ‚Â¸ÃƒÂÃ‚Â²ÃƒÂÃ‚ÂµÃƒâ€˜Ã¢â‚¬Å¡Ãƒâ€˜Ã‚ÂÃƒâ€˜Ã¢â‚¬Å¡ÃƒÂÃ‚Â²ÃƒÂÃ‚ÂµÃƒÂÃ‚Â½ÃƒÂÃ‚Â½Ãƒâ€˜Ã¢â‚¬Â¹ÃƒÂÃ‚Â¹ ÃƒÂÃ‚Â¿Ãƒâ€˜Ã†â€™ÃƒÂÃ‚Â·Ãƒâ€˜Ã¢â‚¬Â¹Ãƒâ€˜Ã¢â€šÂ¬Ãƒâ€˜Ã…â€™
   showWelcomeHint = true;
 
   history = [];
@@ -2051,8 +3648,9 @@ function panelIsHidden() {
   try { return getComputedStyle(panel).display === "none"; } catch { return false; }
 }
 function openPanelIfHidden() {
-  if (INLINE) return; // в inline всегда открыт
-  if (panelIsHidden()) panel.style.display = "flex";
+  if (INLINE) return; // ÃƒÂÃ‚Â² inline ÃƒÂÃ‚Â²Ãƒâ€˜Ã‚ÂÃƒÂÃ‚ÂµÃƒÂÃ‚Â³ÃƒÂÃ‚Â´ÃƒÂÃ‚Â° ÃƒÂÃ‚Â¾Ãƒâ€˜Ã¢â‚¬Å¡ÃƒÂÃ‚ÂºÃƒâ€˜Ã¢â€šÂ¬Ãƒâ€˜Ã¢â‚¬Â¹Ãƒâ€˜Ã¢â‚¬Å¡
+  if (!panelIsHidden()) return;
+  openFloatPanel();
 }
 
 function showLocalGreeting() {
@@ -2084,7 +3682,7 @@ function showLocalGreeting() {
       showTyping();
 
       const meta = collectMeta();
-      // помечаем автогрит для аналитики на бэке
+      // ÃƒÂÃ‚Â¿ÃƒÂÃ‚Â¾ÃƒÂÃ‚Â¼ÃƒÂÃ‚ÂµÃƒâ€˜Ã¢â‚¬Â¡ÃƒÂÃ‚Â°ÃƒÂÃ‚ÂµÃƒÂÃ‚Â¼ ÃƒÂÃ‚Â°ÃƒÂÃ‚Â²Ãƒâ€˜Ã¢â‚¬Å¡ÃƒÂÃ‚Â¾ÃƒÂÃ‚Â³Ãƒâ€˜Ã¢â€šÂ¬ÃƒÂÃ‚Â¸Ãƒâ€˜Ã¢â‚¬Å¡ ÃƒÂÃ‚Â´ÃƒÂÃ‚Â»Ãƒâ€˜Ã‚Â ÃƒÂÃ‚Â°ÃƒÂÃ‚Â½ÃƒÂÃ‚Â°ÃƒÂÃ‚Â»ÃƒÂÃ‚Â¸Ãƒâ€˜Ã¢â‚¬Å¡ÃƒÂÃ‚Â¸ÃƒÂÃ‚ÂºÃƒÂÃ‚Â¸ ÃƒÂÃ‚Â½ÃƒÂÃ‚Â° ÃƒÂÃ‚Â±Ãƒâ€˜Ã‚ÂÃƒÂÃ‚ÂºÃƒÂÃ‚Âµ
       const res = await fetch(ENDPOINT, {
         method: "POST",
         headers: {
@@ -2109,7 +3707,7 @@ function showLocalGreeting() {
         let reply = "";
         try { reply = (JSON.parse(raw) || {}).reply || ""; } catch { reply = raw || ""; }
         dedupeAutogreetAtTail();
-        history.push({ role: "assistant", content: reply || (LANG.startsWith("ru") ? "…" : "…"), meta: { kind: "autogreet" }, ts: Date.now()});
+        history.push({ role: "assistant", content: reply || (LANG.startsWith("ru") ? "ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦" : "ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦"), meta: { kind: "autogreet" }, ts: Date.now()});
         writeHistory(history);
         renderAll();
          log("fetchAIGreeting(JSON): message pushed, length=", (reply||"").length);
@@ -2122,7 +3720,7 @@ const msg = { role: "assistant", content: "", ts: Date.now() };
 history.push(msg);
 writeHistory(history);
 
-// пузырь создаём только, когда придёт первый chunk
+// ÃƒÂÃ‚Â¿Ãƒâ€˜Ã†â€™ÃƒÂÃ‚Â·Ãƒâ€˜Ã¢â‚¬Â¹Ãƒâ€˜Ã¢â€šÂ¬Ãƒâ€˜Ã…â€™ Ãƒâ€˜Ã‚ÂÃƒÂÃ‚Â¾ÃƒÂÃ‚Â·ÃƒÂÃ‚Â´ÃƒÂÃ‚Â°Ãƒâ€˜Ã¢â‚¬ËœÃƒÂÃ‚Â¼ Ãƒâ€˜Ã¢â‚¬Å¡ÃƒÂÃ‚Â¾ÃƒÂÃ‚Â»Ãƒâ€˜Ã…â€™ÃƒÂÃ‚ÂºÃƒÂÃ‚Â¾, ÃƒÂÃ‚ÂºÃƒÂÃ‚Â¾ÃƒÂÃ‚Â³ÃƒÂÃ‚Â´ÃƒÂÃ‚Â° ÃƒÂÃ‚Â¿Ãƒâ€˜Ã¢â€šÂ¬ÃƒÂÃ‚Â¸ÃƒÂÃ‚Â´Ãƒâ€˜Ã¢â‚¬ËœÃƒâ€˜Ã¢â‚¬Å¡ ÃƒÂÃ‚Â¿ÃƒÂÃ‚ÂµÃƒâ€˜Ã¢â€šÂ¬ÃƒÂÃ‚Â²Ãƒâ€˜Ã¢â‚¬Â¹ÃƒÂÃ‚Â¹ chunk
 let rendered = false;
 let bubble;
 
@@ -2167,7 +3765,7 @@ log("fetchAIGreeting(SSE): stream ended, len=", (msg.content || "").length);
 markAutoGreetUsed();
 
     } catch (e) {
-      history.push({ role: "assistant", content: LANG.startsWith("ru") ? "⚠️ Ошибка соединения" : "⚠️ Connection error" });
+      history.push({ role: "assistant", content: LANG.startsWith("ru") ? "ÃƒÂ¢Ã…Â¡Ã‚Â ÃƒÂ¯Ã‚Â¸Ã‚Â ÃƒÂÃ…Â¾Ãƒâ€˜Ã‹â€ ÃƒÂÃ‚Â¸ÃƒÂÃ‚Â±ÃƒÂÃ‚ÂºÃƒÂÃ‚Â° Ãƒâ€˜Ã‚ÂÃƒÂÃ‚Â¾ÃƒÂÃ‚ÂµÃƒÂÃ‚Â´ÃƒÂÃ‚Â¸ÃƒÂÃ‚Â½ÃƒÂÃ‚ÂµÃƒÂÃ‚Â½ÃƒÂÃ‚Â¸Ãƒâ€˜Ã‚Â" : "ÃƒÂ¢Ã…Â¡Ã‚Â ÃƒÂ¯Ã‚Â¸Ã‚Â Connection error" });
       writeHistory(history);
       renderAll();
     } finally {
@@ -2182,9 +3780,9 @@ function scheduleAutoGreet() {
   log("scheduleAutoGreet: scheduled in", AUTO_DELAY, "ms");
 
   AUTO_TIMER_ID = setTimeout(() => {
-    AUTO_TIMER_ID = null; // таймер отработал
+    AUTO_TIMER_ID = null; // Ãƒâ€˜Ã¢â‚¬Å¡ÃƒÂÃ‚Â°ÃƒÂÃ‚Â¹ÃƒÂÃ‚Â¼ÃƒÂÃ‚ÂµÃƒâ€˜Ã¢â€šÂ¬ ÃƒÂÃ‚Â¾Ãƒâ€˜Ã¢â‚¬Å¡Ãƒâ€˜Ã¢â€šÂ¬ÃƒÂÃ‚Â°ÃƒÂÃ‚Â±ÃƒÂÃ‚Â¾Ãƒâ€˜Ã¢â‚¬Å¡ÃƒÂÃ‚Â°ÃƒÂÃ‚Â»
 
-    // если пользователь уже что-то отправил — не показываем приветствие
+    // ÃƒÂÃ‚ÂµÃƒâ€˜Ã‚ÂÃƒÂÃ‚Â»ÃƒÂÃ‚Â¸ ÃƒÂÃ‚Â¿ÃƒÂÃ‚Â¾ÃƒÂÃ‚Â»Ãƒâ€˜Ã…â€™ÃƒÂÃ‚Â·ÃƒÂÃ‚Â¾ÃƒÂÃ‚Â²ÃƒÂÃ‚Â°Ãƒâ€˜Ã¢â‚¬Å¡ÃƒÂÃ‚ÂµÃƒÂÃ‚Â»Ãƒâ€˜Ã…â€™ Ãƒâ€˜Ã†â€™ÃƒÂÃ‚Â¶ÃƒÂÃ‚Âµ Ãƒâ€˜Ã¢â‚¬Â¡Ãƒâ€˜Ã¢â‚¬Å¡ÃƒÂÃ‚Â¾-Ãƒâ€˜Ã¢â‚¬Å¡ÃƒÂÃ‚Â¾ ÃƒÂÃ‚Â¾Ãƒâ€˜Ã¢â‚¬Å¡ÃƒÂÃ‚Â¿Ãƒâ€˜Ã¢â€šÂ¬ÃƒÂÃ‚Â°ÃƒÂÃ‚Â²ÃƒÂÃ‚Â¸ÃƒÂÃ‚Â» ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â ÃƒÂÃ‚Â½ÃƒÂÃ‚Âµ ÃƒÂÃ‚Â¿ÃƒÂÃ‚Â¾ÃƒÂÃ‚ÂºÃƒÂÃ‚Â°ÃƒÂÃ‚Â·Ãƒâ€˜Ã¢â‚¬Â¹ÃƒÂÃ‚Â²ÃƒÂÃ‚Â°ÃƒÂÃ‚ÂµÃƒÂÃ‚Â¼ ÃƒÂÃ‚Â¿Ãƒâ€˜Ã¢â€šÂ¬ÃƒÂÃ‚Â¸ÃƒÂÃ‚Â²ÃƒÂÃ‚ÂµÃƒâ€˜Ã¢â‚¬Å¡Ãƒâ€˜Ã‚ÂÃƒâ€˜Ã¢â‚¬Å¡ÃƒÂÃ‚Â²ÃƒÂÃ‚Â¸ÃƒÂÃ‚Âµ
     if (alreadyInteracted()) {
       log("scheduleAutoGreet: cancelled because user already interacted");
       return;
@@ -2199,14 +3797,14 @@ function scheduleAutoGreet() {
     if (AUTO_MODE === "ai") {
       log("autogreet -> AI mode");
       if (RESET_HISTORY_ON_OPEN) {
-        try { localStorage.removeItem(storeKey); } catch {}
+        try { if (STORAGE) STORAGE.removeItem(storeKey); } catch {}
         history = []; writeHistory(history); renderAll();
       }
       fetchAIGreeting();
     } else {
       log("autogreet -> LOCAL mode");
       if (RESET_HISTORY_ON_OPEN) {
-        try { localStorage.removeItem(storeKey); } catch {}
+        try { if (STORAGE) STORAGE.removeItem(storeKey); } catch {}
         history = []; writeHistory(history); renderAll();
       }
       showLocalGreeting();
@@ -2251,7 +3849,7 @@ const res = await fetch(ENDPOINT, {
   body: JSON.stringify({
     messages: safeMsgs,
       stream: STREAM, 
-    meta // <- отправляем всю мету
+    meta // <- ÃƒÂÃ‚Â¾Ãƒâ€˜Ã¢â‚¬Å¡ÃƒÂÃ‚Â¿Ãƒâ€˜Ã¢â€šÂ¬ÃƒÂÃ‚Â°ÃƒÂÃ‚Â²ÃƒÂÃ‚Â»Ãƒâ€˜Ã‚ÂÃƒÂÃ‚ÂµÃƒÂÃ‚Â¼ ÃƒÂÃ‚Â²Ãƒâ€˜Ã‚ÂÃƒâ€˜Ã…Â½ ÃƒÂÃ‚Â¼ÃƒÂÃ‚ÂµÃƒâ€˜Ã¢â‚¬Å¡Ãƒâ€˜Ã†â€™
   }),
   signal: controller.signal,
   keepalive: true,
@@ -2271,8 +3869,8 @@ const raw = await res.text();
  } catch { reply = raw || ""; }
 history.push({
   role: "assistant",
-  content: reply || (LANG.startsWith("ru") ? "…" : "…"),
-  meta: { citations }, // при желании сохраняем, но не рендерим
+  content: reply || (LANG.startsWith("ru") ? "ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦" : "ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦"),
+  meta: { citations }, // ÃƒÂÃ‚Â¿Ãƒâ€˜Ã¢â€šÂ¬ÃƒÂÃ‚Â¸ ÃƒÂÃ‚Â¶ÃƒÂÃ‚ÂµÃƒÂÃ‚Â»ÃƒÂÃ‚Â°ÃƒÂÃ‚Â½ÃƒÂÃ‚Â¸ÃƒÂÃ‚Â¸ Ãƒâ€˜Ã‚ÂÃƒÂÃ‚Â¾Ãƒâ€˜Ã¢â‚¬Â¦Ãƒâ€˜Ã¢â€šÂ¬ÃƒÂÃ‚Â°ÃƒÂÃ‚Â½Ãƒâ€˜Ã‚ÂÃƒÂÃ‚ÂµÃƒÂÃ‚Â¼, ÃƒÂÃ‚Â½ÃƒÂÃ‚Â¾ ÃƒÂÃ‚Â½ÃƒÂÃ‚Âµ Ãƒâ€˜Ã¢â€šÂ¬ÃƒÂÃ‚ÂµÃƒÂÃ‚Â½ÃƒÂÃ‚Â´ÃƒÂÃ‚ÂµÃƒâ€˜Ã¢â€šÂ¬ÃƒÂÃ‚Â¸ÃƒÂÃ‚Â¼
   ts: Date.now()
 });
 
@@ -2286,7 +3884,7 @@ const msg = { role: "assistant", content: "", ts: Date.now() };
 history.push(msg);
 writeHistory(history);
 
-// пузырь создаём только при первом чанке
+// ÃƒÂÃ‚Â¿Ãƒâ€˜Ã†â€™ÃƒÂÃ‚Â·Ãƒâ€˜Ã¢â‚¬Â¹Ãƒâ€˜Ã¢â€šÂ¬Ãƒâ€˜Ã…â€™ Ãƒâ€˜Ã‚ÂÃƒÂÃ‚Â¾ÃƒÂÃ‚Â·ÃƒÂÃ‚Â´ÃƒÂÃ‚Â°Ãƒâ€˜Ã¢â‚¬ËœÃƒÂÃ‚Â¼ Ãƒâ€˜Ã¢â‚¬Å¡ÃƒÂÃ‚Â¾ÃƒÂÃ‚Â»Ãƒâ€˜Ã…â€™ÃƒÂÃ‚ÂºÃƒÂÃ‚Â¾ ÃƒÂÃ‚Â¿Ãƒâ€˜Ã¢â€šÂ¬ÃƒÂÃ‚Â¸ ÃƒÂÃ‚Â¿ÃƒÂÃ‚ÂµÃƒâ€˜Ã¢â€šÂ¬ÃƒÂÃ‚Â²ÃƒÂÃ‚Â¾ÃƒÂÃ‚Â¼ Ãƒâ€˜Ã¢â‚¬Â¡ÃƒÂÃ‚Â°ÃƒÂÃ‚Â½ÃƒÂÃ‚ÂºÃƒÂÃ‚Âµ
 let rendered = false;
 let bubble;
 
@@ -2328,7 +3926,7 @@ if (!rendered) {
 writeHistory(history);
 
     } catch (err) {
-      history.push({ role: "assistant", content: LANG.startsWith("ru") ? "⚠️ Ошибка соединения" : "⚠️ Connection error" });
+      history.push({ role: "assistant", content: LANG.startsWith("ru") ? "ÃƒÂ¢Ã…Â¡Ã‚Â ÃƒÂ¯Ã‚Â¸Ã‚Â ÃƒÂÃ…Â¾Ãƒâ€˜Ã‹â€ ÃƒÂÃ‚Â¸ÃƒÂÃ‚Â±ÃƒÂÃ‚ÂºÃƒÂÃ‚Â° Ãƒâ€˜Ã‚ÂÃƒÂÃ‚Â¾ÃƒÂÃ‚ÂµÃƒÂÃ‚Â´ÃƒÂÃ‚Â¸ÃƒÂÃ‚Â½ÃƒÂÃ‚ÂµÃƒÂÃ‚Â½ÃƒÂÃ‚Â¸Ãƒâ€˜Ã‚Â" : "ÃƒÂ¢Ã…Â¡Ã‚Â ÃƒÂ¯Ã‚Â¸Ã‚Â Connection error" });
       writeHistory(history); renderAll();
     } finally {
       hideTyping();
@@ -2339,9 +3937,9 @@ writeHistory(history);
   }
 
   // Global events
-  function aiwOpen(){ try { if (panel.style.display === "none") btn.click(); } catch {} }
-  function aiwClose(){ try { if (panel.style.display !== "none") btn.click(); } catch {} }
-  function aiwToggle(){ try { btn.click(); } catch {} }
+  function aiwOpen(){ try { openFloatPanel(); } catch {} }
+  function aiwClose(){ try { closeFloatPanel(); } catch {} }
+  function aiwToggle(){ try { toggleFloatPanel(); } catch {} }
   window.addEventListener("aiw:open", aiwOpen);
   window.addEventListener("aiw:close", aiwClose);
   window.addEventListener("aiw:toggle", aiwToggle);
@@ -2393,4 +3991,5 @@ initGreetingFlows().catch((e) => {
   console.debug("[AIW][autogreet] trigger error:", e);
 });
 })();
+
 

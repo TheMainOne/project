@@ -233,17 +233,67 @@ if (TOUCH_PASSTHROUGH) window.addEventListener("touchcancel", () => {
       console.warn("[AIW][frame] config fetch failed:", e);
     }
 
+    function normalizeRenderMode(value) {
+      const modeValue = String(value || "").trim().toLowerCase();
+      if (!modeValue) return "";
+      if (modeValue === "inline") return "inline";
+      if (modeValue === "float" || modeValue === "floating") return "float";
+      if (
+        modeValue === "hybrid" ||
+        modeValue === "both" ||
+        modeValue === "inline+float" ||
+        modeValue === "float+inline"
+      ) return "hybrid";
+      return "";
+    }
+
+    function resolveRenderMode(configValue) {
+      const behavior = (configValue && typeof configValue.behavior === "object") ? configValue.behavior : null;
+      const direct = normalizeRenderMode(
+        (behavior && (behavior.renderMode || behavior.mode)) ||
+        (configValue && (configValue.renderMode || configValue.mode)) ||
+        ""
+      );
+      if (direct) return direct;
+
+      const hybrid = behavior && typeof behavior.hybrid === "object" ? behavior.hybrid : null;
+      const hybridFloat = hybrid && typeof hybrid.float === "object" ? hybrid.float : null;
+      if (hybridFloat && typeof hybridFloat.enabled === "boolean") return hybridFloat.enabled ? "hybrid" : "float";
+      if (hybrid && typeof hybrid.enabled === "boolean") return hybrid.enabled ? "hybrid" : "float";
+      return "float";
+    }
+
+    const resolvedRenderMode = resolveRenderMode(config);
+
     const cfg = {
       endpoint: base + "/api/aiw/chat",
       siteId,
+      renderMode: resolvedRenderMode,
+      hybridHistorySync: resolvedRenderMode === "hybrid",
       title: (config && (config.widgetTitle || config.title)) || "AI Assistant",
       position: (config && config.position) || "br",
+      primaryColor: (config && (config.primaryColor || config.accent)) || "#6D28D9",
       accent: (config && (config.primaryColor || config.accent)) || "#6D28D9",
       welcome: (config && (config.welcomeMessage || config.welcome)) || "Hi! How can I help?",
       lang: (config && config.lang) || "en",
       backgroundColor: (config && config.backgroundColor) || "#0f0f0f",
       textColor: (config && config.textColor) || "#ffffff",
       borderColor: (config && (config.borderColor || config.primaryColor)) || "#6D28D9",
+      headerBackgroundColor: (config && config.headerBackgroundColor) || null,
+      headerTextColor: (config && config.headerTextColor) || null,
+      assistantBubbleColor: (config && config.assistantBubbleColor) || null,
+      assistantBubbleTextColor: (config && config.assistantBubbleTextColor) || null,
+      userBubbleColor: (config && config.userBubbleColor) || null,
+      userBubbleTextColor: (config && config.userBubbleTextColor) || null,
+      bubbleBorderColor: (config && config.bubbleBorderColor) || null,
+      inputPlaceholder: (config && config.inputPlaceholder) || "",
+      inputBackgroundColor: (config && config.inputBackgroundColor) || null,
+      inputTextColor: (config && config.inputTextColor) || null,
+      inputBorderColor: (config && config.inputBorderColor) || null,
+      sendButtonBackgroundColor: (config && config.sendButtonBackgroundColor) || null,
+      sendButtonIconColor: (config && config.sendButtonIconColor) || null,
+      showAvatars: config ? config.showAvatars !== false : true,
+      showTimestamps: config ? config.showTimestamps !== false : true,
       logo: (
         config?.logo?.url ||
         config?.logoUrl ||

@@ -59,6 +59,142 @@ const InlineAutostartSchema = new mongoose.Schema(
   { _id: false }
 );
 
+const NotificationLimitsSchema = new mongoose.Schema(
+  {
+    globalCooldownMs: { type: Number, default: 8000, min: 0 },
+    maxPerSession:    { type: Number, default: 3, min: 0 },
+  },
+  { _id: false }
+);
+
+const NotificationRuleSchema = new mongoose.Schema(
+  {
+    id:               { type: String, default: "" },
+    event:            { type: String, required: true },
+    section:          { type: String, default: "" },
+    tab:              { type: String, default: "" },
+    path:             { type: String, default: "" },
+    minDurationMs:    { type: Number, default: 0, min: 0 },
+    minScrollDepth:   { type: Number, default: 0, min: 0 },
+    minVisibleMs:     { type: Number, default: 0, min: 0 },
+    once:             { type: Boolean, default: true },
+    cooldownMs:       { type: Number, default: 45000, min: 0 },
+    maxShows:         { type: Number, default: 1, min: 0 },
+    title:            { type: String, default: "AI Assistant" },
+    message:          { type: String, required: true },
+    variant:          { type: String, enum: ["info", "success", "warning", "danger"], default: "info" },
+    durationMs:       { type: Number, default: 6000, min: 0 },
+    ctaLabel:         { type: String, default: "" },
+    ctaUrl:           { type: String, default: "" },
+    position:         { type: String, enum: ["", "br", "bl", "tr", "tl"], default: "" },
+    allowWhileVisible:{ type: Boolean, default: false },
+  },
+  { _id: false }
+);
+
+const NotificationsBehaviorSchema = new mongoose.Schema(
+  {
+    enabled:      { type: Boolean, default: false },
+    rulesVersion: { type: Number, default: 1, min: 1 },
+    limits:       { type: NotificationLimitsSchema, default: () => ({}) },
+    rules:        { type: [NotificationRuleSchema], default: [] },
+  },
+  { _id: false }
+);
+
+const HybridFloatBehaviorSchema = new mongoose.Schema(
+  {
+    enabled: { type: Boolean, default: false },
+  },
+  { _id: false }
+);
+
+const HybridBehaviorSchema = new mongoose.Schema(
+  {
+    enabled: { type: Boolean, default: false },
+    float:   { type: HybridFloatBehaviorSchema, default: () => ({}) },
+  },
+  { _id: false }
+);
+
+const FloatLauncherBehaviorSchema = new mongoose.Schema(
+  {
+    variant:       { type: String, enum: ["circle", "pill"], default: "circle" },
+    text:          { type: String, default: "" },
+    iconText:      { type: String, default: "AI" },
+    hideLabelWhenEmpty: { type: Boolean, default: false },
+    widthPx:       { type: Number, default: 420, min: 160, max: 900 },
+    heightPx:      { type: Number, default: 56, min: 40, max: 120 },
+    bgColor:       { type: String, default: "" },
+    textColor:     { type: String, default: "" },
+    iconBgColor:   { type: String, default: "" },
+    iconTextColor: { type: String, default: "" },
+    borderColor:   { type: String, default: "" },
+    shadow:        { type: String, default: "" },
+  },
+  { _id: false }
+);
+
+const FloatLauncherActionSchema = new mongoose.Schema(
+  {
+    variant:       { type: String, enum: ["", "circle", "pill"], default: "" },
+    text:          { type: String, default: "" },
+    iconText:      { type: String, default: "" },
+    widthPx:       { type: Number, default: null, min: 160, max: 900 },
+    heightPx:      { type: Number, default: null, min: 40, max: 120 },
+    bgColor:       { type: String, default: "" },
+    textColor:     { type: String, default: "" },
+    iconBgColor:   { type: String, default: "" },
+    iconTextColor: { type: String, default: "" },
+    borderColor:   { type: String, default: "" },
+    shadow:        { type: String, default: "" },
+  },
+  { _id: false }
+);
+
+const FloatLauncherDynamicRuleSchema = new mongoose.Schema(
+  {
+    id:             { type: String, default: "" },
+    event:          { type: String, required: true },
+    section:        { type: String, default: "" },
+    tab:            { type: String, default: "" },
+    path:           { type: String, default: "" },
+    minDurationMs:  { type: Number, default: 0, min: 0 },
+    minScrollDepth: { type: Number, default: 0, min: 0 },
+    minVisibleMs:   { type: Number, default: 0, min: 0 },
+    priority:       { type: Number, default: 0 },
+    once:           { type: Boolean, default: false },
+    cooldownMs:     { type: Number, default: 0, min: 0 },
+    maxShows:       { type: Number, default: 0, min: 0 },
+    action:         { type: FloatLauncherActionSchema, default: () => ({}) },
+  },
+  { _id: false }
+);
+
+const FloatLauncherDynamicSchema = new mongoose.Schema(
+  {
+    enabled:         { type: Boolean, default: false },
+    resetOnNoMatch:  { type: Boolean, default: true },
+    transitionMs:    { type: Number, default: 220, min: 80, max: 1200 },
+    rules:           { type: [FloatLauncherDynamicRuleSchema], default: [] },
+  },
+  { _id: false }
+);
+
+FloatLauncherBehaviorSchema.add({
+  dynamic: { type: FloatLauncherDynamicSchema, default: () => ({}) },
+});
+
+const BehaviorSchema = new mongoose.Schema(
+  {
+    renderMode:    { type: String, enum: ["float", "inline", "hybrid"], default: "float" },
+    hybrid:        { type: HybridBehaviorSchema, default: () => ({}) },
+    floatLauncher: { type: FloatLauncherBehaviorSchema, default: () => ({}) },
+    notifications: { type: NotificationsBehaviorSchema, default: () => ({}) },
+  },
+  { _id: false }
+);
+
 const LogoSchema = new mongoose.Schema(
   {
     s3Key:        { type: String, required: true },   // напр. "documents/uuid.png"
@@ -87,7 +223,7 @@ const WidgetConfigSchema = new mongoose.Schema({
 logo:               { type: LogoSchema, default: null },
   // необязательные, но удобные:
   lang:               { type: String, default: "en" },         // "en" | "ru" | ...
-  position:           { type: String, enum: ["br","bl"], default: "br" },
+  position:           { type: String, enum: ["br","bl","center","bc"], default: "br" },
 
   // ===== Поведение (авто-привет, история и т.п.) =====
   autostart:              { type: Boolean, default: false },
@@ -129,6 +265,7 @@ baseFontSize:      { type: Number, default: 14, min: 10, max: 24 },
   // ===== LLM / системный промпт =====
   customSystemPrompt:     { type: String, default: "" },
   leadCapture: { type: LeadCaptureSchema, default: () => ({}) },
+  behavior: { type: BehaviorSchema, default: () => ({}) },
 
   // ===== флаги/метаданные =====
   isActive:   { type: Boolean, default: true },
