@@ -3441,6 +3441,35 @@ function resolveFloatLauncherAnchorTarget() {
     if (byId) return byId;
   }
 
+  // Loader script often knows the inline mount via data-target/data-aiw-inline.
+  // Use it as a fallback so host pages don't need extra anchor attributes.
+  const loaderScripts = document.querySelectorAll("script[data-target], script[data-aiw-inline]");
+  for (let i = 0; i < loaderScripts.length; i += 1) {
+    const scriptEl = loaderScripts[i];
+    const scriptSiteId = toText(
+      scriptEl.getAttribute("data-site-id") ||
+      scriptEl.getAttribute("data-site") ||
+      scriptEl.getAttribute("data-tenant")
+    ).trim();
+    if (scriptSiteId && scriptSiteId !== SITE_ID) continue;
+
+    const targetSelector = toText(scriptEl.getAttribute("data-target") || "").trim();
+    if (targetSelector) {
+      const byScriptTarget = querySelectorSafe(targetSelector);
+      if (byScriptTarget) return byScriptTarget;
+      if (targetSelector.startsWith("#")) {
+        const byScriptId = document.getElementById(targetSelector.slice(1));
+        if (byScriptId) return byScriptId;
+      }
+    }
+
+    const inlineId = toText(scriptEl.getAttribute("data-aiw-inline") || "").trim();
+    if (inlineId) {
+      const byInlineId = document.getElementById(inlineId);
+      if (byInlineId) return byInlineId;
+    }
+  }
+
   const fallbackSelectors = [
     "[data-aiw-inline-anchor]",
     "[data-aiw-inline-widget]",

@@ -1295,6 +1295,15 @@
       }
     }
 
+    // Mark the resolved inline mount so float launcher can always find an anchor target
+    // even when the host page doesn't provide custom anchor attributes.
+    try {
+      mount.setAttribute("data-aiw-inline-anchor", "");
+      mount.setAttribute("data-aiw-inline-widget", "true");
+      mount.setAttribute("data-aiw-mode", "inline");
+      if (siteId) mount.setAttribute("data-aiw-site-id", String(siteId));
+    } catch {}
+
     function hasUsableMountHeight(el) {
       if (!el || el.nodeType !== 1) return false;
       try {
@@ -1339,6 +1348,8 @@
     iframe.style.maxWidth = "100%";
     iframe.style.boxSizing = "border-box";
     iframe.setAttribute("scrolling", "no");
+    iframe.setAttribute("data-aiw-mode", "inline");
+    if (siteId) iframe.setAttribute("data-aiw-site-id", String(siteId));
     iframe.allow = "clipboard-write";
 
     let isFullscreen = false;
