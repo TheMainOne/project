@@ -3608,6 +3608,13 @@ function navigateFloatLauncherToInlineTarget() {
 
 function openFloatPanel() {
   if (INLINE) return;
+  if (FLOAT_LAUNCHER_CLICK_ACTION === "anchor") {
+    if (open) open = false;
+    if (panel.style.display !== "none") panel.style.display = "none";
+    syncFloatLauncherOpenState();
+    launcherLog("panel.open.blocked", { reason: "clickAction=anchor" });
+    return;
+  }
   if (open) return;
   open = true;
   panel.style.display = "flex";
