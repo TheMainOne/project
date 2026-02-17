@@ -270,6 +270,7 @@ const LOGO =
 
 const DEBUG = (CFG.debugAutostart === true) || /\baiwDebug=1\b/.test(location.search);
 const log = (...a) => { if (DEBUG) console.debug("[AIW]", ...a); };
+const launcherLog = (...a) => { console.debug("[AIW][launcher]", ...a); };
 
 log("CFG", {
   site: SITE_ID, AUTOSTART, AUTO_MODE, AUTO_DELAY, AUTO_COOLDOWN_HOURS,
@@ -3418,6 +3419,7 @@ const FLOAT_LAUNCHER_CLICK_ACTION = (!INLINE && FLOAT_LAUNCHER.clickAction === "
 const ANCHOR_FALLBACK_TO_TOGGLE = FLOAT_LAUNCHER_CLICK_ACTION === "anchor"
   ? (RENDER_MODE !== "hybrid")
   : true;
+let lastFloatLauncherAnchorResolveSource = "none";
 
 function querySelectorSafe(selector) {
   const normalized = toText(selector || "").trim();
@@ -3430,18 +3432,31 @@ function querySelectorSafe(selector) {
 }
 
 function resolveFloatLauncherAnchorTarget() {
+  lastFloatLauncherAnchorResolveSource = "none";
   const configuredTarget = toText(FLOAT_LAUNCHER.anchorTarget || "").trim();
   if (configuredTarget) {
     if (configuredTarget.startsWith("#")) {
       const byHash = querySelectorSafe(configuredTarget);
-      if (byHash) return byHash;
+      if (byHash) {
+        lastFloatLauncherAnchorResolveSource = "config:hash-selector";
+        return byHash;
+      }
       const byId = document.getElementById(configuredTarget.slice(1));
-      if (byId) return byId;
+      if (byId) {
+        lastFloatLauncherAnchorResolveSource = "config:hash-id";
+        return byId;
+      }
     }
     const bySelector = querySelectorSafe(configuredTarget);
-    if (bySelector) return bySelector;
+    if (bySelector) {
+      lastFloatLauncherAnchorResolveSource = "config:selector";
+      return bySelector;
+    }
     const byId = document.getElementById(configuredTarget);
-    if (byId) return byId;
+    if (byId) {
+      lastFloatLauncherAnchorResolveSource = "config:id";
+      return byId;
+    }
   }
 
   const registry = (window.__AIW_INLINE_TARGETS__ && typeof window.__AIW_INLINE_TARGETS__ === "object")
@@ -3452,12 +3467,18 @@ function resolveFloatLauncherAnchorTarget() {
     const siteTargets = Array.isArray(registry[siteKey]) ? registry[siteKey] : [];
     for (let i = 0; i < siteTargets.length; i += 1) {
       const el = siteTargets[i];
-      if (el && el.nodeType === 1 && el.isConnected) return el;
+      if (el && el.nodeType === 1 && el.isConnected) {
+        lastFloatLauncherAnchorResolveSource = "registry:site";
+        return el;
+      }
     }
     const allTargets = Array.isArray(registry.__all) ? registry.__all : [];
     for (let i = 0; i < allTargets.length; i += 1) {
       const el = allTargets[i];
-      if (el && el.nodeType === 1 && el.isConnected) return el;
+      if (el && el.nodeType === 1 && el.isConnected) {
+        lastFloatLauncherAnchorResolveSource = "registry:all";
+        return el;
+      }
     }
   }
 
@@ -3476,17 +3497,26 @@ function resolveFloatLauncherAnchorTarget() {
     const targetSelector = toText(scriptEl.getAttribute("data-target") || "").trim();
     if (targetSelector) {
       const byScriptTarget = querySelectorSafe(targetSelector);
-      if (byScriptTarget) return byScriptTarget;
+      if (byScriptTarget) {
+        lastFloatLauncherAnchorResolveSource = "script:data-target";
+        return byScriptTarget;
+      }
       if (targetSelector.startsWith("#")) {
         const byScriptId = document.getElementById(targetSelector.slice(1));
-        if (byScriptId) return byScriptId;
+        if (byScriptId) {
+          lastFloatLauncherAnchorResolveSource = "script:data-target-id";
+          return byScriptId;
+        }
       }
     }
 
     const inlineId = toText(scriptEl.getAttribute("data-aiw-inline") || "").trim();
     if (inlineId) {
       const byInlineId = document.getElementById(inlineId);
-      if (byInlineId) return byInlineId;
+      if (byInlineId) {
+        lastFloatLauncherAnchorResolveSource = "script:data-aiw-inline";
+        return byInlineId;
+      }
     }
   }
 
@@ -3502,6 +3532,7 @@ function resolveFloatLauncherAnchorTarget() {
     if (frameSiteId && frameSiteId !== SITE_ID) continue;
     const frameMode = toText(parsed.searchParams.get("mode") || "").trim().toLowerCase();
     if (frameMode && frameMode !== "inline") continue;
+    lastFloatLauncherAnchorResolveSource = "iframe:widget-frame";
     return frame;
   }
 
@@ -3514,7 +3545,10 @@ function resolveFloatLauncherAnchorTarget() {
   ];
   for (let i = 0; i < fallbackSelectors.length; i += 1) {
     const found = querySelectorSafe(fallbackSelectors[i]);
-    if (found) return found;
+    if (found) {
+      lastFloatLauncherAnchorResolveSource = `fallback:${fallbackSelectors[i]}`;
+      return found;
+    }
   }
   return null;
 }
@@ -3523,13 +3557,23 @@ function navigateFloatLauncherToInlineTarget() {
   if (INLINE) return false;
   const configuredTarget = toText(FLOAT_LAUNCHER.anchorTarget || "").trim();
   const target = resolveFloatLauncherAnchorTarget();
+  launcherLog("anchor.resolve", {
+    siteId: SITE_ID,
+    renderMode: RENDER_MODE,
+    clickAction: FLOAT_LAUNCHER_CLICK_ACTION,
+    configuredTarget,
+    resolved: !!target,
+    source: lastFloatLauncherAnchorResolveSource
+  });
   if (!target) {
     if (configuredTarget.startsWith("#")) {
       try {
         if (location.hash !== configuredTarget) location.hash = configuredTarget;
+        launcherLog("anchor.hash-fallback", { hash: configuredTarget, ok: true });
         return true;
       } catch {}
     }
+    launcherLog("anchor.miss", { configuredTarget, fallbackToToggle: ANCHOR_FALLBACK_TO_TOGGLE });
     return false;
   }
 
@@ -3549,6 +3593,15 @@ function navigateFloatLauncherToInlineTarget() {
       window.history.replaceState(null, "", targetHash);
     } catch {}
   }
+  launcherLog("anchor.scroll", {
+    source: lastFloatLauncherAnchorResolveSource,
+    targetTag: target.tagName || "",
+    targetId: target.id || "",
+    behavior,
+    block,
+    offsetPx,
+    targetHash
+  });
   return true;
 }
 
@@ -3557,6 +3610,7 @@ function openFloatPanel() {
   if (open) return;
   open = true;
   panel.style.display = "flex";
+  launcherLog("panel.open", { open });
   syncFloatLauncherOpenState();
   if (RESET_HISTORY_ON_OPEN) {
     try { if (STORAGE) STORAGE.removeItem(storeKey); } catch {}
@@ -3576,6 +3630,7 @@ function closeFloatPanel() {
     setInlineFullscreenState(false);
   }
   panel.style.display = "none";
+  launcherLog("panel.close", { open });
   syncFloatLauncherOpenState();
 }
 
@@ -3609,13 +3664,22 @@ function syncFloatLauncherOpenState() {
 
 if (!INLINE) {
   btn.addEventListener("click", () => {
+    launcherLog("click", {
+      open,
+      renderMode: RENDER_MODE,
+      clickAction: FLOAT_LAUNCHER_CLICK_ACTION,
+      fallbackToToggle: ANCHOR_FALLBACK_TO_TOGGLE
+    });
     if (FLOAT_LAUNCHER_CLICK_ACTION === "anchor") {
       const navigated = navigateFloatLauncherToInlineTarget();
+      launcherLog("click.anchor-result", { navigated });
       if (navigated) return;
       if (!ANCHOR_FALLBACK_TO_TOGGLE) {
+        launcherLog("click.anchor-miss-close", { reason: "fallback-disabled" });
         closeFloatPanel();
         return;
       }
+      launcherLog("click.anchor-miss-toggle", { reason: "fallback-enabled" });
     }
     toggleFloatPanel();
   });
