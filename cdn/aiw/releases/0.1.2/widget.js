@@ -1170,8 +1170,8 @@ ${(INLINE && IS_IOS) ? `
 }
 .aiw-typing-bubble.me{
   align-self:flex-end;
-  background:${THEME.bubbleUser};
-  color:${THEME.userText};
+  background:${THEME.bubbleAI};
+  color:${THEME.aiText};
 }
 .aiw-typing-bubble.ai{
   align-self:flex-start;
