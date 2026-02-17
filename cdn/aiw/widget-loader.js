@@ -1302,6 +1302,18 @@
       mount.setAttribute("data-aiw-inline-widget", "true");
       mount.setAttribute("data-aiw-mode", "inline");
       if (siteId) mount.setAttribute("data-aiw-site-id", String(siteId));
+
+      const registry = (window.__AIW_INLINE_TARGETS__ && typeof window.__AIW_INLINE_TARGETS__ === "object")
+        ? window.__AIW_INLINE_TARGETS__
+        : {};
+      window.__AIW_INLINE_TARGETS__ = registry;
+      if (!Array.isArray(registry.__all)) registry.__all = [];
+      registry.__all.push(mount);
+      if (siteId) {
+        const key = String(siteId);
+        if (!Array.isArray(registry[key])) registry[key] = [];
+        registry[key].push(mount);
+      }
     } catch {}
 
     function hasUsableMountHeight(el) {

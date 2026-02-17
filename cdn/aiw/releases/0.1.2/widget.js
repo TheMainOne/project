@@ -3415,6 +3415,9 @@ function postHeight() {
 
 let open = INLINE ? true : false;
 const FLOAT_LAUNCHER_CLICK_ACTION = (!INLINE && FLOAT_LAUNCHER.clickAction === "anchor") ? "anchor" : "toggle";
+const ANCHOR_FALLBACK_TO_TOGGLE = FLOAT_LAUNCHER_CLICK_ACTION === "anchor"
+  ? (RENDER_MODE !== "hybrid")
+  : true;
 
 function querySelectorSafe(selector) {
   const normalized = toText(selector || "").trim();
@@ -3439,6 +3442,23 @@ function resolveFloatLauncherAnchorTarget() {
     if (bySelector) return bySelector;
     const byId = document.getElementById(configuredTarget);
     if (byId) return byId;
+  }
+
+  const registry = (window.__AIW_INLINE_TARGETS__ && typeof window.__AIW_INLINE_TARGETS__ === "object")
+    ? window.__AIW_INLINE_TARGETS__
+    : null;
+  if (registry) {
+    const siteKey = toText(SITE_ID || "").trim();
+    const siteTargets = Array.isArray(registry[siteKey]) ? registry[siteKey] : [];
+    for (let i = 0; i < siteTargets.length; i += 1) {
+      const el = siteTargets[i];
+      if (el && el.nodeType === 1 && el.isConnected) return el;
+    }
+    const allTargets = Array.isArray(registry.__all) ? registry.__all : [];
+    for (let i = 0; i < allTargets.length; i += 1) {
+      const el = allTargets[i];
+      if (el && el.nodeType === 1 && el.isConnected) return el;
+    }
   }
 
   // Loader script often knows the inline mount via data-target/data-aiw-inline.
@@ -3468,6 +3488,21 @@ function resolveFloatLauncherAnchorTarget() {
       const byInlineId = document.getElementById(inlineId);
       if (byInlineId) return byInlineId;
     }
+  }
+
+  const inlineFrames = document.querySelectorAll("iframe[src*=\"widget-frame.html\"]");
+  for (let i = 0; i < inlineFrames.length; i += 1) {
+    const frame = inlineFrames[i];
+    let parsed = null;
+    try {
+      parsed = new URL(frame.getAttribute("src") || "", location.href);
+    } catch {}
+    if (!parsed) continue;
+    const frameSiteId = toText(parsed.searchParams.get("siteId") || "").trim();
+    if (frameSiteId && frameSiteId !== SITE_ID) continue;
+    const frameMode = toText(parsed.searchParams.get("mode") || "").trim().toLowerCase();
+    if (frameMode && frameMode !== "inline") continue;
+    return frame;
   }
 
   const fallbackSelectors = [
@@ -3577,6 +3612,10 @@ if (!INLINE) {
     if (FLOAT_LAUNCHER_CLICK_ACTION === "anchor") {
       const navigated = navigateFloatLauncherToInlineTarget();
       if (navigated) return;
+      if (!ANCHOR_FALLBACK_TO_TOGGLE) {
+        closeFloatPanel();
+        return;
+      }
     }
     toggleFloatPanel();
   });
