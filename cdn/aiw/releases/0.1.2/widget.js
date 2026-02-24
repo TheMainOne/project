@@ -3756,12 +3756,20 @@ function tryInlineAnchorSmoothScrollAPIs(target, top, behavior, offsetPx) {
               return by - ay;
             })[0];
           const duration = smooth ? 600 : 0;
+          const containerEl = (bar && bar.containerEl) ? bar.containerEl : document.documentElement;
+          const containerRect = containerEl && typeof containerEl.getBoundingClientRect === "function"
+            ? containerEl.getBoundingClientRect()
+            : { top: 0, height: window.innerHeight || 0 };
+          // Some smooth-scrollbar setups keep content in a shifted viewport (e.g. top: 60px).
+          // Compensate that shift so "start" means true viewport top.
+          const viewportShiftPx = Math.max(0, Math.min(300, Number(containerRect.top) || 0));
+          const blockMode = INLINE_ANCHOR_BUTTON.anchorBlock || "start";
           if (bar && typeof bar.scrollIntoView === "function" && (INLINE_ANCHOR_BUTTON.anchorBlock || "start") === "start") {
             // Native API of smooth-scrollbar gives the most accurate "align top" behavior.
             bar.scrollIntoView(target, {
               alignToTop: true,
               onlyScrollIfNeeded: false,
-              offsetTop: -(offset)
+              offsetTop: -(offset + viewportShiftPx)
             });
             return "smooth-scrollbar-into-view";
           }
@@ -3777,16 +3785,13 @@ function tryInlineAnchorSmoothScrollAPIs(target, top, behavior, offsetPx) {
               0
             ) || 0;
             const rect = target.getBoundingClientRect();
-            const containerEl = bar.containerEl || document.documentElement;
-            const containerRect = containerEl.getBoundingClientRect();
             const viewportHeight = containerEl.clientHeight || containerRect.height || window.innerHeight || 0;
-            const blockMode = INLINE_ANCHOR_BUTTON.anchorBlock || "start";
 
             // For start alignment we target window top to avoid wrapper/top-offset drift.
             const topFromContainer = currentY + (rect.top - containerRect.top);
             const topFromViewport = currentY + rect.top;
             let absoluteY = blockMode === "start"
-              ? (topFromViewport + offset)
+              ? (topFromViewport + offset + viewportShiftPx)
               : (applyAnchorBlockTop(
                 topFromContainer,
                 viewportHeight,
