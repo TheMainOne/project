@@ -185,11 +185,24 @@ FloatLauncherBehaviorSchema.add({
   dynamic: { type: FloatLauncherDynamicSchema, default: () => ({}) },
 });
 
+const InlineAnchorButtonBehaviorSchema = new mongoose.Schema(
+  {
+    enabled:        { type: Boolean, default: false },
+    label:          { type: String, default: "" },
+    anchorTarget:   { type: String, default: "" },
+    anchorBehavior: { type: String, enum: ["auto", "smooth"], default: "smooth" },
+    anchorBlock:    { type: String, enum: ["start", "center", "end", "nearest"], default: "start" },
+    anchorOffsetPx: { type: Number, default: 0, min: -5000, max: 5000 },
+  },
+  { _id: false }
+);
+
 const BehaviorSchema = new mongoose.Schema(
   {
     renderMode:    { type: String, enum: ["float", "inline", "hybrid"], default: "float" },
     hybrid:        { type: HybridBehaviorSchema, default: () => ({}) },
     floatLauncher: { type: FloatLauncherBehaviorSchema, default: () => ({}) },
+    inlineAnchorButton: { type: InlineAnchorButtonBehaviorSchema, default: () => ({}) },
     notifications: { type: NotificationsBehaviorSchema, default: () => ({}) },
   },
   { _id: false }

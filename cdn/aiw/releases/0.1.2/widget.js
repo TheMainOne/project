@@ -190,7 +190,7 @@ const ACCENT = CFG.primaryColor || CFG.accent || "#6D28D9";
     const widthPx = clamp(toNum(raw.widthPx, 420), 160, 900);
     const heightPx = clamp(toNum(raw.heightPx, 56), 40, 120);
     const clickActionRaw = normToken(raw.clickAction || raw.clickMode || raw.onClick);
-    const clickAction = clickActionRaw === "toggle" ? "toggle" : "anchor";
+    const clickAction = clickActionRaw === "anchor" ? "anchor" : "toggle";
     const anchorTarget = toText(raw.anchorTarget || raw.anchorSelector || raw.anchorId || "").trim();
     const anchorBehaviorRaw = normToken(raw.anchorBehavior || raw.scrollBehavior || "");
     const anchorBehavior = anchorBehaviorRaw === "auto" ? "auto" : "smooth";
@@ -235,6 +235,40 @@ const ACCENT = CFG.primaryColor || CFG.accent || "#6D28D9";
         transitionMs: clamp(Math.round(toNum(dynamicRaw.transitionMs, 220)), 80, 1200),
         rules: dynamicRules
       }
+    };
+  })();
+  const INLINE_ANCHOR_BUTTON = (() => {
+    const behavior = CFG.behavior && typeof CFG.behavior === "object" ? CFG.behavior : {};
+    const raw = behavior.inlineAnchorButton && typeof behavior.inlineAnchorButton === "object"
+      ? behavior.inlineAnchorButton
+      : (CFG.inlineAnchorButton && typeof CFG.inlineAnchorButton === "object" ? CFG.inlineAnchorButton : {});
+    const legacyAnchorMode = !INLINE && FLOAT_LAUNCHER.clickAction === "anchor";
+    const enabled = !INLINE && toBool(raw.enabled, legacyAnchorMode);
+    const anchorTarget = toText(
+      raw.anchorTarget ||
+      raw.anchorSelector ||
+      raw.anchorId ||
+      raw.target ||
+      FLOAT_LAUNCHER.anchorTarget ||
+      ""
+    ).trim();
+    const anchorBehaviorRaw = normToken(raw.anchorBehavior || raw.scrollBehavior || raw.behavior || "");
+    const anchorBehavior = anchorBehaviorRaw === "auto" ? "auto" : "smooth";
+    const anchorBlockRaw = normToken(raw.anchorBlock || raw.scrollBlock || raw.block || "");
+    const anchorBlock = ["start", "center", "end", "nearest"].includes(anchorBlockRaw) ? anchorBlockRaw : "start";
+    const anchorOffsetPx = clamp(
+      Math.round(toNum(raw.anchorOffsetPx ?? raw.offsetPx, FLOAT_LAUNCHER.anchorOffsetPx || 0)),
+      -5000,
+      5000
+    );
+    const label = toText(raw.label || raw.text || "").trim();
+    return {
+      enabled,
+      anchorTarget,
+      anchorBehavior,
+      anchorBlock,
+      anchorOffsetPx,
+      label
     };
   })();
   const WELCOME  = CFG.welcome || "Hi! How can I help?";
@@ -1861,7 +1895,11 @@ if (INLINE) {
 } else {
   wrap.style.position = "fixed";
   wrap.style.bottom = "20px";
-  if (POSITION === "center") {
+  if (INLINE_ANCHOR_BUTTON && INLINE_ANCHOR_BUTTON.enabled) {
+    wrap.style.left = "50%";
+    wrap.style.right = "auto";
+    wrap.style.transform = "translateX(-50%)";
+  } else if (POSITION === "center") {
     wrap.style.left = "50%";
     wrap.style.right = "auto";
     wrap.style.transform = "translateX(-50%)";
@@ -1880,11 +1918,16 @@ btn.type = "button";
 btn.setAttribute("aria-haspopup", "dialog");
 btn.setAttribute("aria-expanded", "false");
 
+const DEFAULT_INLINE_ANCHOR_LABEL = LANG.startsWith("ru")
+  ? "\u041f\u0435\u0440\u0435\u0439\u0442\u0438 \u043a \u0447\u0430\u0442\u0443"
+  : "";
 const BASE_FLOAT_LAUNCHER_STATE = {
-  variant: FLOAT_LAUNCHER.variant,
+  variant: INLINE_ANCHOR_BUTTON.enabled ? "pill" : FLOAT_LAUNCHER.variant,
   iconText: FLOAT_LAUNCHER.iconText || "AI",
-  text: FLOAT_LAUNCHER.text || "",
-  hideLabelWhenEmpty: !!FLOAT_LAUNCHER.hideLabelWhenEmpty,
+  text: INLINE_ANCHOR_BUTTON.enabled
+    ? (INLINE_ANCHOR_BUTTON.label || FLOAT_LAUNCHER.text || DEFAULT_INLINE_ANCHOR_LABEL)
+    : (FLOAT_LAUNCHER.text || ""),
+  hideLabelWhenEmpty: INLINE_ANCHOR_BUTTON.enabled ? false : !!FLOAT_LAUNCHER.hideLabelWhenEmpty,
   widthPx: clamp(toNum(FLOAT_LAUNCHER.widthPx, 420), 160, 900),
   heightPx: clamp(toNum(FLOAT_LAUNCHER.heightPx, 56), 40, 120),
   bgColor: toText(FLOAT_LAUNCHER.bgColor || "").trim(),
@@ -2234,7 +2277,8 @@ function applyFloatLauncherState(nextState) {
     const nextTextBase = hasExplicitText
       ? state.text
       : (state.hideLabelWhenEmpty ? "" : "Ask AI assistant...");
-    const showClosedText = isClosedLauncher && hasExplicitText && !!activeDynamicLauncherRuleId;
+    const forceClosedText = !!(INLINE_ANCHOR_BUTTON && INLINE_ANCHOR_BUTTON.enabled && hasExplicitText);
+    const showClosedText = forceClosedText || (isClosedLauncher && hasExplicitText && !!activeDynamicLauncherRuleId);
     const nextText = isClosedLauncher ? (showClosedText ? state.text : "") : nextTextBase;
     const hasTextSlot = !!nextText;
     const keepClosedVisualStyle = isClosedLauncher || !hasTextSlot;
@@ -3416,11 +3460,8 @@ function postHeight() {
 } catch {}
 
 let open = INLINE ? true : false;
-const FLOAT_LAUNCHER_CLICK_ACTION = (!INLINE && FLOAT_LAUNCHER.clickAction === "anchor") ? "anchor" : "toggle";
-const ANCHOR_FALLBACK_TO_TOGGLE = FLOAT_LAUNCHER_CLICK_ACTION === "anchor"
-  ? (RENDER_MODE !== "hybrid")
-  : true;
-let lastFloatLauncherAnchorResolveSource = "none";
+const INLINE_ANCHOR_BUTTON_ENABLED = !INLINE && INLINE_ANCHOR_BUTTON.enabled;
+let lastInlineAnchorResolveSource = "none";
 
 function querySelectorSafe(selector) {
   const normalized = toText(selector || "").trim();
@@ -3432,30 +3473,30 @@ function querySelectorSafe(selector) {
   }
 }
 
-function resolveFloatLauncherAnchorTarget() {
-  lastFloatLauncherAnchorResolveSource = "none";
-  const configuredTarget = toText(FLOAT_LAUNCHER.anchorTarget || "").trim();
+function resolveInlineAnchorTarget() {
+  lastInlineAnchorResolveSource = "none";
+  const configuredTarget = toText(INLINE_ANCHOR_BUTTON.anchorTarget || "").trim();
   if (configuredTarget) {
     if (configuredTarget.startsWith("#")) {
       const byHash = querySelectorSafe(configuredTarget);
       if (byHash) {
-        lastFloatLauncherAnchorResolveSource = "config:hash-selector";
+        lastInlineAnchorResolveSource = "config:hash-selector";
         return byHash;
       }
       const byId = document.getElementById(configuredTarget.slice(1));
       if (byId) {
-        lastFloatLauncherAnchorResolveSource = "config:hash-id";
+        lastInlineAnchorResolveSource = "config:hash-id";
         return byId;
       }
     }
     const bySelector = querySelectorSafe(configuredTarget);
     if (bySelector) {
-      lastFloatLauncherAnchorResolveSource = "config:selector";
+      lastInlineAnchorResolveSource = "config:selector";
       return bySelector;
     }
     const byId = document.getElementById(configuredTarget);
     if (byId) {
-      lastFloatLauncherAnchorResolveSource = "config:id";
+      lastInlineAnchorResolveSource = "config:id";
       return byId;
     }
   }
@@ -3469,7 +3510,7 @@ function resolveFloatLauncherAnchorTarget() {
     for (let i = 0; i < siteTargets.length; i += 1) {
       const el = siteTargets[i];
       if (el && el.nodeType === 1 && el.isConnected) {
-        lastFloatLauncherAnchorResolveSource = "registry:site";
+        lastInlineAnchorResolveSource = "registry:site";
         return el;
       }
     }
@@ -3477,7 +3518,7 @@ function resolveFloatLauncherAnchorTarget() {
     for (let i = 0; i < allTargets.length; i += 1) {
       const el = allTargets[i];
       if (el && el.nodeType === 1 && el.isConnected) {
-        lastFloatLauncherAnchorResolveSource = "registry:all";
+        lastInlineAnchorResolveSource = "registry:all";
         return el;
       }
     }
@@ -3499,13 +3540,13 @@ function resolveFloatLauncherAnchorTarget() {
     if (targetSelector) {
       const byScriptTarget = querySelectorSafe(targetSelector);
       if (byScriptTarget) {
-        lastFloatLauncherAnchorResolveSource = "script:data-target";
+        lastInlineAnchorResolveSource = "script:data-target";
         return byScriptTarget;
       }
       if (targetSelector.startsWith("#")) {
         const byScriptId = document.getElementById(targetSelector.slice(1));
         if (byScriptId) {
-          lastFloatLauncherAnchorResolveSource = "script:data-target-id";
+          lastInlineAnchorResolveSource = "script:data-target-id";
           return byScriptId;
         }
       }
@@ -3515,7 +3556,7 @@ function resolveFloatLauncherAnchorTarget() {
     if (inlineId) {
       const byInlineId = document.getElementById(inlineId);
       if (byInlineId) {
-        lastFloatLauncherAnchorResolveSource = "script:data-aiw-inline";
+        lastInlineAnchorResolveSource = "script:data-aiw-inline";
         return byInlineId;
       }
     }
@@ -3533,7 +3574,7 @@ function resolveFloatLauncherAnchorTarget() {
     if (frameSiteId && frameSiteId !== SITE_ID) continue;
     const frameMode = toText(parsed.searchParams.get("mode") || "").trim().toLowerCase();
     if (frameMode && frameMode !== "inline") continue;
-    lastFloatLauncherAnchorResolveSource = "iframe:widget-frame";
+    lastInlineAnchorResolveSource = "iframe:widget-frame";
     return frame;
   }
 
@@ -3547,40 +3588,33 @@ function resolveFloatLauncherAnchorTarget() {
   for (let i = 0; i < fallbackSelectors.length; i += 1) {
     const found = querySelectorSafe(fallbackSelectors[i]);
     if (found) {
-      lastFloatLauncherAnchorResolveSource = `fallback:${fallbackSelectors[i]}`;
+      lastInlineAnchorResolveSource = `fallback:${fallbackSelectors[i]}`;
       return found;
     }
   }
   return null;
 }
 
-function navigateFloatLauncherToInlineTarget() {
+function navigateInlineAnchorButtonToInlineTarget() {
   if (INLINE) return false;
-  const configuredTarget = toText(FLOAT_LAUNCHER.anchorTarget || "").trim();
-  const target = resolveFloatLauncherAnchorTarget();
+  const configuredTarget = toText(INLINE_ANCHOR_BUTTON.anchorTarget || "").trim();
+  const target = resolveInlineAnchorTarget();
   launcherLog("anchor.resolve", {
     siteId: SITE_ID,
     renderMode: RENDER_MODE,
-    clickAction: FLOAT_LAUNCHER_CLICK_ACTION,
+    mode: "inlineAnchorButton",
     configuredTarget,
     resolved: !!target,
-    source: lastFloatLauncherAnchorResolveSource
+    source: lastInlineAnchorResolveSource
   });
   if (!target) {
-    if (configuredTarget.startsWith("#")) {
-      try {
-        if (location.hash !== configuredTarget) location.hash = configuredTarget;
-        launcherLog("anchor.hash-fallback", { hash: configuredTarget, ok: true });
-        return true;
-      } catch {}
-    }
-    launcherLog("anchor.miss", { configuredTarget, fallbackToToggle: ANCHOR_FALLBACK_TO_TOGGLE });
+    launcherLog("anchor.miss", { configuredTarget, mode: "inlineAnchorButton" });
     return false;
   }
 
-  const behavior = FLOAT_LAUNCHER.anchorBehavior === "auto" ? "auto" : "smooth";
-  const block = FLOAT_LAUNCHER.anchorBlock || "start";
-  const offsetPx = Number(FLOAT_LAUNCHER.anchorOffsetPx) || 0;
+  const behavior = INLINE_ANCHOR_BUTTON.anchorBehavior === "auto" ? "auto" : "smooth";
+  const block = INLINE_ANCHOR_BUTTON.anchorBlock || "start";
+  const offsetPx = Number(INLINE_ANCHOR_BUTTON.anchorOffsetPx) || 0;
   if (offsetPx !== 0) {
     const top = target.getBoundingClientRect().top + window.pageYOffset + offsetPx;
     window.scrollTo({ top, behavior });
@@ -3589,13 +3623,9 @@ function navigateFloatLauncherToInlineTarget() {
   }
 
   const targetHash = target.id ? `#${target.id}` : (configuredTarget.startsWith("#") ? configuredTarget : "");
-  if (targetHash && location.hash !== targetHash) {
-    try {
-      window.history.replaceState(null, "", targetHash);
-    } catch {}
-  }
+  // Intentionally keep URL untouched to avoid host router/hash navigation side effects.
   launcherLog("anchor.scroll", {
-    source: lastFloatLauncherAnchorResolveSource,
+    source: lastInlineAnchorResolveSource,
     targetTag: target.tagName || "",
     targetId: target.id || "",
     behavior,
@@ -3608,13 +3638,7 @@ function navigateFloatLauncherToInlineTarget() {
 
 function openFloatPanel() {
   if (INLINE) return;
-  if (FLOAT_LAUNCHER_CLICK_ACTION === "anchor") {
-    if (open) open = false;
-    if (panel.style.display !== "none") panel.style.display = "none";
-    syncFloatLauncherOpenState();
-    launcherLog("panel.open.blocked", { reason: "clickAction=anchor" });
-    return;
-  }
+  if (INLINE_ANCHOR_BUTTON_ENABLED) return;
   if (open) return;
   open = true;
   panel.style.display = "flex";
@@ -3653,11 +3677,14 @@ function toggleFloatPanel() {
 
 function syncFloatLauncherOpenState() {
   if (INLINE) return;
+  if (INLINE_ANCHOR_BUTTON_ENABLED && open) {
+    open = false;
+  }
   btn.classList.toggle("aiw-btn-open", open);
   btn.classList.toggle("aiw-btn-closed", !open);
   btn.setAttribute("aria-expanded", open ? "true" : "false");
-  const collapsedLabel = FLOAT_LAUNCHER_CLICK_ACTION === "anchor"
-    ? (LANG.startsWith("ru") ? "\u041f\u0435\u0440\u0435\u0439\u0442\u0438 \u043a \u0447\u0430\u0442\u0443" : "Go to chat")
+  const collapsedLabel = INLINE_ANCHOR_BUTTON_ENABLED
+    ? (INLINE_ANCHOR_BUTTON.label || (LANG.startsWith("ru") ? "\u041f\u0435\u0440\u0435\u0439\u0442\u0438 \u043a \u0447\u0430\u0442\u0443" : "Go to chat"))
     : (LANG.startsWith("ru") ? "\u041e\u0442\u043a\u0440\u044b\u0442\u044c \u0447\u0430\u0442" : "Open chat");
   btn.setAttribute(
     "aria-label",
@@ -3675,19 +3702,12 @@ if (!INLINE) {
     launcherLog("click", {
       open,
       renderMode: RENDER_MODE,
-      clickAction: FLOAT_LAUNCHER_CLICK_ACTION,
-      fallbackToToggle: ANCHOR_FALLBACK_TO_TOGGLE
+      inlineAnchorButton: INLINE_ANCHOR_BUTTON_ENABLED
     });
-    if (FLOAT_LAUNCHER_CLICK_ACTION === "anchor") {
-      const navigated = navigateFloatLauncherToInlineTarget();
+    if (INLINE_ANCHOR_BUTTON_ENABLED) {
+      const navigated = navigateInlineAnchorButtonToInlineTarget();
       launcherLog("click.anchor-result", { navigated });
-      if (navigated) return;
-      if (!ANCHOR_FALLBACK_TO_TOGGLE) {
-        launcherLog("click.anchor-miss-close", { reason: "fallback-disabled" });
-        closeFloatPanel();
-        return;
-      }
-      launcherLog("click.anchor-miss-toggle", { reason: "fallback-enabled" });
+      return;
     }
     toggleFloatPanel();
   });
@@ -3789,6 +3809,7 @@ function panelIsHidden() {
 }
 function openPanelIfHidden() {
   if (INLINE) return; // ÃƒÂÃ‚Â² inline ÃƒÂÃ‚Â²Ãƒâ€˜Ã‚ÂÃƒÂÃ‚ÂµÃƒÂÃ‚Â³ÃƒÂÃ‚Â´ÃƒÂÃ‚Â° ÃƒÂÃ‚Â¾Ãƒâ€˜Ã¢â‚¬Å¡ÃƒÂÃ‚ÂºÃƒâ€˜Ã¢â€šÂ¬Ãƒâ€˜Ã¢â‚¬Â¹Ãƒâ€˜Ã¢â‚¬Å¡
+  if (INLINE_ANCHOR_BUTTON_ENABLED) return;
   if (!panelIsHidden()) return;
   openFloatPanel();
 }
@@ -3915,6 +3936,7 @@ markAutoGreetUsed();
 
 function scheduleAutoGreet() {
   if (!AUTOSTART) return;
+  if (INLINE_ANCHOR_BUTTON_ENABLED) return;
   if (!shouldAutoGreetNow()) return;
 
   log("scheduleAutoGreet: scheduled in", AUTO_DELAY, "ms");

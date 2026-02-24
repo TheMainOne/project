@@ -228,6 +228,22 @@ function normalizeFloatLauncherDynamic(rawDynamic) {
   };
 }
 
+function normalizeInlineAnchorButton(rawConfig, fallbackEnabled) {
+  const cfg = rawConfig && typeof rawConfig === "object" ? rawConfig : {};
+  const blockRaw = String(cfg.anchorBlock || cfg.scrollBlock || cfg.block || "").trim().toLowerCase();
+  const behaviorRaw = String(cfg.anchorBehavior || cfg.scrollBehavior || cfg.behavior || "").trim().toLowerCase();
+  const safeBlock = ["start", "center", "end", "nearest"].includes(blockRaw) ? blockRaw : "start";
+  const safeBehavior = behaviorRaw === "auto" ? "auto" : "smooth";
+  return {
+    enabled: toBoolOr(cfg.enabled, !!fallbackEnabled),
+    label: String(cfg.label || cfg.text || ""),
+    anchorTarget: String(cfg.anchorTarget || cfg.anchorSelector || cfg.anchorId || cfg.target || ""),
+    anchorBehavior: safeBehavior,
+    anchorBlock: safeBlock,
+    anchorOffsetPx: Math.max(-5000, Math.min(5000, toIntOr(cfg.anchorOffsetPx ?? cfg.offsetPx, 0))),
+  };
+}
+
 function normalizeBehavior(rawBehavior) {
   const behavior = rawBehavior && typeof rawBehavior === "object" ? rawBehavior : {};
   const notifications = behavior.notifications || {};
@@ -249,6 +265,8 @@ function normalizeBehavior(rawBehavior) {
   const launcherVariant = String(floatLauncher.variant || "").trim().toLowerCase() === "pill" ? "pill" : "circle";
   const launcherIconText = String(floatLauncher.iconText || "AI").trim() || "AI";
   const launcherDynamic = normalizeFloatLauncherDynamic(floatLauncher.dynamic);
+  const legacyAnchorEnabled = String(floatLauncher.clickAction || "").trim().toLowerCase() === "anchor";
+  const inlineAnchorButton = normalizeInlineAnchorButton(behavior.inlineAnchorButton, legacyAnchorEnabled);
 
   return {
     renderMode: resolvedRenderMode,
@@ -273,6 +291,7 @@ function normalizeBehavior(rawBehavior) {
       shadow: String(floatLauncher.shadow || ""),
       dynamic: launcherDynamic,
     },
+    inlineAnchorButton,
     notifications: {
       enabled: !!notifications.enabled,
       rulesVersion: Math.max(1, toIntOr(notifications.rulesVersion, 1)),
@@ -439,6 +458,9 @@ if (leadCapture) {
       if (behavior.floatLauncher && typeof behavior.floatLauncher === "object") {
         setNestedPatch(payload, "behavior.floatLauncher", behavior.floatLauncher);
       }
+      if (behavior.inlineAnchorButton && typeof behavior.inlineAnchorButton === "object") {
+        setNestedPatch(payload, "behavior.inlineAnchorButton", behavior.inlineAnchorButton);
+      }
       if (behavior.notifications && typeof behavior.notifications === "object") {
         setNestedPatch(payload, "behavior.notifications", behavior.notifications);
       }
@@ -460,6 +482,10 @@ if (leadCapture) {
     const floatLauncher = parseBehavior(req.body.floatLauncher);
     if (floatLauncher) {
       setNestedPatch(payload, "behavior.floatLauncher", floatLauncher);
+    }
+    const inlineAnchorButton = parseBehavior(req.body.inlineAnchorButton);
+    if (inlineAnchorButton) {
+      setNestedPatch(payload, "behavior.inlineAnchorButton", inlineAnchorButton);
     }
 
     // ÐµÑÐ»Ð¸ Ð¿Ñ€Ð¸ÑˆÑ‘Ð» Ñ„Ð°Ð¹Ð» Ð»Ð¾Ð³Ð¾ â€” Ð´Ð¾Ð±Ð°Ð²Ð¸Ð¼ Ð¾Ð±ÑŠÐµÐºÑ‚ logo

@@ -1171,6 +1171,7 @@
       preserveHistory: (config ? config.preserveHistory !== false : true),
       resetHistoryOnOpen: !!(config && config.resetHistoryOnOpen),
       floatLauncher: config?.behavior?.floatLauncher || config?.floatLauncher || null,
+      inlineAnchorButton: config?.behavior?.inlineAnchorButton || config?.inlineAnchorButton || null,
 
       inlineAutostart: config?.inlineAutostart || null,
 
@@ -1251,6 +1252,22 @@
     return false;
   }
 
+  function isInlineAnchorButtonEnabledFromConfig(config) {
+    if (!isPlainObject(config)) return false;
+    const behavior = isPlainObject(config.behavior) ? config.behavior : null;
+    const inlineAnchorButton = (behavior && isPlainObject(behavior.inlineAnchorButton))
+      ? behavior.inlineAnchorButton
+      : (isPlainObject(config.inlineAnchorButton) ? config.inlineAnchorButton : null);
+    if (!inlineAnchorButton) return false;
+
+    const raw = inlineAnchorButton.enabled;
+    if (typeof raw === "boolean") return raw;
+    if (typeof raw === "number") return raw !== 0;
+    const text = String(raw || "").trim().toLowerCase();
+    if (!text) return false;
+    return text === "1" || text === "true" || text === "yes" || text === "on";
+  }
+
   function maybeStartHybridFloat(base, configPromise) {
     (async () => {
       let config = null;
@@ -1264,7 +1281,10 @@
 
       applyNotifierConfig(config);
 
-      if (!isHybridFloatEnabledFromConfig(config)) return;
+      const shouldStartFloat =
+        isHybridFloatEnabledFromConfig(config) ||
+        isInlineAnchorButtonEnabledFromConfig(config);
+      if (!shouldStartFloat) return;
       startFloatWidget(base, config);
     })();
   }
