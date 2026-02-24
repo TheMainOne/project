@@ -3576,6 +3576,23 @@ function resolveInlineAnchorGlobalPath(path) {
   return cur || null;
 }
 
+function getInlineAnchorVisualTarget(target) {
+  if (!target || target.nodeType !== 1) return target;
+  if ((target.tagName || "").toUpperCase() === "IFRAME") return target;
+  try {
+    const frame = target.querySelector(
+      "iframe[data-aiw-mode=\"inline\"], iframe[src*=\"mode=inline\"], iframe[src*=\"widget-frame.html\"]"
+    );
+    if (!frame) return target;
+    const targetRect = target.getBoundingClientRect();
+    const frameRect = frame.getBoundingClientRect();
+    const deltaTop = (frameRect.top - targetRect.top);
+    // If host wraps the iframe with top spacing, align to visual widget edge.
+    if (deltaTop > 8 && deltaTop < 240) return frame;
+  } catch {}
+  return target;
+}
+
 function tryInlineAnchorSmoothScrollAPIs(target, top, behavior, offsetPx) {
   const smooth = behavior !== "auto";
   const offset = Number(offsetPx) || 0;
@@ -3953,18 +3970,19 @@ function navigateInlineAnchorButtonToInlineTarget() {
     launcherLog("anchor.miss", { configuredTarget, mode: "inlineAnchorButton" });
     return false;
   }
+  const visualTarget = getInlineAnchorVisualTarget(target);
 
   const behavior = INLINE_ANCHOR_BUTTON.anchorBehavior === "auto" ? "auto" : "smooth";
   const block = INLINE_ANCHOR_BUTTON.anchorBlock || "start";
   const offsetPx = Number(INLINE_ANCHOR_BUTTON.anchorOffsetPx) || 0;
 
-  const scroller = pickInlineAnchorScrollContainer(target);
+  const scroller = pickInlineAnchorScrollContainer(visualTarget);
   const isWindowScroller =
     !scroller ||
     scroller === document.scrollingElement ||
     scroller === document.documentElement ||
     scroller === document.body;
-  const targetRect = target.getBoundingClientRect();
+  const targetRect = visualTarget.getBoundingClientRect();
   let fallbackStrategy = "";
   let nativeScrollMoved = false;
 
@@ -3974,7 +3992,7 @@ function navigateInlineAnchorButtonToInlineTarget() {
     const viewportHeight = window.innerHeight || document.documentElement.clientHeight || 0;
     let top = targetRect.top + window.pageYOffset;
     top = applyAnchorBlockTop(top, viewportHeight, targetRect.height || 0, block) + offsetPx;
-    fallbackStrategy = tryInlineAnchorSmoothScrollAPIs(target, top, behavior, offsetPx);
+    fallbackStrategy = tryInlineAnchorSmoothScrollAPIs(visualTarget, top, behavior, offsetPx);
     if (!fallbackStrategy) {
       try {
         window.scrollTo({ top, behavior });
@@ -3986,12 +4004,12 @@ function navigateInlineAnchorButtonToInlineTarget() {
       nativeScrollMoved = Math.abs(afterY - beforeY) > 1 || Math.abs(afterX - beforeX) > 1;
       if (!nativeScrollMoved && INLINE_ANCHOR_BUTTON.wheelFallbackEnabled) {
         const fallbackDy = applyAnchorBlockTop(
-          target.getBoundingClientRect().top,
+          visualTarget.getBoundingClientRect().top,
           viewportHeight,
           targetRect.height || 0,
           block
         ) + offsetPx;
-        dispatchInlineAnchorWheel(fallbackDy, 0, target, scroller);
+        dispatchInlineAnchorWheel(fallbackDy, 0, visualTarget, scroller);
         fallbackStrategy = "wheel-event";
       }
     }
@@ -4009,15 +4027,15 @@ function navigateInlineAnchorButtonToInlineTarget() {
     const afterTop = Number(scroller.scrollTop) || 0;
     nativeScrollMoved = Math.abs(afterTop - beforeTop) > 1;
     if (!nativeScrollMoved) {
-      fallbackStrategy = tryInlineAnchorSmoothScrollAPIs(target, top, behavior, offsetPx);
+      fallbackStrategy = tryInlineAnchorSmoothScrollAPIs(visualTarget, top, behavior, offsetPx);
       if (!fallbackStrategy && INLINE_ANCHOR_BUTTON.wheelFallbackEnabled) {
         const fallbackDy = applyAnchorBlockTop(
-          target.getBoundingClientRect().top,
+          visualTarget.getBoundingClientRect().top,
           viewportHeight,
           targetRect.height || 0,
           block
         ) + offsetPx;
-        dispatchInlineAnchorWheel(fallbackDy, 0, target, scroller);
+        dispatchInlineAnchorWheel(fallbackDy, 0, visualTarget, scroller);
         fallbackStrategy = "wheel-event";
       }
     }
@@ -4029,6 +4047,8 @@ function navigateInlineAnchorButtonToInlineTarget() {
     source: lastInlineAnchorResolveSource,
     targetTag: target.tagName || "",
     targetId: target.id || "",
+    visualTargetTag: visualTarget && visualTarget.tagName ? visualTarget.tagName : "",
+    visualTargetId: visualTarget && visualTarget.id ? visualTarget.id : "",
     behavior,
     block,
     offsetPx,
