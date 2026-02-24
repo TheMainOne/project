@@ -3761,20 +3761,21 @@ function tryInlineAnchorSmoothScrollAPIs(target, top, behavior, offsetPx) {
               bar.scrollLeft ??
               0
             ) || 0;
-
-            const viewportHeight = window.innerHeight || document.documentElement.clientHeight || 0;
             const rect = target.getBoundingClientRect();
-            const deltaY = applyAnchorBlockTop(
-              rect.top,
-              viewportHeight,
-              rect.height || 0,
-              INLINE_ANCHOR_BUTTON.anchorBlock || "start"
-            ) + offset;
+            const containerEl = bar.containerEl || document.documentElement;
+            const containerRect = containerEl.getBoundingClientRect();
+            const viewportHeight = containerEl.clientHeight || containerRect.height || window.innerHeight || 0;
 
-            const windowY = getInlineAnchorWindowY();
+            // Convert target position to scrollbar content coordinates.
+            const relativeTop = currentY + (rect.top - containerRect.top);
             const absoluteY = Math.max(
               0,
-              (Math.abs(windowY) > 1 ? Number(top) : (currentY + deltaY))
+              applyAnchorBlockTop(
+                relativeTop,
+                viewportHeight,
+                rect.height || 0,
+                INLINE_ANCHOR_BUTTON.anchorBlock || "start"
+              ) + offset
             );
             bar.scrollTo(currentX, absoluteY, duration);
             return "smooth-scrollbar";
