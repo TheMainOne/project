@@ -3473,6 +3473,53 @@ function querySelectorSafe(selector) {
   }
 }
 
+function isInlineAnchorScrollable(el) {
+  if (!el || el.nodeType !== 1) return false;
+  let st = null;
+  try { st = window.getComputedStyle(el); } catch {}
+  if (!st) return false;
+  const oy = st.overflowY;
+  const ox = st.overflowX;
+  const canY = (oy === "auto" || oy === "scroll" || oy === "overlay") && el.scrollHeight > el.clientHeight + 1;
+  const canX = (ox === "auto" || ox === "scroll" || ox === "overlay") && el.scrollWidth > el.clientWidth + 1;
+  return canY || canX;
+}
+
+function pickInlineAnchorScrollContainer(target) {
+  let cur = target;
+  while (cur && cur !== document.documentElement) {
+    if (isInlineAnchorScrollable(cur)) return cur;
+    cur = cur.parentElement;
+  }
+
+  const knownSelectors = [
+    "[data-scroll-container]",
+    "#smooth-wrapper",
+    "#smooth-content",
+    "#app",
+    "#root",
+    "main",
+    ".app",
+    ".root"
+  ];
+  for (let i = 0; i < knownSelectors.length; i += 1) {
+    const found = querySelectorSafe(knownSelectors[i]);
+    if (isInlineAnchorScrollable(found)) return found;
+  }
+
+  return document.scrollingElement || document.documentElement;
+}
+
+function applyAnchorBlockTop(baseTop, viewportHeight, targetHeight, block) {
+  if (block === "center") {
+    return baseTop - (viewportHeight / 2 - targetHeight / 2);
+  }
+  if (block === "end") {
+    return baseTop - (viewportHeight - targetHeight);
+  }
+  return baseTop;
+}
+
 function resolveInlineAnchorTarget() {
   lastInlineAnchorResolveSource = "none";
   const configuredTarget = toText(INLINE_ANCHOR_BUTTON.anchorTarget || "").trim();
@@ -3615,11 +3662,34 @@ function navigateInlineAnchorButtonToInlineTarget() {
   const behavior = INLINE_ANCHOR_BUTTON.anchorBehavior === "auto" ? "auto" : "smooth";
   const block = INLINE_ANCHOR_BUTTON.anchorBlock || "start";
   const offsetPx = Number(INLINE_ANCHOR_BUTTON.anchorOffsetPx) || 0;
-  if (offsetPx !== 0) {
-    const top = target.getBoundingClientRect().top + window.pageYOffset + offsetPx;
-    window.scrollTo({ top, behavior });
+
+  const scroller = pickInlineAnchorScrollContainer(target);
+  const isWindowScroller =
+    !scroller ||
+    scroller === document.scrollingElement ||
+    scroller === document.documentElement ||
+    scroller === document.body;
+  const targetRect = target.getBoundingClientRect();
+
+  if (isWindowScroller) {
+    const viewportHeight = window.innerHeight || document.documentElement.clientHeight || 0;
+    let top = targetRect.top + window.pageYOffset;
+    top = applyAnchorBlockTop(top, viewportHeight, targetRect.height || 0, block) + offsetPx;
+    try {
+      window.scrollTo({ top, behavior });
+    } catch {
+      window.scrollTo(0, top);
+    }
   } else {
-    target.scrollIntoView({ behavior, block });
+    const scrollerRect = scroller.getBoundingClientRect();
+    const viewportHeight = scroller.clientHeight || scrollerRect.height || 0;
+    let top = scroller.scrollTop + (targetRect.top - scrollerRect.top);
+    top = applyAnchorBlockTop(top, viewportHeight, targetRect.height || 0, block) + offsetPx;
+    try {
+      scroller.scrollTo({ top, behavior });
+    } catch {
+      scroller.scrollTop = top;
+    }
   }
 
   const targetHash = target.id ? `#${target.id}` : (configuredTarget.startsWith("#") ? configuredTarget : "");
@@ -3631,7 +3701,10 @@ function navigateInlineAnchorButtonToInlineTarget() {
     behavior,
     block,
     offsetPx,
-    targetHash
+    targetHash,
+    scrollerTag: scroller && scroller.tagName ? scroller.tagName : "window",
+    scrollerId: scroller && scroller.id ? scroller.id : "",
+    scrollerClass: scroller && typeof scroller.className === "string" ? scroller.className : ""
   });
   return true;
 }
