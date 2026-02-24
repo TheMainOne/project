@@ -3542,6 +3542,79 @@ function dispatchInlineAnchorWheel(dy, dx, target, scroller) {
   return true;
 }
 
+function getInlineAnchorDeltaToTarget(target, scroller, block, offsetPx) {
+  const rect = target.getBoundingClientRect();
+  const offset = Number(offsetPx) || 0;
+  const isWindowScroller =
+    !scroller ||
+    scroller === document.scrollingElement ||
+    scroller === document.documentElement ||
+    scroller === document.body;
+
+  if (isWindowScroller) {
+    const viewportHeight = window.innerHeight || document.documentElement.clientHeight || 0;
+    return applyAnchorBlockTop(rect.top, viewportHeight, rect.height || 0, block) + offset;
+  }
+
+  const scrollerRect = scroller.getBoundingClientRect();
+  const viewportHeight = scroller.clientHeight || scrollerRect.height || 0;
+  const relativeTop = rect.top - scrollerRect.top;
+  return applyAnchorBlockTop(relativeTop, viewportHeight, rect.height || 0, block) + offset;
+}
+
+function nudgeInlineAnchorScroller(scroller, delta) {
+  const d = Number(delta) || 0;
+  if (!d) return false;
+  const isWindowScroller =
+    !scroller ||
+    scroller === document.scrollingElement ||
+    scroller === document.documentElement ||
+    scroller === document.body;
+
+  if (isWindowScroller) {
+    const beforeY = getInlineAnchorWindowY();
+    const beforeX = getInlineAnchorWindowX();
+    try {
+      window.scrollBy({ top: d, left: 0, behavior: "auto" });
+    } catch {
+      window.scrollBy(0, d);
+    }
+    const afterY = getInlineAnchorWindowY();
+    const afterX = getInlineAnchorWindowX();
+    return Math.abs(afterY - beforeY) > 1 || Math.abs(afterX - beforeX) > 1;
+  }
+
+  const beforeTop = Number(scroller.scrollTop) || 0;
+  try {
+    scroller.scrollTop = beforeTop + d;
+  } catch {}
+  const afterTop = Number(scroller.scrollTop) || 0;
+  return Math.abs(afterTop - beforeTop) > 1;
+}
+
+function scheduleInlineAnchorAlignment(target, scroller, block, offsetPx) {
+  const maxAttempts = 12;
+  let attempts = 0;
+
+  const step = () => {
+    attempts += 1;
+    const delta = getInlineAnchorDeltaToTarget(target, scroller, block, offsetPx);
+    if (Math.abs(delta) <= 2) return;
+
+    const nudge = clamp(delta, -1400, 1400);
+    const moved = nudgeInlineAnchorScroller(scroller, nudge);
+    if (!moved) {
+      dispatchInlineAnchorWheel(nudge, 0, target, scroller);
+    }
+
+    if (attempts < maxAttempts) {
+      requestAnimationFrame(step);
+    }
+  };
+
+  requestAnimationFrame(step);
+}
+
 function tryInlineAnchorSmoothScrollAPIs(target, top, behavior, offsetPx) {
   const smooth = behavior !== "auto";
   const offset = Number(offsetPx) || 0;
@@ -3824,6 +3897,14 @@ function navigateInlineAnchorButtonToInlineTarget() {
     nativeScrollMoved,
     fallbackStrategy: fallbackStrategy || "none"
   });
+
+  const alignDelayMs = behavior === "smooth" ? 260 : 50;
+  setTimeout(() => {
+    try {
+      scheduleInlineAnchorAlignment(target, scroller, block, offsetPx);
+    } catch {}
+  }, alignDelayMs);
+
   return true;
 }
 
