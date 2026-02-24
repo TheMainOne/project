@@ -193,6 +193,13 @@ const InlineAnchorButtonBehaviorSchema = new mongoose.Schema(
     anchorBehavior: { type: String, enum: ["auto", "smooth"], default: "smooth" },
     anchorBlock:    { type: String, enum: ["start", "center", "end", "nearest"], default: "start" },
     anchorOffsetPx: { type: Number, default: 0, min: -5000, max: 5000 },
+    wheelFallbackEnabled: { type: Boolean, default: true },
+    scrollEngine:   {
+      type: String,
+      enum: ["auto", "window", "lenis", "locomotive", "smoother", "smooth-scrollbar", "fullpage", "host"],
+      default: "auto"
+    },
+    scrollEngineKey: { type: String, default: "" },
   },
   { _id: false }
 );

@@ -232,8 +232,19 @@ function normalizeInlineAnchorButton(rawConfig, fallbackEnabled) {
   const cfg = rawConfig && typeof rawConfig === "object" ? rawConfig : {};
   const blockRaw = String(cfg.anchorBlock || cfg.scrollBlock || cfg.block || "").trim().toLowerCase();
   const behaviorRaw = String(cfg.anchorBehavior || cfg.scrollBehavior || cfg.behavior || "").trim().toLowerCase();
+  const engineRaw = String(cfg.scrollEngine || cfg.engine || "").trim().toLowerCase();
   const safeBlock = ["start", "center", "end", "nearest"].includes(blockRaw) ? blockRaw : "start";
   const safeBehavior = behaviorRaw === "auto" ? "auto" : "smooth";
+  const safeEngine = [
+    "auto",
+    "window",
+    "lenis",
+    "locomotive",
+    "smoother",
+    "smooth-scrollbar",
+    "fullpage",
+    "host",
+  ].includes(engineRaw) ? engineRaw : "auto";
   return {
     enabled: toBoolOr(cfg.enabled, !!fallbackEnabled),
     label: String(cfg.label || cfg.text || ""),
@@ -241,6 +252,9 @@ function normalizeInlineAnchorButton(rawConfig, fallbackEnabled) {
     anchorBehavior: safeBehavior,
     anchorBlock: safeBlock,
     anchorOffsetPx: Math.max(-5000, Math.min(5000, toIntOr(cfg.anchorOffsetPx ?? cfg.offsetPx, 0))),
+    wheelFallbackEnabled: toBoolOr(cfg.wheelFallbackEnabled ?? cfg.enableWheelFallback, true),
+    scrollEngine: safeEngine,
+    scrollEngineKey: String(cfg.scrollEngineKey || cfg.engineKey || cfg.globalKey || ""),
   };
 }
 

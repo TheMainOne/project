@@ -261,6 +261,19 @@ const ACCENT = CFG.primaryColor || CFG.accent || "#6D28D9";
       -5000,
       5000
     );
+    const wheelFallbackEnabled = toBool(raw.wheelFallbackEnabled ?? raw.enableWheelFallback, true);
+    const scrollEngineRaw = normToken(raw.scrollEngine || raw.engine || "");
+    const scrollEngine = [
+      "auto",
+      "window",
+      "lenis",
+      "locomotive",
+      "smoother",
+      "smooth-scrollbar",
+      "fullpage",
+      "host"
+    ].includes(scrollEngineRaw) ? scrollEngineRaw : "auto";
+    const scrollEngineKey = toText(raw.scrollEngineKey || raw.engineKey || raw.globalKey || "").trim();
     const label = toText(raw.label || raw.text || "").trim();
     return {
       enabled,
@@ -268,6 +281,9 @@ const ACCENT = CFG.primaryColor || CFG.accent || "#6D28D9";
       anchorBehavior,
       anchorBlock,
       anchorOffsetPx,
+      wheelFallbackEnabled,
+      scrollEngine,
+      scrollEngineKey,
       label
     };
   })();
@@ -3542,148 +3558,231 @@ function dispatchInlineAnchorWheel(dy, dx, target, scroller) {
   return true;
 }
 
-function getInlineAnchorDeltaToTarget(target, scroller, block, offsetPx) {
-  const rect = target.getBoundingClientRect();
-  const offset = Number(offsetPx) || 0;
-  const isWindowScroller =
-    !scroller ||
-    scroller === document.scrollingElement ||
-    scroller === document.documentElement ||
-    scroller === document.body;
-
-  if (isWindowScroller) {
-    const viewportHeight = window.innerHeight || document.documentElement.clientHeight || 0;
-    return applyAnchorBlockTop(rect.top, viewportHeight, rect.height || 0, block) + offset;
-  }
-
-  const scrollerRect = scroller.getBoundingClientRect();
-  const viewportHeight = scroller.clientHeight || scrollerRect.height || 0;
-  const relativeTop = rect.top - scrollerRect.top;
-  return applyAnchorBlockTop(relativeTop, viewportHeight, rect.height || 0, block) + offset;
-}
-
-function nudgeInlineAnchorScroller(scroller, delta) {
-  const d = Number(delta) || 0;
-  if (!d) return false;
-  const isWindowScroller =
-    !scroller ||
-    scroller === document.scrollingElement ||
-    scroller === document.documentElement ||
-    scroller === document.body;
-
-  if (isWindowScroller) {
-    const beforeY = getInlineAnchorWindowY();
-    const beforeX = getInlineAnchorWindowX();
+function resolveInlineAnchorGlobalPath(path) {
+  const normalized = toText(path || "").trim();
+  if (!normalized) return null;
+  const parts = normalized.split(".").map((p) => p.trim()).filter(Boolean);
+  if (!parts.length) return null;
+  let cur = window;
+  for (let i = 0; i < parts.length; i += 1) {
+    if (!cur) return null;
+    const key = parts[i];
     try {
-      window.scrollBy({ top: d, left: 0, behavior: "auto" });
+      cur = cur[key];
     } catch {
-      window.scrollBy(0, d);
+      return null;
     }
-    const afterY = getInlineAnchorWindowY();
-    const afterX = getInlineAnchorWindowX();
-    return Math.abs(afterY - beforeY) > 1 || Math.abs(afterX - beforeX) > 1;
   }
-
-  const beforeTop = Number(scroller.scrollTop) || 0;
-  try {
-    scroller.scrollTop = beforeTop + d;
-  } catch {}
-  const afterTop = Number(scroller.scrollTop) || 0;
-  return Math.abs(afterTop - beforeTop) > 1;
-}
-
-function scheduleInlineAnchorAlignment(target, scroller, block, offsetPx, options) {
-  const opts = options && typeof options === "object" ? options : {};
-  const preferWheel = !!opts.preferWheel;
-  const allowReverse = opts.allowReverse !== false;
-  const maxAttempts = Math.max(2, Math.min(20, Number(opts.maxAttempts) || 12));
-  let attempts = 0;
-  let initialDirection = 0;
-
-  const step = () => {
-    attempts += 1;
-    const delta = getInlineAnchorDeltaToTarget(target, scroller, block, offsetPx);
-    if (Math.abs(delta) <= 2) return;
-
-    const sign = delta > 0 ? 1 : -1;
-    if (!initialDirection) {
-      initialDirection = sign;
-    } else if (!allowReverse && sign !== initialDirection) {
-      return;
-    }
-
-    const nudge = clamp(delta, -900, 900);
-    let moved = false;
-    if (!preferWheel) {
-      moved = nudgeInlineAnchorScroller(scroller, nudge);
-    }
-    if (!moved) {
-      dispatchInlineAnchorWheel(nudge, 0, target, scroller);
-      moved = true;
-    }
-
-    if (moved && attempts < maxAttempts) {
-      requestAnimationFrame(step);
-    }
-  };
-
-  requestAnimationFrame(step);
+  return cur || null;
 }
 
 function tryInlineAnchorSmoothScrollAPIs(target, top, behavior, offsetPx) {
   const smooth = behavior !== "auto";
   const offset = Number(offsetPx) || 0;
+  const preferred = INLINE_ANCHOR_BUTTON.scrollEngine || "auto";
+  const configuredRef = INLINE_ANCHOR_BUTTON.scrollEngineKey
+    ? resolveInlineAnchorGlobalPath(INLINE_ANCHOR_BUTTON.scrollEngineKey)
+    : null;
+
+  const tryConfigured = () => {
+    if (!configuredRef) return "";
+    try {
+      if (typeof configuredRef === "function") {
+        const res = configuredRef({
+          target,
+          top,
+          behavior,
+          offsetPx: offset
+        });
+        return res === false ? "" : "custom-fn";
+      }
+      if (configuredRef && typeof configuredRef.scrollTo === "function") {
+        try {
+          configuredRef.scrollTo(target, { offset, behavior });
+        } catch {
+          configuredRef.scrollTo(top, { offset, behavior });
+        }
+        return "custom-engine";
+      }
+      if (configuredRef && configuredRef.lenis && typeof configuredRef.lenis.scrollTo === "function") {
+        const opts = smooth ? { offset } : { offset, immediate: true };
+        try {
+          configuredRef.lenis.scrollTo(target, opts);
+        } catch {
+          configuredRef.lenis.scrollTo(top, opts);
+        }
+        return "custom-engine";
+      }
+    } catch {}
+    return "";
+  };
+
+  const tryHostHook = () => {
+    const hook = (
+      (typeof window.__AIW_INLINE_ANCHOR_SCROLL_TO__ === "function" && window.__AIW_INLINE_ANCHOR_SCROLL_TO__) ||
+      (typeof window.__AIW_SCROLL_TO__ === "function" && window.__AIW_SCROLL_TO__) ||
+      null
+    );
+    if (!hook) return "";
+    try {
+      const res = hook({
+        target,
+        top,
+        behavior,
+        offsetPx: offset
+      });
+      return res === false ? "" : "host-hook";
+    } catch {
+      return "";
+    }
+  };
+
+  if (preferred === "window") return "";
+  if (preferred !== "auto") {
+    const configuredResult = tryConfigured();
+    if (configuredResult) return configuredResult;
+    if (preferred === "host") {
+      const hostOnly = tryHostHook();
+      return hostOnly || "";
+    }
+  } else {
+    const configuredResult = tryConfigured();
+    if (configuredResult) return configuredResult;
+    const hostResult = tryHostHook();
+    if (hostResult) return hostResult;
+  }
 
   // GSAP ScrollSmoother
-  try {
-    if (window.ScrollSmoother && typeof window.ScrollSmoother.get === "function") {
-      const sm = window.ScrollSmoother.get();
-      if (sm) {
-        if (typeof sm.scrollTo === "function") {
-          try {
-            sm.scrollTo(target, smooth);
-          } catch {
-            sm.scrollTo(top, smooth);
+  if (preferred === "auto" || preferred === "smoother") {
+    try {
+      if (window.ScrollSmoother && typeof window.ScrollSmoother.get === "function") {
+        const sm = window.ScrollSmoother.get();
+        if (sm) {
+          if (typeof sm.scrollTo === "function") {
+            try {
+              sm.scrollTo(target, smooth);
+            } catch {
+              sm.scrollTo(top, smooth);
+            }
+            return "gsap-smoother";
           }
-          return "gsap-smoother";
-        }
-        if (typeof sm.scrollTop === "function") {
-          sm.scrollTop(top);
-          return "gsap-smoother";
+          if (typeof sm.scrollTop === "function") {
+            sm.scrollTop(top);
+            return "gsap-smoother";
+          }
         }
       }
-    }
-  } catch {}
+    } catch {}
+  }
 
   // Lenis
-  try {
-    const lenis = window.lenis || window.__lenis || window.lenisInstance;
-    if (lenis && typeof lenis.scrollTo === "function") {
-      const opts = smooth ? { offset } : { offset, immediate: true };
-      try {
-        lenis.scrollTo(target, opts);
-      } catch {
-        lenis.scrollTo(top, opts);
+  if (preferred === "auto" || preferred === "lenis") {
+    try {
+      const lenis = window.lenis || window.__lenis || window.lenisInstance;
+      if (lenis && typeof lenis.scrollTo === "function") {
+        const opts = smooth ? { offset } : { offset, immediate: true };
+        try {
+          lenis.scrollTo(target, opts);
+        } catch {
+          lenis.scrollTo(top, opts);
+        }
+        return "lenis";
       }
-      return "lenis";
-    }
-  } catch {}
+    } catch {}
+  }
 
   // Locomotive Scroll
-  try {
-    const loco = window.locomotiveScroll || window.locoScroll || window.__locomotiveScroll;
-    if (loco && typeof loco.scrollTo === "function") {
-      const opts = smooth
-        ? { offset }
-        : { offset, duration: 0, disableLerp: true };
-      try {
-        loco.scrollTo(target, opts);
-      } catch {
-        loco.scrollTo(top, opts);
+  if (preferred === "auto" || preferred === "locomotive") {
+    try {
+      const loco = window.locomotiveScroll || window.locoScroll || window.__locomotiveScroll;
+      if (loco && typeof loco.scrollTo === "function") {
+        const opts = smooth
+          ? { offset }
+          : { offset, duration: 0, disableLerp: true };
+        try {
+          loco.scrollTo(target, opts);
+        } catch {
+          loco.scrollTo(top, opts);
+        }
+        return "locomotive";
       }
-      return "locomotive";
-    }
-  } catch {}
+    } catch {}
+  }
+
+  // fullPage.js
+  if (preferred === "auto" || preferred === "fullpage") {
+    try {
+      const fp = window.fullpage_api;
+      const moveFn = fp && (fp.moveTo || fp.silentMoveTo);
+      if (fp && typeof moveFn === "function") {
+        const section = target.closest("[data-anchor], .section, [data-fp-section], section");
+        if (section) {
+          const anchor = toText(section.getAttribute("data-anchor") || "").trim();
+          if (anchor) {
+            moveFn.call(fp, anchor);
+            return "fullpage";
+          }
+          const allSections = Array.from(
+            document.querySelectorAll("[data-anchor], .section, [data-fp-section], section")
+          );
+          const idx = allSections.indexOf(section);
+          if (idx >= 0) {
+            moveFn.call(fp, idx + 1);
+            return "fullpage";
+          }
+        }
+      }
+    } catch {}
+  }
+
+  // Smooth Scrollbar
+  if (preferred === "auto" || preferred === "smooth-scrollbar") {
+    try {
+      if (window.Scrollbar && typeof window.Scrollbar.getAll === "function") {
+        const bars = window.Scrollbar.getAll();
+        if (Array.isArray(bars) && bars.length > 0) {
+          const bar = bars.find((item) => {
+            if (!item) return false;
+            try {
+              if (item.containerEl && item.containerEl.contains && item.containerEl.contains(target)) return true;
+              if (item.contentEl && item.contentEl.contains && item.contentEl.contains(target)) return true;
+            } catch {}
+            return false;
+          }) || bars[0];
+          const duration = smooth ? 600 : 0;
+          if (bar && typeof bar.scrollTo === "function") {
+            const currentY = Number(
+              (bar.offset && (bar.offset.y ?? bar.offset.top)) ??
+              bar.scrollTop ??
+              0
+            ) || 0;
+            const currentX = Number(
+              (bar.offset && (bar.offset.x ?? bar.offset.left)) ??
+              bar.scrollLeft ??
+              0
+            ) || 0;
+
+            const viewportHeight = window.innerHeight || document.documentElement.clientHeight || 0;
+            const rect = target.getBoundingClientRect();
+            const deltaY = applyAnchorBlockTop(
+              rect.top,
+              viewportHeight,
+              rect.height || 0,
+              INLINE_ANCHOR_BUTTON.anchorBlock || "start"
+            ) + offset;
+
+            const windowY = getInlineAnchorWindowY();
+            const absoluteY = Math.max(
+              0,
+              (Math.abs(windowY) > 1 ? Number(top) : (currentY + deltaY))
+            );
+            bar.scrollTo(currentX, absoluteY, duration);
+            return "smooth-scrollbar";
+          }
+        }
+      }
+    } catch {}
+  }
 
   return "";
 }
@@ -3857,7 +3956,7 @@ function navigateInlineAnchorButtonToInlineTarget() {
       const afterY = getInlineAnchorWindowY();
       const afterX = getInlineAnchorWindowX();
       nativeScrollMoved = Math.abs(afterY - beforeY) > 1 || Math.abs(afterX - beforeX) > 1;
-      if (!nativeScrollMoved) {
+      if (!nativeScrollMoved && INLINE_ANCHOR_BUTTON.wheelFallbackEnabled) {
         const fallbackDy = applyAnchorBlockTop(
           target.getBoundingClientRect().top,
           viewportHeight,
@@ -3883,7 +3982,7 @@ function navigateInlineAnchorButtonToInlineTarget() {
     nativeScrollMoved = Math.abs(afterTop - beforeTop) > 1;
     if (!nativeScrollMoved) {
       fallbackStrategy = tryInlineAnchorSmoothScrollAPIs(target, top, behavior, offsetPx);
-      if (!fallbackStrategy) {
+      if (!fallbackStrategy && INLINE_ANCHOR_BUTTON.wheelFallbackEnabled) {
         const fallbackDy = applyAnchorBlockTop(
           target.getBoundingClientRect().top,
           viewportHeight,
@@ -3912,18 +4011,6 @@ function navigateInlineAnchorButtonToInlineTarget() {
     nativeScrollMoved,
     fallbackStrategy: fallbackStrategy || "none"
   });
-
-  const alignDelayMs = behavior === "smooth" ? 260 : 50;
-  setTimeout(() => {
-    try {
-      const wheelOnly = fallbackStrategy === "wheel-event" && !nativeScrollMoved;
-      scheduleInlineAnchorAlignment(target, scroller, block, offsetPx, {
-        preferWheel: wheelOnly,
-        allowReverse: !wheelOnly,
-        maxAttempts: wheelOnly ? 10 : 12
-      });
-    } catch {}
-  }, alignDelayMs);
 
   return true;
 }
