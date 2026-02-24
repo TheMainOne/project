@@ -3520,6 +3520,86 @@ function applyAnchorBlockTop(baseTop, viewportHeight, targetHeight, block) {
   return baseTop;
 }
 
+function getInlineAnchorWindowY() {
+  return window.pageYOffset || document.documentElement.scrollTop || document.body.scrollTop || 0;
+}
+
+function getInlineAnchorWindowX() {
+  return window.pageXOffset || document.documentElement.scrollLeft || document.body.scrollLeft || 0;
+}
+
+function dispatchInlineAnchorWheel(dy, dx, target, scroller) {
+  const y = Number(dy) || 0;
+  const x = Number(dx) || 0;
+  if (!y && !x) return false;
+  const opts = { deltaY: y, deltaX: x, deltaMode: 0, bubbles: true, cancelable: true };
+  try { window.dispatchEvent(new WheelEvent("wheel", opts)); } catch {}
+  try { document.dispatchEvent(new WheelEvent("wheel", opts)); } catch {}
+  try { document.body && document.body.dispatchEvent(new WheelEvent("wheel", opts)); } catch {}
+  try { document.documentElement && document.documentElement.dispatchEvent(new WheelEvent("wheel", opts)); } catch {}
+  try { if (target && target.dispatchEvent) target.dispatchEvent(new WheelEvent("wheel", opts)); } catch {}
+  try { if (scroller && scroller.dispatchEvent) scroller.dispatchEvent(new WheelEvent("wheel", opts)); } catch {}
+  return true;
+}
+
+function tryInlineAnchorSmoothScrollAPIs(target, top, behavior, offsetPx) {
+  const smooth = behavior !== "auto";
+  const offset = Number(offsetPx) || 0;
+
+  // GSAP ScrollSmoother
+  try {
+    if (window.ScrollSmoother && typeof window.ScrollSmoother.get === "function") {
+      const sm = window.ScrollSmoother.get();
+      if (sm) {
+        if (typeof sm.scrollTo === "function") {
+          try {
+            sm.scrollTo(target, smooth);
+          } catch {
+            sm.scrollTo(top, smooth);
+          }
+          return "gsap-smoother";
+        }
+        if (typeof sm.scrollTop === "function") {
+          sm.scrollTop(top);
+          return "gsap-smoother";
+        }
+      }
+    }
+  } catch {}
+
+  // Lenis
+  try {
+    const lenis = window.lenis || window.__lenis || window.lenisInstance;
+    if (lenis && typeof lenis.scrollTo === "function") {
+      const opts = smooth ? { offset } : { offset, immediate: true };
+      try {
+        lenis.scrollTo(target, opts);
+      } catch {
+        lenis.scrollTo(top, opts);
+      }
+      return "lenis";
+    }
+  } catch {}
+
+  // Locomotive Scroll
+  try {
+    const loco = window.locomotiveScroll || window.locoScroll || window.__locomotiveScroll;
+    if (loco && typeof loco.scrollTo === "function") {
+      const opts = smooth
+        ? { offset }
+        : { offset, duration: 0, disableLerp: true };
+      try {
+        loco.scrollTo(target, opts);
+      } catch {
+        loco.scrollTo(top, opts);
+      }
+      return "locomotive";
+    }
+  } catch {}
+
+  return "";
+}
+
 function resolveInlineAnchorTarget() {
   lastInlineAnchorResolveSource = "none";
   const configuredTarget = toText(INLINE_ANCHOR_BUTTON.anchorTarget || "").trim();
@@ -3670,17 +3750,38 @@ function navigateInlineAnchorButtonToInlineTarget() {
     scroller === document.documentElement ||
     scroller === document.body;
   const targetRect = target.getBoundingClientRect();
+  let fallbackStrategy = "";
+  let nativeScrollMoved = false;
 
   if (isWindowScroller) {
+    const beforeY = getInlineAnchorWindowY();
+    const beforeX = getInlineAnchorWindowX();
     const viewportHeight = window.innerHeight || document.documentElement.clientHeight || 0;
     let top = targetRect.top + window.pageYOffset;
     top = applyAnchorBlockTop(top, viewportHeight, targetRect.height || 0, block) + offsetPx;
-    try {
-      window.scrollTo({ top, behavior });
-    } catch {
-      window.scrollTo(0, top);
+    fallbackStrategy = tryInlineAnchorSmoothScrollAPIs(target, top, behavior, offsetPx);
+    if (!fallbackStrategy) {
+      try {
+        window.scrollTo({ top, behavior });
+      } catch {
+        window.scrollTo(0, top);
+      }
+      const afterY = getInlineAnchorWindowY();
+      const afterX = getInlineAnchorWindowX();
+      nativeScrollMoved = Math.abs(afterY - beforeY) > 1 || Math.abs(afterX - beforeX) > 1;
+      if (!nativeScrollMoved) {
+        const fallbackDy = applyAnchorBlockTop(
+          target.getBoundingClientRect().top,
+          viewportHeight,
+          targetRect.height || 0,
+          block
+        ) + offsetPx;
+        dispatchInlineAnchorWheel(fallbackDy, 0, target, scroller);
+        fallbackStrategy = "wheel-event";
+      }
     }
   } else {
+    const beforeTop = Number(scroller.scrollTop) || 0;
     const scrollerRect = scroller.getBoundingClientRect();
     const viewportHeight = scroller.clientHeight || scrollerRect.height || 0;
     let top = scroller.scrollTop + (targetRect.top - scrollerRect.top);
@@ -3689,6 +3790,21 @@ function navigateInlineAnchorButtonToInlineTarget() {
       scroller.scrollTo({ top, behavior });
     } catch {
       scroller.scrollTop = top;
+    }
+    const afterTop = Number(scroller.scrollTop) || 0;
+    nativeScrollMoved = Math.abs(afterTop - beforeTop) > 1;
+    if (!nativeScrollMoved) {
+      fallbackStrategy = tryInlineAnchorSmoothScrollAPIs(target, top, behavior, offsetPx);
+      if (!fallbackStrategy) {
+        const fallbackDy = applyAnchorBlockTop(
+          target.getBoundingClientRect().top,
+          viewportHeight,
+          targetRect.height || 0,
+          block
+        ) + offsetPx;
+        dispatchInlineAnchorWheel(fallbackDy, 0, target, scroller);
+        fallbackStrategy = "wheel-event";
+      }
     }
   }
 
@@ -3704,7 +3820,9 @@ function navigateInlineAnchorButtonToInlineTarget() {
     targetHash,
     scrollerTag: scroller && scroller.tagName ? scroller.tagName : "window",
     scrollerId: scroller && scroller.id ? scroller.id : "",
-    scrollerClass: scroller && typeof scroller.className === "string" ? scroller.className : ""
+    scrollerClass: scroller && typeof scroller.className === "string" ? scroller.className : "",
+    nativeScrollMoved,
+    fallbackStrategy: fallbackStrategy || "none"
   });
   return true;
 }
