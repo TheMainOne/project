@@ -3748,8 +3748,23 @@ function tryInlineAnchorSmoothScrollAPIs(target, top, behavior, offsetPx) {
               if (item.contentEl && item.contentEl.contains && item.contentEl.contains(target)) return true;
             } catch {}
             return false;
-          }) || bars[0];
+          }) || bars
+            .slice()
+            .sort((a, b) => {
+              const ay = Number(a && a.limit && a.limit.y) || 0;
+              const by = Number(b && b.limit && b.limit.y) || 0;
+              return by - ay;
+            })[0];
           const duration = smooth ? 600 : 0;
+          if (bar && typeof bar.scrollIntoView === "function" && (INLINE_ANCHOR_BUTTON.anchorBlock || "start") === "start") {
+            // Native API of smooth-scrollbar gives the most accurate "align top" behavior.
+            bar.scrollIntoView(target, {
+              alignToTop: true,
+              onlyScrollIfNeeded: false,
+              offsetTop: -(offset)
+            });
+            return "smooth-scrollbar-into-view";
+          }
           if (bar && typeof bar.scrollTo === "function") {
             const currentY = Number(
               (bar.offset && (bar.offset.y ?? bar.offset.top)) ??
@@ -3765,18 +3780,25 @@ function tryInlineAnchorSmoothScrollAPIs(target, top, behavior, offsetPx) {
             const containerEl = bar.containerEl || document.documentElement;
             const containerRect = containerEl.getBoundingClientRect();
             const viewportHeight = containerEl.clientHeight || containerRect.height || window.innerHeight || 0;
+            const blockMode = INLINE_ANCHOR_BUTTON.anchorBlock || "start";
 
-            // Convert target position to scrollbar content coordinates.
-            const relativeTop = currentY + (rect.top - containerRect.top);
-            const absoluteY = Math.max(
-              0,
-              applyAnchorBlockTop(
-                relativeTop,
+            // For start alignment we target window top to avoid wrapper/top-offset drift.
+            const topFromContainer = currentY + (rect.top - containerRect.top);
+            const topFromViewport = currentY + rect.top;
+            let absoluteY = blockMode === "start"
+              ? (topFromViewport + offset)
+              : (applyAnchorBlockTop(
+                topFromContainer,
                 viewportHeight,
                 rect.height || 0,
-                INLINE_ANCHOR_BUTTON.anchorBlock || "start"
-              ) + offset
-            );
+                blockMode
+              ) + offset);
+            const maxY = Number(bar.limit && bar.limit.y);
+            if (Number.isFinite(maxY)) {
+              absoluteY = clamp(absoluteY, 0, maxY);
+            } else {
+              absoluteY = Math.max(0, absoluteY);
+            }
             bar.scrollTo(currentX, absoluteY, duration);
             return "smooth-scrollbar";
           }
