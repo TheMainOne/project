@@ -3592,22 +3592,37 @@ function nudgeInlineAnchorScroller(scroller, delta) {
   return Math.abs(afterTop - beforeTop) > 1;
 }
 
-function scheduleInlineAnchorAlignment(target, scroller, block, offsetPx) {
-  const maxAttempts = 12;
+function scheduleInlineAnchorAlignment(target, scroller, block, offsetPx, options) {
+  const opts = options && typeof options === "object" ? options : {};
+  const preferWheel = !!opts.preferWheel;
+  const allowReverse = opts.allowReverse !== false;
+  const maxAttempts = Math.max(2, Math.min(20, Number(opts.maxAttempts) || 12));
   let attempts = 0;
+  let initialDirection = 0;
 
   const step = () => {
     attempts += 1;
     const delta = getInlineAnchorDeltaToTarget(target, scroller, block, offsetPx);
     if (Math.abs(delta) <= 2) return;
 
-    const nudge = clamp(delta, -1400, 1400);
-    const moved = nudgeInlineAnchorScroller(scroller, nudge);
-    if (!moved) {
-      dispatchInlineAnchorWheel(nudge, 0, target, scroller);
+    const sign = delta > 0 ? 1 : -1;
+    if (!initialDirection) {
+      initialDirection = sign;
+    } else if (!allowReverse && sign !== initialDirection) {
+      return;
     }
 
-    if (attempts < maxAttempts) {
+    const nudge = clamp(delta, -900, 900);
+    let moved = false;
+    if (!preferWheel) {
+      moved = nudgeInlineAnchorScroller(scroller, nudge);
+    }
+    if (!moved) {
+      dispatchInlineAnchorWheel(nudge, 0, target, scroller);
+      moved = true;
+    }
+
+    if (moved && attempts < maxAttempts) {
       requestAnimationFrame(step);
     }
   };
@@ -3901,7 +3916,12 @@ function navigateInlineAnchorButtonToInlineTarget() {
   const alignDelayMs = behavior === "smooth" ? 260 : 50;
   setTimeout(() => {
     try {
-      scheduleInlineAnchorAlignment(target, scroller, block, offsetPx);
+      const wheelOnly = fallbackStrategy === "wheel-event" && !nativeScrollMoved;
+      scheduleInlineAnchorAlignment(target, scroller, block, offsetPx, {
+        preferWheel: wheelOnly,
+        allowReverse: !wheelOnly,
+        maxAttempts: wheelOnly ? 10 : 12
+      });
     } catch {}
   }, alignDelayMs);
 
