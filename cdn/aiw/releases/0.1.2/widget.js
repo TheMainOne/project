@@ -261,6 +261,20 @@ const ACCENT = CFG.primaryColor || CFG.accent || "#6D28D9";
       -5000,
       5000
     );
+    const parseOptionalOffset = (value) => {
+      if (value === undefined || value === null) return null;
+      const text = toText(value).trim();
+      if (!text) return null;
+      const n = Number(text);
+      if (!Number.isFinite(n)) return null;
+      return clamp(Math.round(n), -5000, 5000);
+    };
+    const anchorOffsetPxMobile = parseOptionalOffset(
+      raw.anchorOffsetPxMobile ?? raw.offsetPxMobile ?? raw.mobileAnchorOffsetPx ?? raw.mobileOffsetPx
+    );
+    const anchorOffsetPxIos = parseOptionalOffset(
+      raw.anchorOffsetPxIos ?? raw.offsetPxIos ?? raw.iosAnchorOffsetPx ?? raw.iosOffsetPx
+    );
     const wheelFallbackEnabled = toBool(raw.wheelFallbackEnabled ?? raw.enableWheelFallback, true);
     const scrollEngineRaw = normToken(raw.scrollEngine || raw.engine || "");
     const scrollEngine = [
@@ -281,12 +295,24 @@ const ACCENT = CFG.primaryColor || CFG.accent || "#6D28D9";
       anchorBehavior,
       anchorBlock,
       anchorOffsetPx,
+      anchorOffsetPxMobile,
+      anchorOffsetPxIos,
       wheelFallbackEnabled,
       scrollEngine,
       scrollEngineKey,
       label
     };
   })();
+
+function resolveInlineAnchorOffset() {
+  if (IS_IOS && Number.isFinite(INLINE_ANCHOR_BUTTON.anchorOffsetPxIos)) {
+    return { offsetPx: Number(INLINE_ANCHOR_BUTTON.anchorOffsetPxIos) || 0, source: "ios" };
+  }
+  if (IS_MOBILE && Number.isFinite(INLINE_ANCHOR_BUTTON.anchorOffsetPxMobile)) {
+    return { offsetPx: Number(INLINE_ANCHOR_BUTTON.anchorOffsetPxMobile) || 0, source: "mobile" };
+  }
+  return { offsetPx: Number(INLINE_ANCHOR_BUTTON.anchorOffsetPx) || 0, source: "base" };
+}
   const WELCOME  = CFG.welcome || "Hi! How can I help?";
   const LANG     = CFG.lang || "en";
   const AUTOSTART   = CFG.autostart === true;
@@ -3968,7 +3994,8 @@ function navigateInlineAnchorButtonToInlineTarget() {
 
   const behavior = INLINE_ANCHOR_BUTTON.anchorBehavior === "auto" ? "auto" : "smooth";
   const block = INLINE_ANCHOR_BUTTON.anchorBlock || "start";
-  const offsetPx = Number(INLINE_ANCHOR_BUTTON.anchorOffsetPx) || 0;
+  const resolvedOffset = resolveInlineAnchorOffset();
+  const offsetPx = resolvedOffset.offsetPx;
 
   const scroller = pickInlineAnchorScrollContainer(visualTarget);
   const isWindowScroller =
@@ -4046,6 +4073,7 @@ function navigateInlineAnchorButtonToInlineTarget() {
     behavior,
     block,
     offsetPx,
+    offsetSource: resolvedOffset.source,
     targetHash,
     scrollerTag: scroller && scroller.tagName ? scroller.tagName : "window",
     scrollerId: scroller && scroller.id ? scroller.id : "",

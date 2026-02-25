@@ -230,6 +230,14 @@ function normalizeFloatLauncherDynamic(rawDynamic) {
 
 function normalizeInlineAnchorButton(rawConfig, fallbackEnabled) {
   const cfg = rawConfig && typeof rawConfig === "object" ? rawConfig : {};
+  const parseOptionalOffset = (value) => {
+    if (value === undefined || value === null) return null;
+    const text = String(value).trim();
+    if (!text) return null;
+    const n = Number(text);
+    if (!Number.isFinite(n)) return null;
+    return Math.max(-5000, Math.min(5000, Math.round(n)));
+  };
   const blockRaw = String(cfg.anchorBlock || cfg.scrollBlock || cfg.block || "").trim().toLowerCase();
   const behaviorRaw = String(cfg.anchorBehavior || cfg.scrollBehavior || cfg.behavior || "").trim().toLowerCase();
   const engineRaw = String(cfg.scrollEngine || cfg.engine || "").trim().toLowerCase();
@@ -252,6 +260,12 @@ function normalizeInlineAnchorButton(rawConfig, fallbackEnabled) {
     anchorBehavior: safeBehavior,
     anchorBlock: safeBlock,
     anchorOffsetPx: Math.max(-5000, Math.min(5000, toIntOr(cfg.anchorOffsetPx ?? cfg.offsetPx, 0))),
+    anchorOffsetPxMobile: parseOptionalOffset(
+      cfg.anchorOffsetPxMobile ?? cfg.offsetPxMobile ?? cfg.mobileAnchorOffsetPx ?? cfg.mobileOffsetPx
+    ),
+    anchorOffsetPxIos: parseOptionalOffset(
+      cfg.anchorOffsetPxIos ?? cfg.offsetPxIos ?? cfg.iosAnchorOffsetPx ?? cfg.iosOffsetPx
+    ),
     wheelFallbackEnabled: toBoolOr(cfg.wheelFallbackEnabled ?? cfg.enableWheelFallback, true),
     scrollEngine: safeEngine,
     scrollEngineKey: String(cfg.scrollEngineKey || cfg.engineKey || cfg.globalKey || ""),
