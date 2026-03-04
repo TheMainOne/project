@@ -1,4 +1,4 @@
-// server-aiw.js
+// server-aiw.js - an old code that is not used anymore, but kept for reference. The main server file is now app.js
 import 'dotenv/config';
 import express from 'express';
 import mongoose from 'mongoose';
