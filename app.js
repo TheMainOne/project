@@ -18,6 +18,7 @@ import widgetDemoScriptRouter from "./api/widget/demoScript.js";
 import notificationDestinationsRouter from "./api/notificationDestinations.js";
 import Notification from "./models/Notification.js";
 import NotificationDestination from "./models/NotificationDestination.js";
+import { startTelemetryRetentionJob } from "./cron/telemetryRetention.js";
 import createBot from "./src/bot.js";
 import path from "path";
 import { randomUUID } from "crypto";
@@ -136,6 +137,7 @@ mongoose
     await NotificationDestination.syncIndexes();
     await Notification.createCollection().catch(() => {});
     await Notification.syncIndexes();
+    startTelemetryRetentionJob();
     // создаём бота только ПОСЛЕ подключения к Mongo
     const bot = createBot(BOT_TOKEN);
 
@@ -237,3 +239,4 @@ process.on("unhandledRejection", (reason, promise) => {
   console.error("Unhandled Rejection at:", promise, "reason:", reason);
   sendTelegramMessage(`⚠️ Unhandled Rejection: ${reason}`);
 });
+

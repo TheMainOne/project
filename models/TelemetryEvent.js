@@ -19,5 +19,6 @@ const TelemetryEventSchema = new mongoose.Schema(
 TelemetryEventSchema.index({ siteId: 1, createdAt: -1 });
 TelemetryEventSchema.index({ siteId: 1, pagePath: 1, createdAt: -1 });
 TelemetryEventSchema.index({ siteId: 1, countryCode: 1, createdAt: -1 });
+TelemetryEventSchema.index({ createdAt: 1 });
 
 export default mongoose.model("TelemetryEvent", TelemetryEventSchema);
