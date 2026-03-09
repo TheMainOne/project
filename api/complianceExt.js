@@ -1,6 +1,6 @@
 import express from "express";
 import { requireAuth, requireScopes } from "../middlewares/auth.js";
-import ComplianceAuditLog from "../models/ComplianceAuditLog.js";
+import ComplianceAuditLog from "../extensions/sf-compliance/models/ComplianceAuditLog.js";
 
 const complianceExtRouter = express.Router();
 

@@ -2,17 +2,19 @@ import mongoose from "mongoose";
 
 const SupplierEvidenceSchema = new mongoose.Schema(
   {
-    supplierId: { type: String, index: true },
-    material: { type: String, index: true },
+    supplierId: { type: mongoose.Schema.Types.ObjectId, ref: "Supplier", index: true },
+    supplierCode: { type: String, index: true },
+    materialId: { type: mongoose.Schema.Types.ObjectId, ref: "MaterialCatalog", index: true },
+    materialCode: { type: String, index: true },
     jurisdiction: { type: String, index: true },
-    regulationKey: { type: String, index: true },
-    regulationName: { type: String },
+    regulation: { type: String, index: true },
     regulationVersion: { type: String },
-    documentType: { type: String },
+    evidenceType: { type: String, index: true },
+    evidenceId: { type: String, index: true },
     documentName: { type: String },
     sourceUrl: { type: String },
     validFrom: { type: Date },
-    validUntil: { type: Date, index: true },
+    validTo: { type: Date, index: true },
     status: {
       type: String,
       enum: ["active", "expired", "superseded"],
@@ -24,7 +26,8 @@ const SupplierEvidenceSchema = new mongoose.Schema(
   { timestamps: true, versionKey: false }
 );
 
-SupplierEvidenceSchema.index({ supplierId: 1, regulationKey: 1, material: 1 });
+SupplierEvidenceSchema.index({ supplierCode: 1, regulation: 1, evidenceType: 1, evidenceId: 1 }, { unique: true });
+SupplierEvidenceSchema.index({ materialCode: 1, regulation: 1 });
 
 export default mongoose.models.SupplierEvidence ||
   mongoose.model("SupplierEvidence", SupplierEvidenceSchema);

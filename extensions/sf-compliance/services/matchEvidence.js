@@ -2,26 +2,25 @@ import SupplierEvidence from "../models/SupplierEvidence.js";
 
 function isExpired(evidence) {
   if (evidence.status === "expired") return true;
-  if (!evidence.validUntil) return false;
-  return new Date(evidence.validUntil).getTime() < Date.now();
+  if (!evidence.validTo) return false;
+  return new Date(evidence.validTo).getTime() < Date.now();
 }
 
 function buildMatcher(requirement) {
   const value = String(requirement.value || "").toLowerCase();
 
   if (requirement.type === "material") {
-    return (e) => String(e.material || "").toLowerCase() === value;
+    return (e) => String(e.materialCode || "").toLowerCase() === value;
   }
   if (requirement.type === "jurisdiction") {
     return (e) => String(e.jurisdiction || "").toLowerCase() === value;
   }
   if (requirement.type === "regulation") {
     return (e) =>
-      String(e.regulationKey || "").toLowerCase() === value ||
-      String(e.regulationName || "").toLowerCase().includes(value);
+      String(e.regulation || "").toLowerCase() === value
   }
   if (requirement.type === "document") {
-    return (e) => String(e.documentType || "").toLowerCase() === value;
+    return (e) => String(e.evidenceType || "").toLowerCase() === value;
   }
   return () => false;
 }
@@ -73,12 +72,12 @@ export default async function matchEvidence({ requirements = [] }) {
       explainability: {
         matchedFields:
           requirement.type === "material"
-            ? ["material"]
+             ? ["materialCode"]
             : requirement.type === "jurisdiction"
               ? ["jurisdiction"]
               : requirement.type === "regulation"
-                ? ["regulationKey", "regulationName"]
-                : ["documentType"],
+                 ? ["regulation"]
+                : ["evidenceType"],
         regulationVersionUsed: first.regulationVersion || null,
         reason:
           status === "covered"

@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "Salesforce Compliance Assistant",
   "version": "0.1.0",
-  "description": "Reads Salesforce case context and sends it to compliance backend APIs.",
+  "description": "Reads Salesforce case context and helps handle customer inquiries related to compliance.",
   "permissions": ["storage", "activeTab"],
   "host_permissions": [
     "https://*.salesforce.com/*",

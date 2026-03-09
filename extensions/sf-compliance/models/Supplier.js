@@ -3,7 +3,7 @@ import mongoose from "mongoose";
 const SupplierSchema = new mongoose.Schema(
   {
     supplierCode: { type: String, required: true, unique: true, index: true, trim: true },
-    name: { type: String, required: true, trim: true },
+    supplierName: { type: String, required: true, trim: true },
     metadata: { type: mongoose.Schema.Types.Mixed, default: {} },
   },
   { timestamps: true, versionKey: false }
