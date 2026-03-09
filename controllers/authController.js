@@ -1,7 +1,7 @@
 import User from "../models/user.js";
 import Token from "../models/token.js";
 import dotenv from "dotenv";
-import { signAccess, signRefresh, verifyRefresh } from "../utils/jwt.js";
+import { signAccess, signRefresh, signExtensionAccess, verifyRefresh } from "../utils/jwt.js";
 import ms from "ms";
 import { randomBytes } from "crypto";
 import { OAuth2Client } from "google-auth-library";
@@ -203,4 +203,32 @@ export const me = async (req, res) => {
     isActive: u.isActive !== false,
     timezone: u.timezone || 'UTC',
   });
+};
+
+
+/** POST /api/auth/extension-token (protected) */
+export const issueExtensionToken = async (req, res, next) => {
+  try {
+    const requestedScopes = Array.isArray(req.body?.scopes) ? req.body.scopes : [];
+    const allowedScopes = ["compliance:read", "compliance:analyze"];
+
+    const scopes = requestedScopes
+      .map((s) => String(s).trim())
+      .filter((s) => allowedScopes.includes(s));
+
+    if (!scopes.length) {
+      return res.status(400).json({ error: "At least one valid scope is required" });
+    }
+
+    const token = signExtensionAccess({
+      sub: req.user.id,
+      email: req.user.email,
+      scope: scopes.join(" "),
+      type: "extension",
+    });
+
+    return res.json({ token, scope: scopes.join(" ") });
+  } catch (err) {
+    return next(err);
+  }
 };

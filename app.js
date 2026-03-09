@@ -16,6 +16,9 @@ import retrieveRouter from "./api/widget/aiwSearch.js";
 import chatRouter from "./api/widget/aiwChat.js";
 import widgetDemoScriptRouter from "./api/widget/demoScript.js";
 import notificationDestinationsRouter from "./api/notificationDestinations.js";
+import complianceSuppliersRouter from "./extensions/sf-compliance/api/complianceSuppliers.js";
+import complianceRouter from "./extensions/sf-compliance/api/compliance.js";
+import complianceExtRouter from "./api/complianceExt.js";
 import Notification from "./models/Notification.js";
 import NotificationDestination from "./models/NotificationDestination.js";
 import { startTelemetryRetentionJob } from "./cron/telemetryRetention.js";
@@ -161,6 +164,9 @@ mongoose
     app.use("/api/notification-destinations", notificationDestinationsRouter);
     app.use("/api/telemetry", telemetryRouter);
     app.use("/api/leads", leadsRouter);
+    app.use("/api/compliance/ext", complianceExtRouter);
+    app.use("/api/compliance", complianceRouter);
+    app.use("/api/compliance-suppliers", complianceSuppliersRouter);
     app.use("/api/widget", widgetDemoScriptRouter);
 
 const aiwRouter = express.Router();
