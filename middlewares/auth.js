@@ -1,5 +1,5 @@
 // middleware/authz.js
-import { verifyAccess } from "../utils/jwt.js";
+import { verifyAccess, verifyExtensionAccess } from "../utils/jwt.js";
 import User from "../models/user.js";
 
 export async function requireAuth(req, res, next) {
@@ -32,6 +32,47 @@ export async function requireAuth(req, res, next) {
   }
 }
 
+export async function requireExtensionAuth(req, res, next) {
+  try {
+    const header = req.headers.authorization || "";
+    const token = header.startsWith("Bearer ") ? header.slice(7) : null;
+
+    if (!token) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+
+    const decoded = verifyExtensionAccess(token);
+
+    const user = await User.findById(decoded.sub)
+      .select("_id email roles sites isActive timezone")
+      .lean();
+
+    if (!user) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+
+    req.user = {
+      id: String(user._id),
+      email: user.email,
+      roles: user.roles || [],
+      sites: user.sites || [],
+      scopes: decoded.scope ? decoded.scope.split(" ") : [],
+      tokenType: "extension",
+    };
+    
+    next();
+  } catch (err) {
+    return res.status(401).json({ error: "Unauthorized" });
+  }
+}
+
+export const requireExtensionScope = (scope) => (req, res, next) => {
+  if (!req.user?.scopes?.includes(scope)) {
+    return res.status(403).json({ error: `Forbidden: missing scope ${scope}` });
+  }
+
+  next();
+};
 
 export const requireRoles = (allowed = []) => (req, res, next) => {
   const have = (req.user?.roles || []).map(String);

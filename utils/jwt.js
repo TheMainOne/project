@@ -28,9 +28,19 @@ export const verifyRefresh = (token) =>
 
 export function signExtensionAccess(payload) {
   const secret = process.env.JWT_ACCESS_SECRET;
-  const expiresIn = process.env.JWT_EXTENSION_ACCESS_EXPIRES || "5m";
+  const expiresIn = process.env.JWT_EXTENSION_ACCESS_EXPIRES || "4h";
   if (!secret) {
     throw new Error("JWT_ACCESS_SECRET is missing. Check your environment variables and dotenv loading order.");
   }
   return jwt.sign(payload, secret, { expiresIn });
 }
+
+export const verifyExtensionAccess = (token) => {
+  const decoded = jwt.verify(token, process.env.JWT_ACCESS_SECRET);
+
+  if (decoded.type !== "extension") {
+    throw new Error("Invalid token type");
+  }
+
+  return decoded;
+};

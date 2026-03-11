@@ -5,18 +5,25 @@
   "description": "Reads Salesforce case context and helps handle customer inquiries related to compliance.",
   "permissions": ["storage", "activeTab"],
   "host_permissions": [
-    "https://*.salesforce.com/*",
-    "https://*.force.com/*"
+  "https://*.salesforce.com/*",
+  "https://*.force.com/*",
+  "https://*.lightning.force.com/*",
+  "http://localhost:3000/*",
+  "http://127.0.0.1:3000/*"
   ],
   "background": {
     "service_worker": "src/background.js",
     "type": "module"
   },
-  "content_scripts": [
-    {
-      "matches": ["https://*.salesforce.com/*", "https://*.force.com/*"],
-      "js": ["src/content-script.js"],
-      "run_at": "document_idle"
-    }
-  ]
+"content_scripts": [
+  {
+    "matches": [
+      "https://*.salesforce.com/*",
+      "https://*.force.com/*",
+      "https://*.lightning.force.com/*"
+    ],
+    "js": ["src/content-script.js"],
+    "run_at": "document_idle"
+  }
+]
 }
