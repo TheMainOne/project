@@ -10,6 +10,7 @@ import adminUsersRouter from "./api/adminUsers.js";
 import aiwStatsRouter from "./api/aiwStats.js";
 import telemetryRouter from "./api/telemetry.js";
 import leadsRouter from "./api/leads.js";
+import itemsRouter from "./api/items.js";
 import sendTelegramMessage from "./services/telegramNotify.js";
 import widgetRouter from "./api/widget/widget.js";
 import retrieveRouter from "./api/widget/aiwSearch.js";
@@ -164,6 +165,7 @@ mongoose
     app.use("/api/notification-destinations", notificationDestinationsRouter);
     app.use("/api/telemetry", telemetryRouter);
     app.use("/api/leads", leadsRouter);
+    app.use("/api/items", itemsRouter);
     app.use("/api/compliance/ext", complianceExtRouter);
     app.use("/api/compliance", complianceRouter);
     app.use("/api/compliance-suppliers", complianceSuppliersRouter);

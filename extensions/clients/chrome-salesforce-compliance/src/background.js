@@ -1,10 +1,21 @@
-// const API_BASE_URL = "https://cloudcompliance.duckdns.org/api/compliance/ext";
-const API_BASE_URL = "http://localhost:3000/api/compliance/ext";
+const API_BASE_URL = "https://cloudcompliance.duckdns.org/api/compliance/ext";
+const AUTH_BASE_URL = "https://cloudcompliance.duckdns.org/api/auth";
+
+// local dev:
+// const API_BASE_URL = "http://localhost:3000/api/compliance/ext";
+// const AUTH_BASE_URL = "http://localhost:3000/api/auth";
+
+const STORAGE_KEYS = {
+  complianceToken: "complianceToken",
+  refreshToken: "authRefreshToken",
+  user: "authUser",
+  lastEmail: "authLastEmail",
+};
 
 console.log("BACKGROUND FILE LOADED");
 console.log("API_BASE_URL =", API_BASE_URL);
+console.log("AUTH_BASE_URL =", AUTH_BASE_URL);
 
-// helpers
 function buildSafeCasePayload(payload = {}) {
   return {
     recordId: typeof payload.recordId === "string" ? payload.recordId : null,
@@ -17,52 +28,335 @@ function buildSafeCasePayload(payload = {}) {
   };
 }
 
-// helpers
+async function parseResponse(res) {
+  const text = await res.text();
+  let json = null;
 
-async function getAuthToken() {
-  const { complianceToken } = await chrome.storage.local.get(["complianceToken"]);
-  console.log("TOKEN FOUND:", !!complianceToken);
-  return complianceToken || null;
+  try {
+    json = JSON.parse(text);
+  } catch {
+    json = null;
+  }
+
+  return {
+    ok: res.ok,
+    status: res.status,
+    text,
+    json,
+  };
 }
 
-async function callComplianceApi(path, body) {
-  try {
-    const token = await getAuthToken();
+function getErrorMessage(parsed, fallback = "Request failed") {
+  return parsed?.json?.error || parsed?.json?.message || parsed?.text || fallback;
+}
 
-    if (!token) {
-      console.warn("No complianceToken found in chrome.storage.local");
-      return { ok: false, error: "No token" };
+async function getStoredAuth() {
+  const result = await chrome.storage.local.get([
+    STORAGE_KEYS.complianceToken,
+    STORAGE_KEYS.refreshToken,
+    STORAGE_KEYS.user,
+    STORAGE_KEYS.lastEmail,
+  ]);
+
+  return {
+    complianceToken: result[STORAGE_KEYS.complianceToken] || null,
+    refreshToken: result[STORAGE_KEYS.refreshToken] || null,
+    user: result[STORAGE_KEYS.user] || null,
+    lastEmail: result[STORAGE_KEYS.lastEmail] || "",
+  };
+}
+
+async function setStoredAuth({ complianceToken, refreshToken, user, lastEmail }) {
+  const payload = {};
+
+  if (typeof complianceToken === "string") {
+    payload[STORAGE_KEYS.complianceToken] = complianceToken;
+  }
+
+  if (typeof refreshToken === "string") {
+    payload[STORAGE_KEYS.refreshToken] = refreshToken;
+  }
+
+  if (user) {
+    payload[STORAGE_KEYS.user] = user;
+  }
+
+  if (typeof lastEmail === "string") {
+    payload[STORAGE_KEYS.lastEmail] = lastEmail;
+  }
+
+  await chrome.storage.local.set(payload);
+}
+
+async function clearStoredAuth({ keepLastEmail = true } = {}) {
+  const keysToRemove = [
+    STORAGE_KEYS.complianceToken,
+    STORAGE_KEYS.refreshToken,
+    STORAGE_KEYS.user,
+  ];
+
+  if (!keepLastEmail) {
+    keysToRemove.push(STORAGE_KEYS.lastEmail);
+  }
+
+  await chrome.storage.local.remove(keysToRemove);
+}
+
+async function postJson(url, body, token = null) {
+  const headers = {
+    "Content-Type": "application/json",
+  };
+
+  if (token) {
+    headers.Authorization = `Bearer ${token}`;
+  }
+
+  const res = await fetch(url, {
+    method: "POST",
+    headers,
+    body: JSON.stringify(body || {}),
+  });
+
+  return parseResponse(res);
+}
+
+async function loginAndIssueExtensionToken({ email, password }) {
+  try {
+    const normalizedEmail = String(email || "").trim().toLowerCase();
+
+    const loginResult = await postJson(`${AUTH_BASE_URL}/login`, {
+      email: normalizedEmail,
+      password,
+    });
+
+    if (!loginResult.ok) {
+      return {
+        ok: false,
+        error: getErrorMessage(loginResult, "Login failed"),
+      };
+    }
+
+    const accessToken = loginResult?.json?.tokens?.accessToken;
+    const refreshToken = loginResult?.json?.tokens?.refreshToken;
+    const user = loginResult?.json?.user || null;
+
+    if (!accessToken || !refreshToken) {
+      return {
+        ok: false,
+        error: "Login succeeded but tokens were not returned",
+      };
+    }
+
+    const extensionResult = await postJson(
+      `${AUTH_BASE_URL}/extension-token`,
+      {
+        scopes: ["compliance:read", "compliance:analyze"],
+      },
+      accessToken
+    );
+
+    if (!extensionResult.ok) {
+      return {
+        ok: false,
+        error: getErrorMessage(extensionResult, "Failed to issue extension token"),
+      };
+    }
+
+    const complianceToken = extensionResult?.json?.token;
+
+    if (!complianceToken) {
+      return {
+        ok: false,
+        error: "Extension token was not returned",
+      };
+    }
+
+    await setStoredAuth({
+      complianceToken,
+      refreshToken,
+      user,
+      lastEmail: normalizedEmail,
+    });
+
+    return {
+      ok: true,
+      authenticated: true,
+      user,
+      scope: extensionResult?.json?.scope || "",
+    };
+  } catch (err) {
+    console.error("loginAndIssueExtensionToken failed:", err);
+    return {
+      ok: false,
+      error: err?.message || "Login failed",
+    };
+  }
+}
+
+async function refreshAndIssueExtensionToken() {
+  try {
+    const { refreshToken, user, lastEmail } = await getStoredAuth();
+
+    if (!refreshToken) {
+      return {
+        ok: false,
+        error: "Missing refresh token",
+      };
+    }
+
+    const refreshResult = await postJson(`${AUTH_BASE_URL}/refresh`, {
+      refreshToken,
+    });
+
+    if (!refreshResult.ok) {
+      await clearStoredAuth({ keepLastEmail: true });
+      return {
+        ok: false,
+        error: getErrorMessage(refreshResult, "Refresh failed"),
+      };
+    }
+
+    const accessToken = refreshResult?.json?.accessToken;
+
+    if (!accessToken) {
+      await clearStoredAuth({ keepLastEmail: true });
+      return {
+        ok: false,
+        error: "Refresh succeeded but access token was not returned",
+      };
+    }
+
+    const extensionResult = await postJson(
+      `${AUTH_BASE_URL}/extension-token`,
+      {
+        scopes: ["compliance:read", "compliance:analyze"],
+      },
+      accessToken
+    );
+
+    if (!extensionResult.ok) {
+      await clearStoredAuth({ keepLastEmail: true });
+      return {
+        ok: false,
+        error: getErrorMessage(extensionResult, "Failed to re-issue extension token"),
+      };
+    }
+
+    const complianceToken = extensionResult?.json?.token;
+
+    if (!complianceToken) {
+      await clearStoredAuth({ keepLastEmail: true });
+      return {
+        ok: false,
+        error: "Extension token was not returned",
+      };
+    }
+
+    await setStoredAuth({
+      complianceToken,
+      refreshToken,
+      user,
+      lastEmail,
+    });
+
+    return {
+      ok: true,
+      authenticated: true,
+      user,
+      scope: extensionResult?.json?.scope || "",
+    };
+  } catch (err) {
+    console.error("refreshAndIssueExtensionToken failed:", err);
+    await clearStoredAuth({ keepLastEmail: true });
+    return {
+      ok: false,
+      error: err?.message || "Refresh failed",
+    };
+  }
+}
+
+async function ensureComplianceToken() {
+  const { complianceToken } = await getStoredAuth();
+
+  if (complianceToken) {
+    return { ok: true, complianceToken };
+  }
+
+  const refreshResult = await refreshAndIssueExtensionToken();
+
+  if (!refreshResult.ok) {
+    return {
+      ok: false,
+      authRequired: true,
+      error: refreshResult.error || "Authentication required",
+    };
+  }
+
+  const auth = await getStoredAuth();
+
+  if (!auth.complianceToken) {
+    return {
+      ok: false,
+      authRequired: true,
+      error: "Authentication required",
+    };
+  }
+
+  return {
+    ok: true,
+    complianceToken: auth.complianceToken,
+  };
+}
+
+async function callComplianceApi(path, body, allowRetry = true) {
+  try {
+    const tokenState = await ensureComplianceToken();
+
+    if (!tokenState.ok) {
+      return {
+        ok: false,
+        status: 401,
+        authRequired: true,
+        error: tokenState.error || "Authentication required",
+      };
     }
 
     const url = `${API_BASE_URL}${path}`;
-    console.log("CALLING API:", url, body);
-
     const res = await fetch(url, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        Authorization: `Bearer ${token}`,
+        Authorization: `Bearer ${tokenState.complianceToken}`,
       },
       body: JSON.stringify(body),
     });
 
-    const text = await res.text();
-    console.log("API RESPONSE:", path, res.status, text);
+    const parsed = await parseResponse(res);
 
-let json = null;
+    console.log("API RESPONSE:", path, parsed.status, parsed.text);
 
-try {
-  json = JSON.parse(text);
-} catch {
-  json = null;
-}
+    if (parsed.status === 401 && allowRetry) {
+      const refreshed = await refreshAndIssueExtensionToken();
 
-return {
-  ok: res.ok,
-  status: res.status,
-  body: text,
-  json,
-};
+      if (!refreshed.ok) {
+        return {
+          ok: false,
+          status: 401,
+          authRequired: true,
+          error: refreshed.error || "Authentication required",
+        };
+      }
+
+      return callComplianceApi(path, body, false);
+    }
+
+    return {
+      ok: parsed.ok,
+      status: parsed.status,
+      body: parsed.text,
+      json: parsed.json,
+      error: parsed.ok ? null : getErrorMessage(parsed, "Request failed"),
+    };
   } catch (err) {
     console.error("callComplianceApi failed:", path, err);
     return {
@@ -72,44 +366,96 @@ return {
   }
 }
 
-chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-  console.log("BACKGROUND RECEIVED MESSAGE:", message);
+async function getAuthState() {
+  const { complianceToken, user, lastEmail } = await getStoredAuth();
 
-  if (message?.type !== "SF_CASE_CONTEXT") {
-    return;
-  }
+  return {
+    ok: true,
+    authenticated: !!complianceToken,
+    user: user || null,
+    lastEmail: lastEmail || "",
+  };
+}
 
-  const payload = buildSafeCasePayload(message.payload || {});
-  console.log("PAYLOAD FROM CONTENT SCRIPT:", payload);
-
+async function handleCaseContext(rawPayload) {
+  const payload = buildSafeCasePayload(rawPayload || {});
   const effectiveCaseId = payload.caseId || payload.recordId || null;
 
   if (!effectiveCaseId) {
-    console.warn("Skipping API calls: no caseId/recordId in payload");
-    sendResponse({
+    return {
       ok: false,
       error: "No caseId or recordId in payload",
-    });
+    };
+  }
+
+  const tokenState = await ensureComplianceToken();
+
+  if (!tokenState.ok) {
+    return {
+      ok: false,
+      authRequired: true,
+      error: tokenState.error || "Authentication required",
+    };
+  }
+
+  const caseContextResult = await callComplianceApi("/case-context", {
+    caseId: effectiveCaseId,
+    context: payload,
+  });
+
+  if (caseContextResult.authRequired) {
+    return {
+      ok: false,
+      authRequired: true,
+      error: caseContextResult.error || "Authentication required",
+    };
+  }
+
+  const analyzeResult = await callComplianceApi("/analyze", {
+    caseId: effectiveCaseId,
+    payload,
+  });
+
+  if (analyzeResult.authRequired) {
+    return {
+      ok: false,
+      authRequired: true,
+      error: analyzeResult.error || "Authentication required",
+    };
+  }
+
+  return {
+    ok: analyzeResult.ok,
+    caseContextResult,
+    analyzeResult,
+  };
+}
+
+chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  console.log("BACKGROUND RECEIVED MESSAGE:", message);
+
+  if (message?.type === "AUTH_GET_STATE") {
+    getAuthState().then(sendResponse);
     return true;
   }
 
-  (async () => {
-    const caseContextResult = await callComplianceApi("/case-context", {
-      caseId: effectiveCaseId,
-      context: payload,
-    });
+  if (message?.type === "AUTH_LOGIN") {
+    loginAndIssueExtensionToken(message.payload || {}).then(sendResponse);
+    return true;
+  }
 
-    const analyzeResult = await callComplianceApi("/analyze", {
-      caseId: effectiveCaseId,
-      payload,
-    });
+  if (message?.type === "AUTH_LOGOUT") {
+    clearStoredAuth({ keepLastEmail: true }).then(() =>
+      sendResponse({
+        ok: true,
+        authenticated: false,
+      })
+    );
+    return true;
+  }
 
-    sendResponse({
-      ok: true,
-      caseContextResult,
-      analyzeResult,
-    });
-  })();
-
-  return true;
+  if (message?.type === "SF_CASE_CONTEXT") {
+    handleCaseContext(message.payload || {}).then(sendResponse);
+    return true;
+  }
 });
