@@ -57,7 +57,7 @@ export default async function analyzeCase({ caseData, attachments }) {
 
   try {
     const completion = await oai.chat.completions.create({
-      model: process.env.OPENAI_COMPLIANCE_MODEL || "gpt-4o-mini",
+      model: process.env.OPENAI_COMPLIANCE_MODEL || "gpt-5-nano",
       messages: [{ role: "user", content: prompt }],
       response_format: { type: "json_object" },
       temperature: 0,

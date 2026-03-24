@@ -21,7 +21,7 @@ export async function analyzeComplianceCase(payload = {}) {
   const caseText = buildCaseText(payload);
 
   const response = await client.responses.create({
-    model: process.env.OPENAI_MODEL || "gpt-5-nano",
+    model: process.env.OPENAI_MODEL || "gpt-5.4",
     input: [
       {
         role: "system",

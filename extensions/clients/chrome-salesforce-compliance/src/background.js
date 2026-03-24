@@ -1,9 +1,9 @@
-const API_BASE_URL = "https://cloudcompliance.duckdns.org/api/compliance/ext";
-const AUTH_BASE_URL = "https://cloudcompliance.duckdns.org/api/auth";
+// const API_BASE_URL = "https://cloudcompliance.duckdns.org/api/compliance/ext";
+// const AUTH_BASE_URL = "https://cloudcompliance.duckdns.org/api/auth";
 
 // local dev:
-// const API_BASE_URL = "http://localhost:3000/api/compliance/ext";
-// const AUTH_BASE_URL = "http://localhost:3000/api/auth";
+const API_BASE_URL = "http://localhost:3000/api/compliance/ext";
+const AUTH_BASE_URL = "http://localhost:3000/api/auth";
 
 const STORAGE_KEYS = {
   complianceToken: "complianceToken",
@@ -48,6 +48,130 @@ async function parseResponse(res) {
 
 function getErrorMessage(parsed, fallback = "Request failed") {
   return parsed?.json?.error || parsed?.json?.message || parsed?.text || fallback;
+}
+
+async function handleManualMaterialsLookup(payload) {
+  const caseId = String(payload?.caseId || "").trim();
+  const queries = Array.isArray(payload?.queries)
+    ? payload.queries.map((q) => String(q || "").trim()).filter(Boolean)
+    : [];
+  const requestedRegulations = Array.isArray(payload?.requestedRegulations)
+    ? payload.requestedRegulations.map((code) => String(code || "").trim().toUpperCase()).filter(Boolean)
+    : [];
+
+  if (queries.length === 0) {
+    return {
+      ok: false,
+      error: "queries are required",
+    };
+  }
+
+  const lookupResult = await callComplianceApi("/material-suppliers", {
+    caseId: caseId || "manual-lookup",
+    queries,
+    requestedRegulations,
+  });
+
+  if (lookupResult.authRequired) {
+    return {
+      ok: false,
+      authRequired: true,
+      error: lookupResult.error || "Authentication required",
+    };
+  }
+
+  return {
+    ok: lookupResult.ok,
+    componentSuppliersResult: lookupResult,
+  };
+}
+
+function normalizePartNumber(value) {
+  return String(value || "")
+    .trim()
+    .toUpperCase()
+    .replace(/[–—]/g, "-")
+    .replace(/\s+/g, "");
+}
+
+function isLikelyPartNumber(value) {
+  const v = normalizePartNumber(value);
+  if (!v) return false;
+
+  if (v.length < 5 || v.length > 30) return false;
+  if (!/[0-9]/.test(v)) return false;
+
+  // разрешаем букву в начале, цифры, дефисы
+  return /^[A-Z0-9-]+$/.test(v);
+}
+
+function extractStructuredPartNumbersFromText(text) {
+  const source = String(text || "")
+    .replace(/[–—]/g, "-");
+
+  if (!source.trim()) return [];
+
+  const matches = [
+    ...source.matchAll(/\b[A-Z]?\d{5,7}-\d{2,3}\b/gi),
+    ...source.matchAll(/\b[A-Z]\d{5,8}\b/gi),
+    ...source.matchAll(/\b\d{5,8}\b/g),
+  ];
+
+  const values = matches
+    .map((m) => normalizePartNumber(m[0]))
+    .filter(isLikelyPartNumber);
+
+  return Array.from(new Set(values));
+}
+
+function extractAiMaterialCandidates(analyzeResult) {
+  const analysis = analyzeResult?.json?.result?.analysis || null;
+
+  if (!analysis || !Array.isArray(analysis.materials)) {
+    return [];
+  }
+
+  const aiParts = analysis.materials
+    .map((item) => normalizePartNumber(item?.part_number || ""))
+    .filter(Boolean)
+    .filter(isLikelyPartNumber);
+
+  return Array.from(new Set(aiParts));
+}
+
+function extractRequestedRegulations(analyzeResult) {
+  const analysis = analyzeResult?.json?.result?.analysis || null;
+
+  if (!analysis || !Array.isArray(analysis.requested_regulations)) {
+    return [];
+  }
+
+  return Array.from(
+    new Set(
+      analysis.requested_regulations
+        .map((code) => String(code || "").trim().toUpperCase())
+        .filter(Boolean)
+    )
+  );
+}
+
+function extractPartNumbersForLookup(analyzeResult, payload) {
+  const fromAi = extractAiMaterialCandidates(analyzeResult);
+
+  const fromRawText = Array.from(
+    new Set([
+      ...extractStructuredPartNumbersFromText(payload?.subject || ""),
+      ...extractStructuredPartNumbersFromText(payload?.description || ""),
+    ])
+  );
+
+  // Если AI уже вернула нормальные part numbers — используем именно их.
+  if (fromAi.length > 0) {
+    return fromAi;
+  }
+
+  // Только если AI ничего не дала, падаем в regex fallback.
+  return fromRawText;
 }
 
 async function getStoredAuth() {
@@ -424,15 +548,55 @@ async function handleCaseContext(rawPayload) {
     };
   }
 
+const materialQueries = extractPartNumbersForLookup(analyzeResult, payload);
+const requestedRegulations = extractRequestedRegulations(analyzeResult);
+
+console.log("materialQueries for lookup:", materialQueries);
+console.log("requestedRegulations for lookup:", requestedRegulations);
+
+  let componentSuppliersResult = {
+    ok: true,
+    status: 200,
+    body: "",
+    json: {
+      ok: true,
+      total: 0,
+      results: [],
+    },
+    error: null,
+  };
+
+if (materialQueries.length > 0) {
+  componentSuppliersResult = await callComplianceApi("/material-suppliers", {
+    caseId: effectiveCaseId,
+    queries: materialQueries,
+    requestedRegulations,
+  });
+
+    if (componentSuppliersResult.authRequired) {
+      return {
+        ok: false,
+        authRequired: true,
+        error: componentSuppliersResult.error || "Authentication required",
+      };
+    }
+  }
+
   return {
-    ok: analyzeResult.ok,
+    ok: analyzeResult.ok && componentSuppliersResult.ok,
     caseContextResult,
     analyzeResult,
+    componentSuppliersResult,
   };
 }
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   console.log("BACKGROUND RECEIVED MESSAGE:", message);
+
+  if (message?.type === "SF_MATERIALS_LOOKUP") {
+  handleManualMaterialsLookup(message.payload || {}).then(sendResponse);
+  return true;
+}
 
   if (message?.type === "AUTH_GET_STATE") {
     getAuthState().then(sendResponse);

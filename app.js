@@ -10,7 +10,7 @@ import adminUsersRouter from "./api/adminUsers.js";
 import aiwStatsRouter from "./api/aiwStats.js";
 import telemetryRouter from "./api/telemetry.js";
 import leadsRouter from "./api/leads.js";
-import itemsRouter from "./api/items.js";
+import itemsRouter from "./extensions/api/items.js";
 import sendTelegramMessage from "./services/telegramNotify.js";
 import widgetRouter from "./api/widget/widget.js";
 import retrieveRouter from "./api/widget/aiwSearch.js";
@@ -19,7 +19,10 @@ import widgetDemoScriptRouter from "./api/widget/demoScript.js";
 import notificationDestinationsRouter from "./api/notificationDestinations.js";
 import complianceSuppliersRouter from "./extensions/sf-compliance/api/complianceSuppliers.js";
 import complianceRouter from "./extensions/sf-compliance/api/compliance.js";
-import complianceExtRouter from "./api/complianceExt.js";
+import complianceExtRouter from "./extensions/api/complianceExt.js";
+import complianceDocumentsRouter from "./extensions/api/complianceDocuments.js";
+import complianceAssertionsRouter from "./extensions/api/complianceAssertions.js";
+import complianceCoverageRouter from "./extensions/api/complianceCoverage.js";
 import Notification from "./models/Notification.js";
 import NotificationDestination from "./models/NotificationDestination.js";
 import { startTelemetryRetentionJob } from "./cron/telemetryRetention.js";
@@ -166,10 +169,15 @@ mongoose
     app.use("/api/telemetry", telemetryRouter);
     app.use("/api/leads", leadsRouter);
     app.use("/api/items", itemsRouter);
+    app.use("/api/widget", widgetDemoScriptRouter);
+
+    // роуты из расширения sf-compliance
+    app.use("/api/compliance-documents", complianceDocumentsRouter);
+    app.use("/api/compliance-assertions", complianceAssertionsRouter);
     app.use("/api/compliance/ext", complianceExtRouter);
     app.use("/api/compliance", complianceRouter);
     app.use("/api/compliance-suppliers", complianceSuppliersRouter);
-    app.use("/api/widget", widgetDemoScriptRouter);
+    app.use("/api/compliance-coverage", complianceCoverageRouter);
 
 const aiwRouter = express.Router();
 

@@ -1,5 +1,9 @@
 import Item from "../models/Item.js";
-import { bulkLookupItems, lookupSingleItem } from "../services/compliance/itemLookupService.js";
+import {
+  bulkLookupItems,
+  lookupSingleItem,
+  bulkLookupMaterialComponentSuppliers,
+} from "../services/compliance/itemLookupService.js";
 
 export const searchItems = async (req, res, next) => {
   try {
@@ -43,6 +47,26 @@ export const bulkLookup = async (req, res, next) => {
   }
 };
 
+export const bulkComponentSuppliersLookup = async (req, res, next) => {
+  try {
+    const { queries } = req.body || {};
+
+    if (!Array.isArray(queries) || queries.length === 0) {
+      return res.status(400).json({ error: "Field 'queries' must be a non-empty array" });
+    }
+
+    const results = await bulkLookupMaterialComponentSuppliers(queries);
+
+    return res.json({
+      ok: true,
+      total: results.length,
+      results,
+    });
+  } catch (err) {
+    next(err);
+  }
+};
+
 export const getItemById = async (req, res, next) => {
   try {
     const item = await Item.findById(req.params.id).lean();
@@ -52,6 +76,37 @@ export const getItemById = async (req, res, next) => {
     }
 
     return res.json(item);
+  } catch (err) {
+    next(err);
+  }
+};
+
+
+export const getMaterialSuppliers = async (req, res, next) => {
+  try {
+    const { queries } = req.body || {};
+
+    if (!Array.isArray(queries) || queries.length === 0) {
+      return res.status(400).json({
+        error: "Field 'queries' must be a non-empty array",
+      });
+    }
+
+    const cleanQueries = Array.from(
+      new Set(
+        queries
+          .map((q) => String(q || "").trim())
+          .filter(Boolean)
+      )
+    );
+
+    const results = await bulkLookupMaterialComponentSuppliers(cleanQueries);
+
+    return res.json({
+      ok: true,
+      total: results.length,
+      results,
+    });
   } catch (err) {
     next(err);
   }

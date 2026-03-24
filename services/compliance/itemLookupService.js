@@ -24,6 +24,7 @@ const PACKAGING_SUPPLIERS = [
   "ATLAS CONTAINER CORPORATION",
   "GEORGE H SWATEK INC",
   "ACME CORRUGATED BOX CO INC",
+  "BRADFORD COMPANY",
 ];
 
 const PACKAGING_KEYWORDS = [
@@ -38,6 +39,7 @@ const PACKAGING_KEYWORDS = [
   "DIVIDER",
   "LABEL",
   "SHRINK",
+  "PARTITION"
 ];
 
 function normalizeKey(value = "") {
@@ -68,6 +70,7 @@ function dedupeItems(items = []) {
   for (const item of items) {
     const key = [
       normalizeKey(item.Material),
+      normalizeKey(item.Component),
       normalizeKey(item.CatalogNumber),
       normalizeKey(item.VendorMaterialNumber),
       normalizeKey(item.Name),
@@ -87,6 +90,7 @@ function mapItem(item) {
   return {
     id: String(item._id),
     material: item.Material || "",
+    component: item.Component || "",
     catalogNumber: item.CatalogNumber || "",
     description: item.ItemTextLine || "",
     supplierName: item.Name || "",
@@ -173,6 +177,184 @@ export async function bulkLookupItems(queries = [], options = {}) {
   const results = [];
   for (const query of cleanQueries) {
     const result = await lookupSingleItem(query, options);
+    results.push(result);
+  }
+
+  return results;
+}
+
+// ------------------------------
+// NEW: component suppliers lookup
+// ------------------------------
+
+function uniqueStrings(values = []) {
+  return Array.from(
+    new Set(
+      values
+        .map((v) => String(v || "").trim())
+        .filter(Boolean)
+    )
+  );
+}
+
+async function findBomRowsForMaterial(query) {
+  const normalized = normalizeKey(query);
+  if (!normalized) {
+    return { matchType: "none", rows: [] };
+  }
+
+  let rows = await Item.find({ Material: normalized }).lean();
+
+  if (rows.length > 0) {
+    return { matchType: "material", rows };
+  }
+
+  rows = await Item.find({ CatalogNumber: normalized }).lean();
+
+  if (rows.length > 0) {
+    return { matchType: "catalogNumber", rows };
+  }
+
+  return { matchType: "none", rows: [] };
+}
+
+function groupRowsByComponent(rows = []) {
+  const groups = new Map();
+
+  for (const row of rows) {
+    const componentKey =
+      normalizeKey(row.Component) ||
+      `NO_COMPONENT__${normalizeKey(row.Name)}__${normalizeKey(row.ItemTextLine)}`;
+
+    if (!groups.has(componentKey)) {
+      groups.set(componentKey, {
+        component: row.Component || "",
+        descriptions: new Set(),
+        suppliers: new Set(),
+        vendorMaterialNumbers: new Set(),
+        catalogNumbers: new Set(),
+        plants: new Set(),
+        isPackaging: isPackaging(row),
+      });
+    }
+
+    const group = groups.get(componentKey);
+
+    if (row.ItemTextLine) group.descriptions.add(String(row.ItemTextLine).trim());
+    if (row.Name) group.suppliers.add(String(row.Name).trim());
+    if (row.VendorMaterialNumber) {
+      group.vendorMaterialNumbers.add(String(row.VendorMaterialNumber).trim());
+    }
+    if (row.CatalogNumber) group.catalogNumbers.add(String(row.CatalogNumber).trim());
+    if (row.Plant) group.plants.add(String(row.Plant).trim());
+
+    if (!isPackaging(row)) {
+      group.isPackaging = false;
+    }
+  }
+
+  return Array.from(groups.values()).map((group) => ({
+    component: group.component,
+    descriptions: Array.from(group.descriptions),
+    suppliers: Array.from(group.suppliers),
+    vendorMaterialNumbers: Array.from(group.vendorMaterialNumbers),
+    catalogNumbers: Array.from(group.catalogNumbers),
+    plants: Array.from(group.plants),
+    isPackaging: group.isPackaging,
+  }));
+}
+
+export async function lookupMaterialComponentSuppliers(query) {
+  const normalized = normalizeKey(query);
+
+  if (!normalized) {
+    return {
+      query: query || "",
+      normalizedQuery: "",
+      found: false,
+      matchType: "none",
+      packagingFiltered: false,
+      packagingOnly: false,
+      material: "",
+      catalogNumbers: [],
+      supplierCount: 0,
+      componentCount: 0,
+      suppliers: [],
+      components: [],
+      rawMatchCount: 0,
+    };
+  }
+
+  const { matchType, rows } = await findBomRowsForMaterial(normalized);
+
+  if (!rows.length) {
+    return {
+      query,
+      normalizedQuery: normalized,
+      found: false,
+      matchType: "none",
+      packagingFiltered: false,
+      packagingOnly: false,
+      material: normalized,
+      catalogNumbers: [],
+      supplierCount: 0,
+      componentCount: 0,
+      suppliers: [],
+      components: [],
+      rawMatchCount: 0,
+    };
+  }
+
+  const dedupedRows = dedupeItems(rows);
+  const nonPackagingRows = dedupedRows.filter((row) => !isPackaging(row));
+  const packagingFiltered = nonPackagingRows.length > 0;
+  const finalRows = packagingFiltered ? nonPackagingRows : dedupedRows;
+  const packagingOnly = packagingFiltered ? false : finalRows.every(isPackaging);
+
+  const groupedComponents = groupRowsByComponent(finalRows);
+
+  const suppliers = uniqueStrings(
+    groupedComponents.flatMap((component) => component.suppliers || [])
+  );
+
+  const catalogNumbers = uniqueStrings(
+    finalRows.map((row) => row.CatalogNumber)
+  );
+
+  const materialValue =
+    finalRows[0]?.Material ||
+    normalized;
+
+  return {
+    query,
+    normalizedQuery: normalized,
+    found: true,
+    matchType,
+    packagingFiltered,
+    packagingOnly,
+    material: materialValue,
+    catalogNumbers,
+    supplierCount: suppliers.length,
+    componentCount: groupedComponents.length,
+    suppliers,
+    components: groupedComponents,
+    rawMatchCount: dedupedRows.length,
+    matches: finalRows.map(mapItem),
+  };
+}
+
+export async function bulkLookupMaterialComponentSuppliers(queries = []) {
+  const cleanQueries = Array.from(
+    new Set(
+      (queries || [])
+        .map((q) => String(q || "").trim())
+        .filter(Boolean)
+    )
+  );
+
+  const results = [];
+  for (const query of cleanQueries) {
+    const result = await lookupMaterialComponentSuppliers(query);
     results.push(result);
   }
 
