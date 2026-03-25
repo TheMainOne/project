@@ -9,6 +9,7 @@ import { analyzeComplianceCase } from "../services/complianceCaseAnalyzer.js";
 import { bulkLookupMaterialComponentSuppliers } from "../../services/compliance/itemLookupService.js";
 import { extractRequestedRegulationsFromCase } from "../sf-compliance/services/requestedRegulations.js";
 import { getCoverageForLookupResults } from "../services/complianceCoverage.js";
+import { getSuppliersLibrary } from "../sf-compliance/services/suppliersLibraryService.js";
 
 const complianceExtRouter = express.Router();
 
@@ -234,6 +235,35 @@ const requestedRegulations = Array.isArray(req.body?.requestedRegulations)
         error: "Material suppliers lookup failed",
         details: error?.message || String(error),
       });
+    }
+  }
+);
+
+complianceExtRouter.post(
+  "/suppliers-library",
+  requireExtensionAuth,
+  requireExtensionScope("compliance:read"),
+  async (req, res, next) => {
+    try {
+      const search = String(req.body?.search || "").trim();
+
+      const result = await getSuppliersLibrary({ search });
+
+      await writeAudit({
+        userId: req.user.id,
+        action: "suppliers-library.read",
+        outcome: "success",
+      });
+
+      return res.json(result);
+    } catch (error) {
+      await writeAudit({
+        userId: req.user.id,
+        action: "suppliers-library.read",
+        outcome: "failure",
+      });
+
+      next(error);
     }
   }
 );

@@ -19,6 +19,12 @@ let currentCaseAnalysisState = {
   manualLookupInput: "",
   manualLookupResults: null,
   manualLookupLoading: false,
+
+  suppliersLibrary: null,
+  suppliersLibraryLoading: false,
+  suppliersLibraryError: null,
+  suppliersLibrarySearch: "",
+  selectedSupplierLibraryId: null,
 };
 
 let activeCaseRequestToken = 0;
@@ -36,6 +42,12 @@ function resetCaseAnalysisState() {
     manualLookupInput: "",
     manualLookupResults: null,
     manualLookupLoading: false,
+
+    suppliersLibrary: null,
+    suppliersLibraryLoading: false,
+    suppliersLibraryError: null,
+    suppliersLibrarySearch: "",
+    selectedSupplierLibraryId: null,
   };
 }
 
@@ -115,6 +127,14 @@ function isVisible(el) {
 
   const rect = el.getBoundingClientRect();
   return rect.width > 0 && rect.height > 0;
+}
+
+function rerenderCurrentCaseToast() {
+  if (!currentCaseAnalysisState.payload || !currentCaseAnalysisState.response) return;
+  renderCaseToastAnalysis(
+    currentCaseAnalysisState.payload,
+    currentCaseAnalysisState.response
+  );
 }
 
 async function applyManualMaterialUpdate(materialIndex, newValue) {
@@ -234,6 +254,54 @@ async function runManualLookup() {
   );
 }
 
+async function loadSuppliersLibrary(search = "") {
+  currentCaseAnalysisState.suppliersLibraryLoading = true;
+  currentCaseAnalysisState.suppliersLibraryError = null;
+  rerenderCurrentCaseToast();
+
+  const response = await sendMessageAsync({
+    type: "SF_SUPPLIERS_LIBRARY",
+    payload: { search },
+  });
+
+  if (!response?.ok) {
+    currentCaseAnalysisState.suppliersLibraryLoading = false;
+    currentCaseAnalysisState.suppliersLibraryError =
+      response?.error || "Failed to load suppliers library";
+    rerenderCurrentCaseToast();
+    return;
+  }
+
+  const libraryJson =
+    response?.suppliersLibraryResult?.json ||
+    safeParseJson(response?.suppliersLibraryResult?.body || "") ||
+    {};
+
+  const suppliers = Array.isArray(libraryJson?.suppliers) ? libraryJson.suppliers : [];
+
+  currentCaseAnalysisState.suppliersLibrary = {
+    ok: true,
+    total:
+      typeof libraryJson?.total === "number" ? libraryJson.total : suppliers.length,
+    suppliers,
+  };
+  currentCaseAnalysisState.suppliersLibraryLoading = false;
+  currentCaseAnalysisState.suppliersLibraryError = null;
+
+  const selectedStillExists = suppliers.some(
+    (item) =>
+      String(item?.supplierId || "") ===
+      String(currentCaseAnalysisState.selectedSupplierLibraryId || "")
+  );
+
+  if (!selectedStillExists) {
+    currentCaseAnalysisState.selectedSupplierLibraryId =
+      suppliers[0]?.supplierId || null;
+  }
+
+  rerenderCurrentCaseToast();
+}
+
 function createManualLookupCard(partNumber, supplierLookup) {
   return createMaterialSupplierCard(
     {
@@ -312,46 +380,46 @@ function isCaseRecordPage() {
 function getOrCreateCaseToast() {
   let toast = document.getElementById("sf-compliance-case-toast");
 
-if (toast) {
-  hideLauncher();
-  return toast;
-}
+  if (toast) {
+    hideLauncher();
+    return toast;
+  }
 
   toast = document.createElement("div");
   toast.id = "sf-compliance-case-toast";
 
-Object.assign(toast.style, {
-  position: "fixed",
-  top: "16px",
-  right: "16px",
-  zIndex: "999999",
-  background: "#ffffff",
-  color: "#111111",
-  border: "1px solid #d0d7de",
-  borderRadius: "12px",
-  boxShadow: "0 10px 30px rgba(0,0,0,0.18)",
-   minWidth: "420px",
-  width: "720px",
-  maxWidth: "calc(100vw - 32px)",
-  maxHeight: "78vh",
-  fontSize: "13px",
-  lineHeight: "1.45",
-  display: "flex",
-  flexDirection: "column",
-  overflow: "hidden",
-  paddingTop: "8px",
-});
+  Object.assign(toast.style, {
+    position: "fixed",
+    top: "16px",
+    right: "16px",
+    zIndex: "999999",
+    background: "#ffffff",
+    color: "#111111",
+    border: "1px solid #d0d7de",
+    borderRadius: "12px",
+    boxShadow: "0 10px 30px rgba(0,0,0,0.18)",
+    minWidth: "420px",
+    width: "720px",
+    maxWidth: "calc(100vw - 32px)",
+    maxHeight: "78vh",
+    fontSize: "13px",
+    lineHeight: "1.45",
+    display: "flex",
+    flexDirection: "column",
+    overflow: "hidden",
+    paddingTop: "8px",
+  });
 
   const header = document.createElement("div");
   header.id = "sf-compliance-case-toast-header";
 
-Object.assign(header.style, {
-  display: "flex",
-  justifyContent: "space-between",
-  alignItems: "center",
-  padding: "0 14px 10px 14px",
-  marginBottom: "0",
-});
+  Object.assign(header.style, {
+    display: "flex",
+    justifyContent: "space-between",
+    alignItems: "center",
+    padding: "0 14px 10px 14px",
+    marginBottom: "0",
+  });
 
   const title = document.createElement("div");
   title.textContent = "Compliance Assistant";
@@ -361,89 +429,95 @@ Object.assign(header.style, {
   closeBtn.type = "button";
   closeBtn.textContent = "×";
 
-Object.assign(closeBtn.style, {
-  background: "#ffffff",
-  border: "1px solid #d0d7de",
-  borderRadius: "8px",
-  fontSize: "16px",
-  cursor: "pointer",
-  lineHeight: "1",
-  width: "32px",
-  height: "32px",
-  display: "inline-flex",
-  alignItems: "center",
-  justifyContent: "center",
-  flexShrink: "0",
-});
+  Object.assign(closeBtn.style, {
+    background: "#ffffff",
+    border: "1px solid #d0d7de",
+    borderRadius: "8px",
+    fontSize: "16px",
+    cursor: "pointer",
+    lineHeight: "1",
+    width: "32px",
+    height: "32px",
+    display: "inline-flex",
+    alignItems: "center",
+    justifyContent: "center",
+    flexShrink: "0",
+  });
 
-closeBtn.addEventListener("click", () => {
-  toast.remove();
-  if (isCaseRecordPage()) {
-    showLauncher();
-    updateLauncherState();
-  }
-});
+  closeBtn.addEventListener("click", () => {
+    toast.remove();
+    if (isCaseRecordPage()) {
+      showLauncher();
+      updateLauncherState();
+    }
+  });
 
   header.appendChild(title);
   header.appendChild(closeBtn);
 
   const tabs = document.createElement("div");
-tabs.id = "sf-compliance-case-toast-tabs";
+  tabs.id = "sf-compliance-case-toast-tabs";
 
-Object.assign(tabs.style, {
-  display: "flex",
-  gap: "8px",
-  padding: "0 14px 10px 14px",
-  borderBottom: "1px solid #e5e7eb",
-});
-
-const overviewTab = document.createElement("button");
-overviewTab.type = "button";
-overviewTab.id = "sf-compliance-tab-overview";
-overviewTab.textContent = "Overview";
-
-const materialsTab = document.createElement("button");
-materialsTab.type = "button";
-materialsTab.id = "sf-compliance-tab-materials";
-materialsTab.textContent = "Materials";
-
-const lookupTab = document.createElement("button");
-lookupTab.type = "button";
-lookupTab.id = "sf-compliance-tab-lookup";
-lookupTab.textContent = "Lookup";
-
-[overviewTab, materialsTab, lookupTab].forEach((btn) => {
-  Object.assign(btn.style, {
-    border: "1px solid #d0d7de",
-    background: "#ffffff",
-    color: "#111111",
-    borderRadius: "8px",
-    padding: "6px 10px",
-    cursor: "pointer",
-    fontWeight: "600",
+  Object.assign(tabs.style, {
+    display: "flex",
+    gap: "8px",
+    padding: "0 14px 10px 14px",
+    borderBottom: "1px solid #e5e7eb",
   });
-});
 
-const body = document.createElement("div");
-body.id = "sf-compliance-case-toast-body";
+  const overviewTab = document.createElement("button");
+  overviewTab.type = "button";
+  overviewTab.id = "sf-compliance-tab-overview";
+  overviewTab.textContent = "Overview";
 
-Object.assign(body.style, {
-  padding: "16px 18px 20px 18px",
-  overflowY: "auto",
-  flex: "1",
-  background: "#ffffff",
-});
+  const materialsTab = document.createElement("button");
+  materialsTab.type = "button";
+  materialsTab.id = "sf-compliance-tab-materials";
+  materialsTab.textContent = "Materials";
 
-tabs.appendChild(overviewTab);
-tabs.appendChild(materialsTab);
-tabs.appendChild(lookupTab);
+  const suppliersTab = document.createElement("button");
+  suppliersTab.type = "button";
+  suppliersTab.id = "sf-compliance-tab-suppliers";
+  suppliersTab.textContent = "Suppliers";
 
-toast.appendChild(header);
-toast.appendChild(tabs);
-toast.appendChild(body);
+  const lookupTab = document.createElement("button");
+  lookupTab.type = "button";
+  lookupTab.id = "sf-compliance-tab-lookup";
+  lookupTab.textContent = "Lookup";
 
-hideLauncher();
-document.body.appendChild(toast);
+  [overviewTab, materialsTab, suppliersTab, lookupTab].forEach((btn) => {
+    Object.assign(btn.style, {
+      border: "1px solid #d0d7de",
+      background: "#ffffff",
+      color: "#111111",
+      borderRadius: "8px",
+      padding: "6px 10px",
+      cursor: "pointer",
+      fontWeight: "600",
+    });
+  });
+
+  const body = document.createElement("div");
+  body.id = "sf-compliance-case-toast-body";
+
+  Object.assign(body.style, {
+    padding: "16px 18px 20px 18px",
+    overflowY: "auto",
+    flex: "1",
+    background: "#ffffff",
+  });
+
+  tabs.appendChild(overviewTab);
+  tabs.appendChild(materialsTab);
+  tabs.appendChild(suppliersTab);
+  tabs.appendChild(lookupTab);
+
+  toast.appendChild(header);
+  toast.appendChild(tabs);
+  toast.appendChild(body);
+
+  hideLauncher();
+  document.body.appendChild(toast);
 
   return toast;
 }
@@ -558,6 +632,42 @@ function createCoverageBadge(status) {
   return badge;
 }
 
+function getStatementUrl(assertion) {
+  return (
+    assertion?.document?.storage?.url ||
+    assertion?.document?.url ||
+    ""
+  );
+}
+
+function createStatementOpenLink(url, label = "Open statement") {
+  const link = document.createElement("a");
+  link.href = url || "#";
+  link.textContent = label;
+  link.target = "_blank";
+  link.rel = "noopener noreferrer";
+
+  Object.assign(link.style, {
+    display: "inline-flex",
+    alignItems: "center",
+    marginTop: "6px",
+    fontSize: "13px",
+    fontWeight: "600",
+    color: url ? "#0176d3" : "#6b7280",
+    textDecoration: url ? "none" : "none",
+    cursor: url ? "pointer" : "default",
+    opacity: url ? "1" : "0.65",
+  });
+
+  if (!url) {
+    link.removeAttribute("href");
+    link.addEventListener("click", (event) => event.preventDefault());
+    link.textContent = "Statement link unavailable";
+  }
+
+  return link;
+}
+
 function createCoverageSection(supplierLookup) {
   const coverage = supplierLookup?.coverage;
   const regulations = Array.isArray(coverage?.regulations) ? coverage.regulations : [];
@@ -670,22 +780,52 @@ function createCoverageSection(supplierLookup) {
 
     if (bestAssertions.length > 0) {
       bestAssertions.forEach((entry) => {
-        const evidenceLine = document.createElement("div");
+        const assertion = entry.bestAssertion || null;
         const documentTitle =
-          entry.bestAssertion?.document?.title ||
-          entry.bestAssertion?.document?.fileName ||
+          assertion?.document?.title ||
+          assertion?.document?.fileName ||
           "Document";
 
-        evidenceLine.textContent = `${entry.supplierName}: ${entry.bestAssertion.assertionType} — ${documentTitle}`;
+        const evidenceBlock = document.createElement("div");
+        Object.assign(evidenceBlock.style, {
+          marginTop: "8px",
+          paddingTop: "8px",
+          borderTop: "1px dashed #e5e7eb",
+        });
+
+        const evidenceLine = document.createElement("div");
+        evidenceLine.textContent = `${entry.supplierName}: ${
+          assertion?.assertionType || "assertion"
+        } — ${documentTitle}`;
 
         Object.assign(evidenceLine.style, {
           fontSize: "14px",
           color: "#374151",
           lineHeight: "1.45",
-          marginTop: "4px",
         });
 
-        row.appendChild(evidenceLine);
+        evidenceBlock.appendChild(evidenceLine);
+
+        if (assertion?.statementText) {
+          const statementPreview = document.createElement("div");
+          statementPreview.textContent = assertion.statementText;
+
+          Object.assign(statementPreview.style, {
+            fontSize: "13px",
+            color: "#6b7280",
+            lineHeight: "1.45",
+            marginTop: "4px",
+          });
+
+          evidenceBlock.appendChild(statementPreview);
+        }
+
+        const statementUrl = getStatementUrl(assertion);
+        evidenceBlock.appendChild(
+          createStatementOpenLink(statementUrl, "Open statement")
+        );
+
+        row.appendChild(evidenceBlock);
       });
     }
 
@@ -779,6 +919,8 @@ function clearToastBody(body) {
 function setCaseToastTab(tabName) {
   if (tabName === "materials") {
     activeCaseToastTab = "materials";
+  } else if (tabName === "suppliers") {
+    activeCaseToastTab = "suppliers";
   } else if (tabName === "lookup") {
     activeCaseToastTab = "lookup";
   } else {
@@ -787,6 +929,7 @@ function setCaseToastTab(tabName) {
 
   const overviewBtn = document.getElementById("sf-compliance-tab-overview");
   const materialsBtn = document.getElementById("sf-compliance-tab-materials");
+  const suppliersBtn = document.getElementById("sf-compliance-tab-suppliers");
   const lookupBtn = document.getElementById("sf-compliance-tab-lookup");
 
   const applyActive = (btn, isActive) => {
@@ -798,12 +941,14 @@ function setCaseToastTab(tabName) {
 
   applyActive(overviewBtn, activeCaseToastTab === "overview");
   applyActive(materialsBtn, activeCaseToastTab === "materials");
+  applyActive(suppliersBtn, activeCaseToastTab === "suppliers");
   applyActive(lookupBtn, activeCaseToastTab === "lookup");
 }
 
 function wireCaseToastTabs(renderFn) {
   const overviewBtn = document.getElementById("sf-compliance-tab-overview");
   const materialsBtn = document.getElementById("sf-compliance-tab-materials");
+  const suppliersBtn = document.getElementById("sf-compliance-tab-suppliers");
   const lookupBtn = document.getElementById("sf-compliance-tab-lookup");
 
   if (overviewBtn) {
@@ -816,6 +961,13 @@ function wireCaseToastTabs(renderFn) {
   if (materialsBtn) {
     materialsBtn.onclick = () => {
       activeCaseToastTab = "materials";
+      renderFn();
+    };
+  }
+
+  if (suppliersBtn) {
+    suppliersBtn.onclick = () => {
+      activeCaseToastTab = "suppliers";
       renderFn();
     };
   }
@@ -1158,6 +1310,1041 @@ function createBomSection(supplierLookup) {
   return wrapper;
 }
 
+function normalizeSupplierTabKey(value) {
+  return String(value || "").trim().toLowerCase();
+}
+
+function normalizeMaterialKey(value) {
+  return String(value || "").trim().toUpperCase();
+}
+
+function formatShortDate(value) {
+  if (!value) return "—";
+
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "—";
+
+  return date.toLocaleDateString();
+}
+
+function summarizeStatusesForSupplier(statuses = []) {
+  const normalized = statuses
+    .map((value) => String(value || "").trim().toLowerCase())
+    .filter(Boolean);
+
+  if (!normalized.length) return "missing";
+  if (normalized.includes("non_compliant")) return "non_compliant";
+  if (normalized.every((status) => status === "covered")) return "covered";
+  if (normalized.includes("partial")) return "partial";
+  if (normalized.every((status) => status === "expired")) return "expired";
+  if (
+    normalized.includes("informational") &&
+    normalized.every((status) => status === "informational")
+  ) {
+    return "informational";
+  }
+  if (normalized.includes("covered") && normalized.includes("missing")) return "partial";
+  if (normalized.includes("covered") && normalized.includes("expired")) return "partial";
+  if (normalized.includes("expired") && normalized.includes("missing")) return "partial";
+  if (normalized.every((status) => status === "missing")) return "missing";
+  if (normalized.includes("covered")) return "partial";
+
+  return "partial";
+}
+
+function buildSuppliersViewModel(effectiveResponse) {
+  const results = Array.isArray(effectiveResponse?.componentSuppliersResult?.json?.results)
+    ? effectiveResponse.componentSuppliersResult.json.results
+    : [];
+
+  const supplierMap = new Map();
+
+  results.forEach((lookupResult) => {
+    const materialNumber = normalizeMaterialKey(
+      lookupResult?.material || lookupResult?.normalizedQuery || lookupResult?.query || ""
+    );
+
+    const coverageRegs = Array.isArray(lookupResult?.coverage?.regulations)
+      ? lookupResult.coverage.regulations
+      : [];
+
+    coverageRegs.forEach((regItem) => {
+      const supplierResults = Array.isArray(regItem?.supplierResults)
+        ? regItem.supplierResults
+        : [];
+
+      supplierResults.forEach((supplierResult) => {
+        const supplierKey = normalizeSupplierTabKey(
+          supplierResult?.supplierId ||
+            supplierResult?.supplierCode ||
+            supplierResult?.supplierName
+        );
+
+        if (!supplierKey) return;
+
+        if (!supplierMap.has(supplierKey)) {
+          supplierMap.set(supplierKey, {
+            supplierName: supplierResult?.supplierName || "Unknown supplier",
+            supplierCode: supplierResult?.supplierCode || "",
+            supplierId: supplierResult?.supplierId || null,
+            linkedMaterials: new Set(),
+            linkedComponents: new Set(),
+            statements: new Map(),
+            regulationBuckets: new Map(),
+          });
+        }
+
+        const entry = supplierMap.get(supplierKey);
+
+        if (materialNumber) {
+          entry.linkedMaterials.add(materialNumber);
+        }
+
+        const sources = Array.isArray(supplierResult?.sources) ? supplierResult.sources : [];
+        sources.forEach((sourceItem) => {
+          const componentNumber = normalizeMaterialKey(sourceItem?.component || "");
+          if (componentNumber) {
+            entry.linkedComponents.add(componentNumber);
+          }
+        });
+
+        const regCode =
+          regItem?.regulation?.code || supplierResult?.bestAssertion?.regulation?.code || "UNKNOWN";
+
+        if (!entry.regulationBuckets.has(regCode)) {
+          entry.regulationBuckets.set(regCode, {
+            regulation: regItem?.regulation || supplierResult?.bestAssertion?.regulation || null,
+            statuses: [],
+            linkedMaterials: new Set(),
+          });
+        }
+
+        const regBucket = entry.regulationBuckets.get(regCode);
+        regBucket.statuses.push(supplierResult?.coverageStatus || "missing");
+
+        if (materialNumber) {
+          regBucket.linkedMaterials.add(materialNumber);
+        }
+
+        const bestAssertion = supplierResult?.bestAssertion || null;
+        if (bestAssertion) {
+          const statementKey = String(
+            bestAssertion?._id ||
+              bestAssertion?.document?._id ||
+              `${regCode}-${bestAssertion?.statementText || ""}`
+          );
+
+          if (!entry.statements.has(statementKey)) {
+            entry.statements.set(statementKey, {
+              assertionId: bestAssertion?._id || null,
+              regulation: bestAssertion?.regulation || regItem?.regulation || null,
+              assertionType: bestAssertion?.assertionType || "",
+              coverageLevel: bestAssertion?.coverageLevel || "",
+              statementText: bestAssertion?.statementText || "",
+              confidence: bestAssertion?.confidence || "",
+              document: bestAssertion?.document || null,
+              matchSource: supplierResult?.matchSource || "none",
+              matchReason: supplierResult?.matchReason || null,
+              llmUsed: !!supplierResult?.llmUsed,
+              coverageStatus: supplierResult?.coverageStatus || "missing",
+              linkedMaterials: new Set(),
+              linkedComponents: new Set(),
+            });
+          }
+
+          const statementEntry = entry.statements.get(statementKey);
+
+          if (materialNumber) {
+            statementEntry.linkedMaterials.add(materialNumber);
+          }
+
+          sources.forEach((sourceItem) => {
+            const componentNumber = normalizeMaterialKey(sourceItem?.component || "");
+            if (componentNumber) {
+              statementEntry.linkedComponents.add(componentNumber);
+            }
+          });
+        }
+      });
+    });
+  });
+
+  return Array.from(supplierMap.values())
+    .map((entry) => ({
+      supplierName: entry.supplierName,
+      supplierCode: entry.supplierCode,
+      supplierId: entry.supplierId,
+      linkedMaterials: Array.from(entry.linkedMaterials),
+      linkedComponents: Array.from(entry.linkedComponents),
+      statements: Array.from(entry.statements.values()).map((statement) => ({
+        ...statement,
+        linkedMaterials: Array.from(statement.linkedMaterials),
+        linkedComponents: Array.from(statement.linkedComponents),
+      })),
+      regulations: Array.from(entry.regulationBuckets.values()).map((bucket) => ({
+        regulation: bucket.regulation,
+        status: summarizeStatusesForSupplier(bucket.statuses),
+        linkedMaterials: Array.from(bucket.linkedMaterials),
+      })),
+    }))
+    .sort((a, b) => a.supplierName.localeCompare(b.supplierName));
+}
+
+function createSupplierRegulationSummary(regulations = []) {
+  const wrapper = document.createElement("div");
+  Object.assign(wrapper.style, {
+    display: "grid",
+    gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
+    gap: "10px",
+    marginTop: "14px",
+  });
+
+  regulations.forEach((regItem) => {
+    const row = document.createElement("div");
+    Object.assign(row.style, {
+      display: "flex",
+      justifyContent: "space-between",
+      alignItems: "center",
+      gap: "10px",
+      padding: "10px 12px",
+      background: "#ffffff",
+      border: "1px solid #d9dee7",
+      borderRadius: "12px",
+    });
+
+    const label = document.createElement("div");
+    label.textContent = regItem?.regulation?.code || regItem?.regulation?.name || "Unknown";
+    Object.assign(label.style, {
+      fontSize: "14px",
+      fontWeight: "700",
+      color: "#111827",
+    });
+
+    row.appendChild(label);
+    row.appendChild(createCoverageBadge(regItem?.status || "missing"));
+    wrapper.appendChild(row);
+  });
+
+  return wrapper;
+}
+
+function createSupplierStatementsSection(statements = []) {
+  const wrapper = document.createElement("div");
+  wrapper.style.marginTop = "18px";
+
+  const title = document.createElement("div");
+  title.textContent = "Statements";
+  Object.assign(title.style, {
+    fontSize: "18px",
+    fontWeight: "700",
+    color: "#111827",
+    marginBottom: "10px",
+  });
+  wrapper.appendChild(title);
+
+  if (!statements.length) {
+    const empty = document.createElement("div");
+    empty.textContent = "No matched statements found.";
+    Object.assign(empty.style, {
+      color: "#6b7280",
+      fontSize: "14px",
+    });
+    wrapper.appendChild(empty);
+    return wrapper;
+  }
+
+  statements.forEach((statement) => {
+    const card = document.createElement("div");
+    Object.assign(card.style, {
+      background: "#ffffff",
+      border: "1px solid #d9dee7",
+      borderRadius: "16px",
+      padding: "16px 18px",
+      marginTop: "10px",
+    });
+
+    const header = document.createElement("div");
+    Object.assign(header.style, {
+      display: "flex",
+      justifyContent: "space-between",
+      alignItems: "flex-start",
+      gap: "12px",
+      marginBottom: "10px",
+    });
+
+    const left = document.createElement("div");
+
+    const regTitle = document.createElement("div");
+    regTitle.textContent =
+      statement?.regulation?.name || statement?.regulation?.code || "Unknown regulation";
+    Object.assign(regTitle.style, {
+      fontSize: "16px",
+      fontWeight: "700",
+      color: "#111827",
+      marginBottom: "4px",
+    });
+
+    const meta = document.createElement("div");
+    meta.textContent = `${statement?.assertionType || "assertion"} • ${
+      statement?.coverageLevel || "scope"
+    }`;
+    Object.assign(meta.style, {
+      fontSize: "13px",
+      color: "#6b7280",
+    });
+
+    left.appendChild(regTitle);
+    left.appendChild(meta);
+    header.appendChild(left);
+    header.appendChild(createCoverageBadge(statement?.coverageStatus || "missing"));
+    card.appendChild(header);
+
+    const docTitle = statement?.document?.title || statement?.document?.fileName || "";
+    if (docTitle) {
+      const docLine = document.createElement("div");
+      docLine.textContent = `Document: ${docTitle}`;
+      Object.assign(docLine.style, {
+        fontSize: "14px",
+        color: "#111827",
+        lineHeight: "1.45",
+        marginBottom: "6px",
+      });
+      card.appendChild(docLine);
+    }
+
+    if (statement?.statementText) {
+      const textLine = document.createElement("div");
+      textLine.textContent = statement.statementText;
+      Object.assign(textLine.style, {
+        fontSize: "14px",
+        color: "#374151",
+        lineHeight: "1.5",
+        marginBottom: "10px",
+      });
+      card.appendChild(textLine);
+    }
+
+    const details = document.createElement("div");
+    Object.assign(details.style, {
+      display: "grid",
+      gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
+      gap: "6px 12px",
+      fontSize: "13px",
+      color: "#4b5563",
+    });
+
+    const rows = [
+      ["Issue Date", formatShortDate(statement?.document?.issueDate)],
+      ["Valid Until", formatShortDate(statement?.document?.validUntil)],
+      ["Match Source", statement?.matchSource || "none"],
+      ["LLM Used", statement?.llmUsed ? "Yes" : "No"],
+      [
+        "Linked Materials",
+        statement?.linkedMaterials?.length ? statement.linkedMaterials.join(", ") : "—",
+      ],
+      [
+        "Linked Components",
+        statement?.linkedComponents?.length ? statement.linkedComponents.join(", ") : "—",
+      ],
+    ];
+
+    rows.forEach(([label, value]) => {
+      const row = document.createElement("div");
+      row.innerHTML = `<strong>${label}:</strong> ${value || "—"}`;
+      details.appendChild(row);
+    });
+
+    card.appendChild(details);
+
+    if (statement?.matchReason) {
+      const reason = document.createElement("div");
+      reason.textContent = `Reason: ${statement.matchReason}`;
+      Object.assign(reason.style, {
+        fontSize: "13px",
+        color: "#6b7280",
+        lineHeight: "1.45",
+        marginTop: "10px",
+      });
+      card.appendChild(reason);
+    }
+        const statementUrl =
+      statement?.document?.storage?.url ||
+      statement?.document?.url ||
+      "";
+
+    card.appendChild(createStatementOpenLink(statementUrl, "Open statement"));
+
+    wrapper.appendChild(card);
+  });
+
+  return wrapper;
+}
+
+function createSupplierCard(supplierEntry) {
+  const wrapper = document.createElement("div");
+  Object.assign(wrapper.style, {
+    marginTop: "16px",
+    padding: "22px",
+    border: "1px solid #d9dee7",
+    borderRadius: "24px",
+    background: "#f7f8fb",
+  });
+
+  const header = document.createElement("div");
+  Object.assign(header.style, {
+    display: "flex",
+    justifyContent: "space-between",
+    alignItems: "flex-start",
+    gap: "16px",
+    marginBottom: "10px",
+  });
+
+  const left = document.createElement("div");
+  left.style.flex = "1";
+
+  const title = document.createElement("div");
+  title.textContent = supplierEntry?.supplierName || "Unknown supplier";
+  Object.assign(title.style, {
+    fontSize: "28px",
+    fontWeight: "800",
+    lineHeight: "1.15",
+    color: "#111827",
+    letterSpacing: "-0.02em",
+    marginBottom: supplierEntry?.supplierCode ? "6px" : "0",
+  });
+
+  left.appendChild(title);
+
+  if (supplierEntry?.supplierCode) {
+    const codeLine = document.createElement("div");
+    codeLine.textContent = `Code: ${supplierEntry.supplierCode}`;
+    Object.assign(codeLine.style, {
+      fontSize: "14px",
+      color: "#6b7280",
+      lineHeight: "1.45",
+    });
+    left.appendChild(codeLine);
+  }
+
+  header.appendChild(left);
+  wrapper.appendChild(header);
+
+  const stats = document.createElement("div");
+  Object.assign(stats.style, {
+    display: "grid",
+    gridTemplateColumns: "repeat(3, 1fr)",
+    borderBottom: "1px solid #dde3ee",
+    marginBottom: "18px",
+  });
+
+  const createStat = (label, value, withBorderRight = false) => {
+    const stat = document.createElement("div");
+    Object.assign(stat.style, {
+      padding: "12px 4px 14px 0",
+      borderRight: withBorderRight ? "1px solid #dde3ee" : "none",
+    });
+
+    const statLabel = document.createElement("div");
+    statLabel.textContent = label;
+    Object.assign(statLabel.style, {
+      fontSize: "14px",
+      color: "#4b5563",
+      marginBottom: "6px",
+    });
+
+    const statValue = document.createElement("div");
+    statValue.textContent = String(value);
+    Object.assign(statValue.style, {
+      fontSize: "20px",
+      fontWeight: "800",
+      color: "#111827",
+      lineHeight: "1.1",
+    });
+
+    stat.appendChild(statLabel);
+    stat.appendChild(statValue);
+    return stat;
+  };
+
+  stats.appendChild(
+    createStat("Materials", supplierEntry?.linkedMaterials?.length || 0, true)
+  );
+  stats.appendChild(
+    createStat("Components", supplierEntry?.linkedComponents?.length || 0, true)
+  );
+  stats.appendChild(
+    createStat("Statements", supplierEntry?.statements?.length || 0, false)
+  );
+
+  wrapper.appendChild(stats);
+
+  const regTitle = document.createElement("div");
+  regTitle.textContent = "Regulations";
+  Object.assign(regTitle.style, {
+    fontSize: "18px",
+    fontWeight: "700",
+    color: "#111827",
+    marginBottom: "8px",
+  });
+  wrapper.appendChild(regTitle);
+
+  wrapper.appendChild(createSupplierRegulationSummary(supplierEntry?.regulations || []));
+  wrapper.appendChild(createSupplierStatementsSection(supplierEntry?.statements || []));
+
+  return wrapper;
+}
+
+function createSuppliersLibrarySearchBar() {
+  const wrapper = document.createElement("div");
+  Object.assign(wrapper.style, {
+    marginTop: "10px",
+    marginBottom: "12px",
+    display: "flex",
+    gap: "8px",
+  });
+
+  const input = document.createElement("input");
+  input.type = "text";
+  input.value = currentCaseAnalysisState.suppliersLibrarySearch || "";
+  input.placeholder = "Search suppliers by name, code, or alias";
+
+  Object.assign(input.style, {
+    flex: "1",
+    padding: "10px 12px",
+    border: "1px solid #d0d7de",
+    borderRadius: "10px",
+    fontSize: "14px",
+  });
+
+  input.addEventListener("input", (event) => {
+    currentCaseAnalysisState.suppliersLibrarySearch = event.target.value || "";
+  });
+
+  input.addEventListener("keydown", (event) => {
+    if (event.key === "Enter") {
+      event.preventDefault();
+      loadSuppliersLibrary(currentCaseAnalysisState.suppliersLibrarySearch || "");
+    }
+  });
+
+  const button = document.createElement("button");
+  button.type = "button";
+  button.textContent = currentCaseAnalysisState.suppliersLibraryLoading
+    ? "Loading..."
+    : "Search";
+
+  Object.assign(button.style, {
+    padding: "10px 14px",
+    border: "1px solid #0176d3",
+    borderRadius: "10px",
+    background: "#0176d3",
+    color: "#fff",
+    cursor: currentCaseAnalysisState.suppliersLibraryLoading ? "default" : "pointer",
+    fontWeight: "600",
+    opacity: currentCaseAnalysisState.suppliersLibraryLoading ? "0.7" : "1",
+  });
+
+  button.disabled = currentCaseAnalysisState.suppliersLibraryLoading;
+
+  button.addEventListener("click", () => {
+    loadSuppliersLibrary(currentCaseAnalysisState.suppliersLibrarySearch || "");
+  });
+
+  wrapper.appendChild(input);
+  wrapper.appendChild(button);
+
+  return wrapper;
+}
+
+function createSupplierLibraryListItem(supplier) {
+  const isActive =
+    String(currentCaseAnalysisState.selectedSupplierLibraryId || "") ===
+    String(supplier?.supplierId || "");
+
+  const item = document.createElement("button");
+  item.type = "button";
+
+  Object.assign(item.style, {
+    width: "100%",
+    textAlign: "left",
+    padding: "12px",
+    borderRadius: "12px",
+    border: isActive ? "1px solid #0176d3" : "1px solid #d8dee4",
+    background: isActive ? "#eef6ff" : "#ffffff",
+    cursor: "pointer",
+    marginBottom: "8px",
+  });
+
+  item.addEventListener("click", () => {
+    currentCaseAnalysisState.selectedSupplierLibraryId = supplier?.supplierId || null;
+    rerenderCurrentCaseToast();
+  });
+
+  const name = document.createElement("div");
+  name.textContent = supplier?.supplierName || "Unknown supplier";
+  Object.assign(name.style, {
+    fontWeight: "700",
+    fontSize: "14px",
+    color: "#111827",
+    marginBottom: "4px",
+  });
+
+  const code = document.createElement("div");
+  code.textContent = supplier?.supplierCode || "—";
+  Object.assign(code.style, {
+    fontSize: "12px",
+    color: "#6b7280",
+    marginBottom: "6px",
+  });
+
+  const meta = document.createElement("div");
+  meta.textContent = `Documents: ${supplier?.documentsCount || 0} • Statements: ${
+    supplier?.assertionsCount || 0
+  }`;
+  Object.assign(meta.style, {
+    fontSize: "12px",
+    color: "#374151",
+  });
+
+  item.appendChild(name);
+  item.appendChild(code);
+  item.appendChild(meta);
+
+  return item;
+}
+
+function createOpenFileButton(url) {
+  const button = document.createElement("button");
+  button.type = "button";
+  button.textContent = "Open file";
+
+  Object.assign(button.style, {
+    marginTop: "10px",
+    padding: "8px 12px",
+    borderRadius: "10px",
+    border: "1px solid #0176d3",
+    background: "#ffffff",
+    color: "#0176d3",
+    cursor: url ? "pointer" : "default",
+    fontWeight: "600",
+    opacity: url ? "1" : "0.6",
+  });
+
+  button.disabled = !url;
+
+  button.addEventListener("click", () => {
+    if (!url) return;
+    window.open(url, "_blank", "noopener,noreferrer");
+  });
+
+  return button;
+}
+
+function createSupplierLibraryRegulationSummary(regulations = []) {
+  const wrapper = document.createElement("div");
+  wrapper.style.marginTop = "14px";
+
+  const title = document.createElement("div");
+  title.textContent = "Regulations";
+  Object.assign(title.style, {
+    fontSize: "18px",
+    fontWeight: "700",
+    color: "#111827",
+    marginBottom: "10px",
+  });
+  wrapper.appendChild(title);
+
+  if (!regulations.length) {
+    const empty = document.createElement("div");
+    empty.textContent = "No regulation summary available.";
+    Object.assign(empty.style, {
+      color: "#6b7280",
+      fontSize: "14px",
+    });
+    wrapper.appendChild(empty);
+    return wrapper;
+  }
+
+  const grid = document.createElement("div");
+  Object.assign(grid.style, {
+    display: "grid",
+    gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
+    gap: "10px",
+  });
+
+  regulations.forEach((regItem) => {
+    const row = document.createElement("div");
+    Object.assign(row.style, {
+      display: "flex",
+      justifyContent: "space-between",
+      alignItems: "center",
+      gap: "10px",
+      padding: "10px 12px",
+      background: "#ffffff",
+      border: "1px solid #d9dee7",
+      borderRadius: "12px",
+    });
+
+    const left = document.createElement("div");
+
+    const code = document.createElement("div");
+    code.textContent =
+      regItem?.regulationCode || regItem?.regulationName || "Unknown";
+    Object.assign(code.style, {
+      fontSize: "14px",
+      fontWeight: "700",
+      color: "#111827",
+      marginBottom: "2px",
+    });
+
+    const count = document.createElement("div");
+    count.textContent = `Statements: ${regItem?.statementsCount || 0}`;
+    Object.assign(count.style, {
+      fontSize: "12px",
+      color: "#6b7280",
+    });
+
+    left.appendChild(code);
+    left.appendChild(count);
+
+    row.appendChild(left);
+    row.appendChild(createCoverageBadge(regItem?.status || "missing"));
+    grid.appendChild(row);
+  });
+
+  wrapper.appendChild(grid);
+  return wrapper;
+}
+
+function createSupplierLibraryStatementsSection(assertions = []) {
+  const wrapper = document.createElement("div");
+  wrapper.style.marginTop = "18px";
+
+  const title = document.createElement("div");
+  title.textContent = "Statements";
+  Object.assign(title.style, {
+    fontSize: "18px",
+    fontWeight: "700",
+    color: "#111827",
+    marginBottom: "10px",
+  });
+  wrapper.appendChild(title);
+
+  if (!assertions.length) {
+    const empty = document.createElement("div");
+    empty.textContent = "No statements found for this supplier.";
+    Object.assign(empty.style, {
+      color: "#6b7280",
+      fontSize: "14px",
+    });
+    wrapper.appendChild(empty);
+    return wrapper;
+  }
+
+  assertions.forEach((statement) => {
+    const card = document.createElement("div");
+    Object.assign(card.style, {
+      background: "#ffffff",
+      border: "1px solid #d9dee7",
+      borderRadius: "16px",
+      padding: "16px 18px",
+      marginTop: "10px",
+    });
+
+    const header = document.createElement("div");
+    Object.assign(header.style, {
+      display: "flex",
+      justifyContent: "space-between",
+      alignItems: "flex-start",
+      gap: "12px",
+      marginBottom: "10px",
+    });
+
+    const left = document.createElement("div");
+
+    const regTitle = document.createElement("div");
+    regTitle.textContent =
+      statement?.regulation?.name || statement?.regulation?.code || "Unknown regulation";
+    Object.assign(regTitle.style, {
+      fontSize: "16px",
+      fontWeight: "700",
+      color: "#111827",
+      marginBottom: "4px",
+    });
+
+    const meta = document.createElement("div");
+    meta.textContent = `${statement?.assertionType || "assertion"} • ${
+      statement?.coverageLevel || "scope"
+    }`;
+    Object.assign(meta.style, {
+      fontSize: "13px",
+      color: "#6b7280",
+    });
+
+    left.appendChild(regTitle);
+    left.appendChild(meta);
+
+    const statusBadge = createCoverageBadge(
+      statement?.status === "active" ? "covered" : statement?.status || "missing"
+    );
+
+    header.appendChild(left);
+    header.appendChild(statusBadge);
+    card.appendChild(header);
+
+    const docTitle =
+      statement?.document?.title || statement?.document?.fileName || "";
+    if (docTitle) {
+      const docLine = document.createElement("div");
+      docLine.textContent = `Document: ${docTitle}`;
+      Object.assign(docLine.style, {
+        fontSize: "14px",
+        color: "#111827",
+        lineHeight: "1.45",
+        marginBottom: "6px",
+      });
+      card.appendChild(docLine);
+    }
+
+    if (statement?.statementText) {
+      const textLine = document.createElement("div");
+      textLine.textContent = statement.statementText;
+      Object.assign(textLine.style, {
+        fontSize: "14px",
+        color: "#374151",
+        lineHeight: "1.5",
+        marginBottom: "10px",
+      });
+      card.appendChild(textLine);
+    }
+
+    const details = document.createElement("div");
+    Object.assign(details.style, {
+      display: "grid",
+      gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
+      gap: "6px 12px",
+      fontSize: "13px",
+      color: "#4b5563",
+    });
+
+    const rows = [
+      ["Issue Date", formatShortDate(statement?.document?.issueDate || statement?.issueDate)],
+      ["Valid Until", formatShortDate(statement?.document?.validUntil || statement?.validUntil)],
+      ["Confidence", statement?.confidence || "—"],
+      ["Status", statement?.status || "—"],
+      ["Document Type", statement?.document?.documentType || statement?.document?.title ? statement?.document?.documentType || "—" : "—"],
+      ["Provider", statement?.document?.provider || "—"],
+    ];
+
+    rows.forEach(([label, value]) => {
+      const row = document.createElement("div");
+      row.innerHTML = `<strong>${label}:</strong> ${value || "—"}`;
+      details.appendChild(row);
+    });
+
+    card.appendChild(details);
+
+    const fileUrl =
+      statement?.document?.url ||
+      statement?.document?.storage?.url ||
+      "";
+
+    card.appendChild(createOpenFileButton(fileUrl));
+    wrapper.appendChild(card);
+  });
+
+  return wrapper;
+}
+
+function createSupplierLibraryDetail(supplier) {
+  const wrapper = document.createElement("div");
+
+  if (!supplier) {
+    wrapper.appendChild(createInfoRow("Supplier", "Select a supplier"));
+    return wrapper;
+  }
+
+  const title = document.createElement("div");
+  title.textContent = supplier?.supplierName || "Unknown supplier";
+  Object.assign(title.style, {
+    fontSize: "24px",
+    fontWeight: "800",
+    color: "#111827",
+    marginBottom: "4px",
+  });
+  wrapper.appendChild(title);
+
+  const code = document.createElement("div");
+  code.textContent = `Code: ${supplier?.supplierCode || "—"}`;
+  Object.assign(code.style, {
+    fontSize: "14px",
+    color: "#6b7280",
+    marginBottom: "10px",
+  });
+  wrapper.appendChild(code);
+
+  if (Array.isArray(supplier?.aliases) && supplier.aliases.length) {
+    const aliases = document.createElement("div");
+    aliases.innerHTML = `<strong>Aliases:</strong> ${supplier.aliases.join(", ")}`;
+    Object.assign(aliases.style, {
+      fontSize: "14px",
+      color: "#374151",
+      lineHeight: "1.5",
+      marginBottom: "12px",
+    });
+    wrapper.appendChild(aliases);
+  }
+
+  const stats = document.createElement("div");
+  Object.assign(stats.style, {
+    display: "grid",
+    gridTemplateColumns: "repeat(3, 1fr)",
+    gap: "10px",
+    marginBottom: "18px",
+  });
+
+  const addStatCard = (label, value) => {
+    const card = document.createElement("div");
+    Object.assign(card.style, {
+      background: "#f8fafc",
+      border: "1px solid #d9dee7",
+      borderRadius: "14px",
+      padding: "12px 14px",
+    });
+
+    const statLabel = document.createElement("div");
+    statLabel.textContent = label;
+    Object.assign(statLabel.style, {
+      fontSize: "13px",
+      color: "#6b7280",
+      marginBottom: "6px",
+    });
+
+    const statValue = document.createElement("div");
+    statValue.textContent = String(value);
+    Object.assign(statValue.style, {
+      fontSize: "22px",
+      fontWeight: "800",
+      color: "#111827",
+      lineHeight: "1.1",
+    });
+
+    card.appendChild(statLabel);
+    card.appendChild(statValue);
+    stats.appendChild(card);
+  };
+
+  addStatCard("Documents", supplier?.documentsCount || 0);
+  addStatCard("Statements", supplier?.assertionsCount || 0);
+  addStatCard("Regulations", Array.isArray(supplier?.regulationSummary) ? supplier.regulationSummary.length : 0);
+
+  wrapper.appendChild(stats);
+  wrapper.appendChild(
+    createSupplierLibraryRegulationSummary(
+      Array.isArray(supplier?.regulationSummary) ? supplier.regulationSummary : []
+    )
+  );
+  wrapper.appendChild(
+    createSupplierLibraryStatementsSection(
+      Array.isArray(supplier?.assertions) ? supplier.assertions : []
+    )
+  );
+
+  return wrapper;
+}
+
+function createSuppliersTabContent() {
+  const wrapper = document.createElement("div");
+  wrapper.style.marginTop = "8px";
+
+  wrapper.appendChild(createSuppliersLibrarySearchBar());
+
+  if (currentCaseAnalysisState.suppliersLibraryLoading) {
+    wrapper.appendChild(createInfoRow("Status", "Loading suppliers library..."));
+    return wrapper;
+  }
+
+  if (currentCaseAnalysisState.suppliersLibraryError) {
+    wrapper.appendChild(
+      createInfoRow("Error", currentCaseAnalysisState.suppliersLibraryError)
+    );
+    return wrapper;
+  }
+
+  const suppliers = Array.isArray(currentCaseAnalysisState.suppliersLibrary?.suppliers)
+    ? currentCaseAnalysisState.suppliersLibrary.suppliers
+    : [];
+
+  const summary = document.createElement("div");
+  summary.textContent = `Suppliers found: ${
+    typeof currentCaseAnalysisState.suppliersLibrary?.total === "number"
+      ? currentCaseAnalysisState.suppliersLibrary.total
+      : suppliers.length
+  }`;
+  Object.assign(summary.style, {
+    fontSize: "13px",
+    color: "#4b5563",
+    marginBottom: "12px",
+  });
+  wrapper.appendChild(summary);
+
+  if (!suppliers.length) {
+    wrapper.appendChild(createInfoRow("Suppliers", "No suppliers found."));
+    return wrapper;
+  }
+
+  const layout = document.createElement("div");
+  Object.assign(layout.style, {
+    display: "grid",
+    gridTemplateColumns: "280px minmax(0, 1fr)",
+    gap: "14px",
+    alignItems: "start",
+  });
+
+  const leftPane = document.createElement("div");
+  Object.assign(leftPane.style, {
+    maxHeight: "calc(78vh - 260px)",
+    overflowY: "auto",
+    paddingRight: "4px",
+  });
+
+  suppliers.forEach((supplier) => {
+    leftPane.appendChild(createSupplierLibraryListItem(supplier));
+  });
+
+  const rightPane = document.createElement("div");
+  Object.assign(rightPane.style, {
+    minHeight: "200px",
+    padding: "16px",
+    border: "1px solid #d9dee7",
+    borderRadius: "18px",
+    background: "#f7f8fb",
+  });
+
+  const selectedSupplier = suppliers.find(
+    (item) =>
+      String(item?.supplierId || "") ===
+      String(currentCaseAnalysisState.selectedSupplierLibraryId || "")
+  ) || suppliers[0];
+
+  if (
+    selectedSupplier &&
+    String(currentCaseAnalysisState.selectedSupplierLibraryId || "") !==
+      String(selectedSupplier?.supplierId || "")
+  ) {
+    currentCaseAnalysisState.selectedSupplierLibraryId =
+      selectedSupplier?.supplierId || null;
+  }
+
+  rightPane.appendChild(createSupplierLibraryDetail(selectedSupplier));
+
+  layout.appendChild(leftPane);
+  layout.appendChild(rightPane);
+  wrapper.appendChild(layout);
+
+  return wrapper;
+}
+
 function createMaterialOverviewCard(materialItem, supplierLookup) {
   const wrapper = document.createElement("div");
   wrapper.style.marginTop = "8px";
@@ -1194,14 +2381,14 @@ function createMaterialOverviewCard(materialItem, supplierLookup) {
       ? supplierLookup.suppliers[0]
       : "N/A";
 
-const visibleComponents = Array.isArray(supplierLookup?.components)
-  ? supplierLookup.components.filter((item) => !item?.isPackaging)
-  : [];
+  const visibleComponents = Array.isArray(supplierLookup?.components)
+    ? supplierLookup.components.filter((item) => !item?.isPackaging)
+    : [];
 
-const meta = document.createElement("div");
-meta.textContent =
-  `Suppliers: ${supplierLookup.supplierCount || 0} | Components: ${visibleComponents.length}`;
-wrapper.appendChild(meta);
+  const meta = document.createElement("div");
+  meta.textContent =
+    `Suppliers: ${supplierLookup.supplierCount || 0} | Components: ${visibleComponents.length}`;
+  wrapper.appendChild(meta);
 
   const preview = document.createElement("div");
   preview.style.marginTop = "4px";
@@ -1290,19 +2477,28 @@ function renderCaseToastAnalysis(payload, response) {
       analysis?.requester?.email ||
       "N/A";
 
-const materials = Array.isArray(currentCaseAnalysisState.overriddenMaterials)
-  ? currentCaseAnalysisState.overriddenMaterials
-  : [];
+    const materials = Array.isArray(currentCaseAnalysisState.overriddenMaterials)
+      ? currentCaseAnalysisState.overriddenMaterials
+      : [];
 
-const effectiveResponse = currentCaseAnalysisState.lookupResults
-  ? {
-      ...response,
-      componentSuppliersResult: currentCaseAnalysisState.lookupResults,
+    const effectiveResponse = currentCaseAnalysisState.lookupResults
+      ? {
+          ...response,
+          componentSuppliersResult: currentCaseAnalysisState.lookupResults,
+        }
+      : response;
+
+    const componentSuppliersMap = buildComponentSuppliersMap(effectiveResponse);
+    const coverageSummaryBlock = createCoverageSummaryBlock(effectiveResponse);
+
+    if (
+      activeCaseToastTab === "suppliers" &&
+      !currentCaseAnalysisState.suppliersLibrary &&
+      !currentCaseAnalysisState.suppliersLibraryLoading &&
+      !currentCaseAnalysisState.suppliersLibraryError
+    ) {
+      loadSuppliersLibrary(currentCaseAnalysisState.suppliersLibrarySearch || "");
     }
-  : response;
-
-const componentSuppliersMap = buildComponentSuppliersMap(effectiveResponse);
-const coverageSummaryBlock = createCoverageSummaryBlock(effectiveResponse);
 
     if (activeCaseToastTab === "overview") {
       body.appendChild(createInfoRow("Case Number", payload.caseId));
@@ -1311,7 +2507,7 @@ const coverageSummaryBlock = createCoverageSummaryBlock(effectiveResponse);
       body.appendChild(createInfoRow("Requester", requesterValue));
       body.appendChild(createListRow("Request Types", analysis?.request_types || []));
 
-          if (coverageSummaryBlock) {
+      if (coverageSummaryBlock) {
         body.appendChild(coverageSummaryBlock);
       }
 
@@ -1323,17 +2519,17 @@ const coverageSummaryBlock = createCoverageSummaryBlock(effectiveResponse);
         materialsLabel.textContent = "Materials:";
         materialsBlock.appendChild(materialsLabel);
 
-materials.forEach((materialItem, materialIndex) => {
-  const normalizedPart = String(materialItem?.part_number || "")
-    .trim()
-    .toUpperCase();
+        materials.forEach((materialItem, materialIndex) => {
+          const normalizedPart = String(materialItem?.part_number || "")
+            .trim()
+            .toUpperCase();
 
-  const supplierLookup = componentSuppliersMap.get(normalizedPart) || null;
+          const supplierLookup = componentSuppliersMap.get(normalizedPart) || null;
 
-  materialsBlock.appendChild(
-    createMaterialSupplierCard(materialItem, supplierLookup, materialIndex)
-  );
-});
+          materialsBlock.appendChild(
+            createMaterialSupplierCard(materialItem, supplierLookup, materialIndex)
+          );
+        });
 
         body.appendChild(materialsBlock);
       } else {
@@ -1377,7 +2573,7 @@ materials.forEach((materialItem, materialIndex) => {
       body.appendChild(createInfoRow("Case Number", payload.caseId));
       body.appendChild(createInfoRow("Subject", payload.subject));
 
-         if (coverageSummaryBlock) {
+      if (coverageSummaryBlock) {
         body.appendChild(coverageSummaryBlock);
       }
 
@@ -1389,24 +2585,31 @@ materials.forEach((materialItem, materialIndex) => {
         materialsLabel.textContent = "Materials:";
         materialsBlock.appendChild(materialsLabel);
 
-materials.forEach((materialItem, materialIndex) => {
-  const normalizedPart = String(materialItem?.part_number || "")
-    .trim()
-    .toUpperCase();
+        materials.forEach((materialItem, materialIndex) => {
+          const normalizedPart = String(materialItem?.part_number || "")
+            .trim()
+            .toUpperCase();
 
-  const supplierLookup = componentSuppliersMap.get(normalizedPart) || null;
+          const supplierLookup = componentSuppliersMap.get(normalizedPart) || null;
 
-  materialsBlock.appendChild(
-    createMaterialSupplierCard(materialItem, supplierLookup, materialIndex)
-  );
-});
+          materialsBlock.appendChild(
+            createMaterialSupplierCard(materialItem, supplierLookup, materialIndex)
+          );
+        });
 
         body.appendChild(materialsBlock);
       } else {
         body.appendChild(createInfoRow("Materials", "N/A"));
       }
     }
-        if (activeCaseToastTab === "lookup") {
+
+    if (activeCaseToastTab === "suppliers") {
+      body.appendChild(createInfoRow("Case Number", payload.caseId));
+      body.appendChild(createInfoRow("Subject", payload.subject));
+      body.appendChild(createSuppliersTabContent());
+    }
+
+    if (activeCaseToastTab === "lookup") {
       body.appendChild(createInfoRow("Case Number", payload?.caseId || "Manual Lookup"));
       body.appendChild(
         createInfoRow("Subject", payload?.subject || "Manual supplier lookup")

@@ -1,9 +1,9 @@
-// const API_BASE_URL = "https://cloudcompliance.duckdns.org/api/compliance/ext";
-// const AUTH_BASE_URL = "https://cloudcompliance.duckdns.org/api/auth";
+const API_BASE_URL = "https://cloudcompliance.duckdns.org/api/compliance/ext";
+const AUTH_BASE_URL = "https://cloudcompliance.duckdns.org/api/auth";
 
 // local dev:
-const API_BASE_URL = "http://localhost:3000/api/compliance/ext";
-const AUTH_BASE_URL = "http://localhost:3000/api/auth";
+// const API_BASE_URL = "http://localhost:3000/api/compliance/ext";
+// const AUTH_BASE_URL = "http://localhost:3000/api/auth";
 
 const STORAGE_KEYS = {
   complianceToken: "complianceToken",
@@ -83,6 +83,27 @@ async function handleManualMaterialsLookup(payload) {
   return {
     ok: lookupResult.ok,
     componentSuppliersResult: lookupResult,
+  };
+}
+
+async function handleSuppliersLibraryLookup(payload = {}) {
+  const search = String(payload?.search || "").trim();
+
+  const libraryResult = await callComplianceApi("/suppliers-library", {
+    search,
+  });
+
+  if (libraryResult.authRequired) {
+    return {
+      ok: false,
+      authRequired: true,
+      error: libraryResult.error || "Authentication required",
+    };
+  }
+
+  return {
+    ok: libraryResult.ok,
+    suppliersLibraryResult: libraryResult,
   };
 }
 
@@ -597,6 +618,11 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   handleManualMaterialsLookup(message.payload || {}).then(sendResponse);
   return true;
 }
+
+  if (message?.type === "SF_SUPPLIERS_LIBRARY") {
+    handleSuppliersLibraryLookup(message.payload || {}).then(sendResponse);
+    return true;
+  }
 
   if (message?.type === "AUTH_GET_STATE") {
     getAuthState().then(sendResponse);

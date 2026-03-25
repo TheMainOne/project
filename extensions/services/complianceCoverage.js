@@ -1,6 +1,14 @@
+import "dotenv/config";
+import OpenAI from "openai";
 import ComplianceAssertion from "../sf-compliance/models/ComplianceAssertion.js";
 import Regulation from "../sf-compliance/models/Regulation.js";
 import Supplier from "../sf-compliance/models/Supplier.js";
+
+const openai = process.env.OPENAI_API_KEY
+  ? new OpenAI({ apiKey: process.env.OPENAI_API_KEY })
+  : null;
+
+const OPENAI_MODEL = process.env.OPENAI_MODEL || "gpt-5.4";
 
 export function normalizeItemNumber(value) {
   return String(value || "").trim().toUpperCase();
@@ -66,28 +74,319 @@ export function collectRelevantSuppliersFromLookupResult(result) {
   return Array.from(supplierMap.values());
 }
 
-export function doesAssertionMatchItem(assertion, itemNumber) {
-  const normalizedItem = normalizeItemNumber(itemNumber);
+export function collectRelevantSuppliersFromLookupEntry(entry) {
+  const supplierMap = new Map();
 
-  if (!normalizedItem || !assertion) return false;
-  if (assertion.status && assertion.status !== "active") return false;
+  const addSupplier = (supplierName, source, componentMaterial = null) => {
+    const normalizedName = normalizeSupplierName(supplierName);
+    if (!normalizedName) return;
 
-  const coverageLevel = assertion.coverageLevel;
-  const scope = assertion.scope || {};
+    const key = normalizedName.toLowerCase();
+
+    if (!supplierMap.has(key)) {
+      supplierMap.set(key, {
+        supplierName: normalizedName,
+        sources: [],
+      });
+    }
+
+    const existing = supplierMap.get(key);
+
+    existing.sources.push({
+      source,
+      componentMaterial: componentMaterial ? normalizeItemNumber(componentMaterial) : null,
+    });
+  };
+
+  addSupplier(entry?.supplier, "material");
+
+  toArray(entry?.components).forEach((component) => {
+    addSupplier(component?.supplier, "component", component?.material);
+  });
+
+  return Array.from(supplierMap.values());
+}
+
+function normalizeText(value) {
+  return String(value || "")
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, " ");
+}
+
+function hasStructuredScope(scope = {}) {
+  return Boolean(
+    scope?.allSupplierItems === true ||
+      (Array.isArray(scope?.dwkItemNumbers) && scope.dwkItemNumbers.length > 0) ||
+      (Array.isArray(scope?.supplierPartNumbers) && scope.supplierPartNumbers.length > 0) ||
+      (Array.isArray(scope?.families) && scope.families.length > 0) ||
+      (Array.isArray(scope?.countries) && scope.countries.length > 0) ||
+      (Array.isArray(scope?.plants) && scope.plants.length > 0)
+  );
+}
+
+function isLlmEligibleAssertion(assertion) {
+  const eligibleTypes = new Set(["compliant", "free_from", "informational"]);
+  return eligibleTypes.has(assertion?.assertionType);
+}
+
+export function resolveAssertionMatch(assertion, context = {}) {
+  const normalizedItem = normalizeItemNumber(context.itemNumber);
+  const coverageLevel = assertion?.coverageLevel;
+  const scope = assertion?.scope || {};
+
+  if (!assertion) {
+    return {
+      matched: false,
+      requiresLlm: false,
+      reason: "No assertion provided",
+      matchSource: "none",
+    };
+  }
+
+  if (!normalizedItem) {
+    return {
+      matched: false,
+      requiresLlm: false,
+      reason: "No item number provided",
+      matchSource: "none",
+    };
+  }
+
+  if (assertion.status && !["active", "expired"].includes(assertion.status)) {
+    return {
+      matched: false,
+      requiresLlm: false,
+      reason: `Assertion status ${assertion.status} is not eligible`,
+      matchSource: "none",
+    };
+  }
+
+  const dwkItems = Array.isArray(scope.dwkItemNumbers)
+    ? scope.dwkItemNumbers.map(normalizeItemNumber).filter(Boolean)
+    : [];
 
   if (coverageLevel === "supplier_all") {
-    return scope.allSupplierItems === true;
+    return {
+      matched: scope.allSupplierItems === true,
+      requiresLlm: false,
+      reason:
+        scope.allSupplierItems === true
+          ? "Matched supplier_all with allSupplierItems=true"
+          : "supplier_all without allSupplierItems=true",
+      matchSource: scope.allSupplierItems === true ? "scope" : "none",
+    };
   }
 
   if (coverageLevel === "item_single" || coverageLevel === "item_list") {
-    const dwkItems = Array.isArray(scope.dwkItemNumbers)
-      ? scope.dwkItemNumbers.map(normalizeItemNumber)
-      : [];
+    const matched = dwkItems.includes(normalizedItem);
 
-    return dwkItems.includes(normalizedItem);
+    return {
+      matched,
+      requiresLlm: false,
+      reason: matched
+        ? "Matched DWK item number from explicit scope"
+        : "DWK item number not present in explicit scope",
+      matchSource: matched ? "scope" : "none",
+    };
   }
 
-  return false;
+  if (coverageLevel === "supplier_subset") {
+    if (scope.allSupplierItems === true) {
+      return {
+        matched: true,
+        requiresLlm: false,
+        reason: "supplier_subset treated as supplier-wide because allSupplierItems=true",
+        matchSource: "scope",
+      };
+    }
+
+    if (dwkItems.includes(normalizedItem)) {
+      return {
+        matched: true,
+        requiresLlm: false,
+        reason: "Matched supplier_subset by explicit DWK item number",
+        matchSource: "scope",
+      };
+    }
+
+    const structuredScopeExists = hasStructuredScope(scope);
+    const hasStatementText = Boolean(normalizeText(assertion.statementText));
+    const hasDescriptions =
+      Array.isArray(context.descriptions) &&
+      context.descriptions.some((d) => normalizeText(d));
+
+    if (
+      !structuredScopeExists &&
+      hasStatementText &&
+      hasDescriptions &&
+      isLlmEligibleAssertion(assertion)
+    ) {
+      return {
+        matched: false,
+        requiresLlm: true,
+        reason:
+          "supplier_subset has statementText but no structured scope; LLM interpretation needed",
+        matchSource: "none",
+      };
+    }
+
+    return {
+      matched: false,
+      requiresLlm: false,
+      reason: "supplier_subset did not match structured scope",
+      matchSource: "none",
+    };
+  }
+
+  return {
+    matched: false,
+    requiresLlm: false,
+    reason: `Unsupported coverageLevel: ${coverageLevel || "unknown"}`,
+    matchSource: "none",
+  };
+}
+
+async function resolveAssertionsWithLlm({
+  assertions = [],
+  itemNumber,
+  descriptions = [],
+  supplierName,
+  regulationCode,
+}) {
+  if (!assertions.length) {
+    return {
+      matchedAssertionIds: [],
+      decision: "no_match",
+      reason: "No candidate assertions",
+    };
+  }
+
+  if (!openai) {
+    return {
+      matchedAssertionIds: [],
+      decision: "uncertain",
+      reason: "OPENAI_API_KEY is not configured on the server",
+    };
+  }
+
+  const sanitizedDescriptions = toArray(descriptions)
+    .map((value) => String(value || "").trim())
+    .filter(Boolean)
+    .slice(0, 10);
+
+  const candidateAssertions = assertions.map((assertion) => ({
+    id: String(assertion._id),
+    assertionType: assertion.assertionType || "",
+    coverageLevel: assertion.coverageLevel || "",
+    statementText: assertion.statementText || "",
+    scope: assertion.scope || {},
+    confidence: assertion.confidence || null,
+  }));
+
+  const promptPayload = {
+    itemNumber,
+    supplierName: supplierName || "",
+    regulationCode: regulationCode || "",
+    descriptions: sanitizedDescriptions,
+    assertions: candidateAssertions,
+  };
+
+  const instructions = `
+You are reviewing supplier compliance statements.
+
+Your task is NOT to decide actual regulatory compliance.
+Your only task is to decide whether the item's description appears to fall within
+the textual scope of one or more supplier statements.
+
+Important rules:
+- Be conservative.
+- Only mark a statement as matched when the item description clearly falls within the statement text.
+- If the statement is broad but ambiguous, prefer "uncertain".
+- Do not infer compliance beyond the textual scope.
+- Ignore supplier name matching because the supplier is already pre-filtered.
+- Return strict JSON only.
+
+JSON schema:
+{
+  "matchedAssertionIds": ["string"],
+  "decision": "match" | "no_match" | "uncertain",
+  "reason": "string"
+}
+`.trim();
+
+  try {
+    const response = await openai.responses.create({
+      model: OPENAI_MODEL,
+      store: false,
+      input: [
+        {
+          role: "system",
+          content: instructions,
+        },
+        {
+          role: "user",
+          content: JSON.stringify(promptPayload),
+        },
+      ],
+      text: {
+        format: {
+          type: "json_schema",
+          name: "assertion_scope_match_result",
+          strict: true,
+          schema: {
+            type: "object",
+            additionalProperties: false,
+            properties: {
+              matchedAssertionIds: {
+                type: "array",
+                items: {
+                  type: "string",
+                },
+              },
+              decision: {
+                type: "string",
+                enum: ["match", "no_match", "uncertain"],
+              },
+              reason: {
+                type: "string",
+              },
+            },
+            required: ["matchedAssertionIds", "decision", "reason"],
+          },
+        },
+      },
+    });
+
+    const rawText = response.output_text || "{}";
+    const parsed = JSON.parse(rawText);
+
+    const validIds = new Set(candidateAssertions.map((item) => item.id));
+    const matchedAssertionIds = toArray(parsed?.matchedAssertionIds)
+      .map((id) => String(id))
+      .filter((id) => validIds.has(id));
+
+    const decision = ["match", "no_match", "uncertain"].includes(parsed?.decision)
+      ? parsed.decision
+      : "uncertain";
+
+    const reason =
+      typeof parsed?.reason === "string" && parsed.reason.trim()
+        ? parsed.reason.trim()
+        : "No reason returned by LLM";
+
+    return {
+      matchedAssertionIds,
+      decision,
+      reason,
+    };
+  } catch (error) {
+    return {
+      matchedAssertionIds: [],
+      decision: "uncertain",
+      reason: `LLM resolver failed: ${error.message}`,
+    };
+  }
 }
 
 function getAssertionPriority(assertionType) {
@@ -154,39 +453,6 @@ export function pickBestAssertion(assertions = []) {
   return sorted[0];
 }
 
-export function collectRelevantSuppliersFromLookupEntry(entry) {
-  const supplierMap = new Map();
-
-  const addSupplier = (supplierName, source, componentMaterial = null) => {
-    const normalizedName = normalizeSupplierName(supplierName);
-    if (!normalizedName) return;
-
-    const key = normalizedName.toLowerCase();
-
-    if (!supplierMap.has(key)) {
-      supplierMap.set(key, {
-        supplierName: normalizedName,
-        sources: [],
-      });
-    }
-
-    const existing = supplierMap.get(key);
-
-    existing.sources.push({
-      source,
-      componentMaterial: componentMaterial ? normalizeItemNumber(componentMaterial) : null,
-    });
-  };
-
-  addSupplier(entry?.supplier, "material");
-
-  toArray(entry?.components).forEach((component) => {
-    addSupplier(component?.supplier, "component", component?.material);
-  });
-
-  return Array.from(supplierMap.values());
-}
-
 export function summarizeSupplierCoverageStatuses(statuses = []) {
   const normalized = statuses.filter(Boolean);
 
@@ -222,7 +488,10 @@ export function summarizeSupplierCoverageStatuses(statuses = []) {
     return "partial";
   }
 
-  if (normalized.includes("informational") && normalized.every((status) => status === "informational")) {
+  if (
+    normalized.includes("informational") &&
+    normalized.every((status) => status === "informational")
+  ) {
     return "informational";
   }
 
@@ -267,7 +536,7 @@ export function buildAssertionPreview(assertion) {
   };
 }
 
-export async function getCoverageForItem({ itemNumber, supplierId }) {
+export async function getCoverageForItem({ itemNumber, supplierId, descriptions = [] }) {
   const normalizedItemNumber = normalizeItemNumber(itemNumber);
 
   if (!normalizedItemNumber) {
@@ -278,7 +547,7 @@ export async function getCoverageForItem({ itemNumber, supplierId }) {
     throw new Error("supplierId is required");
   }
 
-  const [regulations, assertions] = await Promise.all([
+  const [regulations, assertions, supplierDoc] = await Promise.all([
     Regulation.find({ isActive: true }).sort({ code: 1 }),
     ComplianceAssertion.find({
       supplierId,
@@ -286,56 +555,78 @@ export async function getCoverageForItem({ itemNumber, supplierId }) {
     })
       .populate("regulationId", "code name")
       .populate("documentId", "title fileName status issueDate validUntil storage"),
+    Supplier.findById(supplierId).select("_id supplierName supplierCode aliases"),
   ]);
 
-  const matchedAssertions = assertions.filter((assertion) =>
-    doesAssertionMatchItem(assertion, normalizedItemNumber)
-  );
+  const lookupContext = {
+    itemNumber: normalizedItemNumber,
+    descriptions: toArray(descriptions).filter(Boolean),
+  };
 
-  const results = regulations.map((regulation) => {
-    const regulationAssertions = matchedAssertions.filter(
+  const results = [];
+
+  for (const regulation of regulations) {
+    const regulationAssertions = assertions.filter(
       (assertion) =>
         String(assertion?.regulationId?._id || assertion?.regulationId) ===
         String(regulation._id)
     );
 
-    const bestAssertion = pickBestAssertion(regulationAssertions);
+    const resolvedMatches = regulationAssertions.map((assertion) => ({
+      assertion,
+      resolution: resolveAssertionMatch(assertion, lookupContext),
+    }));
+
+    const strictMatchedAssertions = resolvedMatches
+      .filter((entry) => entry.resolution.matched)
+      .map((entry) => entry.assertion);
+
+    const llmCandidateAssertions = resolvedMatches
+      .filter((entry) => entry.resolution.requiresLlm)
+      .map((entry) => entry.assertion);
+
+    let finalMatchedAssertions = [...strictMatchedAssertions];
+    let llmReview = null;
+
+    if (
+      finalMatchedAssertions.length === 0 &&
+      llmCandidateAssertions.length > 0 &&
+      lookupContext.descriptions.length > 0
+    ) {
+      llmReview = await resolveAssertionsWithLlm({
+        assertions: llmCandidateAssertions,
+        itemNumber: normalizedItemNumber,
+        descriptions: lookupContext.descriptions,
+        supplierName: supplierDoc?.supplierName,
+        regulationCode: regulation.code,
+      });
+
+      const llmMatchedIds = new Set(
+        toArray(llmReview?.matchedAssertionIds).map((id) => String(id))
+      );
+
+      finalMatchedAssertions = llmCandidateAssertions.filter((assertion) =>
+        llmMatchedIds.has(String(assertion._id))
+      );
+    }
+
+    const bestAssertion = pickBestAssertion(finalMatchedAssertions);
     const coverageStatus = mapAssertionToCoverageStatus(bestAssertion);
 
-    return {
+    results.push({
       regulation: {
         _id: regulation._id,
         code: regulation.code,
         name: regulation.name,
       },
       coverageStatus,
-      matchedAssertionsCount: regulationAssertions.length,
-      bestAssertion: bestAssertion
-        ? {
-            _id: bestAssertion._id,
-            assertionType: bestAssertion.assertionType,
-            coverageLevel: bestAssertion.coverageLevel,
-            statementText: bestAssertion.statementText,
-            issueDate: bestAssertion.issueDate,
-            validUntil: bestAssertion.validUntil,
-            status: bestAssertion.status,
-            confidence: bestAssertion.confidence,
-            scope: bestAssertion.scope,
-            document: bestAssertion.documentId
-              ? {
-                  _id: bestAssertion.documentId._id,
-                  title: bestAssertion.documentId.title,
-                  fileName: bestAssertion.documentId.fileName,
-                  status: bestAssertion.documentId.status,
-                  issueDate: bestAssertion.documentId.issueDate,
-                  validUntil: bestAssertion.documentId.validUntil,
-                  storage: bestAssertion.documentId.storage,
-                }
-              : null,
-          }
-        : null,
-    };
-  });
+      matchedAssertionsCount: finalMatchedAssertions.length,
+      bestAssertion: buildAssertionPreview(bestAssertion),
+      matchSource: bestAssertion ? (llmReview ? "llm" : "scope") : "none",
+      matchReason: llmReview?.reason || null,
+      llmUsed: Boolean(llmReview),
+    });
+  }
 
   return {
     itemNumber: normalizedItemNumber,
@@ -350,7 +641,6 @@ export async function getCoverageForItem({ itemNumber, supplierId }) {
     results,
   };
 }
-
 
 export async function getCoverageForLookupResults({
   lookupResults = [],
@@ -386,41 +676,45 @@ export async function getCoverageForLookupResults({
     ),
   ];
 
-const [regulations, suppliers] = await Promise.all([
-  Regulation.find({
-    isActive: true,
-    code: { $in: normalizedRequestedCodes },
-  }).sort({ code: 1 }),
-  Supplier.find({}).select("_id supplierName supplierCode aliases"),
-]);
+  const [regulations, suppliers] = await Promise.all([
+    Regulation.find({
+      isActive: true,
+      code: { $in: normalizedRequestedCodes },
+    }).sort({ code: 1 }),
+    Supplier.find({}).select("_id supplierName supplierCode aliases"),
+  ]);
 
-const regulationByCode = new Map(
-  regulations.map((regulation) => [normalizeRegulationCode(regulation.code), regulation])
-);
+  const regulationByCode = new Map(
+    regulations.map((regulation) => [normalizeRegulationCode(regulation.code), regulation])
+  );
 
-const requestedRegulations = normalizedRequestedCodes
-  .map((code) => regulationByCode.get(code))
-  .filter(Boolean);
-
-const supplierLookupMap = new Map();
-
-suppliers.forEach((supplier) => {
-  const keys = [
-    supplier.supplierName,
-    supplier.supplierCode,
-    ...(Array.isArray(supplier.aliases) ? supplier.aliases : []),
-  ]
-    .map((value) => normalizeSupplierName(value).toLowerCase())
+  const requestedRegulations = normalizedRequestedCodes
+    .map((code) => regulationByCode.get(code))
     .filter(Boolean);
 
-  keys.forEach((key) => {
-    if (!supplierLookupMap.has(key)) {
-      supplierLookupMap.set(key, supplier);
-    }
-  });
-});
+  const supplierLookupMap = new Map();
 
-  const supplierIds = suppliers.map((supplier) => supplier._id);
+  suppliers.forEach((supplier) => {
+    const keys = [
+      supplier.supplierName,
+      supplier.supplierCode,
+      ...(Array.isArray(supplier.aliases) ? supplier.aliases : []),
+    ]
+      .map((value) => normalizeSupplierName(value).toLowerCase())
+      .filter(Boolean);
+
+    keys.forEach((key) => {
+      if (!supplierLookupMap.has(key)) {
+        supplierLookupMap.set(key, supplier);
+      }
+    });
+  });
+
+  const matchedSupplierDocs = uniqueSupplierNames
+    .map((name) => supplierLookupMap.get(normalizeSupplierName(name).toLowerCase()))
+    .filter(Boolean);
+
+  const supplierIds = [...new Set(matchedSupplierDocs.map((supplier) => String(supplier._id)))];
   const regulationIds = requestedRegulations.map((regulation) => regulation._id);
 
   const assertions =
@@ -448,47 +742,105 @@ suppliers.forEach((supplier) => {
     assertionsBySupplierAndRegulation.get(key).push(assertion);
   });
 
-  const byMaterial = normalizedResults.map((result) => {
+  const byMaterial = [];
+
+  for (const result of normalizedResults) {
     const relevantSuppliers = collectRelevantSuppliersFromLookupResult(result);
     const itemNumber = normalizeItemNumber(result.material);
 
-    const regulationsForMaterial = requestedRegulations.map((regulation) => {
-      const supplierResults = relevantSuppliers.map((supplierInfo) => {
-const supplierDoc = supplierLookupMap.get(
-  normalizeSupplierName(supplierInfo.supplierName).toLowerCase()
-);
+    const materialDescriptions = [
+      ...toArray(result?.matches).map((entry) => entry?.description),
+      ...toArray(result?.components).flatMap((component) => toArray(component?.descriptions)),
+    ].filter(Boolean);
+
+    const lookupContext = {
+      itemNumber,
+      descriptions: materialDescriptions,
+    };
+
+    const regulationsForMaterial = [];
+
+    for (const regulation of requestedRegulations) {
+      const supplierResults = [];
+
+      for (const supplierInfo of relevantSuppliers) {
+        const supplierDoc = supplierLookupMap.get(
+          normalizeSupplierName(supplierInfo.supplierName).toLowerCase()
+        );
 
         if (!supplierDoc) {
-          return {
+          supplierResults.push({
             supplierName: supplierInfo.supplierName,
             supplierId: null,
+            supplierCode: null,
             sources: supplierInfo.sources,
             coverageStatus: "missing",
             matchedAssertionsCount: 0,
             bestAssertion: null,
-          };
+            matchSource: "none",
+            matchReason: "Supplier not found in Supplier collection",
+            llmUsed: false,
+          });
+          continue;
         }
 
         const key = `${String(supplierDoc._id)}::${String(regulation._id)}`;
         const rawAssertions = assertionsBySupplierAndRegulation.get(key) || [];
 
-        const matchedAssertions = rawAssertions.filter((assertion) =>
-          doesAssertionMatchItem(assertion, itemNumber)
-        );
+        const resolvedMatches = rawAssertions.map((assertion) => ({
+          assertion,
+          resolution: resolveAssertionMatch(assertion, lookupContext),
+        }));
 
-        const bestAssertion = pickBestAssertion(matchedAssertions);
+        const strictMatchedAssertions = resolvedMatches
+          .filter((entry) => entry.resolution.matched)
+          .map((entry) => entry.assertion);
+
+        const llmCandidateAssertions = resolvedMatches
+          .filter((entry) => entry.resolution.requiresLlm)
+          .map((entry) => entry.assertion);
+
+        let finalMatchedAssertions = [...strictMatchedAssertions];
+        let llmReview = null;
+
+        if (
+          finalMatchedAssertions.length === 0 &&
+          llmCandidateAssertions.length > 0 &&
+          materialDescriptions.length > 0
+        ) {
+          llmReview = await resolveAssertionsWithLlm({
+            assertions: llmCandidateAssertions,
+            itemNumber,
+            descriptions: materialDescriptions,
+            supplierName: supplierDoc.supplierName,
+            regulationCode: regulation.code,
+          });
+
+          const llmMatchedIds = new Set(
+            toArray(llmReview?.matchedAssertionIds).map((id) => String(id))
+          );
+
+          finalMatchedAssertions = llmCandidateAssertions.filter((assertion) =>
+            llmMatchedIds.has(String(assertion._id))
+          );
+        }
+
+        const bestAssertion = pickBestAssertion(finalMatchedAssertions);
         const coverageStatus = mapAssertionToCoverageStatus(bestAssertion);
 
-return {
-  supplierName: supplierDoc.supplierName,
-  supplierCode: supplierDoc.supplierCode || null,
-  supplierId: supplierDoc._id,
-  sources: supplierInfo.sources,
-  coverageStatus,
-  matchedAssertionsCount: matchedAssertions.length,
-  bestAssertion: buildAssertionPreview(bestAssertion),
-};
-      });
+        supplierResults.push({
+          supplierName: supplierDoc.supplierName,
+          supplierCode: supplierDoc.supplierCode || null,
+          supplierId: supplierDoc._id,
+          sources: supplierInfo.sources,
+          coverageStatus,
+          matchedAssertionsCount: finalMatchedAssertions.length,
+          bestAssertion: buildAssertionPreview(bestAssertion),
+          matchSource: bestAssertion ? (llmReview ? "llm" : "scope") : "none",
+          matchReason: llmReview?.reason || null,
+          llmUsed: Boolean(llmReview),
+        });
+      }
 
       const coveredSuppliers = supplierResults
         .filter((entry) => entry.coverageStatus === "covered")
@@ -518,7 +870,7 @@ return {
         supplierResults.map((entry) => entry.coverageStatus)
       );
 
-      return {
+      regulationsForMaterial.push({
         regulation: {
           _id: regulation._id,
           code: regulation.code,
@@ -532,17 +884,17 @@ return {
         nonCompliantSuppliers,
         missingSuppliers,
         supplierResults,
-      };
-    });
+      });
+    }
 
-    return {
+    byMaterial.push({
       query: result.query,
       normalizedQuery: result.normalizedQuery,
       material: itemNumber,
       suppliers: relevantSuppliers.map((entry) => entry.supplierName),
       regulations: regulationsForMaterial,
-    };
-  });
+    });
+  }
 
   const summary = {};
 
