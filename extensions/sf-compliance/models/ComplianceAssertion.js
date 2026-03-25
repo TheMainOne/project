@@ -39,21 +39,22 @@ const complianceAssertionSchema = new Schema(
       index: true,
     },
 
-    coverageLevel: {
-      type: String,
-      enum: [
-        "supplier_all",
-        "supplier_partial",
-        "item_single",
-        "item_list",
-        "material_family",
-        "component_family",
-        "country_specific",
-        "plant_specific",
-      ],
-      required: true,
-      index: true,
-    },
+coverageLevel: {
+  type: String,
+  enum: [
+    "supplier_all",
+    "supplier_partial",
+    "supplier_subset",
+    "item_single",
+    "item_list",
+    "material_family",
+    "component_family",
+    "country_specific",
+    "plant_specific",
+  ],
+  required: true,
+  index: true,
+},
 
     scope: {
       allSupplierItems: {
