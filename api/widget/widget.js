@@ -19,6 +19,7 @@ import {
   detectLangFromText,        
 } from "../../services/rag/queryRewrite.js";
 import { buildPrompt } from '../../services/rag/buildPrompt.js';
+import { processMessage } from "../../services/aiw/core.js";
 import fs from "fs";
 import path from "path";
 
@@ -1259,7 +1260,6 @@ async function logAssistantMessage({
 // === Headers helpers (NEW) ===
 
 function setSSEHeaders(req, res) {
-  // если заголовки уже ушли — ничего не делаем
   if (res.headersSent) return;
 
   res.setHeader("Access-Control-Allow-Origin", req.headers.origin || "*");
@@ -1269,6 +1269,14 @@ function setSSEHeaders(req, res) {
   res.setHeader("Connection", "keep-alive");
   res.setHeader("X-Accel-Buffering", "no");
   res.flushHeaders?.();
+
+  // Disable response buffering (critical for SSE on Node/Express)
+  if (typeof res.socket?.setNoDelay === "function") {
+    res.socket.setNoDelay(true);
+  }
+  if (typeof res.flush === "function") {
+    res.flush();
+  }
 }
 
 function setJSONHeaders(req, res) {
@@ -1376,1109 +1384,136 @@ router.use((req, res, next) => {
 });
 // ============ Маршрут /chat ============
 router.post("/chat", async (req, res) => {
-  const started = Date.now();
-  const T = makeTimer(req);
-T.mark("entered"); // t=0
-  let timing = {};
-  let dbMark = "user:- assistant:-";
-  let phase = "unknown";
-    let siteId = "unknown-site";
-      let sessionId = "unknown-session";
-  let visitorId = null;
+  const { messages = [], stream, meta = {} } = req.body || {};
 
+  // Extract identity from HTTP headers/body
+  const identity = {
+    siteId: req.header("x-aiw-site") || meta.siteId || req.body?.siteId || null,
+    sessionId: req.header("x-aiw-session") || meta.sessionId || req.body?.sessionId || null,
+    visitorId: req.header("x-aiw-visitor") || meta.visitorId || null,
+    clientId: req.header("x-aiw-client") || meta.clientId || req.body?.clientId || null,
+    clientSlug: req.header("x-aiw-client-slug") || meta.clientSlug || req.body?.clientSlug || null,
+    origin: req.headers.origin || req.headers.referer || null,
+  };
+
+  const requestContext = {
+    ip: getIp(req),
+    userAgent: req.headers["user-agent"] || "",
+  };
+
+let clientClosed = false;
+res.on("close", () => {
+  console.log("[AIW][SSE] res close event fired");
+  clientClosed = true;
+});
+
+  // Expose debug headers to browser
+  const expose = [
+    "X-AIW-Build","X-AIW-Source","X-AIW-Citations-Count",
+    "X-AIW-Handler","X-AIW-Resolved-Site","X-AIW-Resolved-Session",
+    "X-AIW-Phase","X-AIW-DB","X-AIW-Timing","X-AIW-Good-Answer","X-AIW-Client",
+    "X-AIW-WidgetCfg","X-AIW-Contexts","X-AIW-Reply-Lang",
+    "X-AIW-Detected-Lang","X-AIW-Lang-Reason","X-AIW-Retrieve-Mode"
+  ].join(", ");
+  const existingExpose = res.getHeader("Access-Control-Expose-Headers");
+  res.setHeader("Access-Control-Expose-Headers", existingExpose ? (existingExpose + ", " + expose) : expose);
+  res.setHeader("X-AIW-Handler", "aiwChat/chat");
+
+  let heartbeatInterval = null;
 
   try {
-    // ====== Базовые заголовки/метки для дебага ======
-    res.setHeader("X-AIW-Handler", "aiwChat/chat");
-
-    // Разрешим браузеру видеть все наши debug-заголовки
-    const expose = [
-      "X-AIW-Build","X-AIW-Source","X-AIW-Citations-Count",
-      "X-AIW-Handler","X-AIW-Resolved-Site","X-AIW-Resolved-Session",
-      "X-AIW-Phase","X-AIW-DB","X-AIW-Timing","X-AIW-Good-Answer","X-AIW-Client",
-       "X-AIW-WidgetCfg",
-         "X-AIW-Contexts",   
-         "X-AIW-Reply-Lang",
-"X-AIW-Detected-Lang",
-"X-AIW-Lang-Reason",        
-  "X-AIW-Retrieve-Mode"       
-    ].join(", ");
-    const existingExpose = res.getHeader("Access-Control-Expose-Headers");
-    res.setHeader(
-      "Access-Control-Expose-Headers",
-      existingExpose ? (existingExpose + ", " + expose) : expose
-    );
-
-    // ====== Чтение входа (как в твоём коде) ======
-let { messages = [], stream, meta = {} } = req.body || {};
-//          ^^^^^  ← убрали дефолт true здесь
-
-const allowedRoles = new Set(["system", "user", "assistant"]);
-const safeMsgs = (Array.isArray(messages) ? messages : [])
-  .filter((m) => m && allowedRoles.has(m.role) && typeof m.content === "string")
-  .map((m) => ({ role: m.role, content: m.content.slice(0, 4000) }))
-  .slice(-30);
-
-({ siteId, sessionId, visitorId } = resolveIds(req, meta));
-
-const lastUserMsg = [...safeMsgs].reverse().find(m => m.role === "user") || null;
-const rawQueryEarly = (lastUserMsg?.content || "").trim();
-const langEarly = detectLangFromText(rawQueryEarly, meta.lang || "ru");
-
-
-const clientId = await T.wrap("resolveClientIdStrict", () => resolveClientIdStrict(req, meta, siteId));
-if (clientId) res.setHeader("X-AIW-Client", String(clientId));
-const cfg = await T.wrap("getWidgetConfigCached", () => getWidgetConfigCached({ clientId, siteId }));
-
-// 👇 НОВОЕ: приоритет за cfg.stream
-if (cfg && typeof cfg.stream === "boolean") {
-  stream = cfg.stream;
-} else if (typeof stream !== "boolean") {
-  // если фронт ничего не прислал — по умолчанию true
-  stream = true;
-}
-
-if (cfg?._id) res.setHeader("X-AIW-WidgetCfg", String(cfg._id));
-
-
-    res.setHeader("X-AIW-Resolved-Site", siteId);
-    res.setHeader("X-AIW-Resolved-Session", sessionId || "(empty)");
-
-// (TEMP) intent/followup/query vars будут выставлены после prepareQueryForRag (pq)
-let intentTypes = [];
-let intentLabel = null;
-
-let query = "";
-let ragQuery = "";
-let llmQuery = "";
-
-let isFollowUp = false;
-
-const metaAll = {
-  siteId,
-  sessionId,
-  visitorId,
-  clientId,    
-  pageUrl: meta.pageUrl || meta.referrer || req.headers.referer || null,
-  referrer: meta.referrer || null,
-  utm: meta.utm || {},
-  tz: meta.tz || null,
- lang: langEarly,
-};
-
-    // ====== ensureSession ======
-    const tEnsure = Date.now();
-    await ensureSession(metaAll, req);
-// ====== replyLang resolve (NEW) ======
-timing.ensure = Date.now() - tEnsure;
-T.mark("ensureSession");
-
-// читаем сессию (после ensure)
-const sessionDoc = await AiwSession.findOne({ sessionId })
-  .select("replyLang langStreak lastDetectedLang lang replyLangUpdatedAt")
-  .lean();
-
-const uiLang = normalizeLang(meta.lang || sessionDoc?.lang || langEarly || "ru");
-const currentReplyLang = normalizeLang(sessionDoc?.replyLang || uiLang || "ru");
-
-// ====== prepareQueryForRag (ВАЖНО: раньше intent/followup и раньше replyLang hysteresis) ======
-const pq = await T.wrap("prepareQueryForRag", () => prepareQueryForRag({  messages: safeMsgs,
-  metaLang: uiLang,
-  currentReplyLang,
-  oai,
-  rewriteModel: "gpt-4o-mini",
-  maxHistory: MAX_HISTORY_FOR_LLM }));
-
-
-const {
-  rawQuery,
-  ragQuery: initialRagQuery,
-  llmQuery: initialLlmQuery,
-  lang,
-  detectedUserLang,
-  lastAssistant,
-  complex,
-  followup,
-  shouldSwitchLang,
-  switchToLang,
-  switchConfidence,
-  switchEvidence,
-  switchReason,
-} = pq;
-
-// выставляем query/ragQuery/llmQuery (теперь они точно есть)
-query = rawQuery;
-ragQuery = initialRagQuery;
-llmQuery = initialLlmQuery;
-
-// intent теперь можно считать безопасно
-({ intentTypes, intentLabel } = classifyRagIntent(rawQuery, lang));
-if (intentLabel) res.setHeader("X-AIW-Intent", intentLabel);
-
-// follow-up приходит из prepareQueryForRag (LLM judge + fallback)
-isFollowUp = pq.followup?.isFollowUpForRetrieval === true;
-
-// полезно для дебага (опционально)
-console.log("[AIW][followup]", {
-  rawQuery,
-  lastAssistant: !!lastAssistant,
-  isFollowUp,
-  kind: followup?.kind,
-  confidence: followup?.confidence,
-  reason: followup?.reason,
-});
-
-// // ====== replyLang logic (anti short-switch, any language) ======
-// const detectedNow0 = normalizeLang(detectedUserLang || uiLang, uiLang);
-
-// let replyLangThisTurn = detectedNow0;
-// let persistReplyLang  = detectedNow0;
-
-// let langReasonFinal = "detected";
-
-// // ✅ универсально: короткие “значения” не должны переключать язык диалога
-// if (shouldSuppressLangSwitchOnShortAnswer({
-//   rawQuery,
-//   currentReplyLang,
-//   detectedNow: detectedNow0,
-//   lastAssistant,
-// })) {
-//   replyLangThisTurn = currentReplyLang;
-//   persistReplyLang  = currentReplyLang;
-//   langReasonFinal   = "short_entity_followup";
-// }
-
-// res.setHeader("X-AIW-Reply-Lang", replyLangThisTurn);
-// res.setHeader("X-AIW-Persist-Reply-Lang", persistReplyLang);
-// res.setHeader("X-AIW-Detected-Lang", detectedNow0);
-// res.setHeader("X-AIW-Lang-Reason", langReasonFinal);
-// res.setHeader("X-AIW-Soft-Override", String(langReasonFinal !== "detected"));
-
-// ====== replyLang logic (apply switch + anti short-switch + clamp weak-evidence) ======
-const detectedNow0 = normalizeLang(detectedUserLang || uiLang, uiLang);
-
-let replyLangThisTurn = detectedNow0;
-let persistReplyLang  = detectedNow0;
-let langReasonFinal   = "detected";
-
-// 0) CLAMP: если switch слабый — не применяем
-const LOW_SWITCH_CONF = Number(process.env.AIW_LANG_SWITCH_MIN_CONF || 0.8);
-const confNum = Number(switchConfidence ?? 0) || 0;
-
-let applySwitch = Boolean(shouldSwitchLang && switchToLang);
-
-if (applySwitch && (switchReason === "weak-evidence") && confNum < LOW_SWITCH_CONF) {
-  applySwitch = false;
-  langReasonFinal = "weak-evidence_clamped";
-}
-
-// 1) если switch реально применяем — применяем
-if (applySwitch) {
-  const target = normalizeLang(switchToLang, detectedNow0);
-  replyLangThisTurn = target;
-  persistReplyLang  = target;
-  langReasonFinal   = switchReason || "switch";
-}
-
-// 2) короткие “значения” не должны переключать язык
-// ВАЖНО: проверяем !applySwitch (а не !shouldSwitchLang),
-// чтобы подавление сработало, когда мы "зажали" слабый switch
-if (!applySwitch && shouldSuppressLangSwitchOnShortAnswer({
-  rawQuery,
-  currentReplyLang,
-  detectedNow: detectedNow0,
-  lastAssistant,
-})) {
-  replyLangThisTurn = currentReplyLang;
-  persistReplyLang  = currentReplyLang;
-  langReasonFinal   = "short_entity_followup";
-}
-
-res.setHeader("X-AIW-Reply-Lang", replyLangThisTurn);
-res.setHeader("X-AIW-Persist-Reply-Lang", persistReplyLang);
-res.setHeader("X-AIW-Detected-Lang", detectedNow0);
-res.setHeader("X-AIW-Lang-Reason", langReasonFinal);
-res.setHeader("X-AIW-Soft-Override", String(langReasonFinal !== "detected"));
-
-// persist (async)
-defer(() => AiwSession.updateOne(
-  { sessionId },
-  {
-    $set: {
-      replyLang: persistReplyLang,
-      lastDetectedLang: detectedNow0,
-      langStreak: 0,
-      replyLangUpdatedAt: new Date(),
-    },
-  }
-));
-
-    // ====== logUserMessage ======
-if (query) {
-  deferTimed(T, "logUserMessage", () =>
-    logUserMessage({ siteId, sessionId, content: query, clientId })
-  );
-
-  // метка, что мы ушли в async
-  T.mark("logUserMessage_deferred_at_ms");
-  dbMark = "user:~ assistant:-";
-}
-
-    if (!query) {
-      phase = "empty";
-      res.setHeader("X-AIW-Phase", phase);
-      res.setHeader("X-AIW-DB", dbMark);
-      const timings = T.get();
-// добавим производные: buildPromptDur, llmWait, ttfb (time-to-first-byte), firstChunk
-const derived = {
-  buildPromptDur: (timings.buildPrompt ?? 0) - (timings.prePrompt ?? 0),
-  llmWait: (timings.afterLLM ?? 0) - (timings.beforeLLM ?? 0),
-  ttfb: timings.firstByteToClient ?? undefined,
-  firstChunk: (timings.firstChunkFlushed ?? 0) - (timings.firstByteToClient ?? 0),
-};
-
-res.setHeader("X-AIW-Timing", JSON.stringify({
-  ...timing,          // твои старые поля для совместимости
-  ...timings,         // подробные метки
-  ...derived,
-  total: timings.total
-}));
-
-// опционально красивый серверный лог
-console.log("[AIW][timings]", JSON.stringify({
-  siteId, sessionId, phase,
-  timings: { ...timings, ...derived }
-}));
-
-      if (!stream) {
-        setJSONHeaders(req, res);
-        return sendJSON(req, res, {
-          reply: replyLangThisTurn.startsWith("ru") ? "Пустой вопрос" : "Empty question",
-          source: "empty",
-          citations: []
-        });
-      } else {
-        setSSEHeaders(req, res);
-        res.write(`data:${sseEncode(replyLangThisTurn.startsWith("ru") ? "Пустой вопрос" : "Empty question")}\n\n`);
-        res.write("data: [DONE]\n\n");
-        return res.end();
-      }
-    }
-
-
-const skipRetrieve = (followup?.kind === "contact");
-
-// ====== RAG retrieve (HYBRID) ======
-let retrieveRes = { contexts: [] };
-
-if (skipRetrieve) {
-  // contact turn: don't waste retrieval
-  res.setHeader("X-AIW-Retrieve-Mode", "skip-contact");
-  retrieveRes = { contexts: [] };
-} else {
-  retrieveRes = await T.wrap("retrieve", async () => {
-    try {
-      const kDefault = Number(process.env.AIW_KCLIENT || 12);
-      const kFollow  = Number(process.env.AIW_KCLIENT_FOLLOWUP || 8);
-
-      const k = isFollowUp ? kFollow : kDefault;
-
-      const r = await retrieveHybrid({
-        clientId,
-        siteId,
-        query: ragQuery,
-        intentTypes,
-        k,
-      });
-
-      console.log("[RAG][retrieve] q=", ragQuery);
-      console.log("[RAG][retrieve] got=", r?.contexts?.length || 0);
-
-      const modeBase = isFollowUp ? "hybrid-followup" : "hybrid";
-      res.setHeader(
-        "X-AIW-Retrieve-Mode",
-        r?.contexts?.length ? modeBase : `${modeBase}-empty`
-      );
-
-      return r || { contexts: [] };
-    } catch (e) {
-      console.warn("[retrieveHybrid]", e?.message || e);
-      res.setHeader("X-AIW-Retrieve-Mode", isFollowUp ? "hybrid-followup-error" : "hybrid-error");
-      return { contexts: [] };
-    }
-  });
-}
-
-const contexts = retrieveRes.contexts || [];
-
-res.setHeader("X-AIW-Contexts", String(contexts.length));
-console.log("[AIW] contexts:", contexts.length);
-timing.retrieve = T.get().retrieve;
-
-
-// ====== Нет контекста ======
-if (!contexts.length) {
-  phase = skipRetrieve ? "contact" : "no-context";
-  res.setHeader("X-AIW-Phase", phase);
-  setSourceHeaders(res, skipRetrieve ? "contact-llm" : "no-context-llm", []);
-
-  let reply = "";
-  let usageInput  = null;
-  let usageOutput = null;
-  let usageTotal  = null;
-
-  console.log("[LANG][final_decision]", {
-  rawQuery,
-  uiLang,
-  currentReplyLang,
-  detectedUserLang,
-  detectedNow0,
-  shouldSwitchLang,
-  switchToLang,
-  switchConfidence,
-  replyLangThisTurn,
-  persistReplyLang,
-  langReasonFinal,
-});
-  const sys = pickSystemPrompt(cfg, replyLangThisTurn, complex);
-
-  // хвост диалога
-  const dialogTail = safeMsgs
-    .filter(m => m.role === "user" || m.role === "assistant")
-    .slice(-MAX_HISTORY_FOR_LLM);
-
-  // гарантируем, что последний месседж – актуальный вопрос пользователя
-  const lastIsUser = dialogTail.length && dialogTail[dialogTail.length - 1].role === "user";
-
-let messagesForLLM = [
-  { role: "system", content: sys },
-  { role: "system", content: skipRetrieve ? CONTACT_META_CONTRACT : NOCTX_META_CONTRACT },
-  { role: "system", content: `IMPORTANT: You MUST answer ONLY in ${replyLangThisTurn}.` },
-  ...dialogTail,
-];
-
-
-  if (!lastIsUser || (dialogTail[dialogTail.length - 1].content || "").trim() !== llmQuery.trim()) {
-    messagesForLLM.push({ role: "user", content: llmQuery });
-  }
-        
-  dumpPromptIfDebug({
-  label: skipRetrieve ? "contact_noctx" : "no_context",
-  messages: messagesForLLM,
-  req,
-  extra: {
-    phase,
-    siteId,
-    sessionId,
-    clientId: clientId ? String(clientId) : null,
-    skipRetrieve: !!skipRetrieve,
-    isFollowUp: !!isFollowUp,
-    intentLabel: intentLabel || null,
-    replyLangThisTurn,
-    detectedNow0,
-    langReasonFinal,
-  }
-});
-
-  logLLMMessages("no-context", messagesForLLM);
-
-  console.log("[AIW][no-context] rawQuery:", rawQuery);
-  console.log("[AIW][no-context] llmQuery(head):", llmQuery.slice(0, 200).replace(/\n/g, "\\n"));
-
-const quickNoCtx = quickFlag({ phase, contexts: [], reply: "" });
-res.setHeader("X-AIW-Good-Answer", String(quickNoCtx.goodAnswer));
-
-  // ====== STREAM MODE ======
-  if (stream) {
-    setSSEHeaders(req, res);
-    res.write(": heartbeat\n\n");
-    T.mark("firstByteToClient");
-
-    let clientClosed = false;
-    req.on("close", () => { clientClosed = true; });
-    req.on("aborted", () => { clientClosed = true; });
-
-    let buffer = "";       // финальный видимый ответ (без meta)
-let fullBuffer = "";   // полный текст от LLM (включая meta)
-let outBuffer = "";    // что реально отдали пользователю
-let hold = "";         // хвост, чтобы ловить [AIW_META] между чанками
-let metaStarted = false;
-let usage = null;
-let metaNorm = null;
-let metaParsed = null;
-
-    if (!oai) {
-      const demo = replyLangThisTurn.startsWith("ru")
-        ? "Демо-ответ (нет OPENAI_API_KEY)."
-        : "Demo reply (no OPENAI_API_KEY).";
-
-      buffer = demo;
-      const CH = 24;
-      for (let i = 0; i < demo.length && !clientClosed; i += CH) {
-        res.write(`data:${sseEncode(demo.slice(i, i + CH))}\n\n`);
-      }
-    } else {
-      try {
-        T.mark("beforeLLM");
-
-        const completion = await oai.chat.completions.create({
-          model: MODEL,
-          messages: messagesForLLM,
-          stream: true,
-          stream_options: { include_usage: true },
-          ...COMPLETION_OPTS,
-        });
-
-       let firstTokenMarked = false;
-let firstChunkFlushedMarked = false;
-
-for await (const chunk of completion) {
-  if (chunk.usage) {
-    usage = {
-      input:  chunk.usage.prompt_tokens ?? chunk.usage.input_tokens,
-      output: chunk.usage.completion_tokens ?? chunk.usage.output_tokens,
-      total:  chunk.usage.total_tokens,
-    };
-  }
-
-  const piece = chunk.choices?.[0]?.delta?.content || "";
-  if (!piece) continue; // ✅ не отмечаем токен на пустых чанках
-
-  if (!firstTokenMarked) { // ✅ первый токен только когда реально пришёл текст
-    firstTokenMarked = true;
-    T.mark("firstLLMToken");
-  }
-
-  fullBuffer += piece;
-
-  if (metaStarted) continue;
-
-  hold += piece;
-
-  const idx = hold.indexOf(AIW_META_TAG);
-  if (idx !== -1) {
-    const before = hold.slice(0, idx);
-    if (before) {
-      outBuffer += before;
-      if (!clientClosed) {
-        res.write(`data:${sseEncode(before)}\n\n`);
-        if (!firstChunkFlushedMarked) { // ✅ первый флаш в SSE
-          firstChunkFlushedMarked = true;
-          T.mark("firstChunkFlushed");
-        }
-      }
-    }
-    metaStarted = true;
-    hold = "";
-    continue;
-  }
-
-  const HOLD_N = 64;
-  if (hold.length > HOLD_N) {
-    const flush = hold.slice(0, hold.length - HOLD_N);
-    hold = hold.slice(hold.length - HOLD_N);
-
-    outBuffer += flush;
-    if (!clientClosed) {
-      res.write(`data:${sseEncode(flush)}\n\n`);
-      if (!firstChunkFlushedMarked) {
-        firstChunkFlushedMarked = true;
-        T.mark("firstChunkFlushed");
-      }
-    }
-  }
-}
-
-// финальный хвост (если meta не встретили)
-if (!metaStarted && hold) {
-  const tail = String(hold).replace(/\s+$/g, "");
-  outBuffer += tail;
-  if (!clientClosed && tail) {
-    res.write(`data:${sseEncode(tail)}\n\n`);
-    if (!firstChunkFlushedMarked) {
-      firstChunkFlushedMarked = true;
-      T.mark("firstChunkFlushed");
-    }
-  }
-}
-
-T.mark("afterLLM"); 
-logMetaPresence("no-context-stream", fullBuffer);
-
-const { meta } = extractAiwMeta(fullBuffer);
-metaParsed = normalizeMeta(meta);
-
-
-// финальный видимый ответ (без meta)
-buffer = (outBuffer || "").trim();
-
-        if (usage) {
-          console.log("[AIW][tokens][no-context-stream]", { model: MODEL, ...usage });
-        }
-      } catch (e) {
-        const msg = `⚠️ ${e?.message || "LLM error"}`;
-        buffer = msg;
-        if (!clientClosed) res.write(`data:${sseEncode(msg)}\n\n`);
-      }
-    }
-
-    // финальный текст
-    reply = (buffer || "").trim();
-    if (!reply) reply = defaultNoContextReply(replyLangThisTurn, cfg);
-
-    const metaOps = scheduleMetaOps({
-      metaNorm: metaParsed,
-      reply,
-      userText: query,
-      contexts: [],
-      phase,
-      siteId,
-      sessionId,
-      visitorId,
-      clientId,
-      replyLang: replyLangThisTurn,
-      T,
-    });
-    metaNorm = metaOps.metaNorm;
-
-    if (!metaParsed) {
-      console.log("[AIW][AIW_META][fallback]", metaNorm);
-    } else {
-      console.log("[AIW][AIW_META][norm]", metaNorm);
-    }
-
-    // usage → отдельные переменные
-    usageInput  = usage?.input  ?? null;
-    usageOutput = usage?.output ?? null;
-    usageTotal  = usage?.total  ?? null;
-
-    const costUsd = estimateCostUsd(MODEL, usageInput, usageOutput);
-
-await logAssistantMessage({
-  siteId,
-  sessionId,
-  content: reply,
-  latencyMs: Date.now() - started,
-  clientId,
-  tokensInput: usageInput,
-  tokensOutput: usageOutput,
-  tokensTotal: usageTotal,
-  costUsd,
-});
-
-
-    if (!clientClosed) {
-      res.write("data: [DONE]\n\n");
-      return res.end();
-    }
-    return; // если клиент закрыл — просто выходим
-  }
-
-  // ====== JSON MODE (как было) ======
-  // (оставляем не-stream completion)
-  let metaParsed = null;
-  if (oai) {
-    try {
-      const r = await oai.chat.completions.create({
-        model: MODEL,
-        messages: messagesForLLM,
-        ...COMPLETION_OPTS,
-      });
-
-      if (r.usage) {
-        usageInput  = r.usage.prompt_tokens     ?? r.usage.input_tokens;
-        usageOutput = r.usage.completion_tokens ?? r.usage.output_tokens;
-        usageTotal  = r.usage.total_tokens;
-
-        console.log("[AIW][tokens][no-context-json]", {
-          model: MODEL,
-          input: usageInput,
-          output: usageOutput,
-          total: usageTotal,
-        });
-      }
-
-const raw = (r.choices?.[0]?.message?.content || "");
-logMetaPresence("no-context-json", raw);
-
-const { answerText, meta } = extractAiwMeta(raw);
-metaParsed = normalizeMeta(meta);
-
-reply = (answerText || "").trim();
-if (!reply) reply = defaultNoContextReply(replyLangThisTurn, cfg);
-    } catch (e) {
-      console.error("[AIW] no-context LLM error:", e?.message || e);
-      reply = defaultNoContextReply(replyLangThisTurn, cfg);
-    }
-  } else {
-    reply = replyLangThisTurn.startsWith("ru")
-      ? "Демо-ответ (нет OPENAI_API_KEY)."
-      : "Demo reply (no OPENAI_API_KEY).";
-  }
-
-  scheduleMetaOps({
-    metaNorm: metaParsed,
-    reply,
-    userText: query,
-    contexts: [],
-    phase,
-    siteId,
-    sessionId,
-    visitorId,
-    clientId,
-    replyLang: replyLangThisTurn,
-    T,
-  });
-
-  const costUsd = estimateCostUsd(MODEL, usageInput, usageOutput);
-
-  await logAssistantMessage({
-    siteId,
-    sessionId,
-    content: reply,
-    latencyMs: Date.now() - started,
-    clientId,
-    tokensInput: usageInput,
-    tokensOutput: usageOutput,
-    tokensTotal: usageTotal,
-    costUsd,
-  });
-
-  const quick = quickFlag({ phase, contexts: [], reply });
-  res.setHeader("X-AIW-Good-Answer", String(quick.goodAnswer));
-
-  setJSONHeaders(req, res);
-  return sendJSON(req, res, {
-    reply,
-    source: "no-context-llm",
-    citations: [],
-    goodAnswer: quick.goodAnswer,
-    confidence: quick.confidence,
-  });
-}
-
-    // ====== Полноценный RAG через LLM ======
-    const citations = contexts.map((c, i) => ({ idx: i + 1, url: c.url }));
-    T.mark("prePrompt");
-// let prompt = buildPrompt({ query: llmQuery, contexts, lang: replyLangThisTurn, complex });
-
-console.log("[LANG][final_decision]", {
-  rawQuery,
-  uiLang,
-  currentReplyLang,
-  detectedUserLang,
-  detectedNow0,
-  shouldSwitchLang,
-  switchToLang,
-  switchConfidence,
-  replyLangThisTurn,
-  persistReplyLang,
-  langReasonFinal,
-});
-// если есть кастомный системный промпт — добавим его первым сообщением
-const sys = pickSystemPrompt(cfg, replyLangThisTurn, complex);
-
-const prompt = buildPrompt({
-  system: sys,
-  history: safeMsgs,                
-  query: llmQuery,
-  contexts,
-  maxHistory: MAX_HISTORY_FOR_LLM,
-  complex,
-  replyLangThisTurn,
-});
-T.mark("buildPrompt");
-
-// ====== prompt dump (debug only) ======
-dumpPromptIfDebug({
-  label: "rag",
-  messages: prompt,
-  req,
-  extra: {
-    phase,
-    siteId,
-    sessionId,
-    clientId: clientId ? String(clientId) : null,
-    contextsCount: contexts?.length || 0,
-    intentLabel: intentLabel || null,
-    isFollowUp: !!isFollowUp,
-  }
-});
-
-
-if (stream) {
-  // ---- STREAM (SSE) ----
-  phase = "rag";
-  res.setHeader("X-AIW-Phase", phase);
-  setSourceHeaders(res, "rag", citations);
-
-  // ✅ ставим флаг качества ДО начала SSE
-  const quick = quickFlag({ phase, contexts, reply: "" });
-  res.setHeader("X-AIW-Good-Answer", String(quick.goodAnswer));
-
-  // только после этого открываем SSE-поток
+    const result = await processMessage({
+      messages,
+      identity,
+      meta,
+      requestContext,
+      stream,
+onStreamStart: () => {
+  console.log("[AIW][SSE] onStreamStart called, headersSent:", res.headersSent);
   setSSEHeaders(req, res);
   res.write(": heartbeat\n\n");
-  T.mark("firstByteToClient");
+  if (typeof res.flush === "function") res.flush();
 
-      let clientClosed = false;
-      req.on("close", () => { clientClosed = true; });
-      req.on("aborted", () => { clientClosed = true; });
-
-let buffer = "";      // финальный видимый ответ (без meta)
-let fullBuffer = "";  // полный текст от LLM (включая meta)
-let outBuffer = "";   // что реально отдали пользователю
-let hold = "";        // хвост для ловли [AIW_META]
-let metaStarted = false;
-let metaNorm = null;
-let metaParsed = null;
-
-let usage = null;
-
-      if (!oai) {
-        const demo = replyLangThisTurn.startsWith("ru") ? "Демо-ответ (нет OPENAI_API_KEY)." : "Demo reply (no OPENAI_API_KEY).";
-        buffer = demo;
-        const CH = 24;
-        for (let i = 0; i < demo.length && !clientClosed; i += CH) {
-          res.write(`data:${sseEncode(demo.slice(i, i + CH))}\n\n`);
-        }
-      } else {
-        try {
-       T.mark("beforeLLM");
-
-
-      // 🔥 СТРИМ ИЗ OPENAI
-const completion = await oai.chat.completions.create({
-  model: MODEL,
-  messages: prompt,
-  stream: true,
-  stream_options: { include_usage: true },
-  ...COMPLETION_OPTS,
-});
-
-
- let firstTokenMarked = false;
-let firstChunkFlushedMarked = false;
-
-for await (const chunk of completion) {
-  if (chunk.usage) {
-    usage = {
-      input:  chunk.usage.prompt_tokens ?? chunk.usage.input_tokens,
-      output: chunk.usage.completion_tokens ?? chunk.usage.output_tokens,
-      total:  chunk.usage.total_tokens,
-    };
-  }
-
-  const piece = chunk.choices?.[0]?.delta?.content || "";
-  if (!piece) continue;
-
-  if (!firstTokenMarked) {
-    firstTokenMarked = true;
-    T.mark("firstLLMToken");
-  }
-
-  fullBuffer += piece;
-
-  if (metaStarted) continue;
-
-  hold += piece;
-
-  const idx = hold.indexOf(AIW_META_TAG);
-  if (idx !== -1) {
-    const before = hold.slice(0, idx);
-    if (before) {
-      outBuffer += before;
-      if (!clientClosed) {
-        res.write(`data:${sseEncode(before)}\n\n`);
-        if (!firstChunkFlushedMarked) {
-          firstChunkFlushedMarked = true;
-          T.mark("firstChunkFlushed");
-        }
-      }
-    }
-    metaStarted = true;
-    hold = "";
-    continue;
-  }
-
-  const HOLD_N = 64;
-  if (hold.length > HOLD_N) {
-    const flush = hold.slice(0, hold.length - HOLD_N);
-    hold = hold.slice(hold.length - HOLD_N);
-
-    outBuffer += flush;
+  heartbeatInterval = setInterval(() => {
     if (!clientClosed) {
-      res.write(`data:${sseEncode(flush)}\n\n`);
-      if (!firstChunkFlushedMarked) {
-        firstChunkFlushedMarked = true;
-        T.mark("firstChunkFlushed");
-      }
+      try {
+        res.write(": ping\n\n");
+        if (typeof res.flush === "function") res.flush();
+      } catch {}
+    } else {
+      clearInterval(heartbeatInterval);
+      heartbeatInterval = null;
     }
+  }, 2000);
+},
+onChunk: (text) => {
+  console.log("[AIW][SSE] onChunk called, len:", text.length, "closed:", clientClosed);
+  if (!clientClosed) {
+    res.write(`data:${sseEncode(text)}\n\n`);
+    if (typeof res.flush === "function") res.flush();
   }
-}
+},
+      isCancelled: () => clientClosed,
+    });
 
-if (!metaStarted && hold) {
-  const tail = String(hold).replace(/\s+$/g, "");
-  outBuffer += tail;
-  if (!clientClosed && tail) {
-    res.write(`data:${sseEncode(tail)}\n\n`);
-    if (!firstChunkFlushedMarked) {
-      firstChunkFlushedMarked = true;
-      T.mark("firstChunkFlushed");
+    // Clean up heartbeat interval
+    if (heartbeatInterval) {
+      clearInterval(heartbeatInterval);
+      heartbeatInterval = null;
     }
-  }
-}
 
-T.mark("afterLLM");
+    // Set debug headers (only if not already sent for SSE)
+    if (!res.headersSent) {
+      if (result.siteId) res.setHeader("X-AIW-Resolved-Site", result.siteId);
+      if (result.sessionId) res.setHeader("X-AIW-Resolved-Session", result.sessionId);
+      if (result.clientId) res.setHeader("X-AIW-Client", result.clientId);
+      if (result.phase) res.setHeader("X-AIW-Phase", result.phase);
+      if (result.debug?.retrieveMode) res.setHeader("X-AIW-Retrieve-Mode", result.debug.retrieveMode);
+      if (result.debug?.intentLabel) res.setHeader("X-AIW-Intent", result.debug.intentLabel);
+      if (result.debug?.replyLang) res.setHeader("X-AIW-Reply-Lang", result.debug.replyLang);
+      if (result.debug?.detectedLang) res.setHeader("X-AIW-Detected-Lang", result.debug.detectedLang);
+      if (result.debug?.langReason) res.setHeader("X-AIW-Lang-Reason", result.debug.langReason);
+      res.setHeader("X-AIW-Contexts", String(result.debug?.contextsCount ?? 0));
+      res.setHeader("X-AIW-Good-Answer", String(result.goodAnswer));
+      res.setHeader("X-AIW-Source", result.source || "unknown");
+      res.setHeader("X-AIW-Citations-Count", String(result.citations?.length || 0));
+      res.setHeader("X-AIW-Timing", JSON.stringify(result.timings || {}));
+    }
 
-logMetaPresence("rag-stream", fullBuffer);
-
-const { meta } = extractAiwMeta(fullBuffer);
-metaParsed = normalizeMeta(meta);
-
-// финальный видимый ответ (без meta)
-buffer = (outBuffer || "").trim();
-
-// Логируем токены после завершения стрима
-if (usage) {
-  console.log("[AIW][tokens][rag-stream]", {
-    model: MODEL,
-    ...usage,
-  });
-}
-        } catch (e) {
-          const msg = `⚠️ ${e?.message || "LLM error"}`;
-          buffer = msg;
-            if (!clientClosed) res.write(`data:${sseEncode(msg)}\n\n`);
-        }
-      }
-
-      // лог ассистента и финальные заголовки
-      const metaOps = scheduleMetaOps({
-        metaNorm: metaParsed,
-        reply: buffer,
-        userText: query,
-        contexts,
-        phase,
-        siteId,
-        sessionId,
-        visitorId,
-        clientId,
-        replyLang: replyLangThisTurn,
-        T,
-      });
-      metaNorm = metaOps.metaNorm;
-
-      if (!metaParsed) {
-        console.log("[AIW][AIW_META][fallback]", metaNorm);
-      } else {
-        console.log("[AIW][AIW_META][norm]", metaNorm);
-      }
-
-      let tokensInput  = usage?.input  ?? null;
-let tokensOutput = usage?.output ?? null;
-let tokensTotal  = usage?.total  ?? null;
-const costUsd    = estimateCostUsd(MODEL, tokensInput, tokensOutput);
-
-await logAssistantMessage({
-  siteId,
-  sessionId,
-  content: buffer,
-  latencyMs: Date.now() - started,
-  clientId,
-  tokensInput,
-  tokensOutput,
-  tokensTotal,
-  costUsd,
-});
-
-      T.mark("logAssistantMessage");
-      dbMark = "user:+ assistant:+";
-      const timings = T.get();
-// добавим производные: buildPromptDur, llmWait, ttfb (time-to-first-byte), firstChunk
-const derived = {
-  buildPromptDur: (timings.buildPrompt ?? 0) - (timings.prePrompt ?? 0),
-  llmWait: (timings.afterLLM ?? 0) - (timings.beforeLLM ?? 0),
-  ttfb: timings.firstByteToClient ?? undefined,
-  firstChunk: (timings.firstChunkFlushed ?? 0) - (timings.firstByteToClient ?? 0),
-};
-
-
-      // ⚠️ ВАЖНО: заголовки ставим только если они ещё не отправлены
-      if (!res.headersSent) {
-        res.setHeader("X-AIW-DB", dbMark);
-        res.setHeader("X-AIW-Timing", JSON.stringify({
-          ...timing,
-          ...timings,
-          ...derived,
-          total: timings.total
-        }));
-      }
-
-
-// опционально красивый серверный лог
-console.log("[AIW][timings]", JSON.stringify({
-  siteId, sessionId, phase,
-  timings: { ...timings, ...derived }
-}));
-
+    if (result.streamed) {
+      // SSE — finalize stream
       if (!clientClosed) {
         res.write("data: [DONE]\n\n");
         res.end();
       }
-
-      return;
     } else {
-      // ---- JSON ----
-      phase = "rag";
-      res.setHeader("X-AIW-Phase", phase);
-      setSourceHeaders(res, "rag", citations);
-T.mark("beforeLLM");
-
-let reply = replyLangThisTurn.startsWith("ru") ? "Демо-ответ (нет OPENAI_API_KEY)." : "Demo reply (no OPENAI_API_KEY).";
-let usageInput  = null;
-let usageOutput = null;
-let usageTotal  = null;
-let metaParsed = null;
-
-if (oai) {
-const completion = await oai.chat.completions.create({
-  model: MODEL,
-  messages: prompt,
-  ...COMPLETION_OPTS,
-});
-
-  // ЛОГИ ТОКЕНОВ
- if (completion.usage) {
-    usageInput  = completion.usage.prompt_tokens     ?? completion.usage.input_tokens;
-    usageOutput = completion.usage.completion_tokens ?? completion.usage.output_tokens;
-    usageTotal  = completion.usage.total_tokens;
-
-    console.log("[AIW][tokens][rag-json]", {
-      model: MODEL,
-      input:  usageInput,
-      output: usageOutput,
-      total:  usageTotal,
-    });
-  }
-
-  const raw = completion.choices?.[0]?.message?.content || "";
-  logMetaPresence("rag-json", raw);
-const { answerText, meta } = extractAiwMeta(raw);
-metaParsed = normalizeMeta(meta);
-
-reply = (answerText || "").trim() || reply;
-}
-
-scheduleMetaOps({
-  metaNorm: metaParsed,
-  reply,
-  userText: query,
-  contexts,
-  phase,
-  siteId,
-  sessionId,
-  visitorId,
-  clientId,
-  replyLang: replyLangThisTurn,
-  T,
-});
-T.mark("afterLLM");
-timing.llm = T.get().afterLLM - T.get().beforeLLM;
-
-const costUsd = estimateCostUsd(MODEL, usageInput, usageOutput);
-
-await logAssistantMessage({
-  siteId,
-  sessionId,
-  content: reply,
-  latencyMs: Date.now() - started,
-  clientId,
-  tokensInput:  usageInput,
-  tokensOutput: usageOutput,
-  tokensTotal:  usageTotal,
-  costUsd,
-});
-
-      dbMark = "user:+ assistant:+";
-
-      res.setHeader("X-AIW-DB", dbMark);
-      const timings = T.get();
-// добавим производные: buildPromptDur, llmWait, ttfb (time-to-first-byte), firstChunk
-const derived = {
-  buildPromptDur: (timings.buildPrompt ?? 0) - (timings.prePrompt ?? 0),
-  llmWait: (timings.afterLLM ?? 0) - (timings.beforeLLM ?? 0),
-  ttfb: timings.firstByteToClient ?? undefined,
-  firstChunk: (timings.firstChunkFlushed ?? 0) - (timings.firstByteToClient ?? 0),
-};
-
-
-
-res.setHeader("X-AIW-Timing", JSON.stringify({
-  ...timing,          // твои старые поля для совместимости
-  ...timings,         // подробные метки
-  ...derived,
-  total: timings.total
-}));
-
-// опционально красивый серверный лог
-console.log("[AIW][timings]", JSON.stringify({
-  siteId, sessionId, phase,
-  timings: { ...timings, ...derived }
-}));
-
- setJSONHeaders(req, res);
- const quick = quickFlag({ phase, contexts, reply });
- res.setHeader("X-AIW-Good-Answer", String(quick.goodAnswer));
-
- return sendJSON(req, res, {
-   reply, source: "rag", citations,
-   goodAnswer: quick.goodAnswer, confidence: quick.confidence
- });
-
+      // JSON response
+      setJSONHeaders(req, res);
+      setSourceHeaders(res, result.source, result.citations || []);
+      return res.status(200).json({
+        reply: result.reply,
+        source: result.source,
+        citations: result.citations || [],
+        goodAnswer: result.goodAnswer,
+        confidence: result.confidence,
+      });
     }
- } catch (e) {
-    const alreadySent = res.headersSent;
-    phase = "error";
+  } catch (e) {
+    // Clean up heartbeat interval on error
+    if (heartbeatInterval) {
+      clearInterval(heartbeatInterval);
+      heartbeatInterval = null;
+    }
 
-    const timings = T.get();
-    const derived = {
-      buildPromptDur: (timings.buildPrompt ?? 0) - (timings.prePrompt ?? 0),
-      llmWait: (timings.afterLLM ?? 0) - (timings.beforeLLM ?? 0),
-      ttfb: timings.firstByteToClient ?? undefined,
-      firstChunk: (timings.firstChunkFlushed ?? 0) - (timings.firstByteToClient ?? 0),
-    };
-
-    if (!alreadySent) {
-      // заголовки ещё НЕ отправлены → можно безопасно их ставить и вернуть JSON
-      res.setHeader("X-AIW-Phase", phase);
-      res.setHeader("X-AIW-DB", dbMark);
-      res.setHeader("X-AIW-Timing", JSON.stringify({
-        ...timing,
-        ...timings,
-        ...derived,
-        total: timings.total
-      }));
-
-      console.log("[AIW][timings]", JSON.stringify({
-        siteId, sessionId, phase,
-        timings: { ...timings, ...derived }
-      }));
-      console.error("AIW /chat error:", e);
-
+    console.error("AIW /chat error:", e);
+    if (!res.headersSent) {
       return res.status(500).json({ ok: false, error: String(e) });
     }
-
-    // сюда попадаем, если уже начался SSE-стрим (мы уже делали setSSEHeaders + write)
-    console.error("AIW /chat error after headers sent:", e);
-
     try {
-     res.write(`data:⚠️ Internal error\n\n`);
+      res.write(`data:⚠️ Internal error\n\n`);
       res.write("data: [DONE]\n\n");
       res.end();
-    } catch {
-      // тут уже вообще ничего не делаем
-    }
+    } catch {}
   }
 });
 
