@@ -121,7 +121,7 @@
           const activity = window.__AIW_ACTIVITY__;
           if (!activity || typeof activity.on !== "function") return false;
           if (window.__AIW_ACTIVITY_LIVE_LOGGER_ATTACHED__) return true;
-          activity.on((e) => console.log("[AIW][live]", e));
+          // activity.on((e) => console.log("[AIW][live]", e));
           window.__AIW_ACTIVITY_LIVE_LOGGER_ATTACHED__ = true;
           return true;
         } catch {
