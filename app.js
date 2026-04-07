@@ -23,6 +23,7 @@ import complianceExtRouter from "./extensions/api/complianceExt.js";
 import complianceDocumentsRouter from "./extensions/api/complianceDocuments.js";
 import complianceAssertionsRouter from "./extensions/api/complianceAssertions.js";
 import complianceCoverageRouter from "./extensions/api/complianceCoverage.js";
+import telegramRouter from "./services/telegram/telegram.js";
 import Notification from "./models/Notification.js";
 import NotificationDestination from "./models/NotificationDestination.js";
 import { startTelemetryRetentionJob } from "./cron/telemetryRetention.js";
@@ -170,6 +171,7 @@ mongoose
     app.use("/api/leads", leadsRouter);
     app.use("/api/items", itemsRouter);
     app.use("/api/widget", widgetDemoScriptRouter);
+    app.use("/api/telegram", telegramRouter);
 
     // роуты из расширения sf-compliance
     app.use("/api/compliance-documents", complianceDocumentsRouter);
