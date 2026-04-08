@@ -342,6 +342,85 @@ complianceExtRouter.post(
   }
 );
 
+
+// ============================================================
+// POST /add-regulation — создание новой регуляции из расширения
+// ============================================================
+
+complianceExtRouter.post(
+  "/add-regulation",
+  requireExtensionAuth,
+  requireExtensionScope("compliance:analyze"),
+  async (req, res) => {
+    try {
+      const code = String(req.body?.code || "").trim().toUpperCase();
+      const name = String(req.body?.name || "").trim();
+      const category = String(req.body?.category || "general").trim();
+      const aliases = Array.isArray(req.body?.aliases)
+        ? req.body.aliases.map((a) => String(a || "").trim()).filter(Boolean)
+        : [];
+
+      if (!code || !name) {
+        return res.status(400).json({
+          error: "code and name are required",
+        });
+      }
+
+      const existing = await Regulation.findOne({ code });
+
+      if (existing) {
+        return res.status(409).json({
+          error: `Regulation with code "${code}" already exists`,
+          regulation: {
+            id: existing._id,
+            code: existing.code,
+            name: existing.name,
+          },
+        });
+      }
+
+      const regulation = await Regulation.create({
+        code,
+        name,
+        aliases,
+        category,
+        isActive: true,
+      });
+
+      console.log("[ADD-REGULATION] Created:", regulation.code, regulation.name);
+
+      await writeAudit({
+        userId: req.user.id,
+        action: "add-regulation",
+        outcome: "success",
+      });
+
+      return res.json({
+        ok: true,
+        regulation: {
+          id: regulation._id,
+          code: regulation.code,
+          name: regulation.name,
+        },
+      });
+    } catch (error) {
+      console.error("[ADD-REGULATION ROUTE] failed:", error);
+
+      await writeAudit({
+        userId: req.user.id,
+        action: "add-regulation",
+        outcome: "error",
+      });
+
+      return res.status(500).json({
+        ok: false,
+        error: "Failed to add regulation",
+        details: error?.message || String(error),
+      });
+    }
+  }
+);
+
 // ============================================================
 // POST /add-statement — создание стейтмента из расширения
 // ============================================================

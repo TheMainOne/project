@@ -655,6 +655,20 @@ async function handleSearchSuppliers(payload) {
   };
 }
 
+async function handleAddRegulation(payload) {
+  const result = await callComplianceApi("/add-regulation", payload);
+
+  if (result.authRequired) {
+    return { ok: false, authRequired: true, error: "Authentication required" };
+  }
+
+  return {
+    ok: result.ok,
+    result: result.json,
+    error: result.json?.error || result.error,
+  };
+}
+
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   console.log("BACKGROUND RECEIVED MESSAGE:", message);
 
@@ -704,6 +718,11 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
   if (message?.type === "EXT_SEARCH_SUPPLIERS") {
     handleSearchSuppliers(message.payload || {}).then(sendResponse);
+    return true;
+  }
+
+    if (message?.type === "EXT_ADD_REGULATION") {
+    handleAddRegulation(message.payload || {}).then(sendResponse);
     return true;
   }
 });

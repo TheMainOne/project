@@ -16,9 +16,11 @@ let currentCaseAnalysisState = {
   lookupResults: null,
   editingMaterialIndex: null,
 
-  manualLookupInput: "",
-  manualLookupResults: null,
-  manualLookupLoading: false,
+manualLookupInput: "",
+manualLookupResults: null,
+manualLookupLoading: false,
+manualLookupRegulations: [],
+manualLookupAvailableRegulations: [],
 
   suppliersLibrary: null,
   suppliersLibraryLoading: false,
@@ -32,6 +34,13 @@ let currentCaseAnalysisState = {
     supplierAliases: "",
     isNewSupplier: false,
     selectedSupplierId: null,
+
+    showNewRegulationForm: false,
+    newRegCode: "",
+    newRegName: "",
+    newRegCategory: "general",
+    addingRegulation: false,
+    addRegulationError: null,
 
     docTitle: "",
     docFileName: "",
@@ -71,9 +80,11 @@ function resetCaseAnalysisState() {
     lookupResults: null,
     editingMaterialIndex: null,
 
-    manualLookupInput: "",
-    manualLookupResults: null,
-    manualLookupLoading: false,
+manualLookupInput: "",
+manualLookupResults: null,
+manualLookupLoading: false,
+manualLookupRegulations: [],
+manualLookupAvailableRegulations: [],
 
     suppliersLibrary: null,
     suppliersLibraryLoading: false,
@@ -87,6 +98,13 @@ function resetCaseAnalysisState() {
       supplierAliases: "",
       isNewSupplier: false,
       selectedSupplierId: null,
+
+      showNewRegulationForm: false,
+    newRegCode: "",
+    newRegName: "",
+    newRegCategory: "general",
+    addingRegulation: false,
+    addRegulationError: null,
 
       docTitle: "",
       docFileName: "",
@@ -292,9 +310,11 @@ async function runManualLookup() {
         currentCaseAnalysisState.payload?.recordId ||
         "manual-lookup",
       queries,
-      requestedRegulations: Array.isArray(currentCaseAnalysisState.analysis?.requested_regulations)
-        ? currentCaseAnalysisState.analysis.requested_regulations
-        : [],
+     requestedRegulations: currentCaseAnalysisState.manualLookupRegulations.length > 0
+  ? currentCaseAnalysisState.manualLookupRegulations
+  : Array.isArray(currentCaseAnalysisState.analysis?.requested_regulations)
+    ? currentCaseAnalysisState.analysis.requested_regulations
+    : [],
     },
   });
 
@@ -635,7 +655,7 @@ function getOrCreateCaseToast() {
   const addTab = document.createElement("button");
 addTab.type = "button";
 addTab.id = "sf-compliance-tab-add";
-addTab.textContent = "Add";
+addTab.textContent = "New Statement";
 
  [overviewTab, materialsTab, suppliersTab, lookupTab, addTab].forEach((btn) => {
     Object.assign(btn.style, {
@@ -1146,6 +1166,60 @@ const addBtn = document.getElementById("sf-compliance-tab-add");
 }
 
   setCaseToastTab(activeCaseToastTab);
+}
+
+async function submitNewRegulation() {
+  const form = currentCaseAnalysisState.addStatementForm;
+
+  const code = String(form.newRegCode || "").trim().toUpperCase();
+  const name = String(form.newRegName || "").trim();
+
+  if (!code || !name) {
+    form.addRegulationError = "Code and name are required";
+    rerenderCurrentCaseToast();
+    return;
+  }
+
+  form.addingRegulation = true;
+  form.addRegulationError = null;
+  rerenderCurrentCaseToast();
+
+  const response = await sendMessageAsync({
+    type: "EXT_ADD_REGULATION",
+    payload: {
+      code,
+      name,
+      category: form.newRegCategory || "general",
+    },
+  });
+
+  form.addingRegulation = false;
+
+  if (response?.ok && response?.result?.ok) {
+    // Добавить в список и выбрать
+    const newReg = response.result.regulation;
+
+    form.availableRegulations.push({
+      _id: newReg.id,
+      code: newReg.code,
+      name: newReg.name,
+    });
+
+    if (!form.selectedRegulations.includes(newReg.code)) {
+      form.selectedRegulations.push(newReg.code);
+    }
+
+    form.showNewRegulationForm = false;
+    form.newRegCode = "";
+    form.newRegName = "";
+    form.newRegCategory = "general";
+    form.addRegulationError = null;
+  } else {
+    form.addRegulationError =
+      response?.result?.error || response?.error || "Failed to add regulation";
+  }
+
+  rerenderCurrentCaseToast();
 }
 
 async function loadRegulationsIfNeeded() {
@@ -1731,6 +1805,111 @@ function createAddStatementTabContent() {
     });
 
     assertSection.appendChild(regGrid);
+
+    // --- Кнопка + New Regulation и форма ---
+    const newRegBtn = document.createElement("button");
+    newRegBtn.type = "button";
+    newRegBtn.textContent = form.showNewRegulationForm
+      ? "Cancel"
+      : "+ New regulation";
+    Object.assign(newRegBtn.style, {
+      marginTop: "8px",
+      border: "1px solid #d0d7de",
+      borderRadius: "8px",
+      padding: "6px 10px",
+      cursor: "pointer",
+      background: "#fff",
+      fontSize: "12px",
+    });
+    newRegBtn.onclick = () => {
+      form.showNewRegulationForm = !form.showNewRegulationForm;
+      form.addRegulationError = null;
+      rerenderCurrentCaseToast();
+    };
+    assertSection.appendChild(newRegBtn);
+
+    if (form.showNewRegulationForm) {
+      const newRegBlock = document.createElement("div");
+      Object.assign(newRegBlock.style, {
+        marginTop: "8px",
+        padding: "10px",
+        border: "1px solid #d0d7de",
+        borderRadius: "8px",
+        background: "#fff",
+      });
+
+      if (form.addRegulationError) {
+        const errDiv = document.createElement("div");
+        errDiv.textContent = form.addRegulationError;
+        Object.assign(errDiv.style, {
+          color: "#991b1b",
+          fontSize: "12px",
+          marginBottom: "8px",
+        });
+        newRegBlock.appendChild(errDiv);
+      }
+
+      newRegBlock.appendChild(
+        createFormField(
+          "Regulation Code *",
+          createTextInput(form.newRegCode, "e.g. CONEG", (v) => {
+            form.newRegCode = v;
+          })
+        )
+      );
+
+      newRegBlock.appendChild(
+        createFormField(
+          "Regulation Name *",
+          createTextInput(
+            form.newRegName,
+            "e.g. Coalition of Northeastern Governors",
+            (v) => {
+              form.newRegName = v;
+            }
+          )
+        )
+      );
+
+      newRegBlock.appendChild(
+        createFormField(
+          "Category",
+          createSelectInput(
+            form.newRegCategory,
+            [
+              { value: "general", label: "General" },
+              { value: "chemical", label: "Chemical" },
+              { value: "environmental", label: "Environmental" },
+              { value: "health", label: "Health & Safety" },
+              { value: "medical", label: "Medical" },
+            ],
+            (v) => {
+              form.newRegCategory = v;
+            }
+          )
+        )
+      );
+
+      const saveRegBtn = document.createElement("button");
+      saveRegBtn.type = "button";
+      saveRegBtn.textContent = form.addingRegulation ? "Saving..." : "Save Regulation";
+      saveRegBtn.disabled = form.addingRegulation;
+      Object.assign(saveRegBtn.style, {
+        width: "100%",
+        padding: "8px",
+        border: "none",
+        borderRadius: "8px",
+        background: form.addingRegulation ? "#93c5fd" : "#0176d3",
+        color: "#fff",
+        fontWeight: "600",
+        fontSize: "13px",
+        cursor: form.addingRegulation ? "default" : "pointer",
+      });
+      saveRegBtn.onclick = () => submitNewRegulation();
+      newRegBlock.appendChild(saveRegBtn);
+
+      assertSection.appendChild(newRegBlock);
+    }
   }
 
   wrapper.appendChild(assertSection);
@@ -3694,24 +3873,117 @@ function renderCaseToastAnalysis(payload, response) {
 
       body.appendChild(wrapper);
 
-      const parsedQueries = parseManualLookupInput(
-        currentCaseAnalysisState.manualLookupInput
-      );
+            // --- Regulation selector for lookup ---
+      const lookupRegWrapper = document.createElement("div");
+      lookupRegWrapper.style.marginTop = "10px";
 
-      if (parsedQueries.length > 0) {
-        body.appendChild(createInfoRow("Parsed part numbers", String(parsedQueries.length)));
+      const lookupRegLabel = document.createElement("strong");
+      lookupRegLabel.textContent = "Check regulations:";
+      lookupRegWrapper.appendChild(lookupRegLabel);
+
+      // Load regulations if needed
+      if (currentCaseAnalysisState.manualLookupAvailableRegulations.length === 0) {
+        sendMessageAsync({ type: "EXT_FETCH_REGULATIONS" }).then((resp) => {
+          if (resp?.ok && Array.isArray(resp.regulations)) {
+            currentCaseAnalysisState.manualLookupAvailableRegulations = resp.regulations;
+
+            // Auto-select from analysis if available
+            if (
+              currentCaseAnalysisState.manualLookupRegulations.length === 0 &&
+              Array.isArray(currentCaseAnalysisState.analysis?.requested_regulations)
+            ) {
+              currentCaseAnalysisState.manualLookupRegulations = [
+                ...currentCaseAnalysisState.analysis.requested_regulations,
+              ];
+            }
+
+            rerenderCurrentCaseToast();
+          }
+        });
+
+        const loadingDiv = document.createElement("div");
+        loadingDiv.textContent = "Loading regulations...";
+        loadingDiv.style.color = "#6b7280";
+        loadingDiv.style.fontSize = "12px";
+        loadingDiv.style.marginTop = "4px";
+        lookupRegWrapper.appendChild(loadingDiv);
+      } else {
+        const lookupRegGrid = document.createElement("div");
+        Object.assign(lookupRegGrid.style, {
+          display: "flex",
+          flexWrap: "wrap",
+          gap: "6px",
+          marginTop: "6px",
+        });
+
+        currentCaseAnalysisState.manualLookupAvailableRegulations.forEach((reg) => {
+          const isChecked = currentCaseAnalysisState.manualLookupRegulations.includes(reg.code);
+
+          const label = document.createElement("label");
+          Object.assign(label.style, {
+            display: "flex",
+            alignItems: "center",
+            gap: "4px",
+            fontSize: "12px",
+            cursor: "pointer",
+            padding: "4px 8px",
+            borderRadius: "6px",
+            border: isChecked ? "1px solid #0176d3" : "1px solid #e5e7eb",
+            background: isChecked ? "#eef6ff" : "#fff",
+            whiteSpace: "nowrap",
+          });
+
+          const checkbox = document.createElement("input");
+          checkbox.type = "checkbox";
+          checkbox.checked = isChecked;
+          checkbox.onchange = () => {
+            if (checkbox.checked) {
+              currentCaseAnalysisState.manualLookupRegulations.push(reg.code);
+            } else {
+              currentCaseAnalysisState.manualLookupRegulations =
+                currentCaseAnalysisState.manualLookupRegulations.filter(
+                  (c) => c !== reg.code
+                );
+            }
+            rerenderCurrentCaseToast();
+          };
+
+          label.appendChild(checkbox);
+          label.appendChild(document.createTextNode(reg.code));
+          lookupRegGrid.appendChild(label);
+        });
+
+        lookupRegWrapper.appendChild(lookupRegGrid);
       }
 
-      if (currentCaseAnalysisState.manualLookupResults?.error) {
-        body.appendChild(
-          createInfoRow("Error", currentCaseAnalysisState.manualLookupResults.error)
-        );
-      }
+      body.appendChild(lookupRegWrapper);
+const parsedQueries = parseManualLookupInput(
+  currentCaseAnalysisState.manualLookupInput
+);
 
-      const lookupResponse = currentCaseAnalysisState.manualLookupResults;
-      const lookupMap = buildComponentSuppliersMap({
-        componentSuppliersResult: lookupResponse,
-      });
+const lookupResponse = currentCaseAnalysisState.manualLookupResults;
+
+if (parsedQueries.length > 0) {
+  body.appendChild(createInfoRow("Parsed part numbers", String(parsedQueries.length)));
+}
+
+const lookupCoverageSummary = createCoverageSummaryBlock({
+  componentSuppliersResult: lookupResponse,
+});
+
+if (lookupCoverageSummary) {
+  body.appendChild(lookupCoverageSummary);
+}
+
+if (currentCaseAnalysisState.manualLookupResults?.error) {
+  body.appendChild(
+    createInfoRow("Error", currentCaseAnalysisState.manualLookupResults.error)
+  );
+}
+
+const lookupMap = buildComponentSuppliersMap({
+  componentSuppliersResult: lookupResponse,
+});
 
       if (parsedQueries.length > 0) {
         const resultsBlock = document.createElement("div");
