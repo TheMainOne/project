@@ -1,5 +1,9 @@
 import express from "express";
 import ComplianceAuditLog from "../sf-compliance/models/ComplianceAuditLog.js";
+import ComplianceDocument from "../sf-compliance/models/ComplianceDocument.js";
+import ComplianceAssertion from "../sf-compliance/models/ComplianceAssertion.js";
+import Supplier from "../sf-compliance/models/Supplier.js";
+import Regulation from "../sf-compliance/models/Regulation.js";
 import { requireExtensionAuth, requireExtensionScope } from "../../middlewares/auth.js";
 import {
   validateCaseContextBody,
@@ -267,5 +271,323 @@ complianceExtRouter.post(
     }
   }
 );
+
+// ============================================================
+// POST /regulations — список активных регуляций для формы
+// ============================================================
+
+complianceExtRouter.post(
+  "/regulations",
+  requireExtensionAuth,
+  requireExtensionScope("compliance:read"),
+  async (req, res) => {
+    try {
+      const regulations = await Regulation.find({ isActive: true })
+        .select("code name category")
+        .sort({ code: 1 })
+        .lean();
+
+      return res.json({
+        ok: true,
+        total: regulations.length,
+        regulations,
+      });
+    } catch (error) {
+      console.error("[REGULATIONS ROUTE] failed:", error);
+      return res.status(500).json({ ok: false, error: error.message });
+    }
+  }
+);
+
+// ============================================================
+// POST /suppliers-search — поиск поставщиков для автокомплита
+// ============================================================
+
+complianceExtRouter.post(
+  "/suppliers-search",
+  requireExtensionAuth,
+  requireExtensionScope("compliance:read"),
+  async (req, res) => {
+    try {
+      const search = String(req.body?.q || "").trim().toLowerCase();
+
+      const suppliers = await Supplier.find({})
+        .select("supplierCode supplierName aliases")
+        .sort({ supplierName: 1 })
+        .lean();
+
+      const filtered = search
+        ? suppliers.filter((s) => {
+            const haystack = [
+              s.supplierName,
+              s.supplierCode,
+              ...(Array.isArray(s.aliases) ? s.aliases : []),
+            ]
+              .map((v) => String(v || "").toLowerCase())
+              .join(" ");
+
+            return haystack.includes(search);
+          })
+        : suppliers;
+
+      return res.json({
+        ok: true,
+        total: filtered.length,
+        suppliers: filtered.slice(0, 50),
+      });
+    } catch (error) {
+      console.error("[SUPPLIERS-SEARCH ROUTE] failed:", error);
+      return res.status(500).json({ ok: false, error: error.message });
+    }
+  }
+);
+
+// ============================================================
+// POST /add-statement — создание стейтмента из расширения
+// ============================================================
+
+complianceExtRouter.post(
+  "/add-statement",
+  requireExtensionAuth,
+  requireExtensionScope("compliance:analyze"),
+  async (req, res) => {
+    try {
+      const {
+        supplier: supplierInput,
+        document: docInput,
+        coverage,
+        regulations: regulationCodes,
+        assertionType,
+      } = req.body;
+
+      // ---------- Validation ----------
+
+      if (!supplierInput?.supplierCode || !supplierInput?.supplierName) {
+        return res.status(400).json({
+          error: "supplier.supplierCode and supplier.supplierName are required",
+        });
+      }
+
+      if (!docInput?.title || !docInput?.url) {
+        return res.status(400).json({
+          error: "document.title and document.url are required",
+        });
+      }
+
+      if (!Array.isArray(regulationCodes) || regulationCodes.length === 0) {
+        return res.status(400).json({
+          error: "regulations must be a non-empty array of regulation codes",
+        });
+      }
+
+      const validAssertionTypes = [
+        "compliant",
+        "free_from",
+        "contains",
+        "non_compliant",
+        "partial",
+        "informational",
+      ];
+
+      if (!validAssertionTypes.includes(assertionType)) {
+        return res.status(400).json({
+          error: `assertionType must be one of: ${validAssertionTypes.join(", ")}`,
+        });
+      }
+
+      // ---------- Supplier: find or create ----------
+
+      const normalizedCode = String(supplierInput.supplierCode).trim().toUpperCase();
+      const normalizedName = String(supplierInput.supplierName).trim();
+      const aliases = Array.isArray(supplierInput.aliases)
+        ? [...new Set(supplierInput.aliases.map((a) => String(a || "").trim()).filter(Boolean))]
+        : [];
+
+      let supplier = await Supplier.findOne({ supplierCode: normalizedCode });
+
+      if (!supplier) {
+        supplier = await Supplier.create({
+          supplierCode: normalizedCode,
+          supplierName: normalizedName,
+          aliases,
+        });
+        console.log("[ADD-STATEMENT] Created new supplier:", normalizedCode, normalizedName);
+      } else {
+        const existingAliases = new Set(supplier.aliases || []);
+        let changed = false;
+
+        aliases.forEach((alias) => {
+          if (!existingAliases.has(alias)) {
+            existingAliases.add(alias);
+            changed = true;
+          }
+        });
+
+        if (changed) {
+          supplier.aliases = [...existingAliases];
+          await supplier.save();
+          console.log("[ADD-STATEMENT] Updated aliases for supplier:", normalizedCode);
+        }
+      }
+
+      // ---------- Document: create ----------
+
+      const complianceDoc = await ComplianceDocument.create({
+        supplierId: supplier._id,
+        title: docInput.title,
+        fileName: docInput.fileName || "",
+        storage: {
+          provider: "sharepoint",
+          url: docInput.url,
+          site: docInput.site || "",
+          library: docInput.library || "",
+          folderPath: docInput.folderPath || "",
+          documentId: docInput.documentId || "",
+        },
+        documentType: docInput.documentType || "certificate",
+        source: docInput.source || "supplier",
+        issueDate: docInput.issueDate || null,
+        receivedDate: docInput.receivedDate || null,
+        validUntil: docInput.validUntil || null,
+        status: docInput.status || "active",
+        notes: docInput.notes || "",
+        tags: Array.isArray(docInput.tags) ? docInput.tags : [],
+      });
+
+      console.log("[ADD-STATEMENT] Created document:", complianceDoc._id, complianceDoc.title);
+
+      // ---------- Coverage / Scope ----------
+
+      const coverageType = coverage?.type || "supplier_all";
+
+      const validCoverageLevels = [
+        "supplier_all",
+        "supplier_partial",
+        "supplier_subset",
+        "item_single",
+        "item_list",
+        "material_family",
+        "component_family",
+        "country_specific",
+        "plant_specific",
+      ];
+
+      const coverageLevel = validCoverageLevels.includes(coverageType)
+        ? coverageType
+        : "supplier_all";
+
+      const scope = {
+        allSupplierItems: coverageLevel === "supplier_all",
+        dwkItemNumbers: Array.isArray(coverage?.dwkItemNumbers)
+          ? coverage.dwkItemNumbers.map((n) => String(n).trim().toUpperCase()).filter(Boolean)
+          : [],
+        supplierPartNumbers: Array.isArray(coverage?.supplierPartNumbers)
+          ? coverage.supplierPartNumbers.map((n) => String(n).trim().toUpperCase()).filter(Boolean)
+          : [],
+        families: Array.isArray(coverage?.families)
+          ? coverage.families.map((f) => String(f).trim()).filter(Boolean)
+          : [],
+        countries: Array.isArray(coverage?.countries)
+          ? coverage.countries.map((c) => String(c).trim()).filter(Boolean)
+          : [],
+        plants: Array.isArray(coverage?.plants)
+          ? coverage.plants.map((p) => String(p).trim()).filter(Boolean)
+          : [],
+        notes: coverage?.notes || "",
+      };
+
+      // ---------- Assertions: one per regulation ----------
+
+      const normalizedRegCodes = [
+        ...new Set(
+          regulationCodes.map((c) => String(c).trim().toUpperCase()).filter(Boolean)
+        ),
+      ];
+
+      const regulations = await Regulation.find({
+        code: { $in: normalizedRegCodes },
+        isActive: true,
+      });
+
+      const foundCodes = new Set(regulations.map((r) => r.code));
+      const missingCodes = normalizedRegCodes.filter((c) => !foundCodes.has(c));
+
+      if (missingCodes.length > 0) {
+        console.log("[ADD-STATEMENT] Regulations not found in DB:", missingCodes);
+      }
+
+      const createdAssertions = [];
+
+      for (const regulation of regulations) {
+        const assertion = await ComplianceAssertion.create({
+          supplierId: supplier._id,
+          documentId: complianceDoc._id,
+          regulationId: regulation._id,
+          assertionType,
+          coverageLevel,
+          scope,
+          statementText: docInput.statementText || docInput.title || "",
+          issueDate: docInput.issueDate || null,
+          validUntil: docInput.validUntil || null,
+          status: docInput.status || "active",
+          confidence: "manual_verified",
+        });
+
+        createdAssertions.push({
+          assertionId: assertion._id,
+          regulationCode: regulation.code,
+          regulationName: regulation.name,
+        });
+
+        console.log(
+          "[ADD-STATEMENT] Created assertion:",
+          assertion._id,
+          regulation.code,
+          assertionType
+        );
+      }
+
+      // ---------- Audit ----------
+
+      await writeAudit({
+        userId: req.user.id,
+        action: "add-statement",
+        outcome: "success",
+      });
+
+      // ---------- Response ----------
+
+      return res.json({
+        ok: true,
+        supplier: {
+          id: supplier._id,
+          supplierCode: supplier.supplierCode,
+          supplierName: supplier.supplierName,
+        },
+        document: {
+          id: complianceDoc._id,
+          title: complianceDoc.title,
+        },
+        assertions: createdAssertions,
+        missingRegulations: missingCodes,
+      });
+    } catch (error) {
+      console.error("[ADD-STATEMENT ROUTE] failed:", error);
+
+      await writeAudit({
+        userId: req.user.id,
+        action: "add-statement",
+        outcome: "error",
+      });
+
+      return res.status(500).json({
+        ok: false,
+        error: "Failed to add statement",
+        details: error?.message || String(error),
+      });
+    }
+  }
+);
+
 
 export default complianceExtRouter;

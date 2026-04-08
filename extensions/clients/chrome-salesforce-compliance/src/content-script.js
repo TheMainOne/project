@@ -25,6 +25,37 @@ let currentCaseAnalysisState = {
   suppliersLibraryError: null,
   suppliersLibrarySearch: "",
   selectedSupplierLibraryId: null,
+
+  addStatementForm: {
+    supplierCode: "",
+    supplierName: "",
+    supplierAliases: "",
+    isNewSupplier: false,
+    selectedSupplierId: null,
+
+    docTitle: "",
+    docFileName: "",
+    docUrl: "",
+    docType: "certificate",
+    docIssueDate: "",
+    docValidUntil: "",
+    docStatementText: "",
+
+    coverageType: "supplier_all",
+    dwkItemNumbers: "",
+    supplierPartNumbers: "",
+
+    assertionType: "compliant",
+    selectedRegulations: [],
+
+    availableRegulations: [],
+    supplierSearchResults: [],
+    supplierSearchQuery: "",
+
+    submitting: false,
+    submitResult: null,
+    submitError: null,
+  },
 };
 
 let activeCaseRequestToken = 0;
@@ -49,6 +80,37 @@ function resetCaseAnalysisState() {
     suppliersLibraryError: null,
     suppliersLibrarySearch: "",
     selectedSupplierLibraryId: null,
+
+    addStatementForm: {
+      supplierCode: "",
+      supplierName: "",
+      supplierAliases: "",
+      isNewSupplier: false,
+      selectedSupplierId: null,
+
+      docTitle: "",
+      docFileName: "",
+      docUrl: "",
+      docType: "certificate",
+      docIssueDate: "",
+      docValidUntil: "",
+      docStatementText: "",
+
+      coverageType: "supplier_all",
+      dwkItemNumbers: "",
+      supplierPartNumbers: "",
+
+      assertionType: "compliant",
+      selectedRegulations: [],
+
+      availableRegulations: [],
+      supplierSearchResults: [],
+      supplierSearchQuery: "",
+
+      submitting: false,
+      submitResult: null,
+      submitError: null,
+    },
   };
 }
 
@@ -570,7 +632,12 @@ function getOrCreateCaseToast() {
   lookupTab.id = "sf-compliance-tab-lookup";
   lookupTab.textContent = "Lookup";
 
-  [overviewTab, materialsTab, suppliersTab, lookupTab].forEach((btn) => {
+  const addTab = document.createElement("button");
+addTab.type = "button";
+addTab.id = "sf-compliance-tab-add";
+addTab.textContent = "Add";
+
+ [overviewTab, materialsTab, suppliersTab, lookupTab, addTab].forEach((btn) => {
     Object.assign(btn.style, {
       border: "1px solid #d0d7de",
       background: "#ffffff",
@@ -592,10 +659,11 @@ function getOrCreateCaseToast() {
     background: "#ffffff",
   });
 
-  tabs.appendChild(overviewTab);
-  tabs.appendChild(materialsTab);
-  tabs.appendChild(suppliersTab);
-  tabs.appendChild(lookupTab);
+tabs.appendChild(overviewTab);
+tabs.appendChild(materialsTab);
+tabs.appendChild(suppliersTab);
+tabs.appendChild(lookupTab);
+tabs.appendChild(addTab);
 
   toast.appendChild(header);
   toast.appendChild(tabs);
@@ -1003,20 +1071,23 @@ function clearToastBody(body) {
 }
 
 function setCaseToastTab(tabName) {
-  if (tabName === "materials") {
-    activeCaseToastTab = "materials";
-  } else if (tabName === "suppliers") {
-    activeCaseToastTab = "suppliers";
-  } else if (tabName === "lookup") {
-    activeCaseToastTab = "lookup";
-  } else {
-    activeCaseToastTab = "overview";
-  }
+if (tabName === "materials") {
+  activeCaseToastTab = "materials";
+} else if (tabName === "suppliers") {
+  activeCaseToastTab = "suppliers";
+} else if (tabName === "lookup") {
+  activeCaseToastTab = "lookup";
+} else if (tabName === "add") {
+  activeCaseToastTab = "add";
+} else {
+  activeCaseToastTab = "overview";
+}
 
-  const overviewBtn = document.getElementById("sf-compliance-tab-overview");
-  const materialsBtn = document.getElementById("sf-compliance-tab-materials");
-  const suppliersBtn = document.getElementById("sf-compliance-tab-suppliers");
-  const lookupBtn = document.getElementById("sf-compliance-tab-lookup");
+const overviewBtn = document.getElementById("sf-compliance-tab-overview");
+const materialsBtn = document.getElementById("sf-compliance-tab-materials");
+const suppliersBtn = document.getElementById("sf-compliance-tab-suppliers");
+const lookupBtn = document.getElementById("sf-compliance-tab-lookup");
+const addBtn = document.getElementById("sf-compliance-tab-add");
 
   const applyActive = (btn, isActive) => {
     if (!btn) return;
@@ -1025,17 +1096,19 @@ function setCaseToastTab(tabName) {
     btn.style.borderColor = isActive ? "#0176d3" : "#d0d7de";
   };
 
-  applyActive(overviewBtn, activeCaseToastTab === "overview");
-  applyActive(materialsBtn, activeCaseToastTab === "materials");
-  applyActive(suppliersBtn, activeCaseToastTab === "suppliers");
-  applyActive(lookupBtn, activeCaseToastTab === "lookup");
+applyActive(overviewBtn, activeCaseToastTab === "overview");
+applyActive(materialsBtn, activeCaseToastTab === "materials");
+applyActive(suppliersBtn, activeCaseToastTab === "suppliers");
+applyActive(lookupBtn, activeCaseToastTab === "lookup");
+applyActive(addBtn, activeCaseToastTab === "add");
 }
 
 function wireCaseToastTabs(renderFn) {
-  const overviewBtn = document.getElementById("sf-compliance-tab-overview");
-  const materialsBtn = document.getElementById("sf-compliance-tab-materials");
-  const suppliersBtn = document.getElementById("sf-compliance-tab-suppliers");
-  const lookupBtn = document.getElementById("sf-compliance-tab-lookup");
+const overviewBtn = document.getElementById("sf-compliance-tab-overview");
+const materialsBtn = document.getElementById("sf-compliance-tab-materials");
+const suppliersBtn = document.getElementById("sf-compliance-tab-suppliers");
+const lookupBtn = document.getElementById("sf-compliance-tab-lookup");
+const addBtn = document.getElementById("sf-compliance-tab-add");
 
   if (overviewBtn) {
     overviewBtn.onclick = () => {
@@ -1065,7 +1138,640 @@ function wireCaseToastTabs(renderFn) {
     };
   }
 
+  if (addBtn) {
+  addBtn.onclick = () => {
+    activeCaseToastTab = "add";
+    renderFn();
+  };
+}
+
   setCaseToastTab(activeCaseToastTab);
+}
+
+async function loadRegulationsIfNeeded() {
+  const form = currentCaseAnalysisState.addStatementForm;
+  if (form.availableRegulations.length > 0) return;
+
+  const response = await sendMessageAsync({ type: "EXT_FETCH_REGULATIONS" });
+
+  if (response?.ok && Array.isArray(response.regulations)) {
+    form.availableRegulations = response.regulations;
+    rerenderCurrentCaseToast();
+  }
+}
+
+async function searchSuppliersForForm(query) {
+  const form = currentCaseAnalysisState.addStatementForm;
+  form.supplierSearchQuery = query;
+
+  if (!query.trim()) {
+    form.supplierSearchResults = [];
+    rerenderCurrentCaseToast();
+    return;
+  }
+
+  const response = await sendMessageAsync({
+    type: "EXT_SEARCH_SUPPLIERS",
+    payload: { q: query },
+  });
+
+  if (response?.ok) {
+    form.supplierSearchResults = response.suppliers || [];
+    rerenderCurrentCaseToast();
+  }
+}
+
+async function submitAddStatement() {
+  const form = currentCaseAnalysisState.addStatementForm;
+  form.submitting = true;
+  form.submitResult = null;
+  form.submitError = null;
+  rerenderCurrentCaseToast();
+
+  const payload = {
+    supplier: {
+      supplierCode: form.supplierCode.trim().toUpperCase(),
+      supplierName: form.supplierName.trim(),
+      aliases: form.supplierAliases
+        ? form.supplierAliases.split(",").map((a) => a.trim()).filter(Boolean)
+        : [],
+    },
+    document: {
+      title: form.docTitle.trim(),
+      fileName: form.docFileName.trim(),
+      url: form.docUrl.trim(),
+      documentType: form.docType,
+      issueDate: form.docIssueDate || null,
+      validUntil: form.docValidUntil || null,
+      statementText: form.docStatementText.trim(),
+      status: "active",
+    },
+    coverage: {
+      type: form.coverageType,
+      dwkItemNumbers: form.dwkItemNumbers
+        ? form.dwkItemNumbers.split(/[\n,;\s]+/).map((n) => n.trim()).filter(Boolean)
+        : [],
+      supplierPartNumbers: form.supplierPartNumbers
+        ? form.supplierPartNumbers.split(/[\n,;\s]+/).map((n) => n.trim()).filter(Boolean)
+        : [],
+    },
+    regulations: form.selectedRegulations,
+    assertionType: form.assertionType,
+  };
+
+  const response = await sendMessageAsync({
+    type: "EXT_ADD_STATEMENT",
+    payload,
+  });
+
+  form.submitting = false;
+
+  if (response?.ok && response?.result?.ok) {
+    form.submitResult = response.result;
+    form.submitError = null;
+  } else {
+    form.submitError = response?.result?.error || response?.error || "Failed to add statement";
+  }
+
+  rerenderCurrentCaseToast();
+}
+
+function createFormField(label, inputEl) {
+  const wrapper = document.createElement("div");
+  wrapper.style.marginBottom = "10px";
+
+  const lbl = document.createElement("label");
+  lbl.textContent = label;
+  Object.assign(lbl.style, {
+    display: "block",
+    fontWeight: "600",
+    fontSize: "13px",
+    marginBottom: "4px",
+    color: "#374151",
+  });
+
+  wrapper.appendChild(lbl);
+  wrapper.appendChild(inputEl);
+  return wrapper;
+}
+
+function createTextInput(value, placeholder, onChange) {
+  const input = document.createElement("input");
+  input.type = "text";
+  input.value = value || "";
+  input.placeholder = placeholder || "";
+  Object.assign(input.style, {
+    width: "100%",
+    boxSizing: "border-box",
+    padding: "8px 10px",
+    border: "1px solid #d0d7de",
+    borderRadius: "8px",
+    fontSize: "13px",
+  });
+  input.addEventListener("input", (e) => onChange(e.target.value));
+  return input;
+}
+
+function createSelectInput(value, options, onChange) {
+  const select = document.createElement("select");
+  Object.assign(select.style, {
+    width: "100%",
+    boxSizing: "border-box",
+    padding: "8px 10px",
+    border: "1px solid #d0d7de",
+    borderRadius: "8px",
+    fontSize: "13px",
+    background: "#ffffff",
+  });
+
+  options.forEach((opt) => {
+    const option = document.createElement("option");
+    option.value = opt.value;
+    option.textContent = opt.label;
+    if (opt.value === value) option.selected = true;
+    select.appendChild(option);
+  });
+
+  select.addEventListener("change", (e) => onChange(e.target.value));
+  return select;
+}
+
+function createAddStatementTabContent() {
+  const form = currentCaseAnalysisState.addStatementForm;
+  const wrapper = document.createElement("div");
+  wrapper.style.marginTop = "8px";
+
+  // --- Success message ---
+  if (form.submitResult) {
+    const success = document.createElement("div");
+    Object.assign(success.style, {
+      padding: "14px",
+      background: "#dcfce7",
+      border: "1px solid #86efac",
+      borderRadius: "10px",
+      marginBottom: "12px",
+    });
+
+    const title = document.createElement("div");
+    title.textContent = "Statement added successfully";
+    title.style.fontWeight = "700";
+    title.style.marginBottom = "6px";
+    success.appendChild(title);
+
+    const details = document.createElement("div");
+    details.style.fontSize = "13px";
+    const r = form.submitResult;
+    details.textContent = `Supplier: ${r.supplier?.supplierName} | Document: ${r.document?.title} | Assertions: ${r.assertions?.length || 0}`;
+    success.appendChild(details);
+
+    if (r.missingRegulations?.length) {
+      const warn = document.createElement("div");
+      warn.textContent = `Regulations not found in DB: ${r.missingRegulations.join(", ")}`;
+      warn.style.color = "#92400e";
+      warn.style.marginTop = "6px";
+      success.appendChild(warn);
+    }
+
+    const addMoreBtn = document.createElement("button");
+    addMoreBtn.type = "button";
+    addMoreBtn.textContent = "Add another";
+    Object.assign(addMoreBtn.style, {
+      marginTop: "10px",
+      padding: "8px 14px",
+      border: "1px solid #0176d3",
+      borderRadius: "8px",
+      background: "#0176d3",
+      color: "#fff",
+      cursor: "pointer",
+      fontWeight: "600",
+    });
+    addMoreBtn.onclick = () => {
+      form.submitResult = null;
+      form.submitError = null;
+      form.docTitle = "";
+      form.docFileName = "";
+      form.docUrl = "";
+      form.docStatementText = "";
+      form.docIssueDate = "";
+      form.docValidUntil = "";
+      form.dwkItemNumbers = "";
+      form.supplierPartNumbers = "";
+      form.selectedRegulations = [];
+      rerenderCurrentCaseToast();
+    };
+    success.appendChild(addMoreBtn);
+
+    wrapper.appendChild(success);
+    return wrapper;
+  }
+
+  // --- Error message ---
+  if (form.submitError) {
+    const error = document.createElement("div");
+    Object.assign(error.style, {
+      padding: "10px",
+      background: "#fee2e2",
+      border: "1px solid #fca5a5",
+      borderRadius: "8px",
+      marginBottom: "10px",
+      color: "#991b1b",
+      fontSize: "13px",
+    });
+    error.textContent = form.submitError;
+    wrapper.appendChild(error);
+  }
+
+  // --- SUPPLIER SECTION ---
+  const supplierSection = document.createElement("div");
+  Object.assign(supplierSection.style, {
+    padding: "12px",
+    border: "1px solid #d8dee4",
+    borderRadius: "10px",
+    marginBottom: "12px",
+    background: "#f6f8fa",
+  });
+
+  const supplierTitle = document.createElement("div");
+  supplierTitle.textContent = "Supplier";
+  Object.assign(supplierTitle.style, { fontWeight: "700", fontSize: "15px", marginBottom: "10px" });
+  supplierSection.appendChild(supplierTitle);
+
+  // Search existing suppliers
+  const searchWrapper = document.createElement("div");
+  searchWrapper.style.marginBottom = "8px";
+
+  const searchInput = createTextInput(
+    form.supplierSearchQuery,
+    "Search existing suppliers...",
+    (v) => {
+      form.supplierSearchQuery = v;
+      clearTimeout(searchInput._debounce);
+      searchInput._debounce = setTimeout(() => searchSuppliersForForm(v), 300);
+    }
+  );
+  searchWrapper.appendChild(searchInput);
+
+  if (form.supplierSearchResults.length > 0) {
+    const results = document.createElement("div");
+    Object.assign(results.style, {
+      maxHeight: "150px",
+      overflowY: "auto",
+      border: "1px solid #d0d7de",
+      borderRadius: "8px",
+      marginTop: "4px",
+      background: "#fff",
+    });
+
+    form.supplierSearchResults.forEach((s) => {
+      const item = document.createElement("button");
+      item.type = "button";
+      Object.assign(item.style, {
+        display: "block",
+        width: "100%",
+        textAlign: "left",
+        padding: "8px 10px",
+        border: "none",
+        borderBottom: "1px solid #f0f0f0",
+        background: String(s._id) === String(form.selectedSupplierId) ? "#eef6ff" : "#fff",
+        cursor: "pointer",
+        fontSize: "13px",
+      });
+      item.textContent = `${s.supplierName} (${s.supplierCode})`;
+      item.onclick = () => {
+        form.supplierCode = s.supplierCode;
+        form.supplierName = s.supplierName;
+        form.supplierAliases = (s.aliases || []).join(", ");
+        form.selectedSupplierId = s._id;
+        form.isNewSupplier = false;
+        form.supplierSearchResults = [];
+        form.supplierSearchQuery = "";
+        rerenderCurrentCaseToast();
+      };
+      results.appendChild(item);
+    });
+
+    searchWrapper.appendChild(results);
+  }
+
+  supplierSection.appendChild(searchWrapper);
+
+  // Selected or new supplier fields
+  if (form.supplierCode) {
+    const selected = document.createElement("div");
+    Object.assign(selected.style, {
+      padding: "8px 10px",
+      background: "#eef6ff",
+      border: "1px solid #93c5fd",
+      borderRadius: "8px",
+      marginBottom: "8px",
+      display: "flex",
+      justifyContent: "space-between",
+      alignItems: "center",
+    });
+    selected.innerHTML = `<span><strong>${form.supplierName}</strong> (${form.supplierCode})</span>`;
+
+    const clearBtn = document.createElement("button");
+    clearBtn.type = "button";
+    clearBtn.textContent = "×";
+    Object.assign(clearBtn.style, {
+      border: "none",
+      background: "none",
+      fontSize: "16px",
+      cursor: "pointer",
+      color: "#6b7280",
+    });
+    clearBtn.onclick = () => {
+      form.supplierCode = "";
+      form.supplierName = "";
+      form.supplierAliases = "";
+      form.selectedSupplierId = null;
+      form.isNewSupplier = false;
+      rerenderCurrentCaseToast();
+    };
+    selected.appendChild(clearBtn);
+    supplierSection.appendChild(selected);
+  }
+
+  // "New supplier" toggle
+  if (!form.supplierCode) {
+    const newBtn = document.createElement("button");
+    newBtn.type = "button";
+    newBtn.textContent = form.isNewSupplier ? "Cancel new supplier" : "+ New supplier";
+    Object.assign(newBtn.style, {
+      border: "1px solid #d0d7de",
+      borderRadius: "8px",
+      padding: "6px 10px",
+      cursor: "pointer",
+      background: "#fff",
+      fontSize: "13px",
+      marginBottom: "8px",
+    });
+    newBtn.onclick = () => {
+      form.isNewSupplier = !form.isNewSupplier;
+      rerenderCurrentCaseToast();
+    };
+    supplierSection.appendChild(newBtn);
+
+    if (form.isNewSupplier) {
+      supplierSection.appendChild(
+        createFormField("Supplier Code *", createTextInput(form.supplierCode, "e.g. SILGAN", (v) => { form.supplierCode = v; }))
+      );
+      supplierSection.appendChild(
+        createFormField("Supplier Name *", createTextInput(form.supplierName, "e.g. Silgan Dispensing Systems", (v) => { form.supplierName = v; }))
+      );
+      supplierSection.appendChild(
+        createFormField("Aliases (comma-separated)", createTextInput(form.supplierAliases, "e.g. SILGAN, Silgan DS", (v) => { form.supplierAliases = v; }))
+      );
+    }
+  }
+
+  wrapper.appendChild(supplierSection);
+
+  // --- DOCUMENT SECTION ---
+  const docSection = document.createElement("div");
+  Object.assign(docSection.style, {
+    padding: "12px",
+    border: "1px solid #d8dee4",
+    borderRadius: "10px",
+    marginBottom: "12px",
+    background: "#f6f8fa",
+  });
+
+  const docTitle = document.createElement("div");
+  docTitle.textContent = "Document";
+  Object.assign(docTitle.style, { fontWeight: "700", fontSize: "15px", marginBottom: "10px" });
+  docSection.appendChild(docTitle);
+
+  docSection.appendChild(createFormField("Title *", createTextInput(form.docTitle, "Statement title", (v) => { form.docTitle = v; })));
+  docSection.appendChild(createFormField("File Name", createTextInput(form.docFileName, "filename.pdf", (v) => { form.docFileName = v; })));
+  docSection.appendChild(createFormField("SharePoint URL *", createTextInput(form.docUrl, "https://...sharepoint.com/...", (v) => { form.docUrl = v; })));
+
+  docSection.appendChild(createFormField("Document Type", createSelectInput(form.docType, [
+    { value: "certificate", label: "Certificate" },
+    { value: "comprehensive_statement", label: "Comprehensive Statement" },
+    { value: "declaration", label: "Declaration" },
+    { value: "sds", label: "SDS" },
+    { value: "tds", label: "TDS" },
+    { value: "test_report", label: "Test Report" },
+    { value: "email_confirmation", label: "Email Confirmation" },
+    { value: "other", label: "Other" },
+  ], (v) => { form.docType = v; })));
+
+  const dateRow = document.createElement("div");
+  dateRow.style.display = "flex";
+  dateRow.style.gap = "10px";
+
+  const issueDateInput = createTextInput(form.docIssueDate, "YYYY-MM-DD", (v) => { form.docIssueDate = v; });
+  issueDateInput.type = "date";
+  dateRow.appendChild(createFormField("Issue Date", issueDateInput));
+
+  const validUntilInput = createTextInput(form.docValidUntil, "YYYY-MM-DD", (v) => { form.docValidUntil = v; });
+  validUntilInput.type = "date";
+  dateRow.appendChild(createFormField("Valid Until", validUntilInput));
+
+  docSection.appendChild(dateRow);
+
+  const stTextarea = document.createElement("textarea");
+  stTextarea.value = form.docStatementText || "";
+  stTextarea.placeholder = "Statement text (optional)";
+  Object.assign(stTextarea.style, {
+    width: "100%",
+    boxSizing: "border-box",
+    padding: "8px 10px",
+    border: "1px solid #d0d7de",
+    borderRadius: "8px",
+    fontSize: "13px",
+    minHeight: "60px",
+    resize: "vertical",
+  });
+  stTextarea.oninput = (e) => { form.docStatementText = e.target.value; };
+  docSection.appendChild(createFormField("Statement Text", stTextarea));
+
+  wrapper.appendChild(docSection);
+
+  // --- COVERAGE SECTION ---
+  const covSection = document.createElement("div");
+  Object.assign(covSection.style, {
+    padding: "12px",
+    border: "1px solid #d8dee4",
+    borderRadius: "10px",
+    marginBottom: "12px",
+    background: "#f6f8fa",
+  });
+
+  const covTitle = document.createElement("div");
+  covTitle.textContent = "Coverage";
+  Object.assign(covTitle.style, { fontWeight: "700", fontSize: "15px", marginBottom: "10px" });
+  covSection.appendChild(covTitle);
+
+  covSection.appendChild(createFormField("Coverage Type", createSelectInput(form.coverageType, [
+    { value: "supplier_all", label: "All supplier items" },
+    { value: "item_single", label: "Single item" },
+    { value: "item_list", label: "Item list" },
+    { value: "supplier_subset", label: "Supplier subset" },
+    { value: "material_family", label: "Material family" },
+  ], (v) => { form.coverageType = v; rerenderCurrentCaseToast(); })));
+
+  if (form.coverageType !== "supplier_all") {
+    covSection.appendChild(createFormField("DWK Item Numbers (one per line or comma-separated)", (() => {
+      const ta = document.createElement("textarea");
+      ta.value = form.dwkItemNumbers || "";
+      ta.placeholder = "W010946A, W010947B";
+      Object.assign(ta.style, {
+        width: "100%",
+        boxSizing: "border-box",
+        padding: "8px 10px",
+        border: "1px solid #d0d7de",
+        borderRadius: "8px",
+        fontSize: "13px",
+        minHeight: "50px",
+        resize: "vertical",
+      });
+      ta.oninput = (e) => { form.dwkItemNumbers = e.target.value; };
+      return ta;
+    })()));
+
+    covSection.appendChild(createFormField("Supplier Part Numbers (optional)", (() => {
+      const ta = document.createElement("textarea");
+      ta.value = form.supplierPartNumbers || "";
+      ta.placeholder = "5186679, 5186680";
+      Object.assign(ta.style, {
+        width: "100%",
+        boxSizing: "border-box",
+        padding: "8px 10px",
+        border: "1px solid #d0d7de",
+        borderRadius: "8px",
+        fontSize: "13px",
+        minHeight: "50px",
+        resize: "vertical",
+      });
+      ta.oninput = (e) => { form.supplierPartNumbers = e.target.value; };
+      return ta;
+    })()));
+  }
+
+  wrapper.appendChild(covSection);
+
+  // --- ASSERTION SECTION ---
+  const assertSection = document.createElement("div");
+  Object.assign(assertSection.style, {
+    padding: "12px",
+    border: "1px solid #d8dee4",
+    borderRadius: "10px",
+    marginBottom: "12px",
+    background: "#f6f8fa",
+  });
+
+  const assertTitle = document.createElement("div");
+  assertTitle.textContent = "Assertion & Regulations";
+  Object.assign(assertTitle.style, { fontWeight: "700", fontSize: "15px", marginBottom: "10px" });
+  assertSection.appendChild(assertTitle);
+
+  assertSection.appendChild(createFormField("Assertion Type", createSelectInput(form.assertionType, [
+    { value: "compliant", label: "Compliant" },
+    { value: "free_from", label: "Free From" },
+    { value: "contains", label: "Contains" },
+    { value: "non_compliant", label: "Non-Compliant" },
+    { value: "partial", label: "Partial" },
+    { value: "informational", label: "Informational" },
+  ], (v) => { form.assertionType = v; })));
+
+  // Regulations checkboxes
+  const regLabel = document.createElement("div");
+  regLabel.textContent = "Regulations *";
+  Object.assign(regLabel.style, { fontWeight: "600", fontSize: "13px", marginBottom: "6px", color: "#374151" });
+  assertSection.appendChild(regLabel);
+
+  if (form.availableRegulations.length === 0) {
+    loadRegulationsIfNeeded();
+    const loading = document.createElement("div");
+    loading.textContent = "Loading regulations...";
+    loading.style.color = "#6b7280";
+    loading.style.fontSize = "13px";
+    assertSection.appendChild(loading);
+  } else {
+    const regGrid = document.createElement("div");
+    Object.assign(regGrid.style, {
+      display: "grid",
+      gridTemplateColumns: "repeat(3, 1fr)",
+      gap: "6px",
+    });
+
+    form.availableRegulations.forEach((reg) => {
+      const isChecked = form.selectedRegulations.includes(reg.code);
+
+      const label = document.createElement("label");
+      Object.assign(label.style, {
+        display: "flex",
+        alignItems: "center",
+        gap: "4px",
+        fontSize: "12px",
+        cursor: "pointer",
+        padding: "4px 6px",
+        borderRadius: "6px",
+        border: isChecked ? "1px solid #0176d3" : "1px solid #e5e7eb",
+        background: isChecked ? "#eef6ff" : "#fff",
+      });
+
+      const checkbox = document.createElement("input");
+      checkbox.type = "checkbox";
+      checkbox.checked = isChecked;
+      checkbox.onchange = () => {
+        if (checkbox.checked) {
+          form.selectedRegulations.push(reg.code);
+        } else {
+          form.selectedRegulations = form.selectedRegulations.filter((c) => c !== reg.code);
+        }
+        rerenderCurrentCaseToast();
+      };
+
+      label.appendChild(checkbox);
+      label.appendChild(document.createTextNode(reg.code));
+      regGrid.appendChild(label);
+    });
+
+    assertSection.appendChild(regGrid);
+  }
+
+  wrapper.appendChild(assertSection);
+
+  // --- SUBMIT ---
+  const submitBtn = document.createElement("button");
+  submitBtn.type = "button";
+  submitBtn.textContent = form.submitting ? "Saving..." : "Add Statement";
+  submitBtn.disabled = form.submitting;
+  Object.assign(submitBtn.style, {
+    width: "100%",
+    padding: "12px",
+    border: "none",
+    borderRadius: "10px",
+    background: form.submitting ? "#93c5fd" : "#0176d3",
+    color: "#fff",
+    fontWeight: "700",
+    fontSize: "14px",
+    cursor: form.submitting ? "default" : "pointer",
+  });
+  submitBtn.onclick = () => {
+    if (!form.supplierCode || !form.supplierName) {
+      form.submitError = "Select or create a supplier";
+      rerenderCurrentCaseToast();
+      return;
+    }
+    if (!form.docTitle || !form.docUrl) {
+      form.submitError = "Document title and URL are required";
+      rerenderCurrentCaseToast();
+      return;
+    }
+    if (!form.selectedRegulations.length) {
+      form.submitError = "Select at least one regulation";
+      rerenderCurrentCaseToast();
+      return;
+    }
+    submitAddStatement();
+  };
+  wrapper.appendChild(submitBtn);
+
+  return wrapper;
 }
 
 function createMaterialSupplierCard(materialItem, supplierLookup, materialIndex) {
@@ -3024,6 +3730,9 @@ function renderCaseToastAnalysis(payload, response) {
 
         body.appendChild(resultsBlock);
       }
+    }
+      if (activeCaseToastTab === "add") {
+      body.appendChild(createAddStatementTabContent());
     }
   };
 

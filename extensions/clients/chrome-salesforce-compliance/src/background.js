@@ -611,6 +611,50 @@ if (materialQueries.length > 0) {
   };
 }
 
+async function handleAddStatement(payload) {
+  const result = await callComplianceApi("/add-statement", payload);
+
+  if (result.authRequired) {
+    return { ok: false, authRequired: true, error: result.error || "Authentication required" };
+  }
+
+  return {
+    ok: result.ok,
+    result: result.json,
+    error: result.error,
+  };
+}
+
+async function handleFetchRegulations() {
+  const result = await callComplianceApi("/regulations", {});
+
+  if (result.authRequired) {
+    return { ok: false, authRequired: true, error: "Authentication required" };
+  }
+
+  return {
+    ok: result.ok,
+    regulations: result.json?.regulations || [],
+    error: result.error,
+  };
+}
+
+async function handleSearchSuppliers(payload) {
+  const result = await callComplianceApi("/suppliers-search", {
+    q: payload?.q || "",
+  });
+
+  if (result.authRequired) {
+    return { ok: false, authRequired: true, error: "Authentication required" };
+  }
+
+  return {
+    ok: result.ok,
+    suppliers: result.json?.suppliers || [],
+    error: result.error,
+  };
+}
+
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   console.log("BACKGROUND RECEIVED MESSAGE:", message);
 
@@ -646,6 +690,20 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
   if (message?.type === "SF_CASE_CONTEXT") {
     handleCaseContext(message.payload || {}).then(sendResponse);
+    return true;
+  }
+  if (message?.type === "EXT_ADD_STATEMENT") {
+    handleAddStatement(message.payload || {}).then(sendResponse);
+    return true;
+  }
+
+  if (message?.type === "EXT_FETCH_REGULATIONS") {
+    handleFetchRegulations().then(sendResponse);
+    return true;
+  }
+
+  if (message?.type === "EXT_SEARCH_SUPPLIERS") {
+    handleSearchSuppliers(message.payload || {}).then(sendResponse);
     return true;
   }
 });
