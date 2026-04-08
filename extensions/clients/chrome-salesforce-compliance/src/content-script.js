@@ -3,6 +3,8 @@ console.log("CONTENT SCRIPT LOADED:", window.location.href);
 let lastSeenUrl = window.location.href;
 let lastSentCaseUrl = null;
 let activeCaseToastTab = "overview";
+let suppliersSubTab = "library"; // "library" | "analytics"
+
 let authState = {
   authenticated: false,
   user: null,
@@ -71,6 +73,8 @@ let lastCompletedRecordId = null;
 let isCaseToastExpanded = false;
 
 function resetCaseAnalysisState() {
+  suppliersSubTab = "library";
+
   currentCaseAnalysisState = {
     payload: null,
     analysis: null,
@@ -945,7 +949,8 @@ function createCompactRegulationBadge(regulationCode, status, url = "") {
 }
 
 function createMaterialRegulationSummary(supplierLookup) {
-  const rows = buildMaterialRegulationRows(supplierLookup);
+  const allRows = buildMaterialRegulationRows(supplierLookup);
+  const rows = allRows.filter((row) => row.overallStatus !== "missing");
 
   if (!rows.length) return null;
 
@@ -959,7 +964,9 @@ function createMaterialRegulationSummary(supplierLookup) {
   });
 
   rows.forEach((row) => {
-    const primaryEvidence = row.evidence.find((item) => item.url) || row.evidence[0] || null;
+    const primaryEvidence =
+      row.evidence.find((item) => item.url) || row.evidence[0] || null;
+
     wrapper.appendChild(
       createCompactRegulationBadge(
         row.code,
@@ -1004,7 +1011,8 @@ function createCompactSuppliersLine(supplierLookup) {
 }
 
 function createComponentRegulationSummary(supplierLookup) {
-  const rows = buildMaterialRegulationRows(supplierLookup);
+  const allRows = buildMaterialRegulationRows(supplierLookup);
+  const rows = allRows.filter((row) => row.overallStatus !== "missing");
 
   if (!rows.length) return null;
 
@@ -1017,7 +1025,9 @@ function createComponentRegulationSummary(supplierLookup) {
   });
 
   rows.forEach((row) => {
-    const primaryEvidence = row.evidence.find((item) => item.url) || row.evidence[0] || null;
+    const primaryEvidence =
+      row.evidence.find((item) => item.url) || row.evidence[0] || null;
+
     wrapper.appendChild(
       createCompactRegulationBadge(
         row.code,
@@ -2291,11 +2301,6 @@ function createBomSection(supplierLookup) {
       card.appendChild(meta);
     }
 
-    const regSummary = createComponentRegulationSummary(supplierLookup);
-    if (regSummary) {
-      card.appendChild(regSummary);
-    }
-
     wrapper.appendChild(card);
   });
 
@@ -3335,6 +3340,93 @@ function createSuppliersTabContent() {
   const wrapper = document.createElement("div");
   wrapper.style.marginTop = "8px";
 
+  // --- Sub-tab bar ---
+  const subTabBar = document.createElement("div");
+  Object.assign(subTabBar.style, {
+    display: "flex",
+    gap: "6px",
+    marginBottom: "14px",
+    borderBottom: "2px solid #e5e7eb",
+    paddingBottom: "8px",
+  });
+
+  const createSubTabBtn = (label, key) => {
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.textContent = label;
+
+    const isActive = suppliersSubTab === key;
+
+    Object.assign(btn.style, {
+      border: "none",
+      background: "none",
+      padding: "8px 16px",
+      cursor: "pointer",
+      fontWeight: "700",
+      fontSize: "13px",
+      color: isActive ? "#0176d3" : "#6b7280",
+      borderBottom: isActive ? "2px solid #0176d3" : "2px solid transparent",
+      marginBottom: "-10px",
+      transition: "color 0.15s, border-color 0.15s",
+    });
+
+    btn.onmouseenter = () => {
+      if (!isActive) btn.style.color = "#374151";
+    };
+    btn.onmouseleave = () => {
+      if (!isActive) btn.style.color = "#6b7280";
+    };
+
+    btn.onclick = () => {
+      suppliersSubTab = key;
+      rerenderCurrentCaseToast();
+    };
+
+    return btn;
+  };
+
+  subTabBar.appendChild(createSubTabBtn("Library", "library"));
+  subTabBar.appendChild(createSubTabBtn("Analytics", "analytics"));
+
+  wrapper.appendChild(subTabBar);
+
+  // --- Analytics sub-tab ---
+  if (suppliersSubTab === "analytics") {
+    if (
+      !currentCaseAnalysisState.suppliersLibrary &&
+      !currentCaseAnalysisState.suppliersLibraryLoading &&
+      !currentCaseAnalysisState.suppliersLibraryError
+    ) {
+      loadSuppliersLibrary(currentCaseAnalysisState.suppliersLibrarySearch || "");
+    }
+
+    if (currentCaseAnalysisState.suppliersLibraryLoading) {
+      const loading = document.createElement("div");
+      Object.assign(loading.style, {
+        padding: "40px 20px",
+        textAlign: "center",
+        color: "#6b7280",
+        fontSize: "14px",
+      });
+      loading.textContent = "Loading suppliers data for analytics...";
+      wrapper.appendChild(loading);
+      return wrapper;
+    }
+
+    if (currentCaseAnalysisState.suppliersLibraryError) {
+      wrapper.appendChild(
+        createInfoRow("Error", currentCaseAnalysisState.suppliersLibraryError)
+      );
+      return wrapper;
+    }
+
+    wrapper.appendChild(
+      createAnalyticsDashboard(currentCaseAnalysisState.suppliersLibrary)
+    );
+    return wrapper;
+  }
+
+  // --- Library sub-tab (original content) ---
   wrapper.appendChild(createSuppliersLibrarySearchBar());
 
   if (currentCaseAnalysisState.suppliersLibraryLoading) {
@@ -3904,15 +3996,6 @@ const lookupMap = buildComponentSuppliersMap({
   componentSuppliersResult: lookupResponse,
 });
 
-// --- Coverage summary ---
-      const lookupCoverageSummary = createCoverageSummaryBlock({
-        componentSuppliersResult: lookupResponse,
-      });
-
-      if (lookupCoverageSummary) {
-        body.appendChild(lookupCoverageSummary);
-      }
-
       if (parsedQueries.length > 0 && lookupResponse && !lookupResponse.error) {
         const resultsBlock = document.createElement("div");
         resultsBlock.style.marginTop = "10px";
@@ -3921,114 +4004,118 @@ const lookupMap = buildComponentSuppliersMap({
         resultsLabel.textContent = "Lookup results:";
         resultsBlock.appendChild(resultsLabel);
 
-        parsedQueries.forEach((partNumber) => {
-          const supplierLookup =
-            lookupMap.get(String(partNumber).trim().toUpperCase()) || null;
+parsedQueries.forEach((partNumber) => {
+  const supplierLookup =
+    lookupMap.get(String(partNumber).trim().toUpperCase()) || null;
 
-          const card = createManualLookupCard(partNumber, supplierLookup);
+  // --- Компактная карточка без дублирования ---
+  const card = document.createElement("div");
+  Object.assign(card.style, {
+    marginTop: "12px",
+    padding: "14px 14px 12px 14px",
+    border: "1px solid #d9dee7",
+    borderRadius: "14px",
+    background: "#f8fafc",
+  });
 
-          // Добавляем regulation badges со ссылками на документы
-          const regRows = buildMaterialRegulationRows(supplierLookup);
+  // Заголовок: part number
+  const title = document.createElement("div");
+  title.textContent = partNumber;
+  Object.assign(title.style, {
+    fontSize: "18px",
+    fontWeight: "800",
+    lineHeight: "1.2",
+    color: "#111827",
+    marginBottom: "6px",
+  });
+  card.appendChild(title);
 
-          if (regRows.length > 0) {
-            const regSection = document.createElement("div");
-            Object.assign(regSection.style, {
-              marginTop: "12px",
-              display: "flex",
-              flexDirection: "column",
-              gap: "8px",
-            });
+  if (!supplierLookup || !supplierLookup.found) {
+    const notFound = document.createElement("div");
+    notFound.textContent = "No data found in BOM.";
+    Object.assign(notFound.style, {
+      color: "#6b7280",
+      fontSize: "13px",
+      marginTop: "4px",
+    });
+    card.appendChild(notFound);
+    resultsBlock.appendChild(card);
+    return;
+  }
 
-            regRows.forEach((row) => {
-              const regRow = document.createElement("div");
-              Object.assign(regRow.style, {
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "space-between",
-                padding: "8px 10px",
-                border: "1px solid #d9dee7",
-                borderRadius: "10px",
-                background: "#fff",
-              });
+  // Supplier line
+  const suppliersLine = createCompactSuppliersLine(supplierLookup);
+  if (suppliersLine) {
+    suppliersLine.style.marginBottom = "10px";
+    card.appendChild(suppliersLine);
+  }
 
-              const leftSide = document.createElement("div");
-              Object.assign(leftSide.style, {
-                display: "flex",
-                alignItems: "center",
-                gap: "8px",
-              });
+  // Только регуляции с подтверждением (не missing) — компактно в строку
+const regRows = buildMaterialRegulationRows(supplierLookup);
+const coveredRows = regRows.filter(
+  (row) => row.overallStatus !== "missing"
+);
 
-              const icon = document.createElement("span");
-              icon.textContent = getRegulationStatusIcon(row.overallStatus);
-              icon.style.fontSize = "16px";
-              leftSide.appendChild(icon);
+if (coveredRows.length > 0) {
+  const regSection = document.createElement("div");
+  Object.assign(regSection.style, {
+    display: "flex",
+    flexWrap: "wrap",
+    gap: "6px",
+    marginTop: "8px",
+  });
 
-              const regName = document.createElement("span");
-              regName.textContent = row.code;
-              Object.assign(regName.style, {
-                fontWeight: "700",
-                fontSize: "13px",
-                color: "#111827",
-              });
-              leftSide.appendChild(regName);
+  coveredRows.forEach((row) => {
+    const primaryEvidence =
+      row.evidence.find((e) => e.url) || row.evidence[0] || null;
+    const url = primaryEvidence?.url || "";
 
-              leftSide.appendChild(createCoverageBadge(row.overallStatus));
+    const badge = document.createElement(url ? "a" : "span");
 
-              regRow.appendChild(leftSide);
+    if (url) {
+      badge.href = url;
+      badge.target = "_blank";
+      badge.rel = "noopener noreferrer";
+    }
 
-              // Ссылки на документы
-              const linksWrapper = document.createElement("div");
-              Object.assign(linksWrapper.style, {
-                display: "flex",
-                gap: "6px",
-                alignItems: "center",
-              });
+    const icon = getRegulationStatusIcon(row.overallStatus);
+    badge.textContent = `${icon} ${row.code}`;
 
-              const evidenceWithUrls = row.evidence.filter((e) => e.url);
+    const badgeStyle = getCoverageBadgeStyle(row.overallStatus);
 
-              if (evidenceWithUrls.length > 0) {
-                evidenceWithUrls.forEach((ev) => {
-                  const link = document.createElement("a");
-                  link.href = ev.url;
-                  link.target = "_blank";
-                  link.rel = "noopener noreferrer";
-                  link.textContent = ev.documentTitle
-                    ? ev.documentTitle.length > 30
-                      ? ev.documentTitle.slice(0, 30) + "..."
-                      : ev.documentTitle
-                    : "Open";
-                  Object.assign(link.style, {
-                    fontSize: "12px",
-                    fontWeight: "600",
-                    color: "#0176d3",
-                    textDecoration: "none",
-                    padding: "4px 8px",
-                    border: "1px solid #0176d3",
-                    borderRadius: "6px",
-                    whiteSpace: "nowrap",
-                  });
-                  linksWrapper.appendChild(link);
-                });
-              } else {
-                const noDoc = document.createElement("span");
-                noDoc.textContent = "No document";
-                Object.assign(noDoc.style, {
-                  fontSize: "12px",
-                  color: "#9ca3af",
-                  fontStyle: "italic",
-                });
-                linksWrapper.appendChild(noDoc);
-              }
+    Object.assign(badge.style, {
+      display: "inline-flex",
+      alignItems: "center",
+      gap: "4px",
+      padding: "4px 10px",
+      borderRadius: "999px",
+      fontSize: "12px",
+      fontWeight: "700",
+      background: badgeStyle.background,
+      color: badgeStyle.color,
+      border: badgeStyle.border,
+      whiteSpace: "nowrap",
+      textDecoration: "none",
+      cursor: url ? "pointer" : "default",
+    });
 
-              regRow.appendChild(linksWrapper);
-              regSection.appendChild(regRow);
-            });
+    regSection.appendChild(badge);
+  });
 
-            card.appendChild(regSection);
-          }
+  card.appendChild(regSection);
+} else {
+  const noReg = document.createElement("div");
+  noReg.textContent = "No confirmed regulations.";
+  Object.assign(noReg.style, {
+    color: "#6b7280",
+    fontSize: "13px",
+    marginTop: "4px",
+  });
+  card.appendChild(noReg);
+}
 
-          resultsBlock.appendChild(card);
-        });
+  resultsBlock.appendChild(card);
+});
 
         body.appendChild(resultsBlock);
       } else if (parsedQueries.length > 0) {
@@ -4660,6 +4747,1243 @@ function handlePotentialRouteChange() {
       showAuthCard("Sign in to use Compliance Assistant.");
     }
   }
+}
+
+// ============================================================
+// SUPPLIERS ANALYTICS DASHBOARD
+// Integrated into the Suppliers tab as a sub-tab
+// ============================================================
+
+// --- Sub-tab state ---
+// Add this to the top of content-script.js near other state variables:
+// let suppliersSubTab = "library"; // "library" | "analytics"
+
+// --- Analytics data processor ---
+
+function humanizeScopeSummary(scopeSummary) {
+  const value = String(scopeSummary || "").trim();
+
+  if (value === "supplier_all") return "all supplier items";
+  if (value === "item_list") return "specific listed items";
+  if (value === "item_single") return "single specific item";
+  if (value === "supplier_subset") return "supplier subset";
+  if (value === "material_family") return "material family";
+  if (value === "component_family") return "component family";
+  if (value === "country_specific") return "country-specific scope";
+  if (value === "plant_specific") return "plant-specific scope";
+  if (!value) return "scope not specified";
+
+  return value;
+}
+
+function buildAnalyticsData(suppliersLibrary) {
+  const suppliers = Array.isArray(suppliersLibrary?.suppliers)
+    ? suppliersLibrary.suppliers
+    : [];
+
+  if (!suppliers.length) {
+    return {
+      suppliers: [],
+      regulations: [],
+      matrix: [],
+      stats: {},
+      atRisk: [],
+      expiringSoon: [],
+      regulationBreakdown: [],
+    };
+  }
+
+  function isAssertionExpired(assertion) {
+    const validUntil = assertion?.validUntil || assertion?.document?.validUntil;
+    if (!validUntil) return false;
+
+    const time = new Date(validUntil).getTime();
+    if (Number.isNaN(time)) return false;
+
+    return time < Date.now();
+  }
+
+  function isAssertionActive(assertion) {
+    if (!assertion) return false;
+    if (String(assertion.status || "").toLowerCase() !== "active") return false;
+    if (isAssertionExpired(assertion)) return false;
+
+    const docStatus = String(assertion?.document?.status || "active").toLowerCase();
+    if (docStatus && docStatus !== "active") return false;
+
+    return true;
+  }
+
+  function normalizeCoverageBucket(assertion) {
+    const coverageLevel = String(assertion?.coverageLevel || "").toLowerCase();
+    const allSupplierItems = assertion?.scope?.allSupplierItems === true;
+
+    if (allSupplierItems || coverageLevel === "supplier_all") {
+      return "supplier_all";
+    }
+
+    if (
+      coverageLevel === "item_list" ||
+      coverageLevel === "item_single" ||
+      coverageLevel === "supplier_subset" ||
+      coverageLevel === "material_family" ||
+      coverageLevel === "component_family" ||
+      coverageLevel === "supplier_partial" ||
+      coverageLevel === "country_specific" ||
+      coverageLevel === "plant_specific"
+    ) {
+      return "partial_scope";
+    }
+
+    return "partial_scope";
+  }
+
+  function resolveRegulationStatus(assertionsForReg) {
+    const assertions = Array.isArray(assertionsForReg) ? assertionsForReg : [];
+    if (!assertions.length) return "missing";
+
+    const activeAssertions = assertions.filter(isAssertionActive);
+    const expiredAssertions = assertions.filter((a) => !isAssertionActive(a));
+
+    const activeNonCompliant = activeAssertions.some(
+      (a) => String(a?.assertionType || "").toLowerCase() === "non_compliant"
+    );
+    if (activeNonCompliant) return "non_compliant";
+
+    const activeSupplierAll = activeAssertions.some(
+      (a) => normalizeCoverageBucket(a) === "supplier_all"
+    );
+    if (activeSupplierAll) return "covered";
+
+    const activeInformationalOnly =
+      activeAssertions.length > 0 &&
+      activeAssertions.every(
+        (a) => String(a?.assertionType || "").toLowerCase() === "informational"
+      );
+    if (activeInformationalOnly) return "informational";
+
+    const activePartial = activeAssertions.some(
+      (a) => normalizeCoverageBucket(a) === "partial_scope"
+    );
+    if (activePartial) return "partial";
+
+    if (expiredAssertions.length > 0) return "expired";
+
+    return "missing";
+  }
+
+  // Collect all unique regulation codes from assertions first, fallback to regulationSummary
+  const allRegCodes = new Map();
+
+  suppliers.forEach((supplier) => {
+    const assertions = Array.isArray(supplier.assertions) ? supplier.assertions : [];
+    assertions.forEach((assertion) => {
+      const code = assertion?.regulation?.code;
+      const name = assertion?.regulation?.name || code;
+      if (code && !allRegCodes.has(code)) {
+        allRegCodes.set(code, name);
+      }
+    });
+
+    const regs = Array.isArray(supplier.regulationSummary)
+      ? supplier.regulationSummary
+      : [];
+    regs.forEach((reg) => {
+      if (reg?.regulationCode && !allRegCodes.has(reg.regulationCode)) {
+        allRegCodes.set(reg.regulationCode, reg.regulationName || reg.regulationCode);
+      }
+    });
+  });
+
+  const regulations = Array.from(allRegCodes.entries())
+    .map(([code, name]) => ({ code, name }))
+    .sort((a, b) => a.code.localeCompare(b.code));
+
+  // Build matrix: supplier × regulation → status derived from assertions
+  const matrix = suppliers.map((supplier) => {
+    const assertions = Array.isArray(supplier.assertions) ? supplier.assertions : [];
+
+    const assertionsByReg = new Map();
+    assertions.forEach((assertion) => {
+      const code = assertion?.regulation?.code;
+      if (!code) return;
+
+      if (!assertionsByReg.has(code)) {
+        assertionsByReg.set(code, []);
+      }
+
+      assertionsByReg.get(code).push(assertion);
+    });
+function buildScopeSummary(assertionsForReg) {
+  const assertions = Array.isArray(assertionsForReg) ? assertionsForReg : [];
+  if (!assertions.length) return "No assertions";
+
+  const activeAssertions = assertions.filter(isAssertionActive);
+  const sourceAssertions = activeAssertions.length ? activeAssertions : assertions;
+
+  const coverageLevels = Array.from(
+    new Set(
+      sourceAssertions
+        .map((a) => String(a?.coverageLevel || "").trim())
+        .filter(Boolean)
+    )
+  );
+
+  const hasAllSupplierItems = sourceAssertions.some(
+    (a) => a?.scope?.allSupplierItems === true
+  );
+
+  if (hasAllSupplierItems || coverageLevels.includes("supplier_all")) {
+    return "supplier_all";
+  }
+
+  if (coverageLevels.length === 1) {
+    return coverageLevels[0];
+  }
+
+  if (coverageLevels.length > 1) {
+    return coverageLevels.join(", ");
+  }
+
+  return "Scope not specified";
+}
+
+const cells = regulations.map((reg) => {
+  const assertionsForReg = assertionsByReg.get(reg.code) || [];
+  const status = resolveRegulationStatus(assertionsForReg);
+  const scopeSummary = buildScopeSummary(assertionsForReg);
+
+  return {
+    regulationCode: reg.code,
+    status,
+    scopeSummary,
+    assertions: assertionsForReg,
+  };
+});
+
+    const coveredCount = cells.filter((c) => c.status === "covered").length;
+    const partialCount = cells.filter((c) => c.status === "partial").length;
+    const totalCount = regulations.length;
+
+    return {
+      supplierName: supplier.supplierName || "Unknown",
+      supplierCode: supplier.supplierCode || "",
+      supplierId: supplier.supplierId || "",
+      documentsCount: supplier.documentsCount || 0,
+      assertionsCount: supplier.assertionsCount || 0,
+      cells,
+      coveredCount,
+      partialCount,
+      totalCount,
+      coverageRate: totalCount > 0 ? coveredCount / totalCount : 0,
+    };
+  });
+
+  // Stats
+  const totalSuppliers = suppliers.length;
+
+  const fullyCovered = matrix.filter(
+    (row) => row.coveredCount === row.totalCount && row.totalCount > 0
+  ).length;
+
+  const withGaps = matrix.filter((row) => {
+    const hasAnyCoverage = row.cells.some(
+      (c) =>
+        c.status === "covered" ||
+        c.status === "partial" ||
+        c.status === "informational" ||
+        c.status === "expired"
+    );
+    const notFullyCovered = row.coveredCount < row.totalCount;
+    return hasAnyCoverage && notFullyCovered;
+  }).length;
+
+  const noCoverage = matrix.filter((row) =>
+    row.cells.every((c) => c.status === "missing")
+  ).length;
+
+  let totalCells = 0;
+  let coveredCells = 0;
+  let partialCells = 0;
+  let expiredCells = 0;
+  let nonCompliantCells = 0;
+  let informationalCells = 0;
+
+  matrix.forEach((row) => {
+    row.cells.forEach((cell) => {
+      totalCells++;
+      if (cell.status === "covered") coveredCells++;
+      if (cell.status === "partial") partialCells++;
+      if (cell.status === "expired") expiredCells++;
+      if (cell.status === "non_compliant") nonCompliantCells++;
+      if (cell.status === "informational") informationalCells++;
+    });
+  });
+
+  const overallCoverageRate = totalCells > 0 ? coveredCells / totalCells : 0;
+
+  // At risk suppliers (sorted by gaps)
+  const atRisk = matrix
+    .map((row) => ({
+      ...row,
+      missingCount: row.cells.filter((c) => c.status === "missing").length,
+      partialCount: row.cells.filter((c) => c.status === "partial").length,
+      expiredCount: row.cells.filter((c) => c.status === "expired").length,
+      nonCompliantCount: row.cells.filter((c) => c.status === "non_compliant").length,
+      gapScore:
+        row.cells.filter((c) => c.status === "missing").length * 3 +
+        row.cells.filter((c) => c.status === "partial").length * 2 +
+        row.cells.filter((c) => c.status === "expired").length * 2 +
+        row.cells.filter((c) => c.status === "non_compliant").length * 5,
+    }))
+    .filter((row) => row.gapScore > 0)
+    .sort((a, b) => b.gapScore - a.gapScore);
+
+  // Regulation breakdown
+  const regulationBreakdown = regulations.map((reg) => {
+    let covered = 0;
+    let partial = 0;
+    let missing = 0;
+    let expired = 0;
+    let nonCompliant = 0;
+    let informational = 0;
+
+    matrix.forEach((row) => {
+      const cell = row.cells.find((c) => c.regulationCode === reg.code);
+      const status = cell?.status || "missing";
+
+      if (status === "covered") covered++;
+      else if (status === "partial") partial++;
+      else if (status === "expired") expired++;
+      else if (status === "non_compliant") nonCompliant++;
+      else if (status === "informational") informational++;
+      else missing++;
+    });
+
+    return {
+      code: reg.code,
+      name: reg.name,
+      covered,
+      partial,
+      missing,
+      expired,
+      nonCompliant,
+      informational,
+      total: totalSuppliers,
+      coverageRate: totalSuppliers > 0 ? covered / totalSuppliers : 0,
+    };
+  });
+
+  // Expiring soon
+  const now = Date.now();
+  const thirtyDays = 30 * 24 * 60 * 60 * 1000;
+  const sixtyDays = 60 * 24 * 60 * 60 * 1000;
+  const ninetyDays = 90 * 24 * 60 * 60 * 1000;
+
+  const expiringSoon = [];
+  suppliers.forEach((supplier) => {
+    (supplier.assertions || []).forEach((assertion) => {
+      const validUntil = assertion.validUntil || assertion?.document?.validUntil;
+      if (!validUntil) return;
+
+      const expDate = new Date(validUntil);
+      if (Number.isNaN(expDate.getTime())) return;
+
+      const diff = expDate.getTime() - now;
+      if (diff < 0 || diff > ninetyDays) return;
+
+      let urgency = "90d";
+      if (diff <= thirtyDays) urgency = "30d";
+      else if (diff <= sixtyDays) urgency = "60d";
+
+      expiringSoon.push({
+        supplierName: supplier.supplierName,
+        supplierCode: supplier.supplierCode,
+        regulationCode: assertion?.regulation?.code || "",
+        regulationName: assertion?.regulation?.name || "",
+        documentTitle: assertion?.document?.title || "",
+        validUntil: expDate.toISOString(),
+        urgency,
+        daysLeft: Math.ceil(diff / (24 * 60 * 60 * 1000)),
+      });
+    });
+  });
+
+  expiringSoon.sort((a, b) => a.daysLeft - b.daysLeft);
+
+  return {
+    suppliers,
+    regulations,
+    matrix,
+    stats: {
+      totalSuppliers,
+      fullyCovered,
+      withGaps,
+      noCoverage,
+      totalRegulations: regulations.length,
+      overallCoverageRate,
+      totalCells,
+      coveredCells,
+      partialCells,
+      expiredCells,
+      nonCompliantCells,
+      informationalCells,
+    },
+    atRisk,
+    expiringSoon,
+    regulationBreakdown,
+  };
+}
+
+// --- Render functions ---
+
+function createAnalyticsStatCard(label, value, subtext, accentColor) {
+  const card = document.createElement("div");
+  Object.assign(card.style, {
+    padding: "16px 18px",
+    background: "#ffffff",
+    border: "1px solid #d9dee7",
+    borderRadius: "16px",
+    minWidth: "0",
+  });
+
+  const labelEl = document.createElement("div");
+  labelEl.textContent = label;
+  Object.assign(labelEl.style, {
+    fontSize: "12px",
+    fontWeight: "600",
+    color: "#6b7280",
+    textTransform: "uppercase",
+    letterSpacing: "0.05em",
+    marginBottom: "8px",
+  });
+
+  const valueEl = document.createElement("div");
+  valueEl.textContent = String(value);
+  Object.assign(valueEl.style, {
+    fontSize: "32px",
+    fontWeight: "800",
+    color: accentColor || "#111827",
+    lineHeight: "1",
+    marginBottom: subtext ? "6px" : "0",
+  });
+
+  card.appendChild(labelEl);
+  card.appendChild(valueEl);
+
+  if (subtext) {
+    const sub = document.createElement("div");
+    sub.textContent = subtext;
+    Object.assign(sub.style, {
+      fontSize: "12px",
+      color: "#9ca3af",
+    });
+    card.appendChild(sub);
+  }
+
+  return card;
+}
+
+function createAnalyticsStatsBar(stats) {
+  const wrapper = document.createElement("div");
+  Object.assign(wrapper.style, {
+    display: "grid",
+    gridTemplateColumns: "repeat(5, 1fr)",
+    gap: "12px",
+    marginBottom: "24px",
+  });
+
+  wrapper.appendChild(
+    createAnalyticsStatCard(
+      "Suppliers",
+      stats.totalSuppliers,
+      `${stats.totalRegulations} regulations tracked`,
+      "#111827"
+    )
+  );
+
+  wrapper.appendChild(
+    createAnalyticsStatCard(
+      "Fully Covered",
+      stats.fullyCovered,
+      `${stats.totalSuppliers > 0 ? Math.round((stats.fullyCovered / stats.totalSuppliers) * 100) : 0}% of suppliers`,
+      "#16a34a"
+    )
+  );
+
+  wrapper.appendChild(
+    createAnalyticsStatCard(
+      "With Gaps",
+      stats.withGaps,
+      "partial coverage",
+      "#ea580c"
+    )
+  );
+
+  wrapper.appendChild(
+    createAnalyticsStatCard(
+      "No Coverage",
+      stats.noCoverage,
+      "no statements",
+      "#dc2626"
+    )
+  );
+
+  wrapper.appendChild(
+    createAnalyticsStatCard(
+      "Coverage Rate",
+      `${Math.round(stats.overallCoverageRate * 100)}%`,
+      `${stats.coveredCells} / ${stats.totalCells} cells`,
+      stats.overallCoverageRate >= 0.8 ? "#16a34a" : stats.overallCoverageRate >= 0.5 ? "#ea580c" : "#dc2626"
+    )
+  );
+
+  return wrapper;
+}
+
+function getMatrixCellColor(status) {
+  switch (status) {
+    case "covered":
+      return { bg: "#dcfce7", text: "#166534", symbol: "✓" };
+    case "partial":
+      return { bg: "#fef3c7", text: "#92400e", symbol: "◐" };
+    case "expired":
+      return { bg: "#f3f4f6", text: "#6b7280", symbol: "⏱" };
+    case "non_compliant":
+      return { bg: "#fee2e2", text: "#991b1b", symbol: "✗" };
+    case "informational":
+      return { bg: "#e0f2fe", text: "#075985", symbol: "i" };
+    default:
+      return { bg: "#f9fafb", text: "#d1d5db", symbol: "—" };
+  }
+}
+
+function createComplianceMatrix(data) {
+  const section = document.createElement("div");
+  Object.assign(section.style, {
+    marginBottom: "28px",
+  });
+
+  const title = document.createElement("div");
+  title.textContent = "Compliance Matrix";
+  Object.assign(title.style, {
+    fontSize: "18px",
+    fontWeight: "800",
+    color: "#111827",
+    marginBottom: "4px",
+  });
+  section.appendChild(title);
+
+  const subtitle = document.createElement("div");
+  subtitle.textContent = "Supplier × Regulation coverage heatmap";
+  Object.assign(subtitle.style, {
+    fontSize: "13px",
+    color: "#6b7280",
+    marginBottom: "14px",
+  });
+  section.appendChild(subtitle);
+
+  if (!data.matrix.length || !data.regulations.length) {
+    const empty = document.createElement("div");
+    empty.textContent = "No data available for matrix view.";
+    Object.assign(empty.style, { color: "#6b7280", fontSize: "14px" });
+    section.appendChild(empty);
+    return section;
+  }
+
+  const scrollWrapper = document.createElement("div");
+  Object.assign(scrollWrapper.style, {
+    overflowX: "auto",
+    border: "1px solid #d9dee7",
+    borderRadius: "14px",
+    background: "#ffffff",
+  });
+
+  const table = document.createElement("table");
+  Object.assign(table.style, {
+    width: "100%",
+    borderCollapse: "collapse",
+    fontSize: "12px",
+    minWidth: `${200 + data.regulations.length * 72}px`,
+  });
+
+  // Header
+  const thead = document.createElement("thead");
+  const headerRow = document.createElement("tr");
+
+  const cornerCell = document.createElement("th");
+  cornerCell.textContent = "Supplier";
+  Object.assign(cornerCell.style, {
+    position: "sticky",
+    left: "0",
+    zIndex: "2",
+    background: "#f8fafc",
+    padding: "10px 12px",
+    textAlign: "left",
+    fontWeight: "700",
+    borderBottom: "2px solid #d9dee7",
+    borderRight: "1px solid #e5e7eb",
+    minWidth: "180px",
+    fontSize: "12px",
+    color: "#374151",
+  });
+  headerRow.appendChild(cornerCell);
+
+  data.regulations.forEach((reg) => {
+    const th = document.createElement("th");
+    th.textContent = reg.code;
+    th.title = reg.name;
+    Object.assign(th.style, {
+      padding: "10px 6px",
+      textAlign: "center",
+      fontWeight: "700",
+      borderBottom: "2px solid #d9dee7",
+      borderRight: "1px solid #f0f0f0",
+      background: "#f8fafc",
+      fontSize: "11px",
+      color: "#374151",
+      minWidth: "64px",
+      whiteSpace: "nowrap",
+    });
+    headerRow.appendChild(th);
+  });
+
+  // Coverage rate column
+  const rateHeader = document.createElement("th");
+  rateHeader.textContent = "Rate";
+  Object.assign(rateHeader.style, {
+    padding: "10px 10px",
+    textAlign: "center",
+    fontWeight: "700",
+    borderBottom: "2px solid #d9dee7",
+    background: "#f8fafc",
+    fontSize: "11px",
+    color: "#374151",
+    minWidth: "60px",
+  });
+  headerRow.appendChild(rateHeader);
+
+  thead.appendChild(headerRow);
+  table.appendChild(thead);
+
+  // Body
+  const tbody = document.createElement("tbody");
+
+  // Sort matrix by coverage rate ascending (worst first)
+  const sortedMatrix = [...data.matrix].sort((a, b) => a.coverageRate - b.coverageRate);
+
+  sortedMatrix.forEach((row, rowIdx) => {
+    const tr = document.createElement("tr");
+    Object.assign(tr.style, {
+      background: rowIdx % 2 === 0 ? "#ffffff" : "#fafbfc",
+    });
+
+    const supplierCell = document.createElement("td");
+    Object.assign(supplierCell.style, {
+      position: "sticky",
+      left: "0",
+      zIndex: "1",
+      background: rowIdx % 2 === 0 ? "#ffffff" : "#fafbfc",
+      padding: "8px 12px",
+      borderBottom: "1px solid #f0f0f0",
+      borderRight: "1px solid #e5e7eb",
+      fontWeight: "600",
+      fontSize: "12px",
+      color: "#111827",
+      maxWidth: "200px",
+      overflow: "hidden",
+      textOverflow: "ellipsis",
+      whiteSpace: "nowrap",
+    });
+    supplierCell.textContent = row.supplierName;
+    supplierCell.title = `${row.supplierName} (${row.supplierCode})`;
+    tr.appendChild(supplierCell);
+
+    row.cells.forEach((cell) => {
+      const td = document.createElement("td");
+      const colorInfo = getMatrixCellColor(cell.status);
+
+      Object.assign(td.style, {
+        padding: "6px 4px",
+        textAlign: "center",
+        borderBottom: "1px solid #f0f0f0",
+        borderRight: "1px solid #f0f0f0",
+        background: colorInfo.bg,
+        color: colorInfo.text,
+        fontWeight: "700",
+        fontSize: "13px",
+        cursor: "default",
+      });
+
+td.textContent = colorInfo.symbol;
+
+const humanScope = humanizeScopeSummary(cell.scopeSummary);
+
+const scopeLabel =
+  cell.status === "covered"
+    ? `Covered: ${humanScope}`
+    : cell.status === "partial"
+    ? `Partial: ${humanScope}`
+    : cell.status === "non_compliant"
+    ? `Non-compliant: ${humanScope}`
+    : cell.status === "expired"
+    ? `Expired: ${humanScope}`
+    : cell.status === "informational"
+    ? `Informational: ${humanScope}`
+    : "Missing: no assertions";
+
+td.title = `${row.supplierName} — ${cell.regulationCode}\n${scopeLabel}`;
+
+tr.appendChild(td);
+    });
+
+    // Rate cell
+    const rateTd = document.createElement("td");
+    const rate = Math.round(row.coverageRate * 100);
+    Object.assign(rateTd.style, {
+      padding: "6px 8px",
+      textAlign: "center",
+      borderBottom: "1px solid #f0f0f0",
+      fontWeight: "700",
+      fontSize: "12px",
+      color: rate >= 80 ? "#16a34a" : rate >= 50 ? "#92400e" : "#dc2626",
+    });
+    rateTd.textContent = `${rate}%`;
+    tr.appendChild(rateTd);
+
+    tbody.appendChild(tr);
+  });
+
+  table.appendChild(tbody);
+  scrollWrapper.appendChild(table);
+  section.appendChild(scrollWrapper);
+
+  // Legend
+  const legend = document.createElement("div");
+  Object.assign(legend.style, {
+    display: "flex",
+    gap: "16px",
+    marginTop: "10px",
+    flexWrap: "wrap",
+  });
+
+const statuses = [
+  { status: "covered", label: "Covered = all supplier items" },
+  { status: "partial", label: "Partial = specific items / subset / family" },
+  { status: "expired", label: "Expired" },
+  { status: "non_compliant", label: "Non-compliant" },
+  { status: "informational", label: "Info only" },
+  { status: "missing", label: "Missing = no assertions" },
+];
+
+  statuses.forEach((item) => {
+    const colorInfo = getMatrixCellColor(item.status);
+    const legendItem = document.createElement("div");
+    Object.assign(legendItem.style, {
+      display: "flex",
+      alignItems: "center",
+      gap: "6px",
+      fontSize: "12px",
+      color: "#4b5563",
+    });
+
+    const dot = document.createElement("span");
+    Object.assign(dot.style, {
+      width: "16px",
+      height: "16px",
+      borderRadius: "4px",
+      background: colorInfo.bg,
+      border: "1px solid #d0d7de",
+      display: "inline-flex",
+      alignItems: "center",
+      justifyContent: "center",
+      fontSize: "10px",
+      fontWeight: "700",
+      color: colorInfo.text,
+    });
+    dot.textContent = colorInfo.symbol;
+
+    legendItem.appendChild(dot);
+    legendItem.appendChild(document.createTextNode(item.label));
+    legend.appendChild(legendItem);
+  });
+
+  section.appendChild(legend);
+
+  return section;
+}
+
+function createRegulationBreakdownSection(data) {
+  const section = document.createElement("div");
+  Object.assign(section.style, {
+    marginBottom: "28px",
+  });
+
+  const title = document.createElement("div");
+  title.textContent = "Coverage by Regulation";
+  Object.assign(title.style, {
+    fontSize: "18px",
+    fontWeight: "800",
+    color: "#111827",
+    marginBottom: "4px",
+  });
+  section.appendChild(title);
+
+  const subtitle = document.createElement("div");
+  subtitle.textContent = "How many suppliers are covered per regulation";
+  Object.assign(subtitle.style, {
+    fontSize: "13px",
+    color: "#6b7280",
+    marginBottom: "14px",
+  });
+  section.appendChild(subtitle);
+
+  if (!data.regulationBreakdown.length) {
+    const empty = document.createElement("div");
+    empty.textContent = "No regulation data available.";
+    Object.assign(empty.style, { color: "#6b7280", fontSize: "14px" });
+    section.appendChild(empty);
+    return section;
+  }
+
+  const list = document.createElement("div");
+  Object.assign(list.style, {
+    display: "flex",
+    flexDirection: "column",
+    gap: "8px",
+  });
+
+  // Sort by coverage rate ascending
+  const sorted = [...data.regulationBreakdown].sort(
+    (a, b) => a.coverageRate - b.coverageRate
+  );
+
+  sorted.forEach((reg) => {
+    const row = document.createElement("div");
+    Object.assign(row.style, {
+      display: "flex",
+      alignItems: "center",
+      gap: "12px",
+      padding: "12px 14px",
+      background: "#ffffff",
+      border: "1px solid #d9dee7",
+      borderRadius: "12px",
+    });
+
+    // Label
+    const label = document.createElement("div");
+    Object.assign(label.style, {
+      minWidth: "120px",
+      fontWeight: "700",
+      fontSize: "13px",
+      color: "#111827",
+    });
+    label.textContent = reg.code;
+    label.title = reg.name;
+    row.appendChild(label);
+
+    // Stacked bar
+    const barContainer = document.createElement("div");
+    Object.assign(barContainer.style, {
+      flex: "1",
+      height: "22px",
+      background: "#f3f4f6",
+      borderRadius: "6px",
+      overflow: "hidden",
+      display: "flex",
+    });
+
+    const segments = [
+      { count: reg.covered, color: "#22c55e" },
+      { count: reg.partial, color: "#f59e0b" },
+      { count: reg.informational, color: "#38bdf8" },
+      { count: reg.expired, color: "#9ca3af" },
+      { count: reg.nonCompliant, color: "#ef4444" },
+    ];
+
+    segments.forEach((seg) => {
+      if (seg.count <= 0) return;
+      const pct = (seg.count / reg.total) * 100;
+      const bar = document.createElement("div");
+      Object.assign(bar.style, {
+        width: `${pct}%`,
+        height: "100%",
+        background: seg.color,
+        transition: "width 0.3s ease",
+      });
+      barContainer.appendChild(bar);
+    });
+
+    row.appendChild(barContainer);
+
+    // Numbers
+    const numbers = document.createElement("div");
+    Object.assign(numbers.style, {
+      minWidth: "80px",
+      textAlign: "right",
+      fontSize: "13px",
+      fontWeight: "700",
+      color: reg.coverageRate >= 0.8 ? "#16a34a" : reg.coverageRate >= 0.5 ? "#92400e" : "#dc2626",
+    });
+    numbers.textContent = `${reg.covered}/${reg.total} (${Math.round(reg.coverageRate * 100)}%)`;
+    row.appendChild(numbers);
+
+    list.appendChild(row);
+  });
+
+  section.appendChild(list);
+  return section;
+}
+
+function createAtRiskSection(data) {
+  const section = document.createElement("div");
+  Object.assign(section.style, {
+    marginBottom: "28px",
+  });
+
+  const title = document.createElement("div");
+  title.textContent = "Suppliers at Risk";
+  Object.assign(title.style, {
+    fontSize: "18px",
+    fontWeight: "800",
+    color: "#111827",
+    marginBottom: "4px",
+  });
+  section.appendChild(title);
+
+  const subtitle = document.createElement("div");
+  subtitle.textContent = "Ranked by compliance gaps — worst first";
+  Object.assign(subtitle.style, {
+    fontSize: "13px",
+    color: "#6b7280",
+    marginBottom: "14px",
+  });
+  section.appendChild(subtitle);
+
+  const topRisk = data.atRisk.slice(0, 15);
+
+  if (!topRisk.length) {
+    const ok = document.createElement("div");
+    Object.assign(ok.style, {
+      padding: "16px",
+      background: "#dcfce7",
+      border: "1px solid #86efac",
+      borderRadius: "12px",
+      color: "#166534",
+      fontWeight: "600",
+      fontSize: "14px",
+    });
+    ok.textContent = "All suppliers have full coverage — no gaps detected.";
+    section.appendChild(ok);
+    return section;
+  }
+
+  const list = document.createElement("div");
+  Object.assign(list.style, {
+    display: "flex",
+    flexDirection: "column",
+    gap: "8px",
+  });
+
+  topRisk.forEach((row, idx) => {
+    const card = document.createElement("div");
+    Object.assign(card.style, {
+      display: "flex",
+      alignItems: "center",
+      gap: "14px",
+      padding: "12px 14px",
+      background: "#ffffff",
+      border: "1px solid #d9dee7",
+      borderRadius: "12px",
+    });
+
+    // Rank
+    const rank = document.createElement("div");
+    Object.assign(rank.style, {
+      width: "28px",
+      height: "28px",
+      borderRadius: "999px",
+      background: idx < 3 ? "#fee2e2" : "#f3f4f6",
+      color: idx < 3 ? "#dc2626" : "#6b7280",
+      fontWeight: "800",
+      fontSize: "12px",
+      display: "flex",
+      alignItems: "center",
+      justifyContent: "center",
+      flexShrink: "0",
+    });
+    rank.textContent = String(idx + 1);
+    card.appendChild(rank);
+
+    // Name
+    const nameBlock = document.createElement("div");
+    nameBlock.style.flex = "1";
+
+    const nameEl = document.createElement("div");
+    Object.assign(nameEl.style, {
+      fontWeight: "700",
+      fontSize: "14px",
+      color: "#111827",
+      marginBottom: "2px",
+    });
+    nameEl.textContent = row.supplierName;
+
+    const codeEl = document.createElement("div");
+    Object.assign(codeEl.style, {
+      fontSize: "12px",
+      color: "#6b7280",
+    });
+    codeEl.textContent = row.supplierCode || "";
+
+    nameBlock.appendChild(nameEl);
+    nameBlock.appendChild(codeEl);
+    card.appendChild(nameBlock);
+
+    // Progress bar
+    const progressWrapper = document.createElement("div");
+    Object.assign(progressWrapper.style, {
+      width: "120px",
+      flexShrink: "0",
+    });
+
+    const progressBg = document.createElement("div");
+    Object.assign(progressBg.style, {
+      width: "100%",
+      height: "8px",
+      background: "#f3f4f6",
+      borderRadius: "4px",
+      overflow: "hidden",
+    });
+
+    const progressFill = document.createElement("div");
+    const pct = Math.round(row.coverageRate * 100);
+    Object.assign(progressFill.style, {
+      width: `${pct}%`,
+      height: "100%",
+      background: pct >= 80 ? "#22c55e" : pct >= 50 ? "#f59e0b" : "#ef4444",
+      borderRadius: "4px",
+    });
+    progressBg.appendChild(progressFill);
+
+    const progressLabel = document.createElement("div");
+    Object.assign(progressLabel.style, {
+      fontSize: "11px",
+      color: "#6b7280",
+      marginTop: "3px",
+      textAlign: "center",
+    });
+    progressLabel.textContent = `${row.coveredCount}/${row.totalCount}`;
+
+    progressWrapper.appendChild(progressBg);
+    progressWrapper.appendChild(progressLabel);
+    card.appendChild(progressWrapper);
+
+    // Gap badges
+    const badges = document.createElement("div");
+    Object.assign(badges.style, {
+      display: "flex",
+      gap: "6px",
+      flexShrink: "0",
+    });
+
+    if (row.nonCompliantCount > 0) {
+      const badge = document.createElement("span");
+      Object.assign(badge.style, {
+        padding: "3px 8px",
+        borderRadius: "999px",
+        fontSize: "11px",
+        fontWeight: "700",
+        background: "#fee2e2",
+        color: "#991b1b",
+        border: "1px solid #fca5a5",
+      });
+      badge.textContent = `${row.nonCompliantCount} non-compliant`;
+      badges.appendChild(badge);
+    }
+
+    if (row.missingCount > 0) {
+      const badge = document.createElement("span");
+      Object.assign(badge.style, {
+        padding: "3px 8px",
+        borderRadius: "999px",
+        fontSize: "11px",
+        fontWeight: "700",
+        background: "#f3f4f6",
+        color: "#4b5563",
+        border: "1px solid #d1d5db",
+      });
+      badge.textContent = `${row.missingCount} missing`;
+      badges.appendChild(badge);
+    }
+
+    if (row.expiredCount > 0) {
+      const badge = document.createElement("span");
+      Object.assign(badge.style, {
+        padding: "3px 8px",
+        borderRadius: "999px",
+        fontSize: "11px",
+        fontWeight: "700",
+        background: "#fef3c7",
+        color: "#92400e",
+        border: "1px solid #fcd34d",
+      });
+      badge.textContent = `${row.expiredCount} expired`;
+      badges.appendChild(badge);
+    }
+
+    card.appendChild(badges);
+    list.appendChild(card);
+  });
+
+  section.appendChild(list);
+  return section;
+}
+
+function createExpiringSoonSection(data) {
+  const section = document.createElement("div");
+  Object.assign(section.style, {
+    marginBottom: "28px",
+  });
+
+  const title = document.createElement("div");
+  title.textContent = "Expiring Soon";
+  Object.assign(title.style, {
+    fontSize: "18px",
+    fontWeight: "800",
+    color: "#111827",
+    marginBottom: "4px",
+  });
+  section.appendChild(title);
+
+  const subtitle = document.createElement("div");
+  subtitle.textContent = "Statements expiring within the next 90 days";
+  Object.assign(subtitle.style, {
+    fontSize: "13px",
+    color: "#6b7280",
+    marginBottom: "14px",
+  });
+  section.appendChild(subtitle);
+
+  if (!data.expiringSoon.length) {
+    const ok = document.createElement("div");
+    Object.assign(ok.style, {
+      padding: "16px",
+      background: "#dcfce7",
+      border: "1px solid #86efac",
+      borderRadius: "12px",
+      color: "#166534",
+      fontWeight: "600",
+      fontSize: "14px",
+    });
+    ok.textContent = "No statements expiring in the next 90 days.";
+    section.appendChild(ok);
+    return section;
+  }
+
+  const grid = document.createElement("div");
+  Object.assign(grid.style, {
+    display: "grid",
+    gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))",
+    gap: "10px",
+  });
+
+  data.expiringSoon.slice(0, 20).forEach((item) => {
+    const card = document.createElement("div");
+    Object.assign(card.style, {
+      padding: "12px 14px",
+      background: "#ffffff",
+      border: `1px solid ${item.urgency === "30d" ? "#fca5a5" : item.urgency === "60d" ? "#fcd34d" : "#d9dee7"}`,
+      borderRadius: "12px",
+      borderLeft: `4px solid ${item.urgency === "30d" ? "#ef4444" : item.urgency === "60d" ? "#f59e0b" : "#9ca3af"}`,
+    });
+
+    const topRow = document.createElement("div");
+    Object.assign(topRow.style, {
+      display: "flex",
+      justifyContent: "space-between",
+      alignItems: "center",
+      marginBottom: "6px",
+    });
+
+    const supplierEl = document.createElement("div");
+    Object.assign(supplierEl.style, {
+      fontWeight: "700",
+      fontSize: "13px",
+      color: "#111827",
+    });
+    supplierEl.textContent = item.supplierName;
+
+    const daysEl = document.createElement("div");
+    Object.assign(daysEl.style, {
+      fontWeight: "800",
+      fontSize: "13px",
+      color: item.urgency === "30d" ? "#dc2626" : item.urgency === "60d" ? "#ea580c" : "#6b7280",
+    });
+    daysEl.textContent = `${item.daysLeft}d left`;
+
+    topRow.appendChild(supplierEl);
+    topRow.appendChild(daysEl);
+    card.appendChild(topRow);
+
+    const regEl = document.createElement("div");
+    Object.assign(regEl.style, {
+      fontSize: "12px",
+      color: "#4b5563",
+      marginBottom: "2px",
+    });
+    regEl.textContent = `${item.regulationCode}${item.regulationName ? " — " + item.regulationName : ""}`;
+    card.appendChild(regEl);
+
+    if (item.documentTitle) {
+      const docEl = document.createElement("div");
+      Object.assign(docEl.style, {
+        fontSize: "12px",
+        color: "#6b7280",
+        overflow: "hidden",
+        textOverflow: "ellipsis",
+        whiteSpace: "nowrap",
+      });
+      docEl.textContent = item.documentTitle;
+      card.appendChild(docEl);
+    }
+
+    grid.appendChild(card);
+  });
+
+  section.appendChild(grid);
+  return section;
+}
+
+// ============================================================
+// MAIN: Create the full analytics dashboard DOM
+// ============================================================
+
+function createAnalyticsDashboard(suppliersLibrary) {
+  const wrapper = document.createElement("div");
+  wrapper.style.marginTop = "8px";
+
+  const data = buildAnalyticsData(suppliersLibrary);
+
+  if (!data.suppliers.length) {
+    const empty = document.createElement("div");
+    Object.assign(empty.style, {
+      padding: "24px",
+      textAlign: "center",
+      color: "#6b7280",
+      fontSize: "14px",
+    });
+    empty.textContent = "No supplier data loaded. Search for suppliers in the Library tab first.";
+    wrapper.appendChild(empty);
+    return wrapper;
+  }
+
+  wrapper.appendChild(createAnalyticsStatsBar(data.stats));
+  wrapper.appendChild(createComplianceMatrix(data));
+  wrapper.appendChild(createRegulationBreakdownSection(data));
+  wrapper.appendChild(createAtRiskSection(data));
+  wrapper.appendChild(createExpiringSoonSection(data));
+
+  return wrapper;
 }
 
 async function bootstrap() {
