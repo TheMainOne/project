@@ -179,14 +179,22 @@ export function resolveAssertionMatch(assertion, context = {}) {
   }
 
   if (coverageLevel === "item_single" || coverageLevel === "item_list") {
-    const matched = dwkItems.includes(normalizedItem);
+    const supplierParts = Array.isArray(scope.supplierPartNumbers)
+      ? scope.supplierPartNumbers.map(normalizeItemNumber).filter(Boolean)
+      : [];
+
+    const matchedDwk = dwkItems.includes(normalizedItem);
+    const matchedSupplier = supplierParts.includes(normalizedItem);
+    const matched = matchedDwk || matchedSupplier;
 
     return {
       matched,
       requiresLlm: false,
       reason: matched
-        ? "Matched DWK item number from explicit scope"
-        : "DWK item number not present in explicit scope",
+        ? matchedDwk
+          ? "Matched DWK item number from explicit scope"
+          : "Matched supplier part number from explicit scope"
+        : "Item number not present in explicit scope (checked dwkItemNumbers and supplierPartNumbers)",
       matchSource: matched ? "scope" : "none",
     };
   }
@@ -201,11 +209,24 @@ export function resolveAssertionMatch(assertion, context = {}) {
       };
     }
 
+    const supplierParts = Array.isArray(scope.supplierPartNumbers)
+      ? scope.supplierPartNumbers.map(normalizeItemNumber).filter(Boolean)
+      : [];
+
     if (dwkItems.includes(normalizedItem)) {
       return {
         matched: true,
         requiresLlm: false,
         reason: "Matched supplier_subset by explicit DWK item number",
+        matchSource: "scope",
+      };
+    }
+
+    if (supplierParts.includes(normalizedItem)) {
+      return {
+        matched: true,
+        requiresLlm: false,
+        reason: "Matched supplier_subset by supplier part number",
         matchSource: "scope",
       };
     }

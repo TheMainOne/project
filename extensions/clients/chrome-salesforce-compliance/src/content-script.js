@@ -891,12 +891,7 @@ function createCompactSuppliersLine(supplierLookup) {
   if (!uniqueSuppliers.length) return null;
 
   const line = document.createElement("div");
-  const previewText =
-    uniqueSuppliers.length === 1
-      ? uniqueSuppliers[0]
-      : `${uniqueSuppliers[0]} +${uniqueSuppliers.length - 1}`;
-
-  line.textContent = `Supplier: ${previewText}`;
+  line.textContent = `Supplier: ${uniqueSuppliers.join(", ")}`;
 
   Object.assign(line.style, {
     fontSize: "12px",
@@ -905,8 +900,6 @@ function createCompactSuppliersLine(supplierLookup) {
     marginTop: "4px",
     marginBottom: "6px",
   });
-
-  line.title = uniqueSuppliers.join(", ");
 
   return line;
 }
@@ -1759,6 +1752,50 @@ function createSupplierStatementsSection(statements = []) {
 
     card.appendChild(details);
 
+    // ПОСЛЕ card.appendChild(details); ДОБАВИТЬ:
+
+    const scope = statement?.scope || {};
+    const scopeLines = [];
+
+    if (scope.allSupplierItems) {
+      scopeLines.push("Covers: All supplier items");
+    } else {
+      if (Array.isArray(scope.dwkItemNumbers) && scope.dwkItemNumbers.length > 0) {
+        scopeLines.push(`DWK Items: ${scope.dwkItemNumbers.join(", ")}`);
+      }
+      if (Array.isArray(scope.supplierPartNumbers) && scope.supplierPartNumbers.length > 0) {
+        scopeLines.push(`Supplier Parts: ${scope.supplierPartNumbers.join(", ")}`);
+      }
+      if (Array.isArray(scope.families) && scope.families.length > 0) {
+        scopeLines.push(`Families: ${scope.families.join(", ")}`);
+      }
+      if (scopeLines.length === 0) {
+        scopeLines.push("Covers: Specific items (see scope details)");
+      }
+    }
+
+    if (scopeLines.length > 0) {
+      const scopeBlock = document.createElement("div");
+      Object.assign(scopeBlock.style, {
+        marginTop: "10px",
+        padding: "8px 10px",
+        background: "#f0f4f8",
+        border: "1px solid #d9dee7",
+        borderRadius: "8px",
+        fontSize: "13px",
+        color: "#374151",
+        lineHeight: "1.5",
+      });
+
+      scopeLines.forEach((line) => {
+        const div = document.createElement("div");
+        div.textContent = line;
+        scopeBlock.appendChild(div);
+      });
+
+      card.appendChild(scopeBlock);
+    }
+
     if (statement?.matchReason) {
       const reason = document.createElement("div");
       reason.textContent = `Reason: ${statement.matchReason}`;
@@ -2246,6 +2283,48 @@ function createSupplierLibraryStatementsSection(assertions = []) {
     });
 
     card.appendChild(details);
+
+    const scope = statement?.scope || {};
+    const scopeLines = [];
+
+    if (scope.allSupplierItems) {
+      scopeLines.push("Covers: All supplier items");
+    } else {
+      if (Array.isArray(scope.dwkItemNumbers) && scope.dwkItemNumbers.length > 0) {
+        scopeLines.push(`DWK Items: ${scope.dwkItemNumbers.join(", ")}`);
+      }
+      if (Array.isArray(scope.supplierPartNumbers) && scope.supplierPartNumbers.length > 0) {
+        scopeLines.push(`Supplier Parts: ${scope.supplierPartNumbers.join(", ")}`);
+      }
+      if (Array.isArray(scope.families) && scope.families.length > 0) {
+        scopeLines.push(`Families: ${scope.families.join(", ")}`);
+      }
+      if (scopeLines.length === 0) {
+        scopeLines.push("Covers: Specific items (see scope details)");
+      }
+    }
+
+    if (scopeLines.length > 0) {
+      const scopeBlock = document.createElement("div");
+      Object.assign(scopeBlock.style, {
+        marginTop: "10px",
+        padding: "8px 10px",
+        background: "#f0f4f8",
+        border: "1px solid #d9dee7",
+        borderRadius: "8px",
+        fontSize: "13px",
+        color: "#374151",
+        lineHeight: "1.5",
+      });
+
+      scopeLines.forEach((line) => {
+        const div = document.createElement("div");
+        div.textContent = line;
+        scopeBlock.appendChild(div);
+      });
+
+      card.appendChild(scopeBlock);
+    }
 
     const fileUrl =
       statement?.document?.url ||
