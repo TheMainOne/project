@@ -19,8 +19,7 @@ let currentCaseAnalysisState = {
 manualLookupInput: "",
 manualLookupResults: null,
 manualLookupLoading: false,
-manualLookupRegulations: [],
-manualLookupAvailableRegulations: [],
+
 
   suppliersLibrary: null,
   suppliersLibraryLoading: false,
@@ -83,8 +82,6 @@ function resetCaseAnalysisState() {
 manualLookupInput: "",
 manualLookupResults: null,
 manualLookupLoading: false,
-manualLookupRegulations: [],
-manualLookupAvailableRegulations: [],
 
     suppliersLibrary: null,
     suppliersLibraryLoading: false,
@@ -302,6 +299,24 @@ async function runManualLookup() {
     currentCaseAnalysisState.response || {}
   );
 
+  // Загружаем все активные регуляции автоматически
+  let allRegulationCodes = [];
+
+  if (
+    Array.isArray(currentCaseAnalysisState.analysis?.requested_regulations) &&
+    currentCaseAnalysisState.analysis.requested_regulations.length > 0
+  ) {
+    allRegulationCodes = [...currentCaseAnalysisState.analysis.requested_regulations];
+  }
+
+  // Всегда дополняем полным списком из БД
+  const regResponse = await sendMessageAsync({ type: "EXT_FETCH_REGULATIONS" });
+
+  if (regResponse?.ok && Array.isArray(regResponse.regulations)) {
+    const dbCodes = regResponse.regulations.map((r) => r.code);
+    allRegulationCodes = [...new Set([...allRegulationCodes, ...dbCodes])];
+  }
+
   const response = await sendMessageAsync({
     type: "SF_MATERIALS_LOOKUP",
     payload: {
@@ -310,11 +325,7 @@ async function runManualLookup() {
         currentCaseAnalysisState.payload?.recordId ||
         "manual-lookup",
       queries,
-     requestedRegulations: currentCaseAnalysisState.manualLookupRegulations.length > 0
-  ? currentCaseAnalysisState.manualLookupRegulations
-  : Array.isArray(currentCaseAnalysisState.analysis?.requested_regulations)
-    ? currentCaseAnalysisState.analysis.requested_regulations
-    : [],
+      requestedRegulations: allRegulationCodes,
     },
   });
 
@@ -3873,90 +3884,6 @@ function renderCaseToastAnalysis(payload, response) {
 
       body.appendChild(wrapper);
 
-            // --- Regulation selector for lookup ---
-      const lookupRegWrapper = document.createElement("div");
-      lookupRegWrapper.style.marginTop = "10px";
-
-      const lookupRegLabel = document.createElement("strong");
-      lookupRegLabel.textContent = "Check regulations:";
-      lookupRegWrapper.appendChild(lookupRegLabel);
-
-      // Load regulations if needed
-      if (currentCaseAnalysisState.manualLookupAvailableRegulations.length === 0) {
-        sendMessageAsync({ type: "EXT_FETCH_REGULATIONS" }).then((resp) => {
-          if (resp?.ok && Array.isArray(resp.regulations)) {
-            currentCaseAnalysisState.manualLookupAvailableRegulations = resp.regulations;
-
-            // Auto-select from analysis if available
-            if (
-              currentCaseAnalysisState.manualLookupRegulations.length === 0 &&
-              Array.isArray(currentCaseAnalysisState.analysis?.requested_regulations)
-            ) {
-              currentCaseAnalysisState.manualLookupRegulations = [
-                ...currentCaseAnalysisState.analysis.requested_regulations,
-              ];
-            }
-
-            rerenderCurrentCaseToast();
-          }
-        });
-
-        const loadingDiv = document.createElement("div");
-        loadingDiv.textContent = "Loading regulations...";
-        loadingDiv.style.color = "#6b7280";
-        loadingDiv.style.fontSize = "12px";
-        loadingDiv.style.marginTop = "4px";
-        lookupRegWrapper.appendChild(loadingDiv);
-      } else {
-        const lookupRegGrid = document.createElement("div");
-        Object.assign(lookupRegGrid.style, {
-          display: "flex",
-          flexWrap: "wrap",
-          gap: "6px",
-          marginTop: "6px",
-        });
-
-        currentCaseAnalysisState.manualLookupAvailableRegulations.forEach((reg) => {
-          const isChecked = currentCaseAnalysisState.manualLookupRegulations.includes(reg.code);
-
-          const label = document.createElement("label");
-          Object.assign(label.style, {
-            display: "flex",
-            alignItems: "center",
-            gap: "4px",
-            fontSize: "12px",
-            cursor: "pointer",
-            padding: "4px 8px",
-            borderRadius: "6px",
-            border: isChecked ? "1px solid #0176d3" : "1px solid #e5e7eb",
-            background: isChecked ? "#eef6ff" : "#fff",
-            whiteSpace: "nowrap",
-          });
-
-          const checkbox = document.createElement("input");
-          checkbox.type = "checkbox";
-          checkbox.checked = isChecked;
-          checkbox.onchange = () => {
-            if (checkbox.checked) {
-              currentCaseAnalysisState.manualLookupRegulations.push(reg.code);
-            } else {
-              currentCaseAnalysisState.manualLookupRegulations =
-                currentCaseAnalysisState.manualLookupRegulations.filter(
-                  (c) => c !== reg.code
-                );
-            }
-            rerenderCurrentCaseToast();
-          };
-
-          label.appendChild(checkbox);
-          label.appendChild(document.createTextNode(reg.code));
-          lookupRegGrid.appendChild(label);
-        });
-
-        lookupRegWrapper.appendChild(lookupRegGrid);
-      }
-
-      body.appendChild(lookupRegWrapper);
 const parsedQueries = parseManualLookupInput(
   currentCaseAnalysisState.manualLookupInput
 );
@@ -3965,14 +3892,6 @@ const lookupResponse = currentCaseAnalysisState.manualLookupResults;
 
 if (parsedQueries.length > 0) {
   body.appendChild(createInfoRow("Parsed part numbers", String(parsedQueries.length)));
-}
-
-const lookupCoverageSummary = createCoverageSummaryBlock({
-  componentSuppliersResult: lookupResponse,
-});
-
-if (lookupCoverageSummary) {
-  body.appendChild(lookupCoverageSummary);
 }
 
 if (currentCaseAnalysisState.manualLookupResults?.error) {
@@ -3985,7 +3904,134 @@ const lookupMap = buildComponentSuppliersMap({
   componentSuppliersResult: lookupResponse,
 });
 
-      if (parsedQueries.length > 0) {
+// --- Coverage summary ---
+      const lookupCoverageSummary = createCoverageSummaryBlock({
+        componentSuppliersResult: lookupResponse,
+      });
+
+      if (lookupCoverageSummary) {
+        body.appendChild(lookupCoverageSummary);
+      }
+
+      if (parsedQueries.length > 0 && lookupResponse && !lookupResponse.error) {
+        const resultsBlock = document.createElement("div");
+        resultsBlock.style.marginTop = "10px";
+
+        const resultsLabel = document.createElement("strong");
+        resultsLabel.textContent = "Lookup results:";
+        resultsBlock.appendChild(resultsLabel);
+
+        parsedQueries.forEach((partNumber) => {
+          const supplierLookup =
+            lookupMap.get(String(partNumber).trim().toUpperCase()) || null;
+
+          const card = createManualLookupCard(partNumber, supplierLookup);
+
+          // Добавляем regulation badges со ссылками на документы
+          const regRows = buildMaterialRegulationRows(supplierLookup);
+
+          if (regRows.length > 0) {
+            const regSection = document.createElement("div");
+            Object.assign(regSection.style, {
+              marginTop: "12px",
+              display: "flex",
+              flexDirection: "column",
+              gap: "8px",
+            });
+
+            regRows.forEach((row) => {
+              const regRow = document.createElement("div");
+              Object.assign(regRow.style, {
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+                padding: "8px 10px",
+                border: "1px solid #d9dee7",
+                borderRadius: "10px",
+                background: "#fff",
+              });
+
+              const leftSide = document.createElement("div");
+              Object.assign(leftSide.style, {
+                display: "flex",
+                alignItems: "center",
+                gap: "8px",
+              });
+
+              const icon = document.createElement("span");
+              icon.textContent = getRegulationStatusIcon(row.overallStatus);
+              icon.style.fontSize = "16px";
+              leftSide.appendChild(icon);
+
+              const regName = document.createElement("span");
+              regName.textContent = row.code;
+              Object.assign(regName.style, {
+                fontWeight: "700",
+                fontSize: "13px",
+                color: "#111827",
+              });
+              leftSide.appendChild(regName);
+
+              leftSide.appendChild(createCoverageBadge(row.overallStatus));
+
+              regRow.appendChild(leftSide);
+
+              // Ссылки на документы
+              const linksWrapper = document.createElement("div");
+              Object.assign(linksWrapper.style, {
+                display: "flex",
+                gap: "6px",
+                alignItems: "center",
+              });
+
+              const evidenceWithUrls = row.evidence.filter((e) => e.url);
+
+              if (evidenceWithUrls.length > 0) {
+                evidenceWithUrls.forEach((ev) => {
+                  const link = document.createElement("a");
+                  link.href = ev.url;
+                  link.target = "_blank";
+                  link.rel = "noopener noreferrer";
+                  link.textContent = ev.documentTitle
+                    ? ev.documentTitle.length > 30
+                      ? ev.documentTitle.slice(0, 30) + "..."
+                      : ev.documentTitle
+                    : "Open";
+                  Object.assign(link.style, {
+                    fontSize: "12px",
+                    fontWeight: "600",
+                    color: "#0176d3",
+                    textDecoration: "none",
+                    padding: "4px 8px",
+                    border: "1px solid #0176d3",
+                    borderRadius: "6px",
+                    whiteSpace: "nowrap",
+                  });
+                  linksWrapper.appendChild(link);
+                });
+              } else {
+                const noDoc = document.createElement("span");
+                noDoc.textContent = "No document";
+                Object.assign(noDoc.style, {
+                  fontSize: "12px",
+                  color: "#9ca3af",
+                  fontStyle: "italic",
+                });
+                linksWrapper.appendChild(noDoc);
+              }
+
+              regRow.appendChild(linksWrapper);
+              regSection.appendChild(regRow);
+            });
+
+            card.appendChild(regSection);
+          }
+
+          resultsBlock.appendChild(card);
+        });
+
+        body.appendChild(resultsBlock);
+      } else if (parsedQueries.length > 0) {
         const resultsBlock = document.createElement("div");
         resultsBlock.style.marginTop = "10px";
 
