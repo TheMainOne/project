@@ -667,12 +667,7 @@ function getOrCreateCaseToast() {
   lookupTab.id = "sf-compliance-tab-lookup";
   lookupTab.textContent = "Lookup";
 
-  const addTab = document.createElement("button");
-addTab.type = "button";
-addTab.id = "sf-compliance-tab-add";
-addTab.textContent = "New Statement";
-
- [overviewTab, materialsTab, suppliersTab, lookupTab, addTab].forEach((btn) => {
+ [overviewTab, materialsTab, suppliersTab, lookupTab].forEach((btn) => {
     Object.assign(btn.style, {
       border: "1px solid #d0d7de",
       background: "#ffffff",
@@ -698,7 +693,6 @@ tabs.appendChild(overviewTab);
 tabs.appendChild(materialsTab);
 tabs.appendChild(suppliersTab);
 tabs.appendChild(lookupTab);
-tabs.appendChild(addTab);
 
   toast.appendChild(header);
   toast.appendChild(tabs);
@@ -1118,8 +1112,6 @@ if (tabName === "materials") {
   activeCaseToastTab = "suppliers";
 } else if (tabName === "lookup") {
   activeCaseToastTab = "lookup";
-} else if (tabName === "add") {
-  activeCaseToastTab = "add";
 } else {
   activeCaseToastTab = "overview";
 }
@@ -1128,7 +1120,6 @@ const overviewBtn = document.getElementById("sf-compliance-tab-overview");
 const materialsBtn = document.getElementById("sf-compliance-tab-materials");
 const suppliersBtn = document.getElementById("sf-compliance-tab-suppliers");
 const lookupBtn = document.getElementById("sf-compliance-tab-lookup");
-const addBtn = document.getElementById("sf-compliance-tab-add");
 
   const applyActive = (btn, isActive) => {
     if (!btn) return;
@@ -1141,7 +1132,6 @@ applyActive(overviewBtn, activeCaseToastTab === "overview");
 applyActive(materialsBtn, activeCaseToastTab === "materials");
 applyActive(suppliersBtn, activeCaseToastTab === "suppliers");
 applyActive(lookupBtn, activeCaseToastTab === "lookup");
-applyActive(addBtn, activeCaseToastTab === "add");
 }
 
 function wireCaseToastTabs(renderFn) {
@@ -1149,7 +1139,6 @@ const overviewBtn = document.getElementById("sf-compliance-tab-overview");
 const materialsBtn = document.getElementById("sf-compliance-tab-materials");
 const suppliersBtn = document.getElementById("sf-compliance-tab-suppliers");
 const lookupBtn = document.getElementById("sf-compliance-tab-lookup");
-const addBtn = document.getElementById("sf-compliance-tab-add");
 
   if (overviewBtn) {
     overviewBtn.onclick = () => {
@@ -1178,13 +1167,6 @@ const addBtn = document.getElementById("sf-compliance-tab-add");
       renderFn();
     };
   }
-
-  if (addBtn) {
-  addBtn.onclick = () => {
-    activeCaseToastTab = "add";
-    renderFn();
-  };
-}
 
   setCaseToastTab(activeCaseToastTab);
 }
@@ -3387,8 +3369,15 @@ function createSuppliersTabContent() {
 
   subTabBar.appendChild(createSubTabBtn("Library", "library"));
   subTabBar.appendChild(createSubTabBtn("Analytics", "analytics"));
+  subTabBar.appendChild(createSubTabBtn("New Statement", "new_statement"));
 
   wrapper.appendChild(subTabBar);
+
+  // --- New Statement sub-tab ---
+  if (suppliersSubTab === "new_statement") {
+    wrapper.appendChild(createAddStatementTabContent());
+    return wrapper;
+  }
 
   // --- Analytics sub-tab ---
   if (suppliersSubTab === "analytics") {
@@ -4135,9 +4124,6 @@ if (coveredRows.length > 0) {
 
         body.appendChild(resultsBlock);
       }
-    }
-      if (activeCaseToastTab === "add") {
-      body.appendChild(createAddStatementTabContent());
     }
   };
 
