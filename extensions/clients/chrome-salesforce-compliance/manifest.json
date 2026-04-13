@@ -3,14 +3,13 @@
   "name": "Salesforce Compliance Assistant",
   "version": "0.1.0",
   "description": "Reads Salesforce case context and helps handle customer inquiries related to compliance.",
-  "permissions": ["storage", "activeTab"],
+  "permissions": ["storage", "activeTab", "tabs", "scripting"],
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "Compliance Assistant"
+  },
   "host_permissions": [
-    "https://*.salesforce.com/*",
-    "https://*.force.com/*",
-    "https://*.lightning.force.com/*",
-    "http://localhost:3000/*",
-    "http://127.0.0.1:3000/*",
-    "https://cloudcompliance.duckdns.org/*"
+    "<all_urls>"
   ],
   "background": {
     "service_worker": "src/background.js",
@@ -18,11 +17,7 @@
   },
   "content_scripts": [
     {
-      "matches": [
-        "https://*.salesforce.com/*",
-        "https://*.force.com/*",
-        "https://*.lightning.force.com/*"
-      ],
+      "matches": ["<all_urls>"],
       "js": ["src/content-script.js"],
       "run_at": "document_idle"
     }

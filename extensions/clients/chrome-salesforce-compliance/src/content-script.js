@@ -3757,8 +3757,9 @@ function renderCaseToastAnalysis(payload, response) {
 
     const hasAnalyzeResult = !!response?.analyzeResult;
     const isLookupTab = activeCaseToastTab === "lookup";
+    const isSuppliersTab = activeCaseToastTab === "suppliers";
 
-    if (!isLookupTab && hasAnalyzeResult && !response?.analyzeResult?.ok) {
+    if (!isLookupTab && !isSuppliersTab && hasAnalyzeResult && !response?.analyzeResult?.ok) {
       body.appendChild(createInfoRow("Case Number", payload.caseId));
       body.appendChild(createInfoRow("Subject", payload.subject));
       body.appendChild(createInfoRow("Status", "Analysis failed"));
@@ -3774,7 +3775,7 @@ function renderCaseToastAnalysis(payload, response) {
       return;
     }
 
-    if (!isLookupTab && !analysis) {
+    if (!isLookupTab && !isSuppliersTab && !analysis) {
       body.appendChild(createInfoRow("Case Number", payload.caseId));
       body.appendChild(createInfoRow("Subject", payload.subject));
       body.appendChild(createInfoRow("Status", "Analysis unavailable"));
@@ -4218,8 +4219,6 @@ function updateLauncherState() {
 }
 
 function toggleAuthCard() {
-  if (!isCaseRecordPage()) return;
-
   const card = getOrCreateAuthCard();
 
   if (card.style.display === "none" || !card.style.display) {
@@ -4274,8 +4273,6 @@ function getOrCreateAuthLauncher() {
 }
 
 function ensureLauncherVisible() {
-  if (!isCaseRecordPage()) return;
-
   const launcher = getOrCreateAuthLauncher();
   launcher.style.display = "block";
   updateLauncherState();
@@ -4383,6 +4380,14 @@ function getOrCreateAuthCard() {
           Sign out
         </button>
       </div>
+
+      <button
+        id="sf-compliance-open-panel"
+        type="button"
+        style="display:none; width:100%; margin-top:8px; padding:9px 12px; border:none; border-radius:9px; background:#0176d3; color:#ffffff; font-weight:700; cursor:pointer;"
+      >
+        Open Panel
+      </button>
     </div>
 
     <div
@@ -4398,6 +4403,7 @@ function getOrCreateAuthCard() {
   const submitBtn = card.querySelector("#sf-compliance-auth-submit");
   const signOutBtn = card.querySelector("#sf-compliance-auth-signout");
   const closeBtn = card.querySelector("#sf-compliance-auth-close");
+  const openPanelBtn = card.querySelector("#sf-compliance-open-panel");
 
   const handleEnter = (event) => {
     if (event.key === "Enter") {
@@ -4413,6 +4419,7 @@ function getOrCreateAuthCard() {
   closeBtn.addEventListener("click", () => {
     card.style.display = "none";
   });
+  openPanelBtn.addEventListener("click", openStandalonePanel);
 
   return card;
 }
@@ -4457,6 +4464,7 @@ function syncAuthCardUi() {
   const passwordInput = card.querySelector("#sf-compliance-auth-password");
   const submitBtn = card.querySelector("#sf-compliance-auth-submit");
   const signOutBtn = card.querySelector("#sf-compliance-auth-signout");
+  const openPanelBtn = card.querySelector("#sf-compliance-open-panel");
 
   if (emailInput && authState.lastEmail && !emailInput.value) {
     emailInput.value = authState.lastEmail;
@@ -4481,6 +4489,10 @@ function syncAuthCardUi() {
       signOutBtn.textContent = "Sign out";
       signOutBtn.style.flex = "1";
     }
+
+    if (openPanelBtn) {
+      openPanelBtn.style.display = isCaseRecordPage() ? "none" : "block";
+    }
   } else {
     connectedBox.style.display = "none";
     userLine.textContent = "";
@@ -4494,9 +4506,21 @@ function syncAuthCardUi() {
     if (signOutBtn) {
       signOutBtn.style.display = "none";
     }
+
+    if (openPanelBtn) {
+      openPanelBtn.style.display = "none";
+    }
   }
 
   updateLauncherState();
+}
+
+function openStandalonePanel() {
+  const card = document.getElementById("sf-compliance-auth-card");
+  if (card) card.style.display = "none";
+
+  activeCaseToastTab = "suppliers";
+  renderCaseToastAnalysis({}, { ok: true });
 }
 
 function showAuthCard(message = "Sign in to use Compliance Assistant.") {
@@ -4773,13 +4797,12 @@ function handlePotentialRouteChange() {
     resetCaseAnalysisState();
     removeCaseToast();
 
+    ensureLauncherVisible();
+
     if (!isCaseRecordPage()) {
       hideAuthCard();
-      hideLauncher();
       return;
     }
-
-    ensureLauncherVisible();
 
     if (authState.authenticated) {
       scheduleChecks();
@@ -7007,16 +7030,11 @@ function createAnalyticsDashboard(suppliersLibrary) {
 }
 
 async function bootstrap() {
-  if (!isCaseRecordPage()) {
-    hideLauncher();
-    return;
-  }
-
   ensureLauncherVisible();
 
   const isAuthenticated = await syncAuthState();
 
-  if (isAuthenticated) {
+  if (isAuthenticated && isCaseRecordPage()) {
     scheduleChecks();
   }
 }
@@ -7034,3 +7052,12 @@ observer.observe(document.body, {
 
 window.addEventListener("popstate", handlePotentialRouteChange);
 window.addEventListener("hashchange", handlePotentialRouteChange);
+
+chrome.runtime.onMessage.addListener((message) => {
+  if (message?.type === "OPEN_PANEL") {
+    ensureLauncherVisible();
+    const card = getOrCreateAuthCard();
+    card.style.display = "block";
+    syncAuthCardUi();
+  }
+});
