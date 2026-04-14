@@ -39,6 +39,7 @@ manualLookupLoading: false,
 
   freshnessSort: { by: "oldestDoc", dir: "desc" },
   freshnessExpanded: [],
+  atRiskExpanded: [],
   stmtBrowserSupplier: "",
   stmtBrowserReg: "",
   stmtBrowserAge: "all",
@@ -117,7 +118,7 @@ manualLookupLoading: false,
 
     freshnessSort: { by: "oldestDoc", dir: "desc" },
     freshnessExpanded: [],
-
+    atRiskExpanded: [],
     stmtBrowserSupplier: "",
     stmtBrowserReg: "",
     stmtBrowserAge: "all",
@@ -5107,18 +5108,31 @@ const cells = regulations.map((reg) => {
 
   // At risk suppliers (sorted by gaps)
   const atRisk = matrix
-    .map((row) => ({
-      ...row,
-      missingCount: row.cells.filter((c) => c.status === "missing").length,
-      partialCount: row.cells.filter((c) => c.status === "partial").length,
-      expiredCount: row.cells.filter((c) => c.status === "expired").length,
-      nonCompliantCount: row.cells.filter((c) => c.status === "non_compliant").length,
-      gapScore:
-        row.cells.filter((c) => c.status === "missing").length * 3 +
-        row.cells.filter((c) => c.status === "partial").length * 2 +
-        row.cells.filter((c) => c.status === "expired").length * 2 +
-        row.cells.filter((c) => c.status === "non_compliant").length * 5,
-    }))
+    .map((row) => {
+      const missingCells = row.cells.filter((c) => c.status === "missing");
+      const partialCells = row.cells.filter((c) => c.status === "partial");
+      const expiredCells = row.cells.filter((c) => c.status === "expired");
+      const nonCompliantCells = row.cells.filter(
+        (c) => c.status === "non_compliant"
+      );
+ 
+      return {
+        ...row,
+        missingCount: missingCells.length,
+        partialCount: partialCells.length,
+        expiredCount: expiredCells.length,
+        nonCompliantCount: nonCompliantCells.length,
+        missingRegCodes: missingCells.map((c) => c.regulationCode),
+        partialRegCodes: partialCells.map((c) => c.regulationCode),
+        expiredRegCodes: expiredCells.map((c) => c.regulationCode),
+        nonCompliantRegCodes: nonCompliantCells.map((c) => c.regulationCode),
+        gapScore:
+          missingCells.length * 3 +
+          partialCells.length * 2 +
+          expiredCells.length * 2 +
+          nonCompliantCells.length * 5,
+      };
+    })
     .filter((row) => row.gapScore > 0)
     .sort((a, b) => b.gapScore - a.gapScore);
 
@@ -6460,7 +6474,27 @@ function createAtRiskSection(data) {
     gap: "8px",
   });
 
+       const regulationNameByCode = new Map(
+    (Array.isArray(data.regulations) ? data.regulations : []).map((reg) => [
+      reg.code,
+      reg.name || reg.code,
+    ])
+  );
+ 
+  const expandedList = Array.isArray(currentCaseAnalysisState.atRiskExpanded)
+    ? currentCaseAnalysisState.atRiskExpanded
+    : [];
+
   topRisk.forEach((row, idx) => {
+    const rowKey =
+      row.supplierId || row.supplierCode || row.supplierName || "";
+    const isExpanded = expandedList.indexOf(rowKey) >= 0;
+ 
+    const group = document.createElement("div");
+    Object.assign(group.style, {
+      display: "flex",
+      flexDirection: "column",
+    });
     const card = document.createElement("div");
     Object.assign(card.style, {
       display: "flex",
@@ -6469,8 +6503,25 @@ function createAtRiskSection(data) {
       padding: "12px 14px",
       background: "#ffffff",
       border: "1px solid #d9dee7",
-      borderRadius: "12px",
+      borderRadius: isExpanded ? "12px 12px 0 0" : "12px",
+      borderBottom: isExpanded ? "1px solid #e5e7eb" : "1px solid #d9dee7",
+      cursor: "pointer",
     });
+ 
+    card.addEventListener("click", () => {
+      const current = Array.isArray(currentCaseAnalysisState.atRiskExpanded)
+        ? currentCaseAnalysisState.atRiskExpanded
+        : [];
+      const pos = current.indexOf(rowKey);
+      if (pos >= 0) {
+        current.splice(pos, 1);
+      } else {
+        current.push(rowKey);
+      }
+      currentCaseAnalysisState.atRiskExpanded = current;
+      rerenderCurrentCaseToast();
+    });
+ 
 
     // Rank
     const rank = document.createElement("div");
@@ -6492,13 +6543,19 @@ function createAtRiskSection(data) {
 
     // Name
     const nameBlock = document.createElement("div");
-    nameBlock.style.flex = "1";
+    Object.assign(nameBlock.style, {
+      flex: "1",
+      cursor: row.supplierId ? "pointer" : "default",
+    });
+    if (row.supplierId) {
+      nameBlock.title = `Open ${row.supplierName} in Library`;
+    }
 
     const nameEl = document.createElement("div");
     Object.assign(nameEl.style, {
       fontWeight: "700",
       fontSize: "14px",
-      color: "#111827",
+      color: row.supplierId ? "#0176d3" : "#111827",
       marginBottom: "2px",
     });
     nameEl.textContent = row.supplierName;
@@ -6512,6 +6569,14 @@ function createAtRiskSection(data) {
 
     nameBlock.appendChild(nameEl);
     nameBlock.appendChild(codeEl);
+    nameBlock.addEventListener("click", (e) => {
+      e.stopPropagation();
+      if (!row.supplierId) return;
+      suppliersSubTab = "library";
+      currentCaseAnalysisState.selectedSupplierLibraryId = row.supplierId;
+      rerenderCurrentCaseToast();
+    });
+ 
     card.appendChild(nameBlock);
 
     // Progress bar
@@ -6607,7 +6672,138 @@ function createAtRiskSection(data) {
     }
 
     card.appendChild(badges);
-    list.appendChild(card);
+    // Gap score chip with breakdown tooltip
+    if (row.gapScore > 0) {
+      const gapChip = document.createElement("span");
+      Object.assign(gapChip.style, {
+        padding: "3px 8px",
+        borderRadius: "999px",
+        fontSize: "11px",
+        fontWeight: "700",
+        background: "#eef2ff",
+        color: "#3730a3",
+        border: "1px solid #c7d2fe",
+        flexShrink: "0",
+      });
+      gapChip.textContent = `Gap: ${row.gapScore}`;
+      gapChip.title =
+        "Gap score = missing×3 + partial×2 + expired×2 + non_compliant×5" +
+        `\n          = ${row.missingCount}×3 + ${row.partialCount}×2 + ${row.expiredCount}×2 + ${row.nonCompliantCount}×5` +
+        `\n          = ${row.gapScore}`;
+      card.appendChild(gapChip);
+    }
+ 
+    // Expand chevron
+    const chevron = document.createElement("div");
+    Object.assign(chevron.style, {
+      padding: "0 4px",
+      color: "#6b7280",
+      fontSize: "14px",
+      userSelect: "none",
+      flexShrink: "0",
+    });
+    chevron.textContent = isExpanded ? "▾" : "▸";
+    card.appendChild(chevron);
+ 
+    group.appendChild(card);
+ 
+    // Inline expanded panel
+    if (isExpanded) {
+      const panel = document.createElement("div");
+      Object.assign(panel.style, {
+        background: "#f9fafb",
+        border: "1px solid #d9dee7",
+        borderTop: "none",
+        borderRadius: "0 0 12px 12px",
+        padding: "12px 14px 14px 50px",
+        display: "grid",
+        gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))",
+        gap: "12px",
+      });
+ 
+      const groupsConfig = [
+        {
+          label: "Non-compliant",
+          codes: row.nonCompliantRegCodes,
+          color: "#991b1b",
+        },
+        {
+          label: "Expired",
+          codes: row.expiredRegCodes,
+          color: "#92400e",
+        },
+        {
+          label: "Partial",
+          codes: row.partialRegCodes,
+          color: "#1f2937",
+        },
+        {
+          label: "Missing",
+          codes: row.missingRegCodes,
+          color: "#4b5563",
+        },
+      ];
+ 
+      let renderedGroups = 0;
+      groupsConfig.forEach((cfg) => {
+        const codes = Array.isArray(cfg.codes) ? cfg.codes : [];
+        if (!codes.length) return;
+ 
+        renderedGroups += 1;
+ 
+        const col = document.createElement("div");
+ 
+        const heading = document.createElement("div");
+        Object.assign(heading.style, {
+          fontSize: "11px",
+          fontWeight: "800",
+          textTransform: "uppercase",
+          letterSpacing: "0.04em",
+          color: cfg.color,
+          marginBottom: "6px",
+        });
+        heading.textContent = `${cfg.label} (${codes.length})`;
+        col.appendChild(heading);
+ 
+        const itemList = document.createElement("div");
+        Object.assign(itemList.style, {
+          display: "flex",
+          flexDirection: "column",
+          gap: "4px",
+        });
+ 
+        codes.forEach((code) => {
+          const item = document.createElement("div");
+          Object.assign(item.style, {
+            fontSize: "12px",
+            color: "#374151",
+            lineHeight: "1.35",
+          });
+          const name = regulationNameByCode.get(code);
+          item.textContent =
+            name && name !== code ? `${code} — ${name}` : code;
+          itemList.appendChild(item);
+        });
+ 
+        col.appendChild(itemList);
+        panel.appendChild(col);
+      });
+ 
+      if (renderedGroups === 0) {
+        const empty = document.createElement("div");
+        Object.assign(empty.style, {
+          fontSize: "12px",
+          color: "#6b7280",
+          fontStyle: "italic",
+        });
+        empty.textContent = "No regulation-level gaps to show.";
+        panel.appendChild(empty);
+      }
+ 
+      group.appendChild(panel);
+    }
+ 
+    list.appendChild(group);
   });
 
   section.appendChild(list);
