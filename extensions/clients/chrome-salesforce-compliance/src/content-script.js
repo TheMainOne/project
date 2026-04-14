@@ -33,8 +33,15 @@ manualLookupLoading: false,
   analyticsMatrixSearch: "",
   analyticsMatrixSort: { by: "coverageRate", dir: "asc" },
   analyticsMatrixView: "table",
+  analyticsMatrixMode: "status",
   analyticsRegSort: "coverage_asc",
   analyticsComparisonSelected: [],
+
+  freshnessSort: { by: "oldestDoc", dir: "desc" },
+  freshnessExpanded: [],
+  stmtBrowserSupplier: "",
+  stmtBrowserReg: "",
+  stmtBrowserAge: "all",
 
   addStatementForm: {
     supplierCode: "",
@@ -104,8 +111,16 @@ manualLookupLoading: false,
     analyticsMatrixSearch: "",
     analyticsMatrixSort: { by: "coverageRate", dir: "asc" },
     analyticsMatrixView: "table",
+    analyticsMatrixMode: "status",
     analyticsRegSort: "coverage_asc",
     analyticsComparisonSelected: [],
+
+    freshnessSort: { by: "oldestDoc", dir: "desc" },
+    freshnessExpanded: [],
+
+    stmtBrowserSupplier: "",
+    stmtBrowserReg: "",
+    stmtBrowserAge: "all",
 
     addStatementForm: {
       supplierCode: "",
@@ -556,6 +571,8 @@ function getOrCreateCaseToast() {
     zIndex: "999999",
     background: "#ffffff",
     color: "#111111",
+    fontFamily: "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Arial, sans-serif",
+    fontSize: "13px",
     border: "1px solid #d0d7de",
     borderRadius: "12px",
     boxShadow: "0 10px 30px rgba(0,0,0,0.18)",
@@ -4314,7 +4331,7 @@ function getOrCreateAuthCard() {
     padding: "14px",
     fontSize: "13px",
     lineHeight: "1.45",
-    fontFamily: "Arial, sans-serif",
+    fontFamily: "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Arial, sans-serif",
     display: "none",
   });
 
@@ -4853,6 +4870,9 @@ function buildAnalyticsData(suppliersLibrary) {
       atRisk: [],
       expiringSoon: [],
       regulationBreakdown: [],
+      documentAgeData: [],
+      allStatements: [],
+      supplierFreshness: [],
     };
   }
 
@@ -5217,10 +5237,108 @@ const cells = regulations.map((reg) => {
     return (b.ageDays || 0) - (a.ageDays || 0);
   });
 
+  // --- allStatements: flat list for Statement Browser ---
+  const allStatements = [];
+  suppliers.forEach((supplier) => {
+    (supplier.assertions || []).forEach((assertion) => {
+      const issueDate = assertion.document?.issueDate || assertion.validFrom || null;
+      const validUntil = assertion.document?.validUntil || assertion.validUntil || null;
+      const issueTime = issueDate ? new Date(issueDate).getTime() : null;
+      const ageDays = issueTime && !Number.isNaN(issueTime)
+        ? Math.floor((now - issueTime) / 86400000)
+        : null;
+      allStatements.push({
+        supplierName: supplier.supplierName || "Unknown",
+        supplierCode: supplier.supplierCode || "",
+        regCode: assertion.regulation?.code || "",
+        regName: assertion.regulation?.name || "",
+        docTitle: assertion.document?.title || "",
+        issueDate,
+        validUntil,
+        ageDays,
+        undated: ageDays === null,
+        assertionType: assertion.assertionType || "",
+        status: assertion.status || "",
+      });
+    });
+  });
+  allStatements.sort((a, b) => {
+    if (a.undated && !b.undated) return 1;
+    if (!a.undated && b.undated) return -1;
+    return (b.ageDays || 0) - (a.ageDays || 0);
+  });
+
+  // --- supplierFreshness: per-supplier summary for Freshness Table ---
+  const supplierFreshnessMap = new Map();
+  suppliers.forEach((supplier) => {
+    const key = supplier.supplierCode || supplier.supplierName;
+    const assertions = Array.isArray(supplier.assertions) ? supplier.assertions : [];
+    const stmts = assertions.map((assertion) => {
+      const issueDate = assertion.document?.issueDate || assertion.validFrom || null;
+      const validUntil = assertion.document?.validUntil || assertion.validUntil || null;
+      const issueTime = issueDate ? new Date(issueDate).getTime() : null;
+      const ageDays = issueTime && !Number.isNaN(issueTime)
+        ? Math.floor((now - issueTime) / 86400000)
+        : null;
+      return {
+        docTitle: assertion.document?.title || "",
+        regCode: assertion.regulation?.code || "",
+        regName: assertion.regulation?.name || "",
+        issueDate,
+        validUntil,
+        ageDays,
+        undated: ageDays === null,
+        assertionType: assertion.assertionType || "",
+        status: assertion.status || "",
+      };
+    });
+
+    const dated = stmts.filter((s) => !s.undated);
+    const newestAgeDays = dated.length ? Math.min(...dated.map((s) => s.ageDays)) : null;
+    const oldestAgeDays = dated.length ? Math.max(...dated.map((s) => s.ageDays)) : null;
+    const newestStmt = dated.length ? dated.find((s) => s.ageDays === newestAgeDays) : null;
+    const oldestStmt = dated.length ? dated.find((s) => s.ageDays === oldestAgeDays) : null;
+
+    let freshnessLevel = "no_data";
+    if (newestAgeDays !== null) {
+      if (newestAgeDays < 365) freshnessLevel = "fresh";
+      else if (newestAgeDays < 730) freshnessLevel = "ok";
+      else if (newestAgeDays < 1095) freshnessLevel = "aging";
+      else freshnessLevel = "old";
+    }
+
+    supplierFreshnessMap.set(key, {
+      supplierName: supplier.supplierName || "Unknown",
+      supplierCode: supplier.supplierCode || "",
+      supplierId: supplier.supplierId || "",
+      statementCount: stmts.length,
+      undatedCount: stmts.filter((s) => s.undated).length,
+      newestAgeDays,
+      oldestAgeDays,
+      newestDate: newestStmt?.issueDate || null,
+      oldestDate: oldestStmt?.issueDate || null,
+      freshnessLevel,
+      statements: stmts,
+    });
+  });
+  const supplierFreshness = Array.from(supplierFreshnessMap.values());
+
+  // --- cell freshness for matrix mode ---
+  // Attach newestAgeDays per cell so the matrix can color by age
+  const matrixWithFreshness = matrix.map((row) => {
+    const sf = supplierFreshnessMap.get(row.supplierCode || row.supplierName);
+    const cellsWithAge = row.cells.map((cell) => {
+      const stmts = (sf?.statements || []).filter((s) => s.regCode === cell.regulationCode && !s.undated);
+      const cellNewestAge = stmts.length ? Math.min(...stmts.map((s) => s.ageDays)) : null;
+      return { ...cell, newestAgeDays: cellNewestAge };
+    });
+    return { ...row, cells: cellsWithAge };
+  });
+
   return {
     suppliers,
     regulations,
-    matrix,
+    matrix: matrixWithFreshness,
     stats: {
       totalSuppliers,
       fullyCovered,
@@ -5239,6 +5357,8 @@ const cells = regulations.map((reg) => {
     expiringSoon,
     regulationBreakdown,
     documentAgeData,
+    allStatements,
+    supplierFreshness,
   };
 }
 
@@ -5716,6 +5836,26 @@ function createComplianceMatrix(data) {
     controlsBar.appendChild(pill);
   });
 
+  // Mode toggle: Status / Freshness
+  const modeToggle = document.createElement("div");
+  Object.assign(modeToggle.style, {
+    display: "flex", border: "1px solid #d0d7de", borderRadius: "8px", overflow: "hidden", flexShrink: "0",
+  });
+  const currentMode = currentCaseAnalysisState.analyticsMatrixMode || "status";
+  [{ key: "status", label: "Status" }, { key: "freshness", label: "Freshness" }].forEach(({ key, label }) => {
+    const btn = document.createElement("button");
+    btn.type = "button"; btn.textContent = label;
+    const isActive = currentMode === key;
+    Object.assign(btn.style, {
+      padding: "6px 10px", border: "none", fontSize: "12px", fontWeight: "600",
+      background: isActive ? "#0176d3" : "#ffffff",
+      color: isActive ? "#ffffff" : "#374151", cursor: "pointer",
+    });
+    btn.onclick = () => { currentCaseAnalysisState.analyticsMatrixMode = key; rerenderCurrentCaseToast(); };
+    modeToggle.appendChild(btn);
+  });
+  controlsBar.appendChild(modeToggle);
+
   // View toggle: Table / Cards
   const viewToggle = document.createElement("div");
   Object.assign(viewToggle.style, {
@@ -5979,7 +6119,32 @@ function createComplianceMatrix(data) {
 
       row.cells.forEach((cell) => {
         const td = document.createElement("td");
-        const colorInfo = getMatrixCellColor(cell.status);
+        let colorInfo, tdTitle;
+        if (currentMode === "freshness") {
+          const age = cell.newestAgeDays;
+          const level = age === null ? "no_data"
+            : age < 365 ? "fresh"
+            : age < 730 ? "ok"
+            : age < 1095 ? "aging" : "old";
+          const fc = freshnessColor(level);
+          const symbol = age === null
+            ? (cell.status === "missing" ? "—" : "?")
+            : age < 365 ? "✓" : age < 730 ? "~" : age < 1095 ? "!" : "!!"
+          colorInfo = { bg: fc.bg, text: fc.color, symbol };
+          const ageStr = age !== null ? formatAge(age) : "no date";
+          tdTitle = `${row.supplierName} — ${cell.regulationCode}\nNewest doc: ${ageStr}`;
+        } else {
+          colorInfo = getMatrixCellColor(cell.status);
+          const humanScope = humanizeScopeSummary(cell.scopeSummary);
+          const scopeLabel =
+            cell.status === "covered" ? `Covered: ${humanScope}` :
+            cell.status === "partial" ? `Partial: ${humanScope}` :
+            cell.status === "non_compliant" ? `Non-compliant: ${humanScope}` :
+            cell.status === "expired" ? `Expired: ${humanScope}` :
+            cell.status === "informational" ? `Informational: ${humanScope}` :
+            "Missing: no assertions";
+          tdTitle = `${row.supplierName} — ${cell.regulationCode}\n${scopeLabel}`;
+        }
         Object.assign(td.style, {
           padding: "6px 4px",
           textAlign: "center",
@@ -5992,15 +6157,7 @@ function createComplianceMatrix(data) {
           cursor: "default",
         });
         td.textContent = colorInfo.symbol;
-        const humanScope = humanizeScopeSummary(cell.scopeSummary);
-        const scopeLabel =
-          cell.status === "covered" ? `Covered: ${humanScope}` :
-          cell.status === "partial" ? `Partial: ${humanScope}` :
-          cell.status === "non_compliant" ? `Non-compliant: ${humanScope}` :
-          cell.status === "expired" ? `Expired: ${humanScope}` :
-          cell.status === "informational" ? `Informational: ${humanScope}` :
-          "Missing: no assertions";
-        td.title = `${row.supplierName} — ${cell.regulationCode}\n${scopeLabel}`;
+        td.title = tdTitle;
         tr.appendChild(td);
       });
 
@@ -6034,17 +6191,27 @@ function createComplianceMatrix(data) {
     flexWrap: "wrap",
   });
 
-  const statuses = [
-    { status: "covered", label: "Covered = all supplier items" },
-    { status: "partial", label: "Partial = specific items / subset / family" },
-    { status: "expired", label: "Expired" },
-    { status: "non_compliant", label: "Non-compliant" },
-    { status: "informational", label: "Info only" },
-    { status: "missing", label: "Missing = no assertions" },
-  ];
+  const statuses = currentMode === "freshness"
+    ? [
+        { status: "fresh",   label: "< 1 yr",  bg: freshnessColor("fresh").bg,   text: freshnessColor("fresh").color },
+        { status: "ok",      label: "1–2 yr",  bg: freshnessColor("ok").bg,      text: freshnessColor("ok").color },
+        { status: "aging",   label: "2–3 yr",  bg: freshnessColor("aging").bg,   text: freshnessColor("aging").color },
+        { status: "old",     label: "3+ yr",   bg: freshnessColor("old").bg,     text: freshnessColor("old").color },
+        { status: "no_data", label: "No date", bg: freshnessColor("no_data").bg, text: freshnessColor("no_data").color },
+      ]
+    : [
+        { status: "covered",       label: "Covered = all supplier items", ...getMatrixCellColor("covered") },
+        { status: "partial",       label: "Partial = specific items / subset / family", ...getMatrixCellColor("partial") },
+        { status: "expired",       label: "Expired", ...getMatrixCellColor("expired") },
+        { status: "non_compliant", label: "Non-compliant", ...getMatrixCellColor("non_compliant") },
+        { status: "informational", label: "Info only", ...getMatrixCellColor("informational") },
+        { status: "missing",       label: "Missing = no assertions", ...getMatrixCellColor("missing") },
+      ];
 
   statuses.forEach((item) => {
-    const colorInfo = getMatrixCellColor(item.status);
+    const colorInfo = currentMode === "freshness"
+      ? { bg: item.bg, text: item.text, symbol: "●" }
+      : getMatrixCellColor(item.status);
     const legendItem = document.createElement("div");
     Object.assign(legendItem.style, {
       display: "flex",
@@ -6566,6 +6733,436 @@ function createExpiringSoonSection(data) {
 // MAIN: Create the full analytics dashboard DOM
 // ============================================================
 
+// ============================================================
+// VARIANT 1 — Supplier Freshness Table
+// ============================================================
+function freshnessColor(level) {
+  const map = {
+    fresh:   { color: "#166534", bg: "#dcfce7", border: "#86efac" },
+    ok:      { color: "#92400e", bg: "#fef3c7", border: "#fcd34d" },
+    aging:   { color: "#c2410c", bg: "#ffedd5", border: "#fb923c" },
+    old:     { color: "#991b1b", bg: "#fee2e2", border: "#fca5a5" },
+    no_data: { color: "#4b5563", bg: "#f3f4f6", border: "#d1d5db" },
+  };
+  return map[level] || map.no_data;
+}
+
+function freshnessLabel(level) {
+  return { fresh: "< 1 yr", ok: "1–2 yr", aging: "2–3 yr", old: "3+ yr", no_data: "No dates" }[level] || "—";
+}
+
+function formatAge(ageDays) {
+  if (ageDays === null || ageDays === undefined) return "—";
+  const yrs = Math.floor(ageDays / 365);
+  const mos = Math.floor((ageDays % 365) / 30);
+  if (yrs > 0) return `${yrs}y ${mos}m`;
+  return `${mos}m`;
+}
+
+function createSupplierFreshnessTable(data) {
+  const { supplierFreshness } = data;
+  const state = currentCaseAnalysisState;
+
+  const section = document.createElement("div");
+  Object.assign(section.style, { marginBottom: "28px" });
+
+  const hdr = document.createElement("div");
+  hdr.textContent = "Supplier Freshness";
+  Object.assign(hdr.style, { fontSize: "18px", fontWeight: "800", color: "#111827", marginBottom: "4px" });
+  section.appendChild(hdr);
+
+  const sub = document.createElement("div");
+  sub.textContent = "How recent are each supplier's compliance statements — click a row to see details";
+  Object.assign(sub.style, { fontSize: "13px", color: "#6b7280", marginBottom: "14px" });
+  section.appendChild(sub);
+
+  // Sort controls
+  const sortBar = document.createElement("div");
+  Object.assign(sortBar.style, { display: "flex", gap: "6px", marginBottom: "10px", flexWrap: "wrap" });
+
+  const sortOptions = [
+    { key: "oldestDoc",  label: "Oldest doc" },
+    { key: "newestDoc",  label: "Newest doc" },
+    { key: "name",       label: "Name" },
+    { key: "count",      label: "# Statements" },
+  ];
+
+  sortOptions.forEach(({ key, label }) => {
+    const btn = document.createElement("button");
+    btn.type = "button";
+    const isActive = state.freshnessSort.by === key;
+    const dir = isActive ? state.freshnessSort.dir : null;
+    btn.textContent = label + (dir === "asc" ? " ↑" : dir === "desc" ? " ↓" : "");
+    Object.assign(btn.style, {
+      padding: "5px 10px", fontSize: "12px", fontWeight: "600", cursor: "pointer",
+      border: isActive ? "1px solid #0176d3" : "1px solid #d0d7de",
+      borderRadius: "999px",
+      background: isActive ? "#0176d3" : "#ffffff",
+      color: isActive ? "#ffffff" : "#374151",
+    });
+    btn.onclick = () => {
+      if (state.freshnessSort.by === key) {
+        state.freshnessSort.dir = state.freshnessSort.dir === "asc" ? "desc" : "asc";
+      } else {
+        state.freshnessSort = { by: key, dir: "desc" };
+      }
+      rerenderCurrentCaseToast();
+    };
+    sortBar.appendChild(btn);
+  });
+  section.appendChild(sortBar);
+
+  // Sort data
+  const sorted = [...supplierFreshness].sort((a, b) => {
+    const { by, dir } = state.freshnessSort;
+    let cmp = 0;
+    if (by === "oldestDoc") cmp = (b.oldestAgeDays ?? -1) - (a.oldestAgeDays ?? -1);
+    else if (by === "newestDoc") cmp = (b.newestAgeDays ?? -1) - (a.newestAgeDays ?? -1);
+    else if (by === "name") cmp = a.supplierName.localeCompare(b.supplierName);
+    else if (by === "count") cmp = b.statementCount - a.statementCount;
+    return dir === "asc" ? -cmp : cmp;
+  });
+
+  // Table header
+  const table = document.createElement("div");
+  Object.assign(table.style, { display: "flex", flexDirection: "column", gap: "4px" });
+
+  const headerRow = document.createElement("div");
+  Object.assign(headerRow.style, {
+    display: "grid",
+    gridTemplateColumns: "1fr 70px 100px 100px 60px 90px",
+    gap: "8px", padding: "6px 12px",
+    background: "#f8fafc", borderRadius: "8px",
+    fontSize: "11px", fontWeight: "700", color: "#6b7280", textTransform: "uppercase",
+  });
+  ["Supplier", "Stmts", "Newest Doc", "Oldest Doc", "No Date", "Freshness"].forEach((h) => {
+    const c = document.createElement("div");
+    c.textContent = h;
+    headerRow.appendChild(c);
+  });
+  table.appendChild(headerRow);
+
+  sorted.forEach((sf) => {
+    const isExpanded = state.freshnessExpanded.includes(sf.supplierCode || sf.supplierName);
+    const fc = freshnessColor(sf.freshnessLevel);
+
+    const wrapper = document.createElement("div");
+    Object.assign(wrapper.style, { border: "1px solid #e5e7eb", borderRadius: "10px", overflow: "hidden" });
+
+    // Main row
+    const row = document.createElement("div");
+    Object.assign(row.style, {
+      display: "grid",
+      gridTemplateColumns: "1fr 70px 100px 100px 60px 90px",
+      gap: "8px", padding: "10px 12px",
+      background: "#ffffff", cursor: "pointer", alignItems: "center",
+    });
+    row.onmouseenter = () => { row.style.background = "#f8fafc"; };
+    row.onmouseleave = () => { row.style.background = "#ffffff"; };
+
+    const nameCell = document.createElement("div");
+    Object.assign(nameCell.style, { fontWeight: "700", fontSize: "13px", color: "#111827", display: "flex", alignItems: "center", gap: "6px" });
+    const chevron = document.createElement("span");
+    chevron.textContent = isExpanded ? "▾" : "▸";
+    Object.assign(chevron.style, { color: "#9ca3af", fontSize: "11px", flexShrink: "0" });
+    nameCell.appendChild(chevron);
+    const nameText = document.createElement("span");
+    nameText.textContent = sf.supplierName + (sf.supplierCode ? ` (${sf.supplierCode})` : "");
+    Object.assign(nameText.style, { overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" });
+    nameCell.appendChild(nameText);
+
+    const countCell = document.createElement("div");
+    Object.assign(countCell.style, { fontSize: "13px", color: "#374151", fontWeight: "600" });
+    countCell.textContent = sf.statementCount;
+
+    const newestCell = document.createElement("div");
+    Object.assign(newestCell.style, { fontSize: "12px", color: "#374151" });
+    newestCell.textContent = sf.newestDate ? `${sf.newestDate.slice(0, 10)} (${formatAge(sf.newestAgeDays)})` : "—";
+
+    const oldestCell = document.createElement("div");
+    Object.assign(oldestCell.style, { fontSize: "12px", color: "#374151" });
+    oldestCell.textContent = sf.oldestDate ? `${sf.oldestDate.slice(0, 10)} (${formatAge(sf.oldestAgeDays)})` : "—";
+
+    const undatedCell = document.createElement("div");
+    Object.assign(undatedCell.style, { fontSize: "12px", color: sf.undatedCount > 0 ? "#6b7280" : "#374151" });
+    undatedCell.textContent = sf.undatedCount > 0 ? `${sf.undatedCount}` : "—";
+
+    const badge = document.createElement("div");
+    badge.textContent = freshnessLabel(sf.freshnessLevel);
+    Object.assign(badge.style, {
+      display: "inline-block", padding: "3px 8px", borderRadius: "999px",
+      fontSize: "11px", fontWeight: "700",
+      background: fc.bg, color: fc.color, border: `1px solid ${fc.border}`,
+      whiteSpace: "nowrap",
+    });
+
+    [nameCell, countCell, newestCell, oldestCell, undatedCell, badge].forEach((c) => row.appendChild(c));
+    wrapper.appendChild(row);
+
+    // Expandable detail
+    const detail = document.createElement("div");
+    Object.assign(detail.style, {
+      display: isExpanded ? "block" : "none",
+      borderTop: "1px solid #e5e7eb",
+      background: "#fafafa",
+    });
+
+    if (isExpanded) {
+      const stmtList = document.createElement("div");
+      Object.assign(stmtList.style, { display: "flex", flexDirection: "column" });
+
+      const stmtHeader = document.createElement("div");
+      Object.assign(stmtHeader.style, {
+        display: "grid", gridTemplateColumns: "1fr 80px 100px 100px 80px",
+        gap: "8px", padding: "6px 16px",
+        fontSize: "11px", fontWeight: "700", color: "#9ca3af", textTransform: "uppercase",
+        borderBottom: "1px solid #e5e7eb",
+      });
+      ["Document", "Regulation", "Issue Date", "Valid Until", "Age"].forEach((h) => {
+        const c = document.createElement("div"); c.textContent = h; stmtHeader.appendChild(c);
+      });
+      stmtList.appendChild(stmtHeader);
+
+      sf.statements.forEach((stmt, i) => {
+        const srow = document.createElement("div");
+        Object.assign(srow.style, {
+          display: "grid", gridTemplateColumns: "1fr 80px 100px 100px 80px",
+          gap: "8px", padding: "8px 16px", alignItems: "center",
+          background: i % 2 === 0 ? "#ffffff" : "#f8fafc",
+          borderBottom: i < sf.statements.length - 1 ? "1px solid #f3f4f6" : "none",
+        });
+
+        const dTitle = document.createElement("div");
+        Object.assign(dTitle.style, { fontSize: "12px", color: "#111827", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" });
+        dTitle.textContent = stmt.docTitle || "—";
+        dTitle.title = stmt.docTitle || "";
+
+        const dReg = document.createElement("div");
+        Object.assign(dReg.style, { fontSize: "12px", color: "#4b5563", fontWeight: "600" });
+        dReg.textContent = stmt.regCode || "—";
+
+        const dIssue = document.createElement("div");
+        Object.assign(dIssue.style, { fontSize: "12px", color: stmt.issueDate ? "#374151" : "#9ca3af" });
+        dIssue.textContent = stmt.issueDate ? stmt.issueDate.slice(0, 10) : "—";
+
+        const dValid = document.createElement("div");
+        Object.assign(dValid.style, { fontSize: "12px", color: stmt.validUntil ? "#374151" : "#9ca3af" });
+        dValid.textContent = stmt.validUntil ? stmt.validUntil.slice(0, 10) : "—";
+
+        const dAge = document.createElement("div");
+        const ageLevel = stmt.undated ? "no_data"
+          : stmt.ageDays < 365 ? "fresh"
+          : stmt.ageDays < 730 ? "ok"
+          : stmt.ageDays < 1095 ? "aging" : "old";
+        const afc = freshnessColor(ageLevel);
+        dAge.textContent = stmt.undated ? "No date" : formatAge(stmt.ageDays);
+        Object.assign(dAge.style, {
+          fontSize: "11px", fontWeight: "700",
+          color: afc.color, background: afc.bg,
+          padding: "2px 7px", borderRadius: "999px", border: `1px solid ${afc.border}`,
+          whiteSpace: "nowrap", display: "inline-block",
+        });
+
+        [dTitle, dReg, dIssue, dValid, dAge].forEach((c) => srow.appendChild(c));
+        stmtList.appendChild(srow);
+      });
+
+      detail.appendChild(stmtList);
+    }
+
+    row.onclick = () => {
+      const key = sf.supplierCode || sf.supplierName;
+      const idx = state.freshnessExpanded.indexOf(key);
+      if (idx >= 0) state.freshnessExpanded.splice(idx, 1);
+      else state.freshnessExpanded.push(key);
+      rerenderCurrentCaseToast();
+    };
+
+    wrapper.appendChild(detail);
+    table.appendChild(wrapper);
+  });
+
+  section.appendChild(table);
+  return section;
+}
+
+// ============================================================
+// VARIANT 2 — Statement Browser
+// ============================================================
+function createStatementBrowser(data) {
+  const { allStatements, supplierFreshness } = data;
+  const state = currentCaseAnalysisState;
+
+  const section = document.createElement("div");
+  Object.assign(section.style, { marginBottom: "28px" });
+
+  const hdr = document.createElement("div");
+  hdr.textContent = "Statement Browser";
+  Object.assign(hdr.style, { fontSize: "18px", fontWeight: "800", color: "#111827", marginBottom: "4px" });
+  section.appendChild(hdr);
+
+  const sub = document.createElement("div");
+  sub.textContent = "Browse all statements across suppliers with filters by age, regulation, and supplier";
+  Object.assign(sub.style, { fontSize: "13px", color: "#6b7280", marginBottom: "14px" });
+  section.appendChild(sub);
+
+  // Filter bar
+  const filterBar = document.createElement("div");
+  Object.assign(filterBar.style, { display: "flex", gap: "8px", marginBottom: "12px", flexWrap: "wrap", alignItems: "center" });
+
+  // Supplier dropdown
+  const supplierSel = document.createElement("select");
+  Object.assign(supplierSel.style, {
+    padding: "6px 10px", border: "1px solid #d0d7de", borderRadius: "8px", fontSize: "12px",
+    background: "#ffffff", color: "#111827", cursor: "pointer",
+  });
+  const allSupplierOpt = document.createElement("option");
+  allSupplierOpt.value = ""; allSupplierOpt.textContent = "All suppliers";
+  supplierSel.appendChild(allSupplierOpt);
+  [...new Set(allStatements.map((s) => s.supplierName))].sort().forEach((name) => {
+    const opt = document.createElement("option");
+    opt.value = name; opt.textContent = name;
+    if (state.stmtBrowserSupplier === name) opt.selected = true;
+    supplierSel.appendChild(opt);
+  });
+  supplierSel.onchange = () => { state.stmtBrowserSupplier = supplierSel.value; rerenderCurrentCaseToast(); };
+  filterBar.appendChild(supplierSel);
+
+  // Regulation dropdown
+  const regSel = document.createElement("select");
+  Object.assign(regSel.style, {
+    padding: "6px 10px", border: "1px solid #d0d7de", borderRadius: "8px", fontSize: "12px",
+    background: "#ffffff", color: "#111827", cursor: "pointer",
+  });
+  const allRegOpt = document.createElement("option");
+  allRegOpt.value = ""; allRegOpt.textContent = "All regulations";
+  regSel.appendChild(allRegOpt);
+  [...new Set(allStatements.map((s) => s.regCode).filter(Boolean))].sort().forEach((code) => {
+    const opt = document.createElement("option");
+    opt.value = code; opt.textContent = code;
+    if (state.stmtBrowserReg === code) opt.selected = true;
+    regSel.appendChild(opt);
+  });
+  regSel.onchange = () => { state.stmtBrowserReg = regSel.value; rerenderCurrentCaseToast(); };
+  filterBar.appendChild(regSel);
+
+  // Age pills
+  const agePills = [
+    { key: "all",     label: "All" },
+    { key: "fresh",   label: "< 1 yr" },
+    { key: "ok",      label: "1–2 yr" },
+    { key: "aging",   label: "2–3 yr" },
+    { key: "old",     label: "3+ yr" },
+    { key: "undated", label: "No date" },
+  ];
+  agePills.forEach(({ key, label }) => {
+    const pill = document.createElement("button");
+    pill.type = "button";
+    pill.textContent = label;
+    const isActive = (state.stmtBrowserAge || "all") === key;
+    Object.assign(pill.style, {
+      padding: "5px 10px", fontSize: "12px", fontWeight: "600", cursor: "pointer",
+      border: isActive ? "1px solid #0176d3" : "1px solid #d0d7de",
+      borderRadius: "999px",
+      background: isActive ? "#0176d3" : "#ffffff",
+      color: isActive ? "#ffffff" : "#374151",
+      whiteSpace: "nowrap",
+    });
+    pill.onclick = () => { state.stmtBrowserAge = key; rerenderCurrentCaseToast(); };
+    filterBar.appendChild(pill);
+  });
+
+  section.appendChild(filterBar);
+
+  // Apply filters
+  let filtered = allStatements;
+  if (state.stmtBrowserSupplier) filtered = filtered.filter((s) => s.supplierName === state.stmtBrowserSupplier);
+  if (state.stmtBrowserReg) filtered = filtered.filter((s) => s.regCode === state.stmtBrowserReg);
+  const age = state.stmtBrowserAge || "all";
+  if (age === "undated") filtered = filtered.filter((s) => s.undated);
+  else if (age === "fresh")  filtered = filtered.filter((s) => !s.undated && s.ageDays < 365);
+  else if (age === "ok")     filtered = filtered.filter((s) => !s.undated && s.ageDays >= 365 && s.ageDays < 730);
+  else if (age === "aging")  filtered = filtered.filter((s) => !s.undated && s.ageDays >= 730 && s.ageDays < 1095);
+  else if (age === "old")    filtered = filtered.filter((s) => !s.undated && s.ageDays >= 1095);
+
+  const counter = document.createElement("div");
+  Object.assign(counter.style, { fontSize: "12px", color: "#6b7280", marginBottom: "8px" });
+  counter.textContent = `${filtered.length} statement${filtered.length !== 1 ? "s" : ""}`;
+  section.appendChild(counter);
+
+  if (!filtered.length) {
+    const empty = document.createElement("div");
+    Object.assign(empty.style, { padding: "20px", textAlign: "center", color: "#6b7280", background: "#f8fafc", borderRadius: "10px", border: "1px solid #e5e7eb" });
+    empty.textContent = "No statements match the current filters.";
+    section.appendChild(empty);
+    return section;
+  }
+
+  // List
+  const list = document.createElement("div");
+  Object.assign(list.style, { display: "flex", flexDirection: "column", gap: "4px" });
+
+  filtered.forEach((stmt) => {
+    const ageLevel = stmt.undated ? "no_data"
+      : stmt.ageDays < 365 ? "fresh"
+      : stmt.ageDays < 730 ? "ok"
+      : stmt.ageDays < 1095 ? "aging" : "old";
+    const fc = freshnessColor(ageLevel);
+
+    const card = document.createElement("div");
+    Object.assign(card.style, {
+      display: "grid",
+      gridTemplateColumns: "90px 1fr 90px 90px 90px 90px",
+      gap: "10px", padding: "9px 14px", alignItems: "center",
+      background: "#ffffff", border: "1px solid #e5e7eb", borderRadius: "8px",
+      borderLeft: `4px solid ${fc.border}`,
+    });
+
+    const ageBadge = document.createElement("div");
+    ageBadge.textContent = stmt.undated ? "No date" : formatAge(stmt.ageDays);
+    Object.assign(ageBadge.style, {
+      fontSize: "11px", fontWeight: "700",
+      color: fc.color, background: fc.bg,
+      padding: "2px 7px", borderRadius: "999px", border: `1px solid ${fc.border}`,
+      textAlign: "center", whiteSpace: "nowrap",
+    });
+
+    const nameEl = document.createElement("div");
+    Object.assign(nameEl.style, { minWidth: "0" });
+    const nTop = document.createElement("div");
+    Object.assign(nTop.style, { fontWeight: "700", fontSize: "12px", color: "#111827", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" });
+    nTop.textContent = stmt.supplierName;
+    nTop.title = stmt.supplierName;
+    const nBot = document.createElement("div");
+    Object.assign(nBot.style, { fontSize: "11px", color: "#6b7280", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" });
+    nBot.textContent = stmt.docTitle || "—";
+    nBot.title = stmt.docTitle || "";
+    nameEl.appendChild(nTop); nameEl.appendChild(nBot);
+
+    const regEl = document.createElement("div");
+    Object.assign(regEl.style, { fontSize: "12px", fontWeight: "700", color: "#0176d3" });
+    regEl.textContent = stmt.regCode || "—";
+
+    const issuedEl = document.createElement("div");
+    Object.assign(issuedEl.style, { fontSize: "12px", color: stmt.issueDate ? "#374151" : "#9ca3af" });
+    issuedEl.textContent = stmt.issueDate ? stmt.issueDate.slice(0, 10) : "—";
+
+    const validEl = document.createElement("div");
+    Object.assign(validEl.style, { fontSize: "12px", color: stmt.validUntil ? "#374151" : "#9ca3af" });
+    validEl.textContent = stmt.validUntil ? stmt.validUntil.slice(0, 10) : "—";
+
+    const typeEl = document.createElement("div");
+    Object.assign(typeEl.style, { fontSize: "11px", color: "#6b7280" });
+    typeEl.textContent = stmt.assertionType || "—";
+
+    [ageBadge, nameEl, regEl, issuedEl, validEl, typeEl].forEach((c) => card.appendChild(c));
+    list.appendChild(card);
+  });
+
+  section.appendChild(list);
+  return section;
+}
+
 function createDocumentAgeSection(data) {
   const { documentAgeData } = data;
   const old = documentAgeData.filter((d) => !d.undated && d.ageDays >= 365);
@@ -7013,18 +7610,27 @@ function createAnalyticsDashboard(suppliersLibrary) {
     return wrapper;
   }
 
-  wrapper.appendChild(createAnalyticsStatsBar(data.stats));
+  function safeAppend(fn, label) {
+    try {
+      const el = fn();
+      if (el) wrapper.appendChild(el);
+    } catch (e) {
+      console.error(`[Analytics] Error rendering "${label}":`, e);
+      const err = document.createElement("div");
+      Object.assign(err.style, { padding: "10px 14px", color: "#b42318", fontSize: "12px", background: "#fff5f5", borderRadius: "8px", marginBottom: "12px" });
+      err.textContent = `⚠ Failed to render "${label}": ${e.message}`;
+      wrapper.appendChild(err);
+    }
+  }
 
-  const nonCompliantSection = createNonCompliantSection(data);
-  if (nonCompliantSection) wrapper.appendChild(nonCompliantSection);
-
-  wrapper.appendChild(createComplianceMatrix(data));
-  wrapper.appendChild(createRegulationBreakdownSection(data));
-  wrapper.appendChild(createAtRiskSection(data));
-  wrapper.appendChild(createExpiringSoonSection(data));
-
-  const docAgeSection = createDocumentAgeSection(data);
-  if (docAgeSection) wrapper.appendChild(docAgeSection);
+  safeAppend(() => createAnalyticsStatsBar(data.stats), "Stats");
+  safeAppend(() => createNonCompliantSection(data), "Non-compliant");
+  safeAppend(() => createComplianceMatrix(data), "Compliance Matrix");
+  safeAppend(() => createSupplierFreshnessTable(data), "Supplier Freshness");
+  safeAppend(() => createStatementBrowser(data), "Statement Browser");
+  safeAppend(() => createRegulationBreakdownSection(data), "Regulation Breakdown");
+  safeAppend(() => createAtRiskSection(data), "At Risk");
+  safeAppend(() => createExpiringSoonSection(data), "Expiring Soon");
 
   return wrapper;
 }
