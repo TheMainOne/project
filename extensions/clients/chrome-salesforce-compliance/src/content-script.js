@@ -102,6 +102,8 @@ manualLookupLoading: false,
     submitting: false,
     submitError: null,
   },
+
+  complianceSnapshots: [],
 };
 
 let activeCaseRequestToken = 0;
@@ -202,6 +204,8 @@ manualLookupLoading: false,
       submitting: false,
       submitError: null,
     },
+
+    complianceSnapshots: [],
   };
 }
 
@@ -424,14 +428,14 @@ async function runManualLookup() {
   );
 }
 
-async function loadSuppliersLibrary(search = "") {
+async function loadSuppliersLibrary(search = "", forceRefresh = false) {
   currentCaseAnalysisState.suppliersLibraryLoading = true;
   currentCaseAnalysisState.suppliersLibraryError = null;
   rerenderCurrentCaseToast();
 
   const response = await sendMessageAsync({
     type: "SF_SUPPLIERS_LIBRARY",
-    payload: { search },
+    payload: { search, forceRefresh },
   });
 
   if (!response?.ok) {
@@ -467,6 +471,26 @@ async function loadSuppliersLibrary(search = "") {
   if (!selectedStillExists) {
     currentCaseAnalysisState.selectedSupplierLibraryId =
       suppliers[0]?.supplierId || null;
+  }
+
+  // Load existing snapshots for trend display, then save a new snapshot
+  const snapshotsResponse = await sendMessageAsync({ type: "EXT_GET_COMPLIANCE_SNAPSHOTS" });
+  currentCaseAnalysisState.complianceSnapshots = snapshotsResponse?.snapshots || [];
+
+  const analyticsData = buildAnalyticsData(currentCaseAnalysisState.suppliersLibrary);
+  if (analyticsData.stats.totalSuppliers > 0) {
+    const compliancePercent = Math.round(
+      (analyticsData.stats.fullyCovered / analyticsData.stats.totalSuppliers) * 100
+    );
+    const coveragePercent = Math.round((analyticsData.stats.overallCoverageRate || 0) * 100);
+    sendMessageAsync({
+      type: "EXT_SAVE_COMPLIANCE_SNAPSHOT",
+      payload: {
+        compliancePercent,
+        coveragePercent,
+        totalSuppliers: analyticsData.stats.totalSuppliers,
+      },
+    });
   }
 
   rerenderCurrentCaseToast();
@@ -992,7 +1016,7 @@ function buildMaterialRegulationRows(supplierLookup) {
   });
 }
 
-function createCompactRegulationBadge(regulationCode, status, url = "") {
+function createCompactRegulationBadge(regulationCode, status, url = "", tooltip = "") {
   const badge = document.createElement("div");
   const style = getCoverageBadgeStyle(status);
   const icon = getRegulationStatusIcon(status);
@@ -1009,7 +1033,12 @@ function createCompactRegulationBadge(regulationCode, status, url = "") {
     color: style.color,
     border: style.border,
     whiteSpace: "nowrap",
+    cursor: tooltip ? "help" : "default",
   });
+
+  if (tooltip) {
+    badge.title = tooltip;
+  }
 
   const text = document.createElement("span");
   text.textContent = `${regulationCode} ${icon}`;
@@ -1059,7 +1088,8 @@ function createMaterialRegulationSummary(supplierLookup) {
       createCompactRegulationBadge(
         row.code,
         row.overallStatus,
-        primaryEvidence?.url || ""
+        primaryEvidence?.url || "",
+        row.name && row.name !== row.code ? row.name : ""
       )
     );
   });
@@ -1120,7 +1150,8 @@ function createComponentRegulationSummary(supplierLookup) {
       createCompactRegulationBadge(
         row.code,
         row.overallStatus,
-        primaryEvidence?.url || ""
+        primaryEvidence?.url || "",
+        row.name && row.name !== row.code ? row.name : ""
       )
     );
   });
@@ -3007,8 +3038,31 @@ function createSuppliersLibrarySearchBar() {
     loadSuppliersLibrary(currentCaseAnalysisState.suppliersLibrarySearch || "");
   });
 
+  const refreshButton = document.createElement("button");
+  refreshButton.type = "button";
+  refreshButton.textContent = "↺";
+  refreshButton.title = "Force refresh (bypass 15-min cache)";
+  Object.assign(refreshButton.style, {
+    padding: "10px 12px",
+    border: "1px solid #d0d7de",
+    borderRadius: "10px",
+    background: "#ffffff",
+    color: "#374151",
+    cursor: currentCaseAnalysisState.suppliersLibraryLoading ? "default" : "pointer",
+    fontWeight: "600",
+    fontSize: "16px",
+    lineHeight: "1",
+    opacity: currentCaseAnalysisState.suppliersLibraryLoading ? "0.5" : "1",
+    flexShrink: "0",
+  });
+  refreshButton.disabled = currentCaseAnalysisState.suppliersLibraryLoading;
+  refreshButton.addEventListener("click", () => {
+    loadSuppliersLibrary(currentCaseAnalysisState.suppliersLibrarySearch || "", true);
+  });
+
   wrapper.appendChild(input);
   wrapper.appendChild(button);
+  wrapper.appendChild(refreshButton);
 
   return wrapper;
 }
@@ -3903,6 +3957,107 @@ function createOutreachForm() {
   return container;
 }
 
+function createOutreachTimeline(record, effectiveStatus) {
+  function fmtDate(iso) {
+    if (!iso) return null;
+    const d = new Date(iso);
+    return isNaN(d.getTime()) ? null : d.toLocaleDateString(undefined, { month: "short", day: "numeric" });
+  }
+
+  const steps = [];
+
+  steps.push({
+    label: "Sent",
+    date: fmtDate(record.sentAt),
+    done: true,
+    color: "#6b7280",
+  });
+
+  if (record.nextFollowUpAt) {
+    const isOverdue = effectiveStatus === "overdue";
+    const isPast = new Date(record.nextFollowUpAt) < new Date();
+    steps.push({
+      label: isOverdue ? "Overdue" : "Follow-up",
+      date: fmtDate(record.nextFollowUpAt),
+      done: isPast,
+      color: isOverdue ? "#dc2626" : isPast ? "#6b7280" : "#0176d3",
+    });
+  }
+
+  steps.push({
+    label: "Responded",
+    date: fmtDate(record.respondedAt),
+    done: !!record.respondedAt,
+    color: record.respondedAt ? "#059669" : "#d1d5db",
+  });
+
+  const wrapper = document.createElement("div");
+  Object.assign(wrapper.style, {
+    display: "flex",
+    alignItems: "flex-start",
+    marginTop: "8px",
+    marginBottom: "8px",
+  });
+
+  steps.forEach((step, i) => {
+    const node = document.createElement("div");
+    Object.assign(node.style, {
+      display: "flex",
+      flexDirection: "column",
+      alignItems: "center",
+      gap: "3px",
+      minWidth: "60px",
+    });
+
+    const dot = document.createElement("div");
+    Object.assign(dot.style, {
+      width: "10px",
+      height: "10px",
+      borderRadius: "50%",
+      background: step.done ? step.color : "#fff",
+      border: `2px solid ${step.done ? step.color : "#d1d5db"}`,
+      flexShrink: "0",
+    });
+
+    const labelEl = document.createElement("div");
+    labelEl.textContent = step.label;
+    Object.assign(labelEl.style, {
+      fontSize: "10px",
+      fontWeight: "700",
+      color: step.done ? step.color : "#9ca3af",
+      textAlign: "center",
+      lineHeight: "1.2",
+    });
+
+    const dateEl = document.createElement("div");
+    dateEl.textContent = step.date || "—";
+    Object.assign(dateEl.style, {
+      fontSize: "10px",
+      color: "#9ca3af",
+      textAlign: "center",
+    });
+
+    node.appendChild(dot);
+    node.appendChild(labelEl);
+    node.appendChild(dateEl);
+    wrapper.appendChild(node);
+
+    if (i < steps.length - 1) {
+      const line = document.createElement("div");
+      Object.assign(line.style, {
+        flex: "1",
+        height: "2px",
+        background: "#e5e7eb",
+        marginTop: "4px",
+        minWidth: "12px",
+      });
+      wrapper.appendChild(line);
+    }
+  });
+
+  return wrapper;
+}
+
 function createOutreachCard(record) {
   const effectiveStatus = getEffectiveOutreachStatus(record);
 
@@ -3963,6 +4118,7 @@ function createOutreachCard(record) {
   }
 
   card.appendChild(metaRow);
+  card.appendChild(createOutreachTimeline(record, effectiveStatus));
 
   if (record.notes) {
     const notesEl = document.createElement("div");
@@ -6163,14 +6319,44 @@ function createAnalyticsStatsBar(stats) {
     )
   );
 
-  wrapper.appendChild(
-    createAnalyticsStatCard(
-      "Coverage Rate",
-      `${Math.round(stats.overallCoverageRate * 100)}%`,
-      `${stats.coveredCells} / ${stats.totalCells} cells`,
-      stats.overallCoverageRate >= 0.8 ? "#16a34a" : stats.overallCoverageRate >= 0.5 ? "#ea580c" : "#dc2626"
-    )
+  const currentCoverage = Math.round(stats.overallCoverageRate * 100);
+  const coverageColor = stats.overallCoverageRate >= 0.8 ? "#16a34a" : stats.overallCoverageRate >= 0.5 ? "#ea580c" : "#dc2626";
+
+  // Compute trend: compare current coverage with most recent previous snapshot
+  const snapshots = currentCaseAnalysisState.complianceSnapshots || [];
+  let trendEl = null;
+  if (snapshots.length > 0) {
+    const prev = snapshots[0];
+    const delta = currentCoverage - (prev.coveragePercent || 0);
+    if (delta !== 0) {
+      const prevDate = prev.date ? new Date(prev.date).toLocaleDateString() : "previously";
+      trendEl = document.createElement("span");
+      trendEl.title = `Was ${prev.coveragePercent}% on ${prevDate}`;
+      trendEl.textContent = delta > 0 ? ` ↑${delta}%` : ` ↓${Math.abs(delta)}%`;
+      Object.assign(trendEl.style, {
+        fontSize: "13px",
+        fontWeight: "700",
+        color: delta > 0 ? "#16a34a" : "#dc2626",
+        marginLeft: "4px",
+        verticalAlign: "middle",
+      });
+    }
+  }
+
+  const coverageCard = createAnalyticsStatCard(
+    "Coverage Rate",
+    `${currentCoverage}%`,
+    `${stats.coveredCells} / ${stats.totalCells} cells`,
+    coverageColor
   );
+
+  if (trendEl) {
+    // Append trend arrow next to the value element (second child of card)
+    const valueEl = coverageCard.children[1];
+    if (valueEl) valueEl.appendChild(trendEl);
+  }
+
+  wrapper.appendChild(coverageCard);
 
   return wrapper;
 }

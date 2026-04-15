@@ -86,12 +86,26 @@ async function handleManualMaterialsLookup(payload) {
   };
 }
 
+const SUPPLIERS_CACHE_TTL_MS = 15 * 60 * 1000; // 15 minutes
+
 async function handleSuppliersLibraryLookup(payload = {}) {
   const search = String(payload?.search || "").trim();
+  const forceRefresh = Boolean(payload?.forceRefresh);
 
-  const libraryResult = await callComplianceApi("/suppliers-library", {
-    search,
-  });
+  if (!forceRefresh) {
+    const stored = await chrome.storage.local.get("suppliersLibraryCache");
+    const cache = stored.suppliersLibraryCache;
+    if (
+      cache &&
+      cache.search === search &&
+      typeof cache.fetchedAt === "number" &&
+      Date.now() - cache.fetchedAt < SUPPLIERS_CACHE_TTL_MS
+    ) {
+      return { ok: true, suppliersLibraryResult: cache.result, fromCache: true };
+    }
+  }
+
+  const libraryResult = await callComplianceApi("/suppliers-library", { search });
 
   if (libraryResult.authRequired) {
     return {
@@ -101,9 +115,38 @@ async function handleSuppliersLibraryLookup(payload = {}) {
     };
   }
 
+  if (libraryResult.ok) {
+    await chrome.storage.local.set({
+      suppliersLibraryCache: { search, fetchedAt: Date.now(), result: libraryResult },
+    });
+  }
+
   return {
     ok: libraryResult.ok,
     suppliersLibraryResult: libraryResult,
+  };
+}
+
+async function handleSaveComplianceSnapshot(snapshot = {}) {
+  const { compliancePercent, coveragePercent, totalSuppliers } = snapshot;
+  const stored = await chrome.storage.local.get("complianceSnapshots");
+  const existing = Array.isArray(stored.complianceSnapshots) ? stored.complianceSnapshots : [];
+  const newEntry = {
+    date: new Date().toISOString(),
+    compliancePercent: typeof compliancePercent === "number" ? compliancePercent : 0,
+    coveragePercent: typeof coveragePercent === "number" ? coveragePercent : 0,
+    totalSuppliers: typeof totalSuppliers === "number" ? totalSuppliers : 0,
+  };
+  const updated = [newEntry, ...existing].slice(0, 30);
+  await chrome.storage.local.set({ complianceSnapshots: updated });
+  return { ok: true };
+}
+
+async function handleGetComplianceSnapshots() {
+  const stored = await chrome.storage.local.get("complianceSnapshots");
+  return {
+    ok: true,
+    snapshots: Array.isArray(stored.complianceSnapshots) ? stored.complianceSnapshots : [],
   };
 }
 
@@ -543,29 +586,17 @@ async function handleCaseContext(rawPayload) {
     };
   }
 
-  const caseContextResult = await callComplianceApi("/case-context", {
-    caseId: effectiveCaseId,
-    context: payload,
-  });
+  // Run case-context (storage) and analyze (AI) in parallel — they are independent
+  const [caseContextResult, analyzeResult] = await Promise.all([
+    callComplianceApi("/case-context", { caseId: effectiveCaseId, context: payload }),
+    callComplianceApi("/analyze", { caseId: effectiveCaseId, payload }),
+  ]);
 
-  if (caseContextResult.authRequired) {
+  if (caseContextResult.authRequired || analyzeResult.authRequired) {
     return {
       ok: false,
       authRequired: true,
-      error: caseContextResult.error || "Authentication required",
-    };
-  }
-
-  const analyzeResult = await callComplianceApi("/analyze", {
-    caseId: effectiveCaseId,
-    payload,
-  });
-
-  if (analyzeResult.authRequired) {
-    return {
-      ok: false,
-      authRequired: true,
-      error: analyzeResult.error || "Authentication required",
+      error: caseContextResult.error || analyzeResult.error || "Authentication required",
     };
   }
 
@@ -859,6 +890,16 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
   if (message?.type === "EXT_DELETE_OUTREACH") {
     handleDeleteOutreach(message.payload || {}).then(sendResponse);
+    return true;
+  }
+
+  if (message?.type === "EXT_SAVE_COMPLIANCE_SNAPSHOT") {
+    handleSaveComplianceSnapshot(message.payload || {}).then(sendResponse);
+    return true;
+  }
+
+  if (message?.type === "EXT_GET_COMPLIANCE_SNAPSHOTS") {
+    handleGetComplianceSnapshots().then(sendResponse);
     return true;
   }
 });
