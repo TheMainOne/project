@@ -669,6 +669,122 @@ async function handleAddRegulation(payload) {
   };
 }
 
+async function callComplianceApiMethod(method, path, body = null, allowRetry = true) {
+  try {
+    const tokenState = await ensureComplianceToken();
+
+    if (!tokenState.ok) {
+      return { ok: false, status: 401, authRequired: true, error: tokenState.error || "Authentication required" };
+    }
+
+    const url = `${API_BASE_URL}${path}`;
+    const fetchOptions = {
+      method,
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${tokenState.complianceToken}`,
+      },
+    };
+
+    if (body !== null && method !== "GET") {
+      fetchOptions.body = JSON.stringify(body);
+    }
+
+    const res = await fetch(url, fetchOptions);
+    const parsed = await parseResponse(res);
+
+    console.log("API RESPONSE:", method, path, parsed.status, parsed.text);
+
+    if (parsed.status === 401 && allowRetry) {
+      const refreshed = await refreshAndIssueExtensionToken();
+      if (!refreshed.ok) {
+        return { ok: false, status: 401, authRequired: true, error: refreshed.error || "Authentication required" };
+      }
+      return callComplianceApiMethod(method, path, body, false);
+    }
+
+    return {
+      ok: parsed.ok,
+      status: parsed.status,
+      json: parsed.json,
+      error: parsed.ok ? null : getErrorMessage(parsed, "Request failed"),
+    };
+  } catch (err) {
+    console.error("callComplianceApiMethod failed:", method, path, err);
+    return { ok: false, error: err?.message || String(err) };
+  }
+}
+
+async function handleGetOutreach(payload) {
+  const params = new URLSearchParams();
+  if (payload?.supplierId) params.set("supplierId", payload.supplierId);
+  if (payload?.caseId) params.set("caseId", payload.caseId);
+  if (payload?.status) params.set("status", payload.status);
+
+  const query = params.toString() ? `?${params.toString()}` : "";
+  const result = await callComplianceApiMethod("GET", `/outreach${query}`);
+
+  if (result.authRequired) {
+    return { ok: false, authRequired: true, error: result.error || "Authentication required" };
+  }
+
+  return {
+    ok: result.ok,
+    records: result.json?.records || [],
+    total: result.json?.total || 0,
+    error: result.error,
+  };
+}
+
+async function handleCreateOutreach(payload) {
+  const result = await callComplianceApiMethod("POST", "/outreach", payload);
+
+  if (result.authRequired) {
+    return { ok: false, authRequired: true, error: result.error || "Authentication required" };
+  }
+
+  return {
+    ok: result.ok,
+    record: result.json?.record || null,
+    error: result.json?.error || result.error,
+  };
+}
+
+async function handleUpdateOutreach(payload) {
+  const { id, ...update } = payload || {};
+
+  if (!id) return { ok: false, error: "id is required" };
+
+  const result = await callComplianceApiMethod("PATCH", `/outreach/${id}`, update);
+
+  if (result.authRequired) {
+    return { ok: false, authRequired: true, error: result.error || "Authentication required" };
+  }
+
+  return {
+    ok: result.ok,
+    record: result.json?.record || null,
+    error: result.json?.error || result.error,
+  };
+}
+
+async function handleDeleteOutreach(payload) {
+  const { id } = payload || {};
+
+  if (!id) return { ok: false, error: "id is required" };
+
+  const result = await callComplianceApiMethod("DELETE", `/outreach/${id}`);
+
+  if (result.authRequired) {
+    return { ok: false, authRequired: true, error: result.error || "Authentication required" };
+  }
+
+  return {
+    ok: result.ok,
+    error: result.json?.error || result.error,
+  };
+}
+
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   console.log("BACKGROUND RECEIVED MESSAGE:", message);
 
@@ -723,6 +839,26 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
     if (message?.type === "EXT_ADD_REGULATION") {
     handleAddRegulation(message.payload || {}).then(sendResponse);
+    return true;
+  }
+
+  if (message?.type === "EXT_GET_OUTREACH") {
+    handleGetOutreach(message.payload || {}).then(sendResponse);
+    return true;
+  }
+
+  if (message?.type === "EXT_CREATE_OUTREACH") {
+    handleCreateOutreach(message.payload || {}).then(sendResponse);
+    return true;
+  }
+
+  if (message?.type === "EXT_UPDATE_OUTREACH") {
+    handleUpdateOutreach(message.payload || {}).then(sendResponse);
+    return true;
+  }
+
+  if (message?.type === "EXT_DELETE_OUTREACH") {
+    handleDeleteOutreach(message.payload || {}).then(sendResponse);
     return true;
   }
 });

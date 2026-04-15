@@ -4,6 +4,7 @@ import ComplianceDocument from "../sf-compliance/models/ComplianceDocument.js";
 import ComplianceAssertion from "../sf-compliance/models/ComplianceAssertion.js";
 import Supplier from "../sf-compliance/models/Supplier.js";
 import Regulation from "../sf-compliance/models/Regulation.js";
+import SupplierOutreach from "../sf-compliance/models/SupplierOutreach.js";
 import { requireExtensionAuth, requireExtensionScope } from "../../middlewares/auth.js";
 import {
   validateCaseContextBody,
@@ -668,5 +669,136 @@ complianceExtRouter.post(
   }
 );
 
+
+// ============================================================
+// Outreach tracker — CRUD
+// ============================================================
+
+complianceExtRouter.get(
+  "/outreach",
+  requireExtensionAuth,
+  requireExtensionScope("compliance:read"),
+  async (req, res) => {
+    try {
+      const filter = {};
+      if (req.query.supplierId) filter.supplierId = req.query.supplierId;
+      if (req.query.caseId) filter.caseId = req.query.caseId;
+      if (req.query.status) filter.status = req.query.status;
+
+      const records = await SupplierOutreach.find(filter)
+        .sort({ sentAt: -1 })
+        .lean();
+
+      await writeAudit({ userId: req.user.id, action: "outreach.list", outcome: "success" });
+
+      return res.json({ ok: true, total: records.length, records });
+    } catch (error) {
+      console.error("[OUTREACH GET] failed:", error);
+      return res.status(500).json({ ok: false, error: error.message });
+    }
+  }
+);
+
+complianceExtRouter.post(
+  "/outreach",
+  requireExtensionAuth,
+  requireExtensionScope("compliance:read"),
+  async (req, res) => {
+    try {
+      const {
+        supplierId,
+        supplierName,
+        caseId,
+        contactEmail,
+        subject,
+        method,
+        sentAt,
+        nextFollowUpAt,
+        notes,
+        regulationTags,
+      } = req.body;
+
+      if (!supplierId || !supplierName || !subject) {
+        return res.status(400).json({ error: "supplierId, supplierName, and subject are required" });
+      }
+
+      const record = await SupplierOutreach.create({
+        supplierId,
+        supplierName: String(supplierName).trim(),
+        caseId: caseId || null,
+        contactEmail: contactEmail || "",
+        subject: String(subject).trim(),
+        method: method || "email",
+        sentAt: sentAt ? new Date(sentAt) : new Date(),
+        nextFollowUpAt: nextFollowUpAt ? new Date(nextFollowUpAt) : null,
+        status: nextFollowUpAt ? "awaiting" : "sent",
+        notes: notes || "",
+        createdBy: req.user.id,
+        regulationTags: Array.isArray(regulationTags) ? regulationTags : [],
+      });
+
+      await writeAudit({ userId: req.user.id, action: "outreach.create", outcome: "success" });
+
+      return res.json({ ok: true, record });
+    } catch (error) {
+      console.error("[OUTREACH POST] failed:", error);
+      await writeAudit({ userId: req.user.id, action: "outreach.create", outcome: "error" });
+      return res.status(500).json({ ok: false, error: error.message });
+    }
+  }
+);
+
+complianceExtRouter.patch(
+  "/outreach/:id",
+  requireExtensionAuth,
+  requireExtensionScope("compliance:read"),
+  async (req, res) => {
+    try {
+      const allowed = ["status", "respondedAt", "notes", "nextFollowUpAt", "contactEmail"];
+      const update = {};
+      for (const key of allowed) {
+        if (key in req.body) update[key] = req.body[key];
+      }
+
+      if (update.status === "responded" && !update.respondedAt) {
+        update.respondedAt = new Date();
+      }
+
+      const record = await SupplierOutreach.findByIdAndUpdate(
+        req.params.id,
+        { $set: update },
+        { new: true }
+      ).lean();
+
+      if (!record) return res.status(404).json({ error: "Record not found" });
+
+      await writeAudit({ userId: req.user.id, action: "outreach.update", outcome: "success" });
+
+      return res.json({ ok: true, record });
+    } catch (error) {
+      console.error("[OUTREACH PATCH] failed:", error);
+      return res.status(500).json({ ok: false, error: error.message });
+    }
+  }
+);
+
+complianceExtRouter.delete(
+  "/outreach/:id",
+  requireExtensionAuth,
+  requireExtensionScope("compliance:read"),
+  async (req, res) => {
+    try {
+      const record = await SupplierOutreach.findByIdAndDelete(req.params.id).lean();
+      if (!record) return res.status(404).json({ error: "Record not found" });
+
+      await writeAudit({ userId: req.user.id, action: "outreach.delete", outcome: "success" });
+
+      return res.json({ ok: true });
+    } catch (error) {
+      console.error("[OUTREACH DELETE] failed:", error);
+      return res.status(500).json({ ok: false, error: error.message });
+    }
+  }
+);
 
 export default complianceExtRouter;

@@ -81,6 +81,27 @@ manualLookupLoading: false,
     submitResult: null,
     submitError: null,
   },
+
+  outreachList: null,
+  outreachLoading: false,
+  outreachError: null,
+  outreachFilter: "all",
+  outreachShowForm: false,
+  outreachForm: {
+    supplierId: "",
+    supplierName: "",
+    supplierSearchQuery: "",
+    supplierSearchResults: [],
+    contactEmail: "",
+    subject: "",
+    method: "email",
+    sentAt: "",
+    followUpDays: "7",
+    notes: "",
+    regulationTags: [],
+    submitting: false,
+    submitError: null,
+  },
 };
 
 let activeCaseRequestToken = 0;
@@ -158,6 +179,27 @@ manualLookupLoading: false,
 
       submitting: false,
       submitResult: null,
+      submitError: null,
+    },
+
+    outreachList: null,
+    outreachLoading: false,
+    outreachError: null,
+    outreachFilter: "all",
+    outreachShowForm: false,
+    outreachForm: {
+      supplierId: "",
+      supplierName: "",
+      supplierSearchQuery: "",
+      supplierSearchResults: [],
+      contactEmail: "",
+      subject: "",
+      method: "email",
+      sentAt: "",
+      followUpDays: "7",
+      notes: "",
+      regulationTags: [],
+      submitting: false,
       submitError: null,
     },
   };
@@ -427,6 +469,26 @@ async function loadSuppliersLibrary(search = "") {
       suppliers[0]?.supplierId || null;
   }
 
+  rerenderCurrentCaseToast();
+}
+
+async function loadOutreachList() {
+  currentCaseAnalysisState.outreachLoading = true;
+  currentCaseAnalysisState.outreachError = null;
+  rerenderCurrentCaseToast();
+
+  const response = await sendMessageAsync({ type: "EXT_GET_OUTREACH", payload: {} });
+
+  if (!response?.ok) {
+    currentCaseAnalysisState.outreachLoading = false;
+    currentCaseAnalysisState.outreachError = response?.error || "Failed to load outreach records";
+    rerenderCurrentCaseToast();
+    return;
+  }
+
+  currentCaseAnalysisState.outreachList = response.records || [];
+  currentCaseAnalysisState.outreachLoading = false;
+  currentCaseAnalysisState.outreachError = null;
   rerenderCurrentCaseToast();
 }
 
@@ -3390,6 +3452,600 @@ function createSupplierLibraryDetail(supplier) {
   return wrapper;
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Outreach Tracker UI
+// ─────────────────────────────────────────────────────────────────────────────
+
+function getEffectiveOutreachStatus(record) {
+  if (record.status === "responded" || record.status === "closed") return record.status;
+  if (record.nextFollowUpAt && new Date(record.nextFollowUpAt) < new Date()) return "overdue";
+  if (record.nextFollowUpAt) return "awaiting";
+  return record.status || "sent";
+}
+
+function formatOutreachDate(dateStr) {
+  if (!dateStr) return "—";
+  const d = new Date(dateStr);
+  if (isNaN(d)) return "—";
+  return d.toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" });
+}
+
+function formatDaysAgo(dateStr) {
+  if (!dateStr) return "";
+  const d = new Date(dateStr);
+  if (isNaN(d)) return "";
+  const diff = Math.floor((Date.now() - d.getTime()) / 86400000);
+  if (diff === 0) return "today";
+  if (diff === 1) return "1 day ago";
+  return `${diff} days ago`;
+}
+
+function createOutreachStatusBadge(status) {
+  const badge = document.createElement("span");
+  const config = {
+    sent:      { label: "Sent",      bg: "#f3f4f6", color: "#374151" },
+    awaiting:  { label: "Awaiting",  bg: "#fef3c7", color: "#92400e" },
+    overdue:   { label: "Overdue",   bg: "#fee2e2", color: "#991b1b" },
+    responded: { label: "Responded", bg: "#d1fae5", color: "#065f46" },
+    closed:    { label: "Closed",    bg: "#f3f4f6", color: "#6b7280" },
+  };
+  const c = config[status] || config.sent;
+  badge.textContent = c.label;
+  Object.assign(badge.style, {
+    display: "inline-block",
+    padding: "2px 8px",
+    borderRadius: "9999px",
+    fontSize: "11px",
+    fontWeight: "700",
+    background: c.bg,
+    color: c.color,
+    whiteSpace: "nowrap",
+  });
+  return badge;
+}
+
+function createOutreachTabContent(records) {
+  const wrapper = document.createElement("div");
+
+  // ── Filter bar ──────────────────────────────────────────────────────────────
+  const filterBar = document.createElement("div");
+  Object.assign(filterBar.style, {
+    display: "flex",
+    gap: "6px",
+    marginBottom: "12px",
+    flexWrap: "wrap",
+    alignItems: "center",
+  });
+
+  const currentFilter = currentCaseAnalysisState.outreachFilter;
+
+  const filterDefs = [
+    { key: "all",       label: "All" },
+    { key: "awaiting",  label: "Awaiting" },
+    { key: "overdue",   label: "Overdue" },
+    { key: "responded", label: "Responded" },
+  ];
+
+  filterDefs.forEach(({ key, label }) => {
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.textContent = label;
+    const isActive = currentFilter === key;
+    Object.assign(btn.style, {
+      border: isActive ? "2px solid #0176d3" : "2px solid #e5e7eb",
+      borderRadius: "9999px",
+      background: isActive ? "#eff6ff" : "#fff",
+      color: isActive ? "#0176d3" : "#374151",
+      padding: "4px 12px",
+      fontSize: "12px",
+      fontWeight: "600",
+      cursor: "pointer",
+    });
+    btn.onclick = () => {
+      currentCaseAnalysisState.outreachFilter = key;
+      rerenderCurrentCaseToast();
+    };
+    filterBar.appendChild(btn);
+  });
+
+  // Refresh button
+  const refreshBtn = document.createElement("button");
+  refreshBtn.type = "button";
+  refreshBtn.textContent = "↻";
+  Object.assign(refreshBtn.style, {
+    marginLeft: "auto",
+    border: "1px solid #e5e7eb",
+    borderRadius: "6px",
+    background: "#fff",
+    color: "#6b7280",
+    padding: "4px 10px",
+    fontSize: "14px",
+    cursor: "pointer",
+    title: "Refresh",
+  });
+  refreshBtn.title = "Refresh list";
+  refreshBtn.onclick = () => {
+    currentCaseAnalysisState.outreachList = null;
+    loadOutreachList();
+  };
+  filterBar.appendChild(refreshBtn);
+
+  wrapper.appendChild(filterBar);
+
+  // ── Log Outreach button ─────────────────────────────────────────────────────
+  const logBtn = document.createElement("button");
+  logBtn.type = "button";
+  logBtn.textContent = currentCaseAnalysisState.outreachShowForm ? "✕ Cancel" : "+ Log Outreach";
+  Object.assign(logBtn.style, {
+    display: "block",
+    width: "100%",
+    marginBottom: "12px",
+    padding: "8px",
+    border: "2px dashed #0176d3",
+    borderRadius: "8px",
+    background: currentCaseAnalysisState.outreachShowForm ? "#f9fafb" : "#eff6ff",
+    color: "#0176d3",
+    fontWeight: "700",
+    fontSize: "13px",
+    cursor: "pointer",
+  });
+  logBtn.onclick = () => {
+    currentCaseAnalysisState.outreachShowForm = !currentCaseAnalysisState.outreachShowForm;
+    // Reset form when opening
+    if (currentCaseAnalysisState.outreachShowForm) {
+      const caseId = currentCaseAnalysisState.payload?.caseId || "";
+      currentCaseAnalysisState.outreachForm = {
+        supplierId: "",
+        supplierName: "",
+        supplierSearchQuery: "",
+        supplierSearchResults: [],
+        contactEmail: "",
+        subject: "",
+        method: "email",
+        sentAt: new Date().toISOString().slice(0, 10),
+        followUpDays: "7",
+        notes: "",
+        regulationTags: [],
+        caseId,
+        submitting: false,
+        submitError: null,
+      };
+    }
+    rerenderCurrentCaseToast();
+  };
+  wrapper.appendChild(logBtn);
+
+  // ── Inline form ─────────────────────────────────────────────────────────────
+  if (currentCaseAnalysisState.outreachShowForm) {
+    wrapper.appendChild(createOutreachForm());
+  }
+
+  // ── Records list ────────────────────────────────────────────────────────────
+  const filteredRecords = records.filter((r) => {
+    if (currentFilter === "all") return true;
+    return getEffectiveOutreachStatus(r) === currentFilter;
+  });
+
+  if (filteredRecords.length === 0) {
+    const empty = document.createElement("div");
+    Object.assign(empty.style, {
+      padding: "32px 20px",
+      textAlign: "center",
+      color: "#9ca3af",
+      fontSize: "13px",
+    });
+    empty.innerHTML = records.length === 0
+      ? "No outreach logged yet.<br>Use <strong>+ Log Outreach</strong> to track emails and requests to suppliers."
+      : `No records match the selected filter.`;
+    wrapper.appendChild(empty);
+    return wrapper;
+  }
+
+  filteredRecords.forEach((record) => {
+    wrapper.appendChild(createOutreachCard(record));
+  });
+
+  return wrapper;
+}
+
+function createOutreachForm() {
+  const form = currentCaseAnalysisState.outreachForm;
+  const container = document.createElement("div");
+  Object.assign(container.style, {
+    border: "1px solid #e5e7eb",
+    borderRadius: "10px",
+    padding: "14px",
+    marginBottom: "14px",
+    background: "#f9fafb",
+  });
+
+  const labelStyle = { display: "block", fontSize: "11px", fontWeight: "700", color: "#374151", marginBottom: "3px", marginTop: "10px" };
+  const inputStyle = { width: "100%", padding: "6px 8px", border: "1px solid #d1d5db", borderRadius: "6px", fontSize: "12px", boxSizing: "border-box" };
+
+  function makeLabel(text) {
+    const el = document.createElement("label");
+    el.textContent = text;
+    Object.assign(el.style, labelStyle);
+    return el;
+  }
+
+  function makeInput(type, value, onchange, placeholder = "") {
+    const el = document.createElement("input");
+    el.type = type;
+    el.value = value || "";
+    el.placeholder = placeholder;
+    Object.assign(el.style, inputStyle);
+    el.oninput = (e) => onchange(e.target.value);
+    return el;
+  }
+
+  // Supplier search
+  container.appendChild(makeLabel("Supplier *"));
+  const supplierSearchInput = makeInput("text", form.supplierName || form.supplierSearchQuery, (v) => {
+    currentCaseAnalysisState.outreachForm.supplierSearchQuery = v;
+    if (!v) {
+      currentCaseAnalysisState.outreachForm.supplierId = "";
+      currentCaseAnalysisState.outreachForm.supplierName = "";
+      currentCaseAnalysisState.outreachForm.supplierSearchResults = [];
+      rerenderCurrentCaseToast();
+      return;
+    }
+    // Debounce: search after typing
+    clearTimeout(supplierSearchInput._timer);
+    supplierSearchInput._timer = setTimeout(async () => {
+      const resp = await sendMessageAsync({ type: "EXT_SEARCH_SUPPLIERS", payload: { q: v } });
+      currentCaseAnalysisState.outreachForm.supplierSearchResults = resp?.suppliers || [];
+      rerenderCurrentCaseToast();
+    }, 250);
+  }, "Search supplier...");
+  container.appendChild(supplierSearchInput);
+
+  if (form.supplierSearchResults?.length > 0 && !form.supplierId) {
+    const dropdown = document.createElement("div");
+    Object.assign(dropdown.style, {
+      border: "1px solid #d1d5db",
+      borderRadius: "6px",
+      background: "#fff",
+      maxHeight: "140px",
+      overflowY: "auto",
+      marginTop: "2px",
+      zIndex: "1000",
+    });
+    form.supplierSearchResults.slice(0, 10).forEach((s) => {
+      const opt = document.createElement("div");
+      opt.textContent = `${s.supplierName} (${s.supplierCode})`;
+      Object.assign(opt.style, {
+        padding: "6px 10px",
+        fontSize: "12px",
+        cursor: "pointer",
+        borderBottom: "1px solid #f3f4f6",
+      });
+      opt.onmouseenter = () => { opt.style.background = "#eff6ff"; };
+      opt.onmouseleave = () => { opt.style.background = ""; };
+      opt.onclick = () => {
+        currentCaseAnalysisState.outreachForm.supplierId = s._id || s.supplierId || "";
+        currentCaseAnalysisState.outreachForm.supplierName = s.supplierName;
+        currentCaseAnalysisState.outreachForm.supplierSearchQuery = s.supplierName;
+        currentCaseAnalysisState.outreachForm.supplierSearchResults = [];
+        rerenderCurrentCaseToast();
+      };
+      dropdown.appendChild(opt);
+    });
+    container.appendChild(dropdown);
+  }
+
+  // Subject
+  container.appendChild(makeLabel("Subject / Email identifier *"));
+  container.appendChild(makeInput("text", form.subject, (v) => { currentCaseAnalysisState.outreachForm.subject = v; }, "e.g. Request for REACH Statement Q2 2025"));
+
+  // Contact email
+  container.appendChild(makeLabel("Contact email"));
+  container.appendChild(makeInput("email", form.contactEmail, (v) => { currentCaseAnalysisState.outreachForm.contactEmail = v; }, "supplier@example.com"));
+
+  // Method
+  container.appendChild(makeLabel("Method"));
+  const methodSel = document.createElement("select");
+  Object.assign(methodSel.style, inputStyle);
+  [["email", "Email"], ["phone", "Phone"], ["portal", "Supplier portal"], ["meeting", "Meeting"], ["other", "Other"]].forEach(([val, label]) => {
+    const opt = document.createElement("option");
+    opt.value = val;
+    opt.textContent = label;
+    opt.selected = form.method === val;
+    methodSel.appendChild(opt);
+  });
+  methodSel.onchange = (e) => { currentCaseAnalysisState.outreachForm.method = e.target.value; };
+  container.appendChild(methodSel);
+
+  // Sent date
+  container.appendChild(makeLabel("Date sent"));
+  container.appendChild(makeInput("date", form.sentAt, (v) => { currentCaseAnalysisState.outreachForm.sentAt = v; }));
+
+  // Follow-up in
+  container.appendChild(makeLabel("Follow up in"));
+  const fuSel = document.createElement("select");
+  Object.assign(fuSel.style, inputStyle);
+  [["3", "3 days"], ["7", "7 days"], ["14", "14 days"], ["30", "30 days"], ["0", "No follow-up"]].forEach(([val, label]) => {
+    const opt = document.createElement("option");
+    opt.value = val;
+    opt.textContent = label;
+    opt.selected = form.followUpDays === val;
+    fuSel.appendChild(opt);
+  });
+  fuSel.onchange = (e) => { currentCaseAnalysisState.outreachForm.followUpDays = e.target.value; };
+  container.appendChild(fuSel);
+
+  // Case ID
+  container.appendChild(makeLabel("Case ID (optional)"));
+  container.appendChild(makeInput("text", form.caseId || "", (v) => { currentCaseAnalysisState.outreachForm.caseId = v; }, "Salesforce case number"));
+
+  // Regulation tags
+  container.appendChild(makeLabel("Regulations (optional)"));
+  const tagsRow = document.createElement("div");
+  Object.assign(tagsRow.style, { display: "flex", gap: "6px", flexWrap: "wrap", marginTop: "4px" });
+  ["REACH", "RoHS", "Conflict Minerals", "PFAS", "TSCA", "Prop 65"].forEach((tag) => {
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.textContent = tag;
+    const isSelected = (form.regulationTags || []).includes(tag);
+    Object.assign(btn.style, {
+      border: isSelected ? "2px solid #0176d3" : "1px solid #d1d5db",
+      borderRadius: "9999px",
+      background: isSelected ? "#eff6ff" : "#fff",
+      color: isSelected ? "#0176d3" : "#374151",
+      padding: "3px 10px",
+      fontSize: "11px",
+      fontWeight: "600",
+      cursor: "pointer",
+    });
+    btn.onclick = () => {
+      const tags = currentCaseAnalysisState.outreachForm.regulationTags || [];
+      currentCaseAnalysisState.outreachForm.regulationTags = isSelected
+        ? tags.filter((t) => t !== tag)
+        : [...tags, tag];
+      rerenderCurrentCaseToast();
+    };
+    tagsRow.appendChild(btn);
+  });
+  container.appendChild(tagsRow);
+
+  // Notes
+  container.appendChild(makeLabel("Notes"));
+  const notes = document.createElement("textarea");
+  notes.value = form.notes || "";
+  notes.placeholder = "Any additional context...";
+  notes.rows = 2;
+  Object.assign(notes.style, { ...inputStyle, resize: "vertical" });
+  notes.oninput = (e) => { currentCaseAnalysisState.outreachForm.notes = e.target.value; };
+  container.appendChild(notes);
+
+  // Error
+  if (form.submitError) {
+    const errEl = document.createElement("div");
+    errEl.textContent = form.submitError;
+    Object.assign(errEl.style, { color: "#dc2626", fontSize: "12px", marginTop: "8px" });
+    container.appendChild(errEl);
+  }
+
+  // Submit
+  const submitBtn = document.createElement("button");
+  submitBtn.type = "button";
+  submitBtn.textContent = form.submitting ? "Logging..." : "Log Outreach";
+  submitBtn.disabled = form.submitting;
+  Object.assign(submitBtn.style, {
+    marginTop: "12px",
+    width: "100%",
+    padding: "8px",
+    background: form.submitting ? "#9ca3af" : "#0176d3",
+    color: "#fff",
+    border: "none",
+    borderRadius: "6px",
+    fontWeight: "700",
+    fontSize: "13px",
+    cursor: form.submitting ? "default" : "pointer",
+  });
+  submitBtn.onclick = async () => {
+    const f = currentCaseAnalysisState.outreachForm;
+
+    if (!f.supplierId || !f.supplierName) {
+      currentCaseAnalysisState.outreachForm.submitError = "Please select a supplier from the dropdown.";
+      rerenderCurrentCaseToast();
+      return;
+    }
+    if (!f.subject?.trim()) {
+      currentCaseAnalysisState.outreachForm.submitError = "Subject / identifier is required.";
+      rerenderCurrentCaseToast();
+      return;
+    }
+
+    currentCaseAnalysisState.outreachForm.submitting = true;
+    currentCaseAnalysisState.outreachForm.submitError = null;
+    rerenderCurrentCaseToast();
+
+    const sentAt = f.sentAt || new Date().toISOString().slice(0, 10);
+    let nextFollowUpAt = null;
+    if (f.followUpDays && f.followUpDays !== "0") {
+      const d = new Date(sentAt);
+      d.setDate(d.getDate() + parseInt(f.followUpDays, 10));
+      nextFollowUpAt = d.toISOString();
+    }
+
+    const resp = await sendMessageAsync({
+      type: "EXT_CREATE_OUTREACH",
+      payload: {
+        supplierId: f.supplierId,
+        supplierName: f.supplierName,
+        caseId: f.caseId || null,
+        contactEmail: f.contactEmail || "",
+        subject: f.subject.trim(),
+        method: f.method || "email",
+        sentAt,
+        nextFollowUpAt,
+        notes: f.notes || "",
+        regulationTags: f.regulationTags || [],
+      },
+    });
+
+    currentCaseAnalysisState.outreachForm.submitting = false;
+
+    if (!resp?.ok) {
+      currentCaseAnalysisState.outreachForm.submitError = resp?.error || "Failed to log outreach.";
+      rerenderCurrentCaseToast();
+      return;
+    }
+
+    // Success: close form and reload list
+    currentCaseAnalysisState.outreachShowForm = false;
+    currentCaseAnalysisState.outreachList = null;
+    loadOutreachList();
+  };
+  container.appendChild(submitBtn);
+
+  return container;
+}
+
+function createOutreachCard(record) {
+  const effectiveStatus = getEffectiveOutreachStatus(record);
+
+  const card = document.createElement("div");
+  Object.assign(card.style, {
+    border: "1px solid",
+    borderColor: effectiveStatus === "overdue" ? "#fca5a5" : "#e5e7eb",
+    borderRadius: "8px",
+    padding: "10px 12px",
+    marginBottom: "8px",
+    background: effectiveStatus === "overdue" ? "#fff7f7" : "#fff",
+  });
+
+  // Header row
+  const headerRow = document.createElement("div");
+  Object.assign(headerRow.style, { display: "flex", alignItems: "center", gap: "8px", marginBottom: "4px" });
+
+  const supplierName = document.createElement("span");
+  supplierName.textContent = record.supplierName;
+  Object.assign(supplierName.style, { fontWeight: "700", fontSize: "13px", color: "#111827", flex: "1", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" });
+
+  headerRow.appendChild(supplierName);
+  headerRow.appendChild(createOutreachStatusBadge(effectiveStatus));
+  card.appendChild(headerRow);
+
+  // Subject
+  const subjectEl = document.createElement("div");
+  subjectEl.textContent = record.subject;
+  Object.assign(subjectEl.style, { fontSize: "12px", color: "#374151", marginBottom: "4px", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" });
+  card.appendChild(subjectEl);
+
+  // Meta row
+  const metaRow = document.createElement("div");
+  Object.assign(metaRow.style, { display: "flex", gap: "12px", fontSize: "11px", color: "#6b7280", flexWrap: "wrap", marginBottom: "6px" });
+
+  const sentLabel = document.createElement("span");
+  sentLabel.textContent = `Sent: ${formatOutreachDate(record.sentAt)} (${formatDaysAgo(record.sentAt)})`;
+  metaRow.appendChild(sentLabel);
+
+  if (record.nextFollowUpAt && effectiveStatus !== "responded") {
+    const fuLabel = document.createElement("span");
+    fuLabel.textContent = `Follow up: ${formatOutreachDate(record.nextFollowUpAt)}`;
+    fuLabel.style.color = effectiveStatus === "overdue" ? "#dc2626" : "#6b7280";
+    fuLabel.style.fontWeight = effectiveStatus === "overdue" ? "700" : "400";
+    metaRow.appendChild(fuLabel);
+  }
+
+  if (record.regulationTags?.length > 0) {
+    const tagsLabel = document.createElement("span");
+    tagsLabel.textContent = record.regulationTags.join(", ");
+    metaRow.appendChild(tagsLabel);
+  }
+
+  if (record.contactEmail) {
+    const emailLabel = document.createElement("span");
+    emailLabel.textContent = `✉ ${record.contactEmail}`;
+    metaRow.appendChild(emailLabel);
+  }
+
+  card.appendChild(metaRow);
+
+  if (record.notes) {
+    const notesEl = document.createElement("div");
+    notesEl.textContent = record.notes;
+    Object.assign(notesEl.style, { fontSize: "11px", color: "#6b7280", fontStyle: "italic", marginBottom: "6px", borderLeft: "2px solid #e5e7eb", paddingLeft: "8px" });
+    card.appendChild(notesEl);
+  }
+
+  // Action buttons row
+  const actionsRow = document.createElement("div");
+  Object.assign(actionsRow.style, { display: "flex", gap: "6px", flexWrap: "wrap" });
+
+  function makeActionBtn(label, color, onClick) {
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.textContent = label;
+    Object.assign(btn.style, {
+      border: `1px solid ${color}`,
+      borderRadius: "6px",
+      background: "#fff",
+      color,
+      padding: "3px 10px",
+      fontSize: "11px",
+      fontWeight: "600",
+      cursor: "pointer",
+    });
+    btn.onclick = onClick;
+    return btn;
+  }
+
+  // Mark Responded
+  if (effectiveStatus !== "responded" && effectiveStatus !== "closed") {
+    actionsRow.appendChild(makeActionBtn("✓ Responded", "#059669", async () => {
+      const resp = await sendMessageAsync({
+        type: "EXT_UPDATE_OUTREACH",
+        payload: { id: record._id, status: "responded", respondedAt: new Date().toISOString() },
+      });
+      if (resp?.ok) {
+        currentCaseAnalysisState.outreachList = null;
+        loadOutreachList();
+      }
+    }));
+  }
+
+  // Follow Up Again
+  if (effectiveStatus !== "responded" && effectiveStatus !== "closed") {
+    actionsRow.appendChild(makeActionBtn("↻ Follow Up Again", "#0176d3", async () => {
+      const d = new Date();
+      d.setDate(d.getDate() + 7);
+      const resp = await sendMessageAsync({
+        type: "EXT_UPDATE_OUTREACH",
+        payload: { id: record._id, status: "awaiting", nextFollowUpAt: d.toISOString() },
+      });
+      if (resp?.ok) {
+        currentCaseAnalysisState.outreachList = null;
+        loadOutreachList();
+      }
+    }));
+  }
+
+  // Copy template
+  actionsRow.appendChild(makeActionBtn("Copy Template", "#6b7280", () => {
+    const template = `Subject: Follow-up: ${record.subject}\n\nDear ${record.supplierName} team,\n\nWe are following up on our previous request regarding compliance documentation${record.regulationTags?.length ? ` (${record.regulationTags.join(", ")})` : ""}.\n\nCould you please provide an update on the status of this request? We need the updated documents for our compliance records.\n\nThank you for your cooperation.\n\nBest regards`;
+    navigator.clipboard.writeText(template).catch(() => {});
+  }));
+
+  // Delete
+  actionsRow.appendChild(makeActionBtn("✕ Delete", "#dc2626", async () => {
+    if (!confirm(`Delete outreach record for ${record.supplierName}?`)) return;
+    const resp = await sendMessageAsync({
+      type: "EXT_DELETE_OUTREACH",
+      payload: { id: record._id },
+    });
+    if (resp?.ok) {
+      currentCaseAnalysisState.outreachList = null;
+      loadOutreachList();
+    }
+  }));
+
+  card.appendChild(actionsRow);
+  return card;
+}
+
 function createSuppliersTabContent() {
   const wrapper = document.createElement("div");
   wrapper.style.marginTop = "8px";
@@ -3442,6 +4098,7 @@ function createSuppliersTabContent() {
   subTabBar.appendChild(createSubTabBtn("Library", "library"));
   subTabBar.appendChild(createSubTabBtn("Analytics", "analytics"));
   subTabBar.appendChild(createSubTabBtn("New Statement", "new_statement"));
+  subTabBar.appendChild(createSubTabBtn("Outreach", "outreach"));
 
   wrapper.appendChild(subTabBar);
 
@@ -3483,6 +4140,42 @@ function createSuppliersTabContent() {
 
     wrapper.appendChild(
       createAnalyticsDashboard(currentCaseAnalysisState.suppliersLibrary)
+    );
+    return wrapper;
+  }
+
+  // --- Outreach sub-tab ---
+  if (suppliersSubTab === "outreach") {
+    if (
+      !currentCaseAnalysisState.outreachList &&
+      !currentCaseAnalysisState.outreachLoading &&
+      !currentCaseAnalysisState.outreachError
+    ) {
+      loadOutreachList();
+    }
+
+    if (currentCaseAnalysisState.outreachLoading) {
+      const loading = document.createElement("div");
+      Object.assign(loading.style, {
+        padding: "40px 20px",
+        textAlign: "center",
+        color: "#6b7280",
+        fontSize: "14px",
+      });
+      loading.textContent = "Loading outreach records...";
+      wrapper.appendChild(loading);
+      return wrapper;
+    }
+
+    if (currentCaseAnalysisState.outreachError) {
+      wrapper.appendChild(
+        createInfoRow("Error", currentCaseAnalysisState.outreachError)
+      );
+      return wrapper;
+    }
+
+    wrapper.appendChild(
+      createOutreachTabContent(currentCaseAnalysisState.outreachList || [])
     );
     return wrapper;
   }
