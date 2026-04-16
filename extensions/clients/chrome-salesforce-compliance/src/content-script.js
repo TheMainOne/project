@@ -27,7 +27,12 @@ manualLookupLoading: false,
   suppliersLibraryLoading: false,
   suppliersLibraryError: null,
   suppliersLibrarySearch: "",
+  suppliersLibraryRegFilter: "",
+  suppliersLibraryStatusFilter: "all",
+  suppliersLibraryDocSearch: "",
   selectedSupplierLibraryId: null,
+  supplierContactForm: null,   // null | { mode: "add"|"edit", contactId?, name, email, phone, role, notes, saving, error }
+  supplierContactDeleting: null, // contactId being deleted
 
   analyticsMatrixFilter: "all",
   analyticsMatrixSearch: "",
@@ -87,6 +92,9 @@ manualLookupLoading: false,
   outreachError: null,
   outreachFilter: "all",
   outreachShowForm: false,
+  outreachReminders: {},
+  outreachReminderPickerFor: null,
+  outreachReminderDate: "",
   outreachForm: {
     supplierId: "",
     supplierName: "",
@@ -140,7 +148,12 @@ manualLookupLoading: false,
     suppliersLibraryLoading: false,
     suppliersLibraryError: null,
     suppliersLibrarySearch: "",
+    suppliersLibraryRegFilter: "",
+    suppliersLibraryStatusFilter: "all",
+    suppliersLibraryDocSearch: "",
     selectedSupplierLibraryId: null,
+    supplierContactForm: null,
+    supplierContactDeleting: null,
 
     analyticsMatrixFilter: "all",
     analyticsMatrixSearch: "",
@@ -200,6 +213,9 @@ manualLookupLoading: false,
     outreachError: null,
     outreachFilter: "all",
     outreachShowForm: false,
+    outreachReminders: {},
+    outreachReminderPickerFor: null,
+    outreachReminderDate: "",
     outreachForm: {
       supplierId: "",
       supplierName: "",
@@ -534,6 +550,13 @@ async function loadOutreachList() {
   currentCaseAnalysisState.outreachList = response.records || [];
   currentCaseAnalysisState.outreachLoading = false;
   currentCaseAnalysisState.outreachError = null;
+
+  // Load reminders in parallel
+  sendMessageAsync({ type: "EXT_GET_REMINDERS" }).then((r) => {
+    currentCaseAnalysisState.outreachReminders = r?.reminders || {};
+    rerenderCurrentCaseToast();
+  });
+
   rerenderCurrentCaseToast();
 }
 
@@ -3003,6 +3026,129 @@ function createSupplierCard(supplierEntry) {
   return wrapper;
 }
 
+
+function getFilteredLibrarySuppliers(suppliers) {
+  const regFilter = currentCaseAnalysisState.suppliersLibraryRegFilter || "";
+  const statusFilter = currentCaseAnalysisState.suppliersLibraryStatusFilter || "all";
+  return suppliers.filter((s) => {
+    const regs = Array.isArray(s.regulationSummary) ? s.regulationSummary : [];
+    if (regFilter) {
+      const hasReg = regs.some(
+        (r) =>
+          (r.regulationCode || "").toLowerCase().includes(regFilter.toLowerCase()) ||
+          (r.regulationName || "").toLowerCase().includes(regFilter.toLowerCase())
+      );
+      if (!hasReg) return false;
+    }
+    if (statusFilter !== "all") {
+      const hasStatus = regs.some((r) => r.status === statusFilter);
+      if (!hasStatus) return false;
+    }
+    return true;
+  });
+}
+
+function createSuppliersLibraryFilterBar(allSuppliers) {
+  const regCodes = new Set();
+  allSuppliers.forEach((s) => {
+    (Array.isArray(s.regulationSummary) ? s.regulationSummary : []).forEach((r) => {
+      if (r.regulationCode) regCodes.add(r.regulationCode);
+    });
+  });
+
+  const wrapper = document.createElement("div");
+  Object.assign(wrapper.style, {
+    marginBottom: "10px",
+    display: "flex",
+    gap: "8px",
+    alignItems: "center",
+  });
+
+  const selectStyle = {
+    padding: "6px 10px",
+    border: "1px solid #d0d7de",
+    borderRadius: "8px",
+    fontSize: "13px",
+    color: "#374151",
+    background: "#ffffff",
+    cursor: "pointer",
+    outline: "none",
+  };
+
+  // Status dropdown
+  const statusSelect = document.createElement("select");
+  Object.assign(statusSelect.style, { ...selectStyle, minWidth: "130px" });
+  [
+    { value: "all", label: "All statuses" },
+    { value: "covered", label: "✓ Covered" },
+    { value: "partial", label: "~ Partial" },
+    { value: "missing", label: "✗ Missing" },
+    { value: "expired", label: "⚠ Expired" },
+  ].forEach(({ value, label }) => {
+    const opt = document.createElement("option");
+    opt.value = value;
+    opt.textContent = label;
+    if (value === (currentCaseAnalysisState.suppliersLibraryStatusFilter || "all")) {
+      opt.selected = true;
+    }
+    statusSelect.appendChild(opt);
+  });
+  statusSelect.addEventListener("change", () => {
+    currentCaseAnalysisState.suppliersLibraryStatusFilter = statusSelect.value;
+    rerenderCurrentCaseToast();
+  });
+
+  // Regulation dropdown
+  const regSelect = document.createElement("select");
+  Object.assign(regSelect.style, { ...selectStyle, minWidth: "160px" });
+  const allOpt = document.createElement("option");
+  allOpt.value = "";
+  allOpt.textContent = "All regulations";
+  if (!currentCaseAnalysisState.suppliersLibraryRegFilter) allOpt.selected = true;
+  regSelect.appendChild(allOpt);
+  [...regCodes].sort().forEach((code) => {
+    const opt = document.createElement("option");
+    opt.value = code;
+    opt.textContent = code;
+    if (code === currentCaseAnalysisState.suppliersLibraryRegFilter) opt.selected = true;
+    regSelect.appendChild(opt);
+  });
+  regSelect.addEventListener("change", () => {
+    currentCaseAnalysisState.suppliersLibraryRegFilter = regSelect.value;
+    rerenderCurrentCaseToast();
+  });
+
+  wrapper.appendChild(statusSelect);
+  if (regCodes.size > 0) wrapper.appendChild(regSelect);
+
+  // Active filter indicator + clear
+  const hasFilter =
+    !!currentCaseAnalysisState.suppliersLibraryRegFilter ||
+    (currentCaseAnalysisState.suppliersLibraryStatusFilter || "all") !== "all";
+  if (hasFilter) {
+    const clearBtn = document.createElement("button");
+    clearBtn.type = "button";
+    clearBtn.textContent = "✕ Clear";
+    Object.assign(clearBtn.style, {
+      padding: "6px 10px",
+      border: "none",
+      borderRadius: "8px",
+      background: "transparent",
+      color: "#6b7280",
+      fontSize: "12px",
+      cursor: "pointer",
+    });
+    clearBtn.addEventListener("click", () => {
+      currentCaseAnalysisState.suppliersLibraryRegFilter = "";
+      currentCaseAnalysisState.suppliersLibraryStatusFilter = "all";
+      rerenderCurrentCaseToast();
+    });
+    wrapper.appendChild(clearBtn);
+  }
+
+  return wrapper;
+}
+
 function createSuppliersLibrarySearchBar() {
   const wrapper = document.createElement("div");
   Object.assign(wrapper.style, {
@@ -3109,6 +3255,9 @@ function createSupplierLibraryListItem(supplier) {
 
   item.addEventListener("click", () => {
     currentCaseAnalysisState.selectedSupplierLibraryId = supplier?.supplierId || null;
+    currentCaseAnalysisState.suppliersLibraryDocSearch = "";
+    currentCaseAnalysisState.supplierContactForm = null;
+    currentCaseAnalysisState.supplierContactDeleting = null;
     rerenderCurrentCaseToast();
   });
 
@@ -3252,15 +3401,43 @@ function createSupplierLibraryStatementsSection(assertions = []) {
   const wrapper = document.createElement("div");
   wrapper.style.marginTop = "18px";
 
+  const header = document.createElement("div");
+  Object.assign(header.style, {
+    display: "flex",
+    justifyContent: "space-between",
+    alignItems: "center",
+    gap: "10px",
+    marginBottom: "10px",
+  });
+
   const title = document.createElement("div");
   title.textContent = "Statements";
   Object.assign(title.style, {
     fontSize: "18px",
     fontWeight: "700",
     color: "#111827",
-    marginBottom: "10px",
   });
-  wrapper.appendChild(title);
+  header.appendChild(title);
+
+  const docSearchInput = document.createElement("input");
+  docSearchInput.type = "text";
+  docSearchInput.placeholder = "Search by regulation, document…";
+  docSearchInput.value = currentCaseAnalysisState.suppliersLibraryDocSearch || "";
+  Object.assign(docSearchInput.style, {
+    padding: "6px 10px",
+    border: "1px solid #d0d7de",
+    borderRadius: "8px",
+    fontSize: "13px",
+    width: "200px",
+    outline: "none",
+  });
+  docSearchInput.addEventListener("input", (e) => {
+    currentCaseAnalysisState.suppliersLibraryDocSearch = e.target.value || "";
+    rerenderCurrentCaseToast();
+  });
+  header.appendChild(docSearchInput);
+
+  wrapper.appendChild(header);
 
   if (!assertions.length) {
     const empty = document.createElement("div");
@@ -3273,7 +3450,47 @@ function createSupplierLibraryStatementsSection(assertions = []) {
     return wrapper;
   }
 
-  assertions.forEach((statement) => {
+  const docSearch = (currentCaseAnalysisState.suppliersLibraryDocSearch || "").toLowerCase().trim();
+  const filteredAssertions = docSearch
+    ? assertions.filter((s) => {
+        const regName = (s?.regulation?.name || s?.regulation?.code || "").toLowerCase();
+        const docTitle = (s?.document?.title || s?.document?.fileName || "").toLowerCase();
+        const status = (s?.status || "").toLowerCase();
+        const assertionType = (s?.assertionType || "").toLowerCase();
+        return (
+          regName.includes(docSearch) ||
+          docTitle.includes(docSearch) ||
+          status.includes(docSearch) ||
+          assertionType.includes(docSearch)
+        );
+      })
+    : assertions;
+
+  if (!filteredAssertions.length) {
+    const empty = document.createElement("div");
+    empty.textContent = `No statements match "${currentCaseAnalysisState.suppliersLibraryDocSearch}".`;
+    Object.assign(empty.style, {
+      color: "#6b7280",
+      fontSize: "14px",
+      fontStyle: "italic",
+    });
+    wrapper.appendChild(empty);
+    return wrapper;
+  }
+
+  if (docSearch && filteredAssertions.length < assertions.length) {
+    const matchNote = document.createElement("div");
+    matchNote.textContent = `Showing ${filteredAssertions.length} of ${assertions.length} statements`;
+    Object.assign(matchNote.style, {
+      fontSize: "12px",
+      color: "#0176d3",
+      fontWeight: "600",
+      marginBottom: "8px",
+    });
+    wrapper.appendChild(matchNote);
+  }
+
+  filteredAssertions.forEach((statement) => {
     const card = document.createElement("div");
     Object.assign(card.style, {
       background: "#ffffff",
@@ -3430,6 +3647,301 @@ function createSupplierLibraryStatementsSection(assertions = []) {
   return wrapper;
 }
 
+function createSupplierContactsSection(supplier) {
+  const contacts = Array.isArray(supplier?.contacts) ? supplier.contacts : [];
+  const supplierId = supplier?.supplierId || "";
+  const form = currentCaseAnalysisState.supplierContactForm;
+  const deleting = currentCaseAnalysisState.supplierContactDeleting;
+
+  const section = document.createElement("div");
+  section.style.marginTop = "20px";
+
+  // Header
+  const header = document.createElement("div");
+  Object.assign(header.style, { display: "flex", alignItems: "center", gap: "10px", marginBottom: "12px" });
+
+  const title = document.createElement("div");
+  title.textContent = "Contacts";
+  Object.assign(title.style, { fontSize: "18px", fontWeight: "700", color: "#111827", flex: "1" });
+  header.appendChild(title);
+
+  const addBtn = document.createElement("button");
+  addBtn.type = "button";
+  addBtn.textContent = form?.mode === "add" ? "✕ Cancel" : "+ Add contact";
+  Object.assign(addBtn.style, {
+    padding: "5px 12px", border: "1px solid #0176d3", borderRadius: "8px",
+    background: form?.mode === "add" ? "#f9fafb" : "#eff6ff", color: "#0176d3",
+    fontSize: "12px", fontWeight: "600", cursor: "pointer",
+  });
+  addBtn.onclick = () => {
+    currentCaseAnalysisState.supplierContactForm = form?.mode === "add" ? null
+      : { mode: "add", name: "", email: "", phone: "", role: "", notes: "", saving: false, error: null };
+    rerenderCurrentCaseToast();
+  };
+  header.appendChild(addBtn);
+  section.appendChild(header);
+
+  // Inline add/edit form
+  if (form) {
+    const formEl = document.createElement("div");
+    Object.assign(formEl.style, {
+      border: "1px solid #e5e7eb", borderRadius: "10px", padding: "12px 14px",
+      marginBottom: "12px", background: "#f9fafb",
+    });
+
+    const inputStyle = { width: "100%", padding: "6px 8px", border: "1px solid #d1d5db", borderRadius: "6px", fontSize: "13px", boxSizing: "border-box", marginBottom: "8px" };
+    const labelStyle = { display: "block", fontSize: "11px", fontWeight: "700", color: "#374151", marginBottom: "3px" };
+
+    const makeField = (label, key, placeholder = "", type = "text") => {
+      const wrap = document.createElement("div");
+      const lb = document.createElement("label");
+      lb.textContent = label;
+      Object.assign(lb.style, labelStyle);
+      const inp = document.createElement("input");
+      inp.type = type;
+      inp.value = form[key] || "";
+      inp.placeholder = placeholder;
+      Object.assign(inp.style, inputStyle);
+      inp.oninput = (e) => { currentCaseAnalysisState.supplierContactForm[key] = e.target.value; };
+      wrap.appendChild(lb);
+      wrap.appendChild(inp);
+      return wrap;
+    };
+
+    formEl.appendChild(makeField("Name *", "name", "Jane Smith"));
+    formEl.appendChild(makeField("Email", "email", "jane@supplier.com", "email"));
+    formEl.appendChild(makeField("Phone", "phone", "+1 555 000 0000", "tel"));
+    formEl.appendChild(makeField("Role / Title", "role", "Compliance Manager"));
+    formEl.appendChild(makeField("Notes", "notes", "Preferred contact for REACH requests"));
+
+    if (form.error) {
+      const errEl = document.createElement("div");
+      errEl.textContent = form.error;
+      Object.assign(errEl.style, { fontSize: "12px", color: "#dc2626", marginBottom: "8px" });
+      formEl.appendChild(errEl);
+    }
+
+    const btnRow = document.createElement("div");
+    Object.assign(btnRow.style, { display: "flex", gap: "8px" });
+
+    const saveBtn = document.createElement("button");
+    saveBtn.type = "button";
+    saveBtn.textContent = form.saving ? "Saving…" : (form.mode === "add" ? "Save contact" : "Update");
+    saveBtn.disabled = form.saving;
+    Object.assign(saveBtn.style, {
+      flex: "1", padding: "7px 12px", border: "none", borderRadius: "8px",
+      background: "#0176d3", color: "#fff", fontSize: "13px", fontWeight: "600",
+      cursor: form.saving ? "default" : "pointer", opacity: form.saving ? "0.7" : "1",
+    });
+    saveBtn.onclick = async () => {
+      if (!currentCaseAnalysisState.supplierContactForm.name?.trim()) {
+        currentCaseAnalysisState.supplierContactForm.error = "Name is required";
+        rerenderCurrentCaseToast();
+        return;
+      }
+      currentCaseAnalysisState.supplierContactForm.saving = true;
+      currentCaseAnalysisState.supplierContactForm.error = null;
+      rerenderCurrentCaseToast();
+
+      const f = currentCaseAnalysisState.supplierContactForm;
+      const payload = { supplierId, name: f.name.trim(), email: f.email || "", phone: f.phone || "", role: f.role || "", notes: f.notes || "" };
+
+      let resp;
+      if (f.mode === "add") {
+        resp = await sendMessageAsync({ type: "EXT_ADD_SUPPLIER_CONTACT", payload });
+      } else {
+        resp = await sendMessageAsync({ type: "EXT_UPDATE_SUPPLIER_CONTACT", payload: { ...payload, contactId: f.contactId } });
+      }
+
+      if (!resp?.ok) {
+        currentCaseAnalysisState.supplierContactForm.saving = false;
+        currentCaseAnalysisState.supplierContactForm.error = resp?.error || "Failed to save contact";
+        rerenderCurrentCaseToast();
+        return;
+      }
+
+      // Update local contacts list in the loaded library
+      const lib = currentCaseAnalysisState.suppliersLibrary;
+      if (lib?.suppliers) {
+        const s = lib.suppliers.find((x) => x.supplierId === supplierId);
+        if (s) {
+          if (f.mode === "add") {
+            s.contacts = [...(s.contacts || []), resp.contact];
+          } else {
+            s.contacts = (s.contacts || []).map((c) => c.contactId === f.contactId ? resp.contact : c);
+          }
+        }
+      }
+
+      currentCaseAnalysisState.supplierContactForm = null;
+      rerenderCurrentCaseToast();
+    };
+
+    const cancelBtn = document.createElement("button");
+    cancelBtn.type = "button";
+    cancelBtn.textContent = "Cancel";
+    Object.assign(cancelBtn.style, {
+      padding: "7px 12px", border: "1px solid #e5e7eb", borderRadius: "8px",
+      background: "#fff", color: "#374151", fontSize: "13px", cursor: "pointer",
+    });
+    cancelBtn.onclick = () => { currentCaseAnalysisState.supplierContactForm = null; rerenderCurrentCaseToast(); };
+
+    btnRow.appendChild(saveBtn);
+    btnRow.appendChild(cancelBtn);
+    formEl.appendChild(btnRow);
+    section.appendChild(formEl);
+  }
+
+  // Contacts list
+  if (!contacts.length && !form) {
+    const empty = document.createElement("div");
+    empty.textContent = "No contacts yet. Add one to speed up outreach.";
+    Object.assign(empty.style, { fontSize: "13px", color: "#9ca3af", fontStyle: "italic" });
+    section.appendChild(empty);
+    return section;
+  }
+
+  contacts.forEach((contact) => {
+    const isEditing = form?.mode === "edit" && form?.contactId === contact.contactId;
+    if (isEditing) return; // form is shown at top
+
+    const card = document.createElement("div");
+    Object.assign(card.style, {
+      background: "#ffffff", border: "1px solid #e5e7eb", borderRadius: "10px",
+      padding: "10px 12px", marginBottom: "8px",
+    });
+
+    const row1 = document.createElement("div");
+    Object.assign(row1.style, { display: "flex", alignItems: "flex-start", gap: "8px", marginBottom: "4px" });
+
+    const nameEl = document.createElement("div");
+    nameEl.textContent = contact.name;
+    Object.assign(nameEl.style, { fontWeight: "700", fontSize: "14px", color: "#111827", flex: "1" });
+    row1.appendChild(nameEl);
+
+    if (contact.role) {
+      const roleEl = document.createElement("div");
+      roleEl.textContent = contact.role;
+      Object.assign(roleEl.style, { fontSize: "12px", color: "#6b7280", background: "#f3f4f6", padding: "2px 8px", borderRadius: "6px" });
+      row1.appendChild(roleEl);
+    }
+    card.appendChild(row1);
+
+    const row2 = document.createElement("div");
+    Object.assign(row2.style, { display: "flex", gap: "14px", fontSize: "13px", color: "#374151", flexWrap: "wrap", marginBottom: "8px" });
+    if (contact.email) {
+      const emailLink = document.createElement("a");
+      emailLink.href = `mailto:${contact.email}`;
+      emailLink.textContent = `✉ ${contact.email}`;
+      Object.assign(emailLink.style, { color: "#0176d3", textDecoration: "none" });
+      row2.appendChild(emailLink);
+    }
+    if (contact.phone) {
+      const phoneEl = document.createElement("span");
+      phoneEl.textContent = `📞 ${contact.phone}`;
+      row2.appendChild(phoneEl);
+    }
+    if (row2.childNodes.length) card.appendChild(row2);
+
+    if (contact.notes) {
+      const notesEl = document.createElement("div");
+      notesEl.textContent = contact.notes;
+      Object.assign(notesEl.style, { fontSize: "12px", color: "#6b7280", fontStyle: "italic", marginBottom: "8px" });
+      card.appendChild(notesEl);
+    }
+
+    // Action row
+    const actions = document.createElement("div");
+    Object.assign(actions.style, { display: "flex", gap: "6px" });
+
+    // Use in outreach
+    if (contact.email) {
+      const useBtn = document.createElement("button");
+      useBtn.type = "button";
+      useBtn.textContent = "Use in Outreach";
+      Object.assign(useBtn.style, {
+        padding: "3px 10px", border: "1px solid #0176d3", borderRadius: "6px",
+        background: "#eff6ff", color: "#0176d3", fontSize: "11px", fontWeight: "600", cursor: "pointer",
+      });
+      useBtn.onclick = () => {
+        // Pre-fill outreach form and switch to outreach tab
+        currentCaseAnalysisState.outreachShowForm = true;
+        const caseId = currentCaseAnalysisState.payload?.caseId || "";
+        currentCaseAnalysisState.outreachForm = {
+          supplierId: supplier.supplierId || "",
+          supplierName: supplier.supplierName || "",
+          supplierSearchQuery: supplier.supplierName || "",
+          supplierSearchResults: [],
+          contactEmail: contact.email,
+          subject: "",
+          method: "email",
+          sentAt: new Date().toISOString().slice(0, 10),
+          followUpDays: "7",
+          notes: "",
+          regulationTags: [],
+          caseId,
+          submitting: false,
+          submitError: null,
+        };
+        activeCaseToastTab = "suppliers";
+        suppliersSubTab = "outreach";
+        rerenderCurrentCaseToast();
+      };
+      actions.appendChild(useBtn);
+    }
+
+    const editBtn = document.createElement("button");
+    editBtn.type = "button";
+    editBtn.textContent = "Edit";
+    Object.assign(editBtn.style, {
+      padding: "3px 10px", border: "1px solid #d1d5db", borderRadius: "6px",
+      background: "#fff", color: "#374151", fontSize: "11px", cursor: "pointer",
+    });
+    editBtn.onclick = () => {
+      currentCaseAnalysisState.supplierContactForm = {
+        mode: "edit", contactId: contact.contactId,
+        name: contact.name, email: contact.email, phone: contact.phone,
+        role: contact.role, notes: contact.notes,
+        saving: false, error: null,
+      };
+      rerenderCurrentCaseToast();
+    };
+    actions.appendChild(editBtn);
+
+    const deleteBtn = document.createElement("button");
+    deleteBtn.type = "button";
+    deleteBtn.textContent = deleting === contact.contactId ? "Deleting…" : "✕";
+    deleteBtn.disabled = deleting === contact.contactId;
+    Object.assign(deleteBtn.style, {
+      padding: "3px 8px", border: "1px solid #fca5a5", borderRadius: "6px",
+      background: "#fff", color: "#dc2626", fontSize: "11px", cursor: "pointer",
+    });
+    deleteBtn.onclick = async () => {
+      if (!confirm(`Delete contact ${contact.name}?`)) return;
+      currentCaseAnalysisState.supplierContactDeleting = contact.contactId;
+      rerenderCurrentCaseToast();
+
+      const resp = await sendMessageAsync({ type: "EXT_DELETE_SUPPLIER_CONTACT", payload: { supplierId, contactId: contact.contactId } });
+
+      currentCaseAnalysisState.supplierContactDeleting = null;
+      if (resp?.ok) {
+        const lib = currentCaseAnalysisState.suppliersLibrary;
+        if (lib?.suppliers) {
+          const s = lib.suppliers.find((x) => x.supplierId === supplierId);
+          if (s) s.contacts = (s.contacts || []).filter((c) => c.contactId !== contact.contactId);
+        }
+      }
+      rerenderCurrentCaseToast();
+    };
+    actions.appendChild(deleteBtn);
+
+    card.appendChild(actions);
+    section.appendChild(card);
+  });
+
+  return section;
+}
+
 function createSupplierLibraryDetail(supplier) {
   const wrapper = document.createElement("div");
 
@@ -3513,6 +4025,7 @@ function createSupplierLibraryDetail(supplier) {
   addStatCard("Regulations", Array.isArray(supplier?.regulationSummary) ? supplier.regulationSummary.length : 0);
 
   wrapper.appendChild(stats);
+  wrapper.appendChild(createSupplierContactsSection(supplier));
   wrapper.appendChild(
     createSupplierLibraryRegulationSummary(
       Array.isArray(supplier?.regulationSummary) ? supplier.regulationSummary : []
@@ -3579,8 +4092,83 @@ function createOutreachStatusBadge(status) {
   return badge;
 }
 
+function createOutreachStatsBar(records) {
+  if (!records.length) return null;
+
+  const responded = records.filter(
+    (r) => r.status === "responded" || r.status === "closed"
+  );
+  const responseRate = Math.round((responded.length / records.length) * 100);
+
+  const replyTimes = responded
+    .filter((r) => r.sentAt && r.respondedAt)
+    .map((r) => (new Date(r.respondedAt) - new Date(r.sentAt)) / 86400000);
+  const avgReply =
+    replyTimes.length > 0
+      ? Math.round(replyTimes.reduce((a, b) => a + b, 0) / replyTimes.length)
+      : null;
+
+  const overdue = records.filter((r) => getEffectiveOutreachStatus(r) === "overdue").length;
+
+  const bar = document.createElement("div");
+  Object.assign(bar.style, {
+    display: "flex",
+    gap: "16px",
+    padding: "10px 14px",
+    background: "#f8fafc",
+    border: "1px solid #e5e7eb",
+    borderRadius: "10px",
+    marginBottom: "12px",
+    flexWrap: "wrap",
+    alignItems: "center",
+  });
+
+  const addStat = (label, value, color) => {
+    const item = document.createElement("div");
+    Object.assign(item.style, { display: "flex", flexDirection: "column", alignItems: "center", minWidth: "64px" });
+
+    const valEl = document.createElement("div");
+    valEl.textContent = value;
+    Object.assign(valEl.style, { fontSize: "18px", fontWeight: "800", color: color || "#111827", lineHeight: "1.1" });
+
+    const lbEl = document.createElement("div");
+    lbEl.textContent = label;
+    Object.assign(lbEl.style, { fontSize: "11px", color: "#6b7280", marginTop: "2px", whiteSpace: "nowrap" });
+
+    item.appendChild(valEl);
+    item.appendChild(lbEl);
+    bar.appendChild(item);
+  };
+
+  const divider = () => {
+    const d = document.createElement("div");
+    Object.assign(d.style, { width: "1px", height: "32px", background: "#e5e7eb", flexShrink: "0" });
+    bar.appendChild(d);
+  };
+
+  addStat("Total", records.length);
+  divider();
+  addStat("Response rate", `${responseRate}%`, responseRate >= 70 ? "#16a34a" : responseRate >= 40 ? "#d97706" : "#dc2626");
+  divider();
+  addStat("Responded", responded.length, "#16a34a");
+  if (avgReply !== null) {
+    divider();
+    addStat("Avg. reply", `${avgReply}d`, avgReply <= 5 ? "#16a34a" : avgReply <= 14 ? "#d97706" : "#dc2626");
+  }
+  if (overdue > 0) {
+    divider();
+    addStat("Overdue", overdue, "#dc2626");
+  }
+
+  return bar;
+}
+
 function createOutreachTabContent(records) {
   const wrapper = document.createElement("div");
+
+  // ── Stats bar ───────────────────────────────────────────────────────────────
+  const statsBar = createOutreachStatsBar(records);
+  if (statsBar) wrapper.appendChild(statsBar);
 
   // ── Filter bar ──────────────────────────────────────────────────────────────
   const filterBar = document.createElement("div");
@@ -4220,6 +4808,151 @@ function createOutreachCard(record) {
   }));
 
   card.appendChild(actionsRow);
+
+  // ── Reminder section ────────────────────────────────────────────────────────
+  const existingReminder = currentCaseAnalysisState.outreachReminders?.[record._id];
+  const isPickerOpen = currentCaseAnalysisState.outreachReminderPickerFor === record._id;
+
+  const reminderSection = document.createElement("div");
+  Object.assign(reminderSection.style, { marginTop: "8px" });
+
+  if (existingReminder && !isPickerOpen) {
+    // Show active reminder with cancel option
+    const reminderRow = document.createElement("div");
+    Object.assign(reminderRow.style, {
+      display: "flex",
+      alignItems: "center",
+      gap: "8px",
+      padding: "6px 10px",
+      background: "#fffbeb",
+      border: "1px solid #fde68a",
+      borderRadius: "8px",
+      fontSize: "12px",
+      color: "#92400e",
+    });
+    reminderRow.innerHTML = `🔔 Reminder: <strong>${formatOutreachDate(existingReminder.remindAt)}</strong>`;
+
+    const cancelReminderBtn = document.createElement("button");
+    cancelReminderBtn.type = "button";
+    cancelReminderBtn.textContent = "✕";
+    Object.assign(cancelReminderBtn.style, {
+      marginLeft: "auto",
+      border: "none",
+      background: "transparent",
+      color: "#92400e",
+      cursor: "pointer",
+      fontSize: "12px",
+      padding: "0 2px",
+    });
+    cancelReminderBtn.title = "Cancel reminder";
+    cancelReminderBtn.onclick = async () => {
+      await sendMessageAsync({ type: "EXT_CANCEL_REMINDER", payload: { recordId: record._id } });
+      const r = await sendMessageAsync({ type: "EXT_GET_REMINDERS" });
+      currentCaseAnalysisState.outreachReminders = r?.reminders || {};
+      rerenderCurrentCaseToast();
+    };
+    reminderRow.appendChild(cancelReminderBtn);
+    reminderSection.appendChild(reminderRow);
+  } else if (isPickerOpen) {
+    // Show date picker
+    const pickerRow = document.createElement("div");
+    Object.assign(pickerRow.style, {
+      display: "flex",
+      alignItems: "center",
+      gap: "6px",
+      padding: "6px 0",
+    });
+
+    const dateInput = document.createElement("input");
+    dateInput.type = "date";
+    dateInput.value = currentCaseAnalysisState.outreachReminderDate ||
+      new Date(Date.now() + 86400000).toISOString().slice(0, 10);
+    Object.assign(dateInput.style, {
+      padding: "5px 8px",
+      border: "1px solid #d1d5db",
+      borderRadius: "6px",
+      fontSize: "12px",
+      flex: "1",
+    });
+    dateInput.min = new Date(Date.now() + 60000).toISOString().slice(0, 10);
+    dateInput.oninput = (e) => { currentCaseAnalysisState.outreachReminderDate = e.target.value; };
+
+    const confirmBtn = document.createElement("button");
+    confirmBtn.type = "button";
+    confirmBtn.textContent = "Set";
+    Object.assign(confirmBtn.style, {
+      padding: "5px 12px",
+      border: "1px solid #0176d3",
+      borderRadius: "6px",
+      background: "#0176d3",
+      color: "#fff",
+      fontSize: "12px",
+      fontWeight: "600",
+      cursor: "pointer",
+    });
+    confirmBtn.onclick = async () => {
+      const dateStr = dateInput.value;
+      if (!dateStr) return;
+      // Set to noon on the chosen day to avoid timezone issues
+      const remindAt = new Date(dateStr + "T12:00:00").toISOString();
+      const resp = await sendMessageAsync({
+        type: "EXT_SET_REMINDER",
+        payload: { recordId: record._id, remindAt, supplierName: record.supplierName, subject: record.subject },
+      });
+      if (resp?.ok) {
+        currentCaseAnalysisState.outreachReminderPickerFor = null;
+        currentCaseAnalysisState.outreachReminderDate = "";
+        const r = await sendMessageAsync({ type: "EXT_GET_REMINDERS" });
+        currentCaseAnalysisState.outreachReminders = r?.reminders || {};
+        rerenderCurrentCaseToast();
+      }
+    };
+
+    const cancelPickerBtn = document.createElement("button");
+    cancelPickerBtn.type = "button";
+    cancelPickerBtn.textContent = "Cancel";
+    Object.assign(cancelPickerBtn.style, {
+      padding: "5px 10px",
+      border: "1px solid #e5e7eb",
+      borderRadius: "6px",
+      background: "#fff",
+      color: "#6b7280",
+      fontSize: "12px",
+      cursor: "pointer",
+    });
+    cancelPickerBtn.onclick = () => {
+      currentCaseAnalysisState.outreachReminderPickerFor = null;
+      currentCaseAnalysisState.outreachReminderDate = "";
+      rerenderCurrentCaseToast();
+    };
+
+    pickerRow.appendChild(dateInput);
+    pickerRow.appendChild(confirmBtn);
+    pickerRow.appendChild(cancelPickerBtn);
+    reminderSection.appendChild(pickerRow);
+  } else {
+    // Show "Set reminder" link
+    const setBtn = document.createElement("button");
+    setBtn.type = "button";
+    setBtn.textContent = "🔔 Set reminder";
+    Object.assign(setBtn.style, {
+      border: "none",
+      background: "transparent",
+      color: "#6b7280",
+      fontSize: "11px",
+      cursor: "pointer",
+      padding: "2px 0",
+      textDecoration: "underline",
+    });
+    setBtn.onclick = () => {
+      currentCaseAnalysisState.outreachReminderPickerFor = record._id;
+      currentCaseAnalysisState.outreachReminderDate = "";
+      rerenderCurrentCaseToast();
+    };
+    reminderSection.appendChild(setBtn);
+  }
+
+  card.appendChild(reminderSection);
   return card;
 }
 
@@ -4376,21 +5109,36 @@ function createSuppliersTabContent() {
     ? currentCaseAnalysisState.suppliersLibrary.suppliers
     : [];
 
+  wrapper.appendChild(createSuppliersLibraryFilterBar(suppliers));
+
+  const filteredSuppliers = getFilteredLibrarySuppliers(suppliers);
+  const hasActiveFilter =
+    !!currentCaseAnalysisState.suppliersLibraryRegFilter ||
+    (currentCaseAnalysisState.suppliersLibraryStatusFilter || "all") !== "all";
+
   const summary = document.createElement("div");
-  summary.textContent = `Suppliers found: ${
-    typeof currentCaseAnalysisState.suppliersLibrary?.total === "number"
-      ? currentCaseAnalysisState.suppliersLibrary.total
-      : suppliers.length
-  }`;
+  summary.textContent = hasActiveFilter
+    ? `Showing ${filteredSuppliers.length} of ${suppliers.length} suppliers`
+    : `Suppliers found: ${
+        typeof currentCaseAnalysisState.suppliersLibrary?.total === "number"
+          ? currentCaseAnalysisState.suppliersLibrary.total
+          : suppliers.length
+      }`;
   Object.assign(summary.style, {
     fontSize: "13px",
-    color: "#4b5563",
+    color: hasActiveFilter ? "#0176d3" : "#4b5563",
+    fontWeight: hasActiveFilter ? "600" : "400",
     marginBottom: "12px",
   });
   wrapper.appendChild(summary);
 
   if (!suppliers.length) {
     wrapper.appendChild(createInfoRow("Suppliers", "No suppliers found."));
+    return wrapper;
+  }
+
+  if (!filteredSuppliers.length) {
+    wrapper.appendChild(createInfoRow("Suppliers", "No suppliers match the selected filters."));
     return wrapper;
   }
 
@@ -4411,7 +5159,7 @@ function createSuppliersTabContent() {
     paddingRight: "4px",
   });
 
-  suppliers.forEach((supplier) => {
+  filteredSuppliers.forEach((supplier) => {
     leftPane.appendChild(createSupplierLibraryListItem(supplier));
   });
 
@@ -4424,11 +5172,12 @@ function createSuppliersTabContent() {
     background: "#f7f8fb",
   });
 
-  const selectedSupplier = suppliers.find(
-    (item) =>
-      String(item?.supplierId || "") ===
-      String(currentCaseAnalysisState.selectedSupplierLibraryId || "")
-  ) || suppliers[0];
+  const selectedSupplier =
+    filteredSuppliers.find(
+      (item) =>
+        String(item?.supplierId || "") ===
+        String(currentCaseAnalysisState.selectedSupplierLibraryId || "")
+    ) || filteredSuppliers[0];
 
   if (
     selectedSupplier &&

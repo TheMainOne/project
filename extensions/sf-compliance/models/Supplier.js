@@ -6,6 +6,17 @@ function normalizeAlias(value) {
   return String(value || "").trim();
 }
 
+const supplierContactSchema = new Schema(
+  {
+    name: { type: String, required: true, trim: true },
+    email: { type: String, trim: true, default: "" },
+    phone: { type: String, trim: true, default: "" },
+    role: { type: String, trim: true, default: "" },
+    notes: { type: String, trim: true, default: "" },
+  },
+  { _id: true, timestamps: true, versionKey: false }
+);
+
 const supplierSchema = new Schema(
   {
     supplierCode: {
@@ -25,6 +36,11 @@ const supplierSchema = new Schema(
 
     aliases: {
       type: [String],
+      default: [],
+    },
+
+    contacts: {
+      type: [supplierContactSchema],
       default: [],
     },
   },

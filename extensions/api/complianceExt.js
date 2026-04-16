@@ -801,4 +801,84 @@ complianceExtRouter.delete(
   }
 );
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Supplier contacts
+// ─────────────────────────────────────────────────────────────────────────────
+
+complianceExtRouter.post(
+  "/suppliers/:supplierId/contacts",
+  requireExtensionAuth,
+  requireExtensionScope("compliance:read"),
+  async (req, res) => {
+    try {
+      const { name, email, phone, role, notes } = req.body;
+      if (!name) return res.status(400).json({ ok: false, error: "name is required" });
+
+      const supplier = await Supplier.findById(req.params.supplierId);
+      if (!supplier) return res.status(404).json({ ok: false, error: "Supplier not found" });
+
+      supplier.contacts.push({ name, email: email || "", phone: phone || "", role: role || "", notes: notes || "" });
+      await supplier.save();
+
+      const contact = supplier.contacts[supplier.contacts.length - 1];
+      await writeAudit({ userId: req.user.id, action: "supplier-contact.create", outcome: "success" });
+      return res.json({ ok: true, contact: { contactId: String(contact._id), name: contact.name, email: contact.email, phone: contact.phone, role: contact.role, notes: contact.notes } });
+    } catch (error) {
+      console.error("[SUPPLIER CONTACT POST] failed:", error);
+      return res.status(500).json({ ok: false, error: error.message });
+    }
+  }
+);
+
+complianceExtRouter.patch(
+  "/suppliers/:supplierId/contacts/:contactId",
+  requireExtensionAuth,
+  requireExtensionScope("compliance:read"),
+  async (req, res) => {
+    try {
+      const supplier = await Supplier.findById(req.params.supplierId);
+      if (!supplier) return res.status(404).json({ ok: false, error: "Supplier not found" });
+
+      const contact = supplier.contacts.id(req.params.contactId);
+      if (!contact) return res.status(404).json({ ok: false, error: "Contact not found" });
+
+      const allowed = ["name", "email", "phone", "role", "notes"];
+      for (const key of allowed) {
+        if (key in req.body) contact[key] = req.body[key];
+      }
+      await supplier.save();
+
+      await writeAudit({ userId: req.user.id, action: "supplier-contact.update", outcome: "success" });
+      return res.json({ ok: true, contact: { contactId: String(contact._id), name: contact.name, email: contact.email, phone: contact.phone, role: contact.role, notes: contact.notes } });
+    } catch (error) {
+      console.error("[SUPPLIER CONTACT PATCH] failed:", error);
+      return res.status(500).json({ ok: false, error: error.message });
+    }
+  }
+);
+
+complianceExtRouter.delete(
+  "/suppliers/:supplierId/contacts/:contactId",
+  requireExtensionAuth,
+  requireExtensionScope("compliance:read"),
+  async (req, res) => {
+    try {
+      const supplier = await Supplier.findById(req.params.supplierId);
+      if (!supplier) return res.status(404).json({ ok: false, error: "Supplier not found" });
+
+      const contact = supplier.contacts.id(req.params.contactId);
+      if (!contact) return res.status(404).json({ ok: false, error: "Contact not found" });
+
+      contact.deleteOne();
+      await supplier.save();
+
+      await writeAudit({ userId: req.user.id, action: "supplier-contact.delete", outcome: "success" });
+      return res.json({ ok: true });
+    } catch (error) {
+      console.error("[SUPPLIER CONTACT DELETE] failed:", error);
+      return res.status(500).json({ ok: false, error: error.message });
+    }
+  }
+);
+
 export default complianceExtRouter;

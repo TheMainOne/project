@@ -858,6 +858,64 @@ async function handleDeleteOutreach(payload) {
   };
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Outreach reminders (chrome.alarms + chrome.notifications)
+// ─────────────────────────────────────────────────────────────────────────────
+
+const REMINDERS_KEY = "outreachReminders";
+
+async function handleSetOutreachReminder({ recordId, remindAt, supplierName, subject }) {
+  if (!recordId || !remindAt) return { ok: false, error: "Missing recordId or remindAt" };
+  const alarmName = `outreach_${recordId}`;
+  const when = new Date(remindAt).getTime();
+  if (isNaN(when) || when <= Date.now()) return { ok: false, error: "Reminder date must be in the future" };
+
+  chrome.alarms.create(alarmName, { when });
+
+  const stored = await chrome.storage.local.get(REMINDERS_KEY);
+  const reminders = stored[REMINDERS_KEY] || {};
+  reminders[recordId] = { remindAt, supplierName, subject };
+  await chrome.storage.local.set({ [REMINDERS_KEY]: reminders });
+
+  return { ok: true };
+}
+
+async function handleCancelOutreachReminder({ recordId }) {
+  if (!recordId) return { ok: false };
+  chrome.alarms.clear(`outreach_${recordId}`);
+  const stored = await chrome.storage.local.get(REMINDERS_KEY);
+  const reminders = stored[REMINDERS_KEY] || {};
+  delete reminders[recordId];
+  await chrome.storage.local.set({ [REMINDERS_KEY]: reminders });
+  return { ok: true };
+}
+
+async function handleGetOutreachReminders() {
+  const stored = await chrome.storage.local.get(REMINDERS_KEY);
+  return { ok: true, reminders: stored[REMINDERS_KEY] || {} };
+}
+
+chrome.alarms.onAlarm.addListener(async (alarm) => {
+  if (!alarm.name.startsWith("outreach_")) return;
+  const recordId = alarm.name.replace("outreach_", "");
+  const stored = await chrome.storage.local.get(REMINDERS_KEY);
+  const reminder = (stored[REMINDERS_KEY] || {})[recordId];
+  if (!reminder) return;
+
+  chrome.notifications.create(`outreach_notif_${recordId}`, {
+    type: "basic",
+    iconUrl: "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==",
+    title: "Outreach follow-up reminder",
+    message: `${reminder.supplierName}: ${reminder.subject}`,
+    priority: 1,
+  });
+
+  // Clean up the fired reminder
+  const reminders = stored[REMINDERS_KEY] || {};
+  delete reminders[recordId];
+  await chrome.storage.local.set({ [REMINDERS_KEY]: reminders });
+});
+
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   console.log("BACKGROUND RECEIVED MESSAGE:", message);
 
@@ -942,6 +1000,42 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
   if (message?.type === "EXT_GET_COMPLIANCE_SNAPSHOTS") {
     handleGetComplianceSnapshots().then(sendResponse);
+    return true;
+  }
+
+  if (message?.type === "EXT_SET_REMINDER") {
+    handleSetOutreachReminder(message.payload || {}).then(sendResponse);
+    return true;
+  }
+
+  if (message?.type === "EXT_CANCEL_REMINDER") {
+    handleCancelOutreachReminder(message.payload || {}).then(sendResponse);
+    return true;
+  }
+
+  if (message?.type === "EXT_GET_REMINDERS") {
+    handleGetOutreachReminders().then(sendResponse);
+    return true;
+  }
+
+  if (message?.type === "EXT_ADD_SUPPLIER_CONTACT") {
+    const { supplierId, ...contactData } = message.payload || {};
+    callComplianceApiMethod("POST", `/suppliers/${supplierId}/contacts`, contactData)
+      .then(sendResponse);
+    return true;
+  }
+
+  if (message?.type === "EXT_UPDATE_SUPPLIER_CONTACT") {
+    const { supplierId, contactId, ...contactData } = message.payload || {};
+    callComplianceApiMethod("PATCH", `/suppliers/${supplierId}/contacts/${contactId}`, contactData)
+      .then(sendResponse);
+    return true;
+  }
+
+  if (message?.type === "EXT_DELETE_SUPPLIER_CONTACT") {
+    const { supplierId, contactId } = message.payload || {};
+    callComplianceApiMethod("DELETE", `/suppliers/${supplierId}/contacts/${contactId}`, {})
+      .then(sendResponse);
     return true;
   }
 });

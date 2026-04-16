@@ -212,6 +212,16 @@ export async function getSuppliersLibrary({ search = "" } = {}) {
       supplierName: supplier.supplierName || "",
       supplierCode: supplier.supplierCode || "",
       aliases: Array.isArray(supplier.aliases) ? supplier.aliases : [],
+      contacts: Array.isArray(supplier.contacts)
+        ? supplier.contacts.map((c) => ({
+            contactId: String(c._id),
+            name: c.name || "",
+            email: c.email || "",
+            phone: c.phone || "",
+            role: c.role || "",
+            notes: c.notes || "",
+          }))
+        : [],
       documentsCount: formattedDocuments.length,
       assertionsCount: formattedAssertions.length,
       regulationSummary,
