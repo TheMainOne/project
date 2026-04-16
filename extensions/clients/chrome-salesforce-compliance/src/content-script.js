@@ -104,6 +104,16 @@ manualLookupLoading: false,
   },
 
   complianceSnapshots: [],
+
+  analyticsExpandedSections: {
+    nonCompliant: true,
+    complianceMatrix: false,
+    supplierFreshness: false,
+    statementBrowser: false,
+    regulationBreakdown: false,
+    atRisk: true,
+    expiringSoon: true,
+  },
 };
 
 let activeCaseRequestToken = 0;
@@ -111,6 +121,7 @@ let lastCompletedRecordId = null;
 let isCaseToastExpanded = false;
 
 function resetCaseAnalysisState() {
+  activeCaseToastTab = "overview";
   suppliersSubTab = "library";
 
   currentCaseAnalysisState = {
@@ -206,6 +217,16 @@ manualLookupLoading: false,
     },
 
     complianceSnapshots: [],
+
+    analyticsExpandedSections: {
+      nonCompliant: true,
+      complianceMatrix: false,
+      supplierFreshness: false,
+      statementBrowser: false,
+      regulationBreakdown: false,
+      atRisk: true,
+      expiringSoon: true,
+    },
   };
 }
 
@@ -4601,7 +4622,45 @@ function renderCaseToastInitial(payload) {
 
   body.appendChild(createInfoRow("Case Number", payload.caseId));
   body.appendChild(createInfoRow("Subject", payload.subject));
-  body.appendChild(createInfoRow("Status", "Analyzing..."));
+
+  const statusRow = document.createElement("div");
+  Object.assign(statusRow.style, {
+    display: "flex",
+    alignItems: "center",
+    gap: "8px",
+    padding: "4px 0",
+  });
+
+  const statusLabel = document.createElement("span");
+  statusLabel.textContent = "Analyzing...";
+  Object.assign(statusLabel.style, { fontSize: "13px", color: "#6b7280", flex: "1" });
+
+  const cancelBtn = document.createElement("button");
+  cancelBtn.type = "button";
+  cancelBtn.textContent = "Cancel";
+  Object.assign(cancelBtn.style, {
+    border: "1px solid #d0d7de",
+    borderRadius: "6px",
+    background: "#fff",
+    color: "#6b7280",
+    padding: "2px 10px",
+    fontSize: "11px",
+    fontWeight: "600",
+    cursor: "pointer",
+    flexShrink: "0",
+  });
+  cancelBtn.onclick = () => {
+    activeCaseRequestToken++;
+    lastSentCaseUrl = null;
+    lastCompletedRecordId = null;
+    clearToastBody(body);
+    body.appendChild(createInfoRow("Case Number", payload.caseId));
+    body.appendChild(createInfoRow("Status", "Cancelled — click ↺ to re-analyze"));
+  };
+
+  statusRow.appendChild(statusLabel);
+  statusRow.appendChild(cancelBtn);
+  body.appendChild(statusRow);
 }
 
 function renderCaseToastAnalysis(payload, response) {
@@ -5514,6 +5573,48 @@ function readSalesforceCaseFromDom() {
     '[field-label="Description"]'
   ]);
 
+  const priorityNode = findFirstVisible([
+    '[data-target-selection-name="sfdc:RecordField.Case.Priority"] lightning-formatted-text',
+    '[data-target-selection-name="sfdc:RecordField.Case.Priority"]',
+    '[field-label="Priority"] lightning-formatted-text',
+    '[field-label="Priority"]'
+  ]);
+
+  const statusNode = findFirstVisible([
+    '[data-target-selection-name="sfdc:RecordField.Case.Status"] lightning-formatted-text',
+    '[data-target-selection-name="sfdc:RecordField.Case.Status"]',
+    '[field-label="Status"] lightning-formatted-text',
+    '[field-label="Status"]'
+  ]);
+
+  const accountNode = findFirstVisible([
+    '[data-target-selection-name="sfdc:RecordField.Case.AccountId"] a',
+    '[data-target-selection-name="sfdc:RecordField.Case.AccountId"] lightning-formatted-text',
+    '[field-label="Account Name"] a',
+    '[field-label="Account Name"] lightning-formatted-text'
+  ]);
+
+  const contactNode = findFirstVisible([
+    '[data-target-selection-name="sfdc:RecordField.Case.ContactId"] a',
+    '[data-target-selection-name="sfdc:RecordField.Case.ContactId"] lightning-formatted-text',
+    '[field-label="Contact Name"] a',
+    '[field-label="Contact Name"] lightning-formatted-text'
+  ]);
+
+  const typeNode = findFirstVisible([
+    '[data-target-selection-name="sfdc:RecordField.Case.Type"] lightning-formatted-text',
+    '[data-target-selection-name="sfdc:RecordField.Case.Type"]',
+    '[field-label="Type"] lightning-formatted-text',
+    '[field-label="Type"]'
+  ]);
+
+  const reasonNode = findFirstVisible([
+    '[data-target-selection-name="sfdc:RecordField.Case.Reason"] lightning-formatted-text',
+    '[data-target-selection-name="sfdc:RecordField.Case.Reason"]',
+    '[field-label="Reason"] lightning-formatted-text',
+    '[field-label="Reason"]'
+  ]);
+
   return {
     caseId: cleanCaseNumber(normalizeText(caseIdNode?.textContent, 100)),
     subject: normalizeText(cleanSubject(subjectNode?.textContent), 500),
@@ -5521,6 +5622,12 @@ function readSalesforceCaseFromDom() {
     href: window.location.href,
     title: normalizeText(document.title, 300),
     capturedAt: new Date().toISOString(),
+    priority: normalizeText(priorityNode?.textContent, 50) || null,
+    status: normalizeText(statusNode?.textContent, 50) || null,
+    accountName: normalizeText(accountNode?.textContent, 200) || null,
+    contactName: normalizeText(contactNode?.textContent, 200) || null,
+    caseType: normalizeText(typeNode?.textContent, 100) || null,
+    reason: normalizeText(reasonNode?.textContent, 100) || null,
   };
 }
 
@@ -5636,8 +5743,40 @@ async function trySendCaseContext() {
     clearToastBody(body);
     body.appendChild(createInfoRow("Case Number", payload.caseId));
     body.appendChild(createInfoRow("Subject", payload.subject));
-    body.appendChild(createInfoRow("Status", "Analysis failed"));
-    body.appendChild(createInfoRow("Error", response?.error || "Unknown error"));
+
+    const errorType = response?.errorType;
+    let statusText = "Analysis failed";
+    let hintText = null;
+
+    if (errorType === "timeout") {
+      statusText = "Request timed out";
+      hintText = "The server took too long to respond. Check your connection and try again.";
+    } else if (errorType === "network") {
+      statusText = "Network error";
+      hintText = "Cannot reach the compliance server. Check your internet connection.";
+    } else if (errorType === "server") {
+      statusText = "Server error";
+      hintText = "The compliance server is temporarily unavailable. Try again in a moment.";
+    } else if (errorType === "forbidden") {
+      statusText = "Access denied";
+      hintText = "Your account does not have permission for this action. Contact your administrator.";
+    }
+
+    body.appendChild(createInfoRow("Status", statusText));
+    body.appendChild(createInfoRow("Detail", response?.error || "Unknown error"));
+    if (hintText) {
+      const hint = document.createElement("div");
+      hint.textContent = hintText;
+      Object.assign(hint.style, {
+        fontSize: "12px",
+        color: "#6b7280",
+        fontStyle: "italic",
+        marginTop: "6px",
+        borderLeft: "3px solid #e5e7eb",
+        paddingLeft: "8px",
+      });
+      body.appendChild(hint);
+    }
   }
 }
 
@@ -8666,6 +8805,88 @@ function createNonCompliantSection(data) {
   return section;
 }
 
+function createCollapsibleSection(key, title, contentFn) {
+  const sections = currentCaseAnalysisState.analyticsExpandedSections;
+  const isOpen = sections[key] === true;
+
+  const wrapper = document.createElement("div");
+  Object.assign(wrapper.style, {
+    marginBottom: "12px",
+    border: "1px solid #e5e7eb",
+    borderRadius: "12px",
+    overflow: "hidden",
+  });
+
+  const header = document.createElement("div");
+  Object.assign(header.style, {
+    display: "flex",
+    alignItems: "center",
+    padding: "12px 16px",
+    background: "#f9fafb",
+    cursor: "pointer",
+    userSelect: "none",
+    borderBottom: isOpen ? "1px solid #e5e7eb" : "none",
+  });
+
+  const arrow = document.createElement("span");
+  arrow.textContent = isOpen ? "▾" : "▸";
+  Object.assign(arrow.style, {
+    fontSize: "14px",
+    color: "#6b7280",
+    marginRight: "10px",
+    flexShrink: "0",
+    lineHeight: "1",
+  });
+
+  const titleEl = document.createElement("span");
+  titleEl.textContent = title;
+  Object.assign(titleEl.style, {
+    fontSize: "13px",
+    fontWeight: "700",
+    color: "#111827",
+    flex: "1",
+  });
+
+  header.appendChild(arrow);
+  header.appendChild(titleEl);
+  wrapper.appendChild(header);
+
+  const body = document.createElement("div");
+  body.style.display = isOpen ? "block" : "none";
+  Object.assign(body.style, { padding: "16px" });
+
+  // Lazy render: only build DOM when section is first opened
+  let rendered = false;
+  function renderBody() {
+    if (rendered) return;
+    rendered = true;
+    try {
+      const content = contentFn();
+      if (content) body.appendChild(content);
+    } catch (e) {
+      console.error(`[Analytics collapsible] Error rendering "${title}":`, e);
+      const err = document.createElement("div");
+      Object.assign(err.style, { padding: "10px", color: "#b42318", fontSize: "12px" });
+      err.textContent = `Failed to render: ${e.message}`;
+      body.appendChild(err);
+    }
+  }
+
+  if (isOpen) renderBody();
+
+  header.addEventListener("click", () => {
+    const nowOpen = body.style.display === "none";
+    body.style.display = nowOpen ? "block" : "none";
+    arrow.textContent = nowOpen ? "▾" : "▸";
+    header.style.borderBottom = nowOpen ? "1px solid #e5e7eb" : "none";
+    sections[key] = nowOpen;
+    if (nowOpen) renderBody();
+  });
+
+  wrapper.appendChild(body);
+  return wrapper;
+}
+
 function createAnalyticsDashboard(suppliersLibrary) {
   const wrapper = document.createElement("div");
   wrapper.style.marginTop = "8px";
@@ -8699,19 +8920,39 @@ function createAnalyticsDashboard(suppliersLibrary) {
   }
 
   safeAppend(() => createAnalyticsStatsBar(data.stats), "Stats");
-  safeAppend(() => createNonCompliantSection(data), "Non-compliant");
-  safeAppend(() => createComplianceMatrix(data), "Compliance Matrix");
-  safeAppend(() => createSupplierFreshnessTable(data), "Supplier Freshness");
-  safeAppend(() => createStatementBrowser(data), "Statement Browser");
-  safeAppend(() => createRegulationBreakdownSection(data), "Regulation Breakdown");
-  safeAppend(() => createAtRiskSection(data), "At Risk");
-  safeAppend(() => createExpiringSoonSection(data), "Expiring Soon");
+
+  const nonCompliantCount = data.matrix.filter((r) => r.cells.some((c) => c.status === "non_compliant")).length;
+  const atRiskCount = data.atRisk.length;
+  const expiringSoonCount = data.expiringSoon.length;
+
+  if (nonCompliantCount > 0) {
+    safeAppend(() => createCollapsibleSection("nonCompliant", `Non-Compliant Suppliers (${nonCompliantCount})`, () => createNonCompliantSection(data)), "Non-compliant");
+  }
+  if (atRiskCount > 0) {
+    safeAppend(() => createCollapsibleSection("atRisk", `At-Risk Certifications (${atRiskCount})`, () => createAtRiskSection(data)), "At Risk");
+  }
+  if (expiringSoonCount > 0) {
+    safeAppend(() => createCollapsibleSection("expiringSoon", `Expiring Soon (${expiringSoonCount})`, () => createExpiringSoonSection(data)), "Expiring Soon");
+  }
+
+  safeAppend(() => createCollapsibleSection("complianceMatrix", `Compliance Matrix (${data.matrix.length} suppliers × ${data.regulations.length} regulations)`, () => createComplianceMatrix(data)), "Compliance Matrix");
+  safeAppend(() => createCollapsibleSection("supplierFreshness", `Supplier Freshness (${data.supplierFreshness.length} suppliers)`, () => createSupplierFreshnessTable(data)), "Supplier Freshness");
+  safeAppend(() => createCollapsibleSection("statementBrowser", `Statement Browser (${data.allStatements.length} statements)`, () => createStatementBrowser(data)), "Statement Browser");
+  safeAppend(() => createCollapsibleSection("regulationBreakdown", `Regulation Breakdown (${data.regulationBreakdown.length} regulations)`, () => createRegulationBreakdownSection(data)), "Regulation Breakdown");
 
   return wrapper;
 }
 
 async function bootstrap() {
   ensureLauncherVisible();
+
+  // Intercept Salesforce SPA navigation — Lightning uses history.pushState()
+  // which doesn't fire popstate, so we wrap it to catch route changes reliably.
+  const _origPushState = history.pushState.bind(history);
+  history.pushState = function (...args) {
+    _origPushState(...args);
+    handlePotentialRouteChange();
+  };
 
   const isAuthenticated = await syncAuthState();
 
@@ -8722,8 +8963,10 @@ async function bootstrap() {
 
 bootstrap();
 
+let _routeChangeTimeout;
 const observer = new MutationObserver(() => {
-  handlePotentialRouteChange();
+  clearTimeout(_routeChangeTimeout);
+  _routeChangeTimeout = setTimeout(handlePotentialRouteChange, 300);
 });
 
 observer.observe(document.body, {

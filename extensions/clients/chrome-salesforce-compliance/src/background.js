@@ -506,18 +506,28 @@ async function callComplianceApi(path, body, allowRetry = true) {
         status: 401,
         authRequired: true,
         error: tokenState.error || "Authentication required",
+        errorType: "auth",
       };
     }
 
     const url = `${API_BASE_URL}${path}`;
-    const res = await fetch(url, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${tokenState.complianceToken}`,
-      },
-      body: JSON.stringify(body),
-    });
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 15000);
+
+    let res;
+    try {
+      res = await fetch(url, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${tokenState.complianceToken}`,
+        },
+        body: JSON.stringify(body),
+        signal: controller.signal,
+      });
+    } finally {
+      clearTimeout(timer);
+    }
 
     const parsed = await parseResponse(res);
 
@@ -532,11 +542,18 @@ async function callComplianceApi(path, body, allowRetry = true) {
           status: 401,
           authRequired: true,
           error: refreshed.error || "Authentication required",
+          errorType: "auth",
         };
       }
 
       return callComplianceApi(path, body, false);
     }
+
+    const errorType = parsed.ok ? null
+      : parsed.status >= 500 ? "server"
+      : parsed.status === 403 ? "forbidden"
+      : parsed.status === 401 ? "auth"
+      : "api";
 
     return {
       ok: parsed.ok,
@@ -544,12 +561,15 @@ async function callComplianceApi(path, body, allowRetry = true) {
       body: parsed.text,
       json: parsed.json,
       error: parsed.ok ? null : getErrorMessage(parsed, "Request failed"),
+      errorType,
     };
   } catch (err) {
     console.error("callComplianceApi failed:", path, err);
+    const isTimeout = err?.name === "AbortError";
     return {
       ok: false,
-      error: err?.message || String(err),
+      error: isTimeout ? "Request timed out (15s). Check your connection." : (err?.message || String(err)),
+      errorType: isTimeout ? "timeout" : "network",
     };
   }
 }
@@ -705,23 +725,33 @@ async function callComplianceApiMethod(method, path, body = null, allowRetry = t
     const tokenState = await ensureComplianceToken();
 
     if (!tokenState.ok) {
-      return { ok: false, status: 401, authRequired: true, error: tokenState.error || "Authentication required" };
+      return { ok: false, status: 401, authRequired: true, error: tokenState.error || "Authentication required", errorType: "auth" };
     }
 
     const url = `${API_BASE_URL}${path}`;
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 15000);
+
     const fetchOptions = {
       method,
       headers: {
         "Content-Type": "application/json",
         Authorization: `Bearer ${tokenState.complianceToken}`,
       },
+      signal: controller.signal,
     };
 
     if (body !== null && method !== "GET") {
       fetchOptions.body = JSON.stringify(body);
     }
 
-    const res = await fetch(url, fetchOptions);
+    let res;
+    try {
+      res = await fetch(url, fetchOptions);
+    } finally {
+      clearTimeout(timer);
+    }
+
     const parsed = await parseResponse(res);
 
     console.log("API RESPONSE:", method, path, parsed.status, parsed.text);
@@ -729,20 +759,32 @@ async function callComplianceApiMethod(method, path, body = null, allowRetry = t
     if (parsed.status === 401 && allowRetry) {
       const refreshed = await refreshAndIssueExtensionToken();
       if (!refreshed.ok) {
-        return { ok: false, status: 401, authRequired: true, error: refreshed.error || "Authentication required" };
+        return { ok: false, status: 401, authRequired: true, error: refreshed.error || "Authentication required", errorType: "auth" };
       }
       return callComplianceApiMethod(method, path, body, false);
     }
+
+    const errorType = parsed.ok ? null
+      : parsed.status >= 500 ? "server"
+      : parsed.status === 403 ? "forbidden"
+      : parsed.status === 401 ? "auth"
+      : "api";
 
     return {
       ok: parsed.ok,
       status: parsed.status,
       json: parsed.json,
       error: parsed.ok ? null : getErrorMessage(parsed, "Request failed"),
+      errorType,
     };
   } catch (err) {
     console.error("callComplianceApiMethod failed:", method, path, err);
-    return { ok: false, error: err?.message || String(err) };
+    const isTimeout = err?.name === "AbortError";
+    return {
+      ok: false,
+      error: isTimeout ? "Request timed out (15s). Check your connection." : (err?.message || String(err)),
+      errorType: isTimeout ? "timeout" : "network",
+    };
   }
 }
 
