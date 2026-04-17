@@ -1754,7 +1754,12 @@ function createAddStatementTabContent() {
       justifyContent: "space-between",
       alignItems: "center",
     });
-    selected.innerHTML = `<span><strong>${form.supplierName}</strong> (${form.supplierCode})</span>`;
+    const _selSpan = document.createElement("span");
+    const _selStrong = document.createElement("strong");
+    _selStrong.textContent = form.supplierName;
+    _selSpan.appendChild(_selStrong);
+    _selSpan.appendChild(document.createTextNode(` (${form.supplierCode})`));
+    selected.appendChild(_selSpan);
 
     const clearBtn = document.createElement("button");
     clearBtn.type = "button";
@@ -2838,7 +2843,10 @@ function createSupplierStatementsSection(statements = []) {
 
     rows.forEach(([label, value]) => {
       const row = document.createElement("div");
-      row.innerHTML = `<strong>${label}:</strong> ${value || "—"}`;
+      const strong = document.createElement("strong");
+      strong.textContent = `${label}:`;
+      row.appendChild(strong);
+      row.appendChild(document.createTextNode(` ${value || "—"}`));
       details.appendChild(row);
     });
 
@@ -3587,7 +3595,10 @@ function createSupplierLibraryStatementsSection(assertions = []) {
 
     rows.forEach(([label, value]) => {
       const row = document.createElement("div");
-      row.innerHTML = `<strong>${label}:</strong> ${value || "—"}`;
+      const strong = document.createElement("strong");
+      strong.textContent = `${label}:`;
+      row.appendChild(strong);
+      row.appendChild(document.createTextNode(` ${value || "—"}`));
       details.appendChild(row);
     });
 
@@ -3979,7 +3990,10 @@ function createSupplierLibraryDetail(supplier) {
 
   if (Array.isArray(supplier?.aliases) && supplier.aliases.length) {
     const aliases = document.createElement("div");
-    aliases.innerHTML = `<strong>Aliases:</strong> ${supplier.aliases.join(", ")}`;
+    const _aliasStrong = document.createElement("strong");
+    _aliasStrong.textContent = "Aliases:";
+    aliases.appendChild(_aliasStrong);
+    aliases.appendChild(document.createTextNode(` ${supplier.aliases.join(", ")}`));
     Object.assign(aliases.style, {
       fontSize: "14px",
       color: "#374151",
@@ -4305,9 +4319,17 @@ function createOutreachTabContent(records) {
       color: "#9ca3af",
       fontSize: "13px",
     });
-    empty.innerHTML = records.length === 0
-      ? "No outreach logged yet.<br>Use <strong>+ Log Outreach</strong> to track emails and requests to suppliers."
-      : `No records match the selected filter.`;
+    if (records.length === 0) {
+      empty.appendChild(document.createTextNode("No outreach logged yet."));
+      empty.appendChild(document.createElement("br"));
+      empty.appendChild(document.createTextNode("Use "));
+      const _em = document.createElement("strong");
+      _em.textContent = "+ Log Outreach";
+      empty.appendChild(_em);
+      empty.appendChild(document.createTextNode(" to track emails and requests to suppliers."));
+    } else {
+      empty.textContent = "No records match the selected filter.";
+    }
     wrapper.appendChild(empty);
     return wrapper;
   }
@@ -4838,7 +4860,10 @@ function createOutreachCard(record) {
       fontSize: "12px",
       color: "#92400e",
     });
-    reminderRow.innerHTML = `🔔 Reminder: <strong>${formatOutreachDate(existingReminder.remindAt)}</strong>`;
+    reminderRow.appendChild(document.createTextNode("🔔 Reminder: "));
+    const _reminderStrong = document.createElement("strong");
+    _reminderStrong.textContent = formatOutreachDate(existingReminder.remindAt);
+    reminderRow.appendChild(_reminderStrong);
 
     const cancelReminderBtn = document.createElement("button");
     cancelReminderBtn.type = "button";
@@ -6602,6 +6627,251 @@ function humanizeScopeSummary(scopeSummary) {
   return value;
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Export helpers: Excel (SpreadsheetML) and PDF (print)
+// ─────────────────────────────────────────────────────────────────────────────
+
+function _exportDownloadFile(content, filename, mimeType) {
+  const a = document.createElement("a");
+  a.href = `data:${mimeType};charset=utf-8,` + encodeURIComponent(content);
+  a.download = filename;
+  a.style.display = "none";
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+}
+
+function exportToExcel(data) {
+  const STATUS_LABEL = {
+    covered: "Covered", partial: "Partial", missing: "Missing",
+    expired: "Expired", non_compliant: "Non-Compliant", informational: "Informational",
+  };
+  const STATUS_COLOR = {
+    covered: "C6EFCE", partial: "FFEB9C", missing: "F2F2F2",
+    expired: "FFCCCC", non_compliant: "FFC7CE", informational: "DDEBF7",
+  };
+
+  function xlEsc(v) {
+    return String(v == null ? "" : v)
+      .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+  }
+
+  function xlStr(value, styleId) {
+    const s = styleId ? ` ss:StyleID="${styleId}"` : "";
+    return `<Cell${s}><Data ss:Type="String">${xlEsc(value)}</Data></Cell>`;
+  }
+
+  function xlNum(value, styleId) {
+    const s = styleId ? ` ss:StyleID="${styleId}"` : "";
+    const n = Number(value);
+    return `<Cell${s}><Data ss:Type="Number">${isNaN(n) ? 0 : n}</Data></Cell>`;
+  }
+
+  function xlRow(cells) {
+    return `<Row>${cells.join("")}</Row>`;
+  }
+
+  function makeSheet(name, rows) {
+    return `<Worksheet ss:Name="${xlEsc(name)}"><Table>${rows.join("")}</Table></Worksheet>`;
+  }
+
+  const coverageRateBySupplier = {};
+  data.matrix.forEach(r => { coverageRateBySupplier[r.supplierId] = r.coverageRate; });
+
+  // Sheet 1: Compliance Matrix
+  const matrixHeaderCells = [
+    xlStr("Supplier", "hdr"), xlStr("Code", "hdr"),
+    ...data.regulations.map(r => xlStr(r.code + (r.name ? `\n${r.name}` : ""), "hdr")),
+    xlStr("Coverage %", "hdr"),
+  ];
+  const matrixRows = [
+    xlRow(matrixHeaderCells),
+    ...data.matrix.map(row => xlRow([
+      xlStr(row.supplierName),
+      xlStr(row.supplierCode || ""),
+      ...row.cells.map(c => xlStr(STATUS_LABEL[c.status] || c.status, `bg_${STATUS_COLOR[c.status] || "F2F2F2"}`)),
+      xlStr(`${Math.round(row.coverageRate * 100)}%`),
+    ])),
+  ];
+
+  // Sheet 2: Suppliers Overview
+  const supplierRows = [
+    xlRow([xlStr("Supplier","hdr"), xlStr("Code","hdr"), xlStr("Documents","hdr"), xlStr("Assertions","hdr"), xlStr("Coverage %","hdr"), xlStr("Contacts","hdr")]),
+    ...data.suppliers.map(s => xlRow([
+      xlStr(s.supplierName || ""),
+      xlStr(s.supplierCode || ""),
+      xlNum(s.documentsCount || 0),
+      xlNum(s.assertionsCount || 0),
+      xlNum(Math.round((coverageRateBySupplier[s.supplierId] || 0) * 100)),
+      xlStr((s.contacts || []).map(c => [c.name, c.email].filter(Boolean).join(" ")).filter(Boolean).join("; ")),
+    ])),
+  ];
+
+  // Sheet 3: Expiring Documents
+  const expiringRows = [
+    xlRow([xlStr("Supplier","hdr"), xlStr("Code","hdr"), xlStr("Regulation","hdr"), xlStr("Document","hdr"), xlStr("Expires","hdr"), xlStr("Days Left","hdr"), xlStr("Urgency","hdr")]),
+    ...data.expiringSoon.map(e => xlRow([
+      xlStr(e.supplierName || ""),
+      xlStr(e.supplierCode || ""),
+      xlStr(e.regulationCode || ""),
+      xlStr(e.documentTitle || ""),
+      xlStr(e.validUntil ? new Date(e.validUntil).toLocaleDateString() : ""),
+      e.daysLeft != null ? xlNum(e.daysLeft) : xlStr("—"),
+      xlStr(e.urgency || ""),
+    ])),
+  ];
+
+  // Sheet 4: At-Risk Suppliers
+  const atRiskRows = [
+    xlRow([xlStr("Supplier","hdr"), xlStr("Code","hdr"), xlStr("Missing","hdr"), xlStr("Expired","hdr"), xlStr("Non-Compliant","hdr"), xlStr("Gap Score","hdr"), xlStr("Missing Regulations","hdr")]),
+    ...data.atRisk.map(r => xlRow([
+      xlStr(r.supplierName || ""),
+      xlStr(r.supplierCode || ""),
+      xlNum(r.missingCount || 0),
+      xlNum(r.expiredCount || 0),
+      xlNum(r.nonCompliantCount || 0),
+      xlNum(r.gapScore || 0),
+      xlStr((r.missingRegCodes || []).join(", ")),
+    ])),
+  ];
+
+  const colorStyles = Object.values(STATUS_COLOR)
+    .filter((v, i, a) => a.indexOf(v) === i)
+    .map(color => `<Style ss:ID="bg_${color}"><Interior ss:Color="#${color}" ss:Pattern="Solid"/></Style>`)
+    .join("\n");
+
+  const xml = `<?xml version="1.0" encoding="UTF-8"?>
+<?mso-application progid="Excel.Sheet"?>
+<Workbook xmlns="urn:schemas-microsoft-com:office:spreadsheet"
+  xmlns:ss="urn:schemas-microsoft-com:office:spreadsheet">
+  <Styles>
+    <Style ss:ID="hdr">
+      <Font ss:Bold="1"/>
+      <Interior ss:Color="#D9E1F2" ss:Pattern="Solid"/>
+    </Style>
+    ${colorStyles}
+  </Styles>
+  ${makeSheet("Compliance Matrix", matrixRows)}
+  ${makeSheet("Suppliers", supplierRows)}
+  ${makeSheet("Expiring Documents", expiringRows)}
+  ${makeSheet("At Risk", atRiskRows)}
+</Workbook>`;
+
+  _exportDownloadFile(xml, "compliance_report.xls", "application/vnd.ms-excel");
+}
+
+function exportToPdf(data, casePayload) {
+  const STATUS_LABEL = {
+    covered: "Covered", partial: "Partial", missing: "Missing",
+    expired: "Expired", non_compliant: "Non-Compliant", informational: "Info",
+  };
+  const STATUS_BG = {
+    covered: "#c6efce", partial: "#ffeb9c", missing: "#f2f2f2",
+    expired: "#ffcccc", non_compliant: "#ffc7ce", informational: "#ddebf7",
+  };
+
+  function esc(v) {
+    return String(v == null ? "" : v)
+      .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  }
+
+  const caseId = esc(casePayload?.caseId || casePayload?.recordId || "N/A");
+  const caseSubject = esc(casePayload?.subject || "N/A");
+  const today = new Date().toLocaleDateString();
+
+  const matrixHeaderCols = [
+    "<th>Supplier</th><th>Code</th>",
+    ...data.regulations.map(r => `<th>${esc(r.code)}</th>`),
+    "<th>Rate</th>",
+  ].join("");
+
+  const matrixBodyRows = data.matrix.map(row => `<tr>
+    <td>${esc(row.supplierName)}</td>
+    <td>${esc(row.supplierCode || "")}</td>
+    ${row.cells.map(c => `<td style="background:${STATUS_BG[c.status] || "#f2f2f2"};text-align:center">${STATUS_LABEL[c.status] || esc(c.status)}</td>`).join("")}
+    <td style="text-align:center;font-weight:600">${Math.round(row.coverageRate * 100)}%</td>
+  </tr>`).join("");
+
+  const expiringBodyRows = data.expiringSoon.slice(0, 50).map(e => `<tr>
+    <td>${esc(e.supplierName)}</td>
+    <td>${esc(e.regulationCode)}</td>
+    <td>${esc(e.documentTitle || "")}</td>
+    <td>${e.validUntil ? esc(new Date(e.validUntil).toLocaleDateString()) : "—"}</td>
+    <td style="color:${e.urgency === "critical" ? "#dc2626" : "#d97706"}">${e.daysLeft != null ? e.daysLeft + "d" : "—"}</td>
+  </tr>`).join("");
+
+  const atRiskBodyRows = data.atRisk.slice(0, 30).map(r => `<tr>
+    <td>${esc(r.supplierName)}</td>
+    <td>${esc(r.supplierCode || "")}</td>
+    <td>${r.missingCount || 0}</td>
+    <td>${r.expiredCount || 0}</td>
+    <td>${r.nonCompliantCount || 0}</td>
+    <td>${esc((r.missingRegCodes || []).join(", "))}</td>
+  </tr>`).join("");
+
+  const html = `<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Compliance Report — ${caseId}</title>
+<style>
+  body{font-family:Arial,sans-serif;font-size:11px;color:#111;margin:20px 28px}
+  h1{font-size:17px;margin:0 0 4px}
+  h2{font-size:13px;margin:22px 0 7px;border-bottom:1px solid #ccc;padding-bottom:3px;color:#1e3a5f}
+  .meta{color:#555;margin-bottom:14px;font-size:11px}
+  .stats{display:flex;gap:12px;margin-bottom:18px;flex-wrap:wrap}
+  .stat{background:#f6f8fa;border:1px solid #d0d7de;border-radius:8px;padding:8px 14px;text-align:center;min-width:80px}
+  .stat .val{font-size:20px;font-weight:700;color:#0176d3}
+  .stat .lbl{font-size:10px;color:#6b7280;margin-top:2px}
+  table{border-collapse:collapse;width:100%;margin-bottom:14px;font-size:10px}
+  th{background:#d9e1f2;border:1px solid #bbb;padding:4px 7px;text-align:left;white-space:nowrap}
+  td{border:1px solid #ddd;padding:3px 7px}
+  @media print{
+    h2{page-break-before:auto}
+    table{page-break-inside:auto}
+    tr{page-break-inside:avoid}
+  }
+</style>
+</head>
+<body>
+<h1>Compliance Report</h1>
+<div class="meta">Case: <b>${caseId}</b> &nbsp;|&nbsp; ${caseSubject} &nbsp;|&nbsp; Generated: ${today}</div>
+<div class="stats">
+  <div class="stat"><div class="val">${data.stats.totalSuppliers || 0}</div><div class="lbl">Suppliers</div></div>
+  <div class="stat"><div class="val">${data.stats.totalRegulations || 0}</div><div class="lbl">Regulations</div></div>
+  <div class="stat"><div class="val">${Math.round((data.stats.overallCoverageRate || 0) * 100)}%</div><div class="lbl">Coverage</div></div>
+  <div class="stat"><div class="val">${data.stats.fullyCovered || 0}</div><div class="lbl">Fully Covered</div></div>
+  <div class="stat"><div class="val">${data.stats.withGaps || 0}</div><div class="lbl">With Gaps</div></div>
+  <div class="stat"><div class="val">${data.expiringSoon.length}</div><div class="lbl">Expiring Soon</div></div>
+</div>
+<h2>Compliance Matrix</h2>
+<table><thead><tr>${matrixHeaderCols}</tr></thead><tbody>${matrixBodyRows}</tbody></table>
+${data.expiringSoon.length ? `
+<h2>Expiring Documents</h2>
+<table>
+  <thead><tr><th>Supplier</th><th>Regulation</th><th>Document</th><th>Expires</th><th>Days Left</th></tr></thead>
+  <tbody>${expiringBodyRows}</tbody>
+</table>` : ""}
+${data.atRisk.length ? `
+<h2>At-Risk Suppliers</h2>
+<table>
+  <thead><tr><th>Supplier</th><th>Code</th><th>Missing</th><th>Expired</th><th>Non-Compliant</th><th>Missing Regulations</th></tr></thead>
+  <tbody>${atRiskBodyRows}</tbody>
+</table>` : ""}
+</body>
+</html>`;
+
+  const w = window.open("", "_blank");
+  if (!w) {
+    alert("Pop-up blocked. Please allow pop-ups for this site to export PDF.");
+    return;
+  }
+  w.document.write(html);
+  w.document.close();
+  w.focus();
+  setTimeout(() => { w.print(); }, 400);
+}
+
 function buildAnalyticsData(suppliersLibrary) {
   const suppliers = Array.isArray(suppliersLibrary?.suppliers)
     ? suppliersLibrary.suppliers
@@ -7678,10 +7948,7 @@ function createComplianceMatrix(data) {
   });
   controlsBar.appendChild(viewToggle);
 
-  const csvBtn = document.createElement("button");
-  csvBtn.type = "button";
-  csvBtn.textContent = "Download CSV";
-  Object.assign(csvBtn.style, {
+  const exportBtnStyle = {
     padding: "6px 12px",
     border: "1px solid #d0d7de",
     borderRadius: "8px",
@@ -7691,8 +7958,38 @@ function createComplianceMatrix(data) {
     fontWeight: "600",
     cursor: "pointer",
     whiteSpace: "nowrap",
-  });
+  };
+
+  const csvBtn = document.createElement("button");
+  csvBtn.type = "button";
+  csvBtn.textContent = "CSV";
+  Object.assign(csvBtn.style, exportBtnStyle);
   controlsBar.appendChild(csvBtn);
+
+  const xlsBtn = document.createElement("button");
+  xlsBtn.type = "button";
+  xlsBtn.textContent = "Excel";
+  Object.assign(xlsBtn.style, { ...exportBtnStyle, color: "#166534", borderColor: "#86efac" });
+  xlsBtn.title = "Export full report to Excel (4 sheets: matrix, suppliers, expiring docs, at-risk)";
+  xlsBtn.onclick = () => {
+    const lib = currentCaseAnalysisState.suppliersLibrary;
+    if (!lib) { alert("No supplier data loaded yet."); return; }
+    exportToExcel(buildAnalyticsData(lib));
+  };
+  controlsBar.appendChild(xlsBtn);
+
+  const pdfBtn = document.createElement("button");
+  pdfBtn.type = "button";
+  pdfBtn.textContent = "PDF";
+  Object.assign(pdfBtn.style, { ...exportBtnStyle, color: "#7c2d12", borderColor: "#fca5a5" });
+  pdfBtn.title = "Open printable PDF report in a new tab";
+  pdfBtn.onclick = () => {
+    const lib = currentCaseAnalysisState.suppliersLibrary;
+    if (!lib) { alert("No supplier data loaded yet."); return; }
+    exportToPdf(buildAnalyticsData(lib), currentCaseAnalysisState.payload);
+  };
+  controlsBar.appendChild(pdfBtn);
+
   section.appendChild(controlsBar);
 
   if (!data.matrix.length || !data.regulations.length) {

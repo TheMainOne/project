@@ -1,9 +1,19 @@
 const API_BASE_URL = "https://cloudcompliance.duckdns.org/api/compliance/ext";
 const AUTH_BASE_URL = "https://cloudcompliance.duckdns.org/api/auth";
 
-// local dev:
-// const API_BASE_URL = "http://localhost:3000/api/compliance/ext";
-// const AUTH_BASE_URL = "http://localhost:3000/api/auth";
+const DEBUG = false;
+
+function assertHttps(url) {
+  if (new URL(url).protocol !== "https:") {
+    throw new Error(`Non-HTTPS requests are not allowed: ${url}`);
+  }
+}
+
+function sanitizeId(id) {
+  const s = String(id || "").replace(/[^a-zA-Z0-9_-]/g, "");
+  if (!s) throw new Error("Invalid ID format");
+  return s;
+}
 
 const STORAGE_KEYS = {
   complianceToken: "complianceToken",
@@ -12,9 +22,7 @@ const STORAGE_KEYS = {
   lastEmail: "authLastEmail",
 };
 
-console.log("BACKGROUND FILE LOADED");
-console.log("API_BASE_URL =", API_BASE_URL);
-console.log("AUTH_BASE_URL =", AUTH_BASE_URL);
+if (DEBUG) console.log("BACKGROUND FILE LOADED");
 
 function buildSafeCasePayload(payload = {}) {
   return {
@@ -238,31 +246,47 @@ function extractPartNumbersForLookup(analyzeResult, payload) {
   return fromRawText;
 }
 
+// Refresh token is kept only in memory — never persisted to storage.
+let _sessionRefreshToken = null;
+
 async function getStoredAuth() {
   const result = await chrome.storage.local.get([
     STORAGE_KEYS.complianceToken,
-    STORAGE_KEYS.refreshToken,
     STORAGE_KEYS.user,
     STORAGE_KEYS.lastEmail,
   ]);
 
+  const stored = result[STORAGE_KEYS.complianceToken];
+  let complianceToken = null;
+
+  if (stored && typeof stored === "object" && stored.token) {
+    if (!stored.expiresAt || stored.expiresAt > Date.now()) {
+      complianceToken = stored.token;
+    } else {
+      await chrome.storage.local.remove([STORAGE_KEYS.complianceToken]);
+    }
+  }
+
   return {
-    complianceToken: result[STORAGE_KEYS.complianceToken] || null,
-    refreshToken: result[STORAGE_KEYS.refreshToken] || null,
+    complianceToken,
+    refreshToken: _sessionRefreshToken,
     user: result[STORAGE_KEYS.user] || null,
     lastEmail: result[STORAGE_KEYS.lastEmail] || "",
   };
 }
 
-async function setStoredAuth({ complianceToken, refreshToken, user, lastEmail }) {
+async function setStoredAuth({ complianceToken, refreshToken, user, lastEmail, expiresAt }) {
   const payload = {};
 
   if (typeof complianceToken === "string") {
-    payload[STORAGE_KEYS.complianceToken] = complianceToken;
+    // Store with expiry — default 1 hour if not provided
+    const expiry = typeof expiresAt === "number" ? expiresAt : Date.now() + 3600_000;
+    payload[STORAGE_KEYS.complianceToken] = { token: complianceToken, expiresAt: expiry };
   }
 
+  // Never persist refresh token — keep in memory only
   if (typeof refreshToken === "string") {
-    payload[STORAGE_KEYS.refreshToken] = refreshToken;
+    _sessionRefreshToken = refreshToken;
   }
 
   if (user) {
@@ -277,9 +301,10 @@ async function setStoredAuth({ complianceToken, refreshToken, user, lastEmail })
 }
 
 async function clearStoredAuth({ keepLastEmail = true } = {}) {
+  _sessionRefreshToken = null;
+
   const keysToRemove = [
     STORAGE_KEYS.complianceToken,
-    STORAGE_KEYS.refreshToken,
     STORAGE_KEYS.user,
   ];
 
@@ -291,6 +316,8 @@ async function clearStoredAuth({ keepLastEmail = true } = {}) {
 }
 
 async function postJson(url, body, token = null) {
+  assertHttps(url);
+
   const headers = {
     "Content-Type": "application/json",
   };
@@ -531,8 +558,6 @@ async function callComplianceApi(path, body, allowRetry = true) {
 
     const parsed = await parseResponse(res);
 
-    console.log("API RESPONSE:", path, parsed.status, parsed.text);
-
     if (parsed.status === 401 && allowRetry) {
       const refreshed = await refreshAndIssueExtensionToken();
 
@@ -622,9 +647,6 @@ async function handleCaseContext(rawPayload) {
 
 const materialQueries = extractPartNumbersForLookup(analyzeResult, payload);
 const requestedRegulations = extractRequestedRegulations(analyzeResult);
-
-console.log("materialQueries for lookup:", materialQueries);
-console.log("requestedRegulations for lookup:", requestedRegulations);
 
   let componentSuppliersResult = {
     ok: true,
@@ -754,8 +776,6 @@ async function callComplianceApiMethod(method, path, body = null, allowRetry = t
 
     const parsed = await parseResponse(res);
 
-    console.log("API RESPONSE:", method, path, parsed.status, parsed.text);
-
     if (parsed.status === 401 && allowRetry) {
       const refreshed = await refreshAndIssueExtensionToken();
       if (!refreshed.ok) {
@@ -865,16 +885,28 @@ async function handleDeleteOutreach(payload) {
 const REMINDERS_KEY = "outreachReminders";
 
 async function handleSetOutreachReminder({ recordId, remindAt, supplierName, subject }) {
-  if (!recordId || !remindAt) return { ok: false, error: "Missing recordId or remindAt" };
-  const alarmName = `outreach_${recordId}`;
-  const when = new Date(remindAt).getTime();
-  if (isNaN(when) || when <= Date.now()) return { ok: false, error: "Reminder date must be in the future" };
+  if (!recordId || typeof recordId !== "string" || !/^[a-zA-Z0-9_-]{1,100}$/.test(recordId)) {
+    return { ok: false, error: "Invalid recordId format" };
+  }
+  if (!remindAt) return { ok: false, error: "Missing remindAt" };
 
+  const when = new Date(remindAt).getTime();
+  if (isNaN(when)) return { ok: false, error: "Invalid date format" };
+  if (when <= Date.now()) return { ok: false, error: "Reminder date must be in the future" };
+  if (when > Date.now() + 365 * 86400_000) return { ok: false, error: "Reminder date too far in the future (max 1 year)" };
+
+  const alarms = await chrome.alarms.getAll();
+  if (alarms.length >= 100) return { ok: false, error: "Too many reminders set. Please delete some reminders first." };
+
+  const safeName = String(supplierName || "Unknown").slice(0, 200).trim();
+  const safeSubject = String(subject || "Outreach follow-up").slice(0, 200).trim();
+
+  const alarmName = `outreach_${recordId}`;
   chrome.alarms.create(alarmName, { when });
 
   const stored = await chrome.storage.local.get(REMINDERS_KEY);
   const reminders = stored[REMINDERS_KEY] || {};
-  reminders[recordId] = { remindAt, supplierName, subject };
+  reminders[recordId] = { remindAt, supplierName: safeName, subject: safeSubject };
   await chrome.storage.local.set({ [REMINDERS_KEY]: reminders });
 
   return { ok: true };
@@ -916,8 +948,26 @@ chrome.alarms.onAlarm.addListener(async (alarm) => {
   await chrome.storage.local.set({ [REMINDERS_KEY]: reminders });
 });
 
+const ALLOWED_MESSAGE_TYPES = new Set([
+  "SF_MATERIALS_LOOKUP", "SF_SUPPLIERS_LIBRARY", "AUTH_GET_STATE", "AUTH_LOGIN",
+  "AUTH_LOGOUT", "SF_CASE_CONTEXT", "EXT_ADD_STATEMENT", "EXT_FETCH_REGULATIONS",
+  "EXT_SEARCH_SUPPLIERS", "EXT_ADD_REGULATION", "EXT_GET_OUTREACH", "EXT_CREATE_OUTREACH",
+  "EXT_UPDATE_OUTREACH", "EXT_DELETE_OUTREACH", "EXT_SAVE_COMPLIANCE_SNAPSHOT",
+  "EXT_GET_COMPLIANCE_SNAPSHOTS", "EXT_SET_REMINDER", "EXT_CANCEL_REMINDER",
+  "EXT_GET_REMINDERS", "EXT_ADD_SUPPLIER_CONTACT", "EXT_UPDATE_SUPPLIER_CONTACT",
+  "EXT_DELETE_SUPPLIER_CONTACT",
+]);
+
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-  console.log("BACKGROUND RECEIVED MESSAGE:", message);
+  if (sender.id !== chrome.runtime.id) {
+    sendResponse({ ok: false, error: "Unauthorized sender" });
+    return false;
+  }
+
+  if (!ALLOWED_MESSAGE_TYPES.has(message?.type)) {
+    sendResponse({ ok: false, error: "Invalid message type" });
+    return false;
+  }
 
   if (message?.type === "SF_MATERIALS_LOOKUP") {
   handleManualMaterialsLookup(message.payload || {}).then(sendResponse);
@@ -1020,31 +1070,48 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
   if (message?.type === "EXT_ADD_SUPPLIER_CONTACT") {
     const { supplierId, ...contactData } = message.payload || {};
-    callComplianceApiMethod("POST", `/suppliers/${supplierId}/contacts`, contactData)
-      .then(async (result) => {
-        if (result.ok) await chrome.storage.local.remove("suppliersLibraryCache");
-        sendResponse(result);
-      });
+    try {
+      const safeId = sanitizeId(supplierId);
+      callComplianceApiMethod("POST", `/suppliers/${safeId}/contacts`, contactData)
+        .then(async (result) => {
+          if (result.ok) await chrome.storage.local.remove("suppliersLibraryCache");
+          sendResponse(result);
+        });
+    } catch {
+      sendResponse({ ok: false, error: "Invalid supplierId" });
+    }
     return true;
   }
 
   if (message?.type === "EXT_UPDATE_SUPPLIER_CONTACT") {
     const { supplierId, contactId, ...contactData } = message.payload || {};
-    callComplianceApiMethod("PATCH", `/suppliers/${supplierId}/contacts/${contactId}`, contactData)
-      .then(async (result) => {
-        if (result.ok) await chrome.storage.local.remove("suppliersLibraryCache");
-        sendResponse(result);
-      });
+    try {
+      const safeSupId = sanitizeId(supplierId);
+      const safeConId = sanitizeId(contactId);
+      callComplianceApiMethod("PATCH", `/suppliers/${safeSupId}/contacts/${safeConId}`, contactData)
+        .then(async (result) => {
+          if (result.ok) await chrome.storage.local.remove("suppliersLibraryCache");
+          sendResponse(result);
+        });
+    } catch {
+      sendResponse({ ok: false, error: "Invalid supplierId or contactId" });
+    }
     return true;
   }
 
   if (message?.type === "EXT_DELETE_SUPPLIER_CONTACT") {
     const { supplierId, contactId } = message.payload || {};
-    callComplianceApiMethod("DELETE", `/suppliers/${supplierId}/contacts/${contactId}`, {})
-      .then(async (result) => {
-        if (result.ok) await chrome.storage.local.remove("suppliersLibraryCache");
-        sendResponse(result);
-      });
+    try {
+      const safeSupId = sanitizeId(supplierId);
+      const safeConId = sanitizeId(contactId);
+      callComplianceApiMethod("DELETE", `/suppliers/${safeSupId}/contacts/${safeConId}`, {})
+        .then(async (result) => {
+          if (result.ok) await chrome.storage.local.remove("suppliersLibraryCache");
+          sendResponse(result);
+        });
+    } catch {
+      sendResponse({ ok: false, error: "Invalid supplierId or contactId" });
+    }
     return true;
   }
 });
