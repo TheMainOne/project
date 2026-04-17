@@ -3035,10 +3035,95 @@ function createSupplierCard(supplierEntry) {
 }
 
 
+// ─── Fuzzy search helpers ────────────────────────────────────────────────────
+
+function _charSequenceMatch(text, query) {
+  let qi = 0;
+  for (let i = 0; i < text.length && qi < query.length; i++) {
+    if (text[i] === query[qi]) qi++;
+  }
+  return qi === query.length;
+}
+
+function fuzzyScoreSupplier(supplier, query) {
+  if (!query) return { score: 100, matchField: null, matchValue: null };
+  const q = query.toLowerCase().trim();
+  if (!q) return { score: 100, matchField: null, matchValue: null };
+
+  const targets = [
+    { field: "name",       value: String(supplier.supplierName || "").toLowerCase(),  weight: 1.0,  display: supplier.supplierName },
+    { field: "code",       value: String(supplier.supplierCode || "").toLowerCase(),  weight: 0.95, display: supplier.supplierCode },
+    ...(Array.isArray(supplier.aliases) ? supplier.aliases.map(a => ({
+      field: "alias", value: String(a || "").toLowerCase(), weight: 0.85, display: a,
+    })) : []),
+    ...(Array.isArray(supplier.regulationSummary) ? supplier.regulationSummary.map(r => ({
+      field: "regulation",
+      value: `${(r.regulationCode || "").toLowerCase()} ${(r.regulationName || "").toLowerCase()}`.trim(),
+      weight: 0.75,
+      display: r.regulationCode ? `${r.regulationCode}${r.regulationName ? " — " + r.regulationName : ""}` : r.regulationName,
+    })) : []),
+    ...(Array.isArray(supplier.assertions) ? supplier.assertions.slice(0, 10).map(a => ({
+      field: "document",
+      value: String(a?.document?.title || "").toLowerCase(),
+      weight: 0.6,
+      display: a?.document?.title,
+    })) : []),
+    ...(Array.isArray(supplier.contacts) ? supplier.contacts.map(c => ({
+      field: "contact",
+      value: `${(c.name || "").toLowerCase()} ${(c.email || "").toLowerCase()}`.trim(),
+      weight: 0.55,
+      display: c.name || c.email,
+    })) : []),
+  ];
+
+  let bestScore = 0, bestField = null, bestDisplay = null;
+
+  for (const { field, value, weight, display } of targets) {
+    if (!value) continue;
+    let raw = 0;
+    if (value === q) raw = 100;
+    else if (value.startsWith(q)) raw = 90;
+    else if (value.includes(q)) raw = 75;
+    else {
+      const words = value.split(/[\s\-_/]+/);
+      if (words.some(w => w.startsWith(q))) raw = 65;
+      else if (q.length >= 3 && _charSequenceMatch(value, q)) raw = 40;
+    }
+    const weighted = raw * weight;
+    if (weighted > bestScore) {
+      bestScore = weighted;
+      bestField = field;
+      bestDisplay = display;
+    }
+  }
+
+  return { score: bestScore, matchField: bestField, matchValue: bestDisplay };
+}
+
+function _highlightText(text, query) {
+  const wrapper = document.createElement("span");
+  if (!query || !text) { wrapper.textContent = text || ""; return wrapper; }
+  const lower = text.toLowerCase();
+  const q = query.toLowerCase();
+  const idx = lower.indexOf(q);
+  if (idx === -1) { wrapper.textContent = text; return wrapper; }
+  if (idx > 0) wrapper.appendChild(document.createTextNode(text.slice(0, idx)));
+  const mark = document.createElement("mark");
+  mark.textContent = text.slice(idx, idx + q.length);
+  Object.assign(mark.style, { background: "#fef3c7", color: "#111", borderRadius: "2px", padding: "0 1px" });
+  wrapper.appendChild(mark);
+  if (idx + q.length < text.length) wrapper.appendChild(document.createTextNode(text.slice(idx + q.length)));
+  return wrapper;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+
 function getFilteredLibrarySuppliers(suppliers) {
   const regFilter = currentCaseAnalysisState.suppliersLibraryRegFilter || "";
   const statusFilter = currentCaseAnalysisState.suppliersLibraryStatusFilter || "all";
-  return suppliers.filter((s) => {
+  const query = (currentCaseAnalysisState.suppliersLibrarySearch || "").trim();
+
+  let result = suppliers.filter((s) => {
     const regs = Array.isArray(s.regulationSummary) ? s.regulationSummary : [];
     if (regFilter) {
       const hasReg = regs.some(
@@ -3052,8 +3137,21 @@ function getFilteredLibrarySuppliers(suppliers) {
       const hasStatus = regs.some((r) => r.status === statusFilter);
       if (!hasStatus) return false;
     }
+    if (query) {
+      const { score } = fuzzyScoreSupplier(s, query);
+      if (score < 28) return false;
+    }
     return true;
   });
+
+  if (query) {
+    result = result
+      .map(s => ({ s, score: fuzzyScoreSupplier(s, query).score }))
+      .sort((a, b) => b.score - a.score)
+      .map(({ s }) => s);
+  }
+
+  return result;
 }
 
 function createSuppliersLibraryFilterBar(allSuppliers) {
@@ -3168,8 +3266,9 @@ function createSuppliersLibrarySearchBar() {
 
   const input = document.createElement("input");
   input.type = "text";
+  input.id = "sf-compliance-lib-search";
   input.value = currentCaseAnalysisState.suppliersLibrarySearch || "";
-  input.placeholder = "Search suppliers by name, code, or alias";
+  input.placeholder = "Search by name, code, alias, regulation, document…";
 
   Object.assign(input.style, {
     flex: "1",
@@ -3180,7 +3279,16 @@ function createSuppliersLibrarySearchBar() {
   });
 
   input.addEventListener("input", (event) => {
-    currentCaseAnalysisState.suppliersLibrarySearch = event.target.value || "";
+    const val = event.target.value || "";
+    const cursorPos = event.target.selectionStart;
+    currentCaseAnalysisState.suppliersLibrarySearch = val;
+    rerenderCurrentCaseToast();
+    // Restore focus and cursor position after DOM rebuild
+    const rebuilt = document.getElementById("sf-compliance-lib-search");
+    if (rebuilt) {
+      rebuilt.focus();
+      rebuilt.setSelectionRange(cursorPos, cursorPos);
+    }
   });
 
   input.addEventListener("keydown", (event) => {
@@ -3247,6 +3355,9 @@ function createSupplierLibraryListItem(supplier) {
     String(currentCaseAnalysisState.selectedSupplierLibraryId || "") ===
     String(supplier?.supplierId || "");
 
+  const query = (currentCaseAnalysisState.suppliersLibrarySearch || "").trim();
+  const matchInfo = query ? fuzzyScoreSupplier(supplier, query) : null;
+
   const item = document.createElement("button");
   item.type = "button";
 
@@ -3270,34 +3381,47 @@ function createSupplierLibraryListItem(supplier) {
   });
 
   const name = document.createElement("div");
-  name.textContent = supplier?.supplierName || "Unknown supplier";
-  Object.assign(name.style, {
-    fontWeight: "700",
-    fontSize: "14px",
-    color: "#111827",
-    marginBottom: "4px",
-  });
+  Object.assign(name.style, { fontWeight: "700", fontSize: "14px", color: "#111827", marginBottom: "4px" });
+  if (query && matchInfo?.matchField === "name") {
+    name.appendChild(_highlightText(supplier?.supplierName || "Unknown supplier", query));
+  } else {
+    name.textContent = supplier?.supplierName || "Unknown supplier";
+  }
 
   const code = document.createElement("div");
-  code.textContent = supplier?.supplierCode || "—";
-  Object.assign(code.style, {
-    fontSize: "12px",
-    color: "#6b7280",
-    marginBottom: "6px",
-  });
+  Object.assign(code.style, { fontSize: "12px", color: "#6b7280", marginBottom: "4px" });
+  if (query && matchInfo?.matchField === "code") {
+    code.appendChild(_highlightText(supplier?.supplierCode || "—", query));
+  } else {
+    code.textContent = supplier?.supplierCode || "—";
+  }
 
   const meta = document.createElement("div");
-  meta.textContent = `Documents: ${supplier?.documentsCount || 0} • Statements: ${
-    supplier?.assertionsCount || 0
-  }`;
-  Object.assign(meta.style, {
-    fontSize: "12px",
-    color: "#374151",
-  });
+  meta.textContent = `Documents: ${supplier?.documentsCount || 0} • Statements: ${supplier?.assertionsCount || 0}`;
+  Object.assign(meta.style, { fontSize: "12px", color: "#374151" });
 
   item.appendChild(name);
   item.appendChild(code);
   item.appendChild(meta);
+
+  // Show match hint for non-obvious fields (alias, regulation, document, contact)
+  if (matchInfo?.matchField && !["name", "code"].includes(matchInfo.matchField) && matchInfo.matchValue) {
+    const FIELD_LABEL = { alias: "Alias", regulation: "Regulation", document: "Document", contact: "Contact" };
+    const hint = document.createElement("div");
+    Object.assign(hint.style, {
+      marginTop: "5px",
+      fontSize: "11px",
+      color: "#0176d3",
+      background: "#eff6ff",
+      borderRadius: "5px",
+      padding: "2px 6px",
+      display: "inline-block",
+    });
+    const label = document.createTextNode(`${FIELD_LABEL[matchInfo.matchField] || matchInfo.matchField}: `);
+    hint.appendChild(label);
+    hint.appendChild(_highlightText(String(matchInfo.matchValue).slice(0, 60), query));
+    item.appendChild(hint);
+  }
 
   return item;
 }
@@ -5145,18 +5269,26 @@ function createSuppliersTabContent() {
   wrapper.appendChild(createSuppliersLibraryFilterBar(suppliers));
 
   const filteredSuppliers = getFilteredLibrarySuppliers(suppliers);
+  const activeQuery = (currentCaseAnalysisState.suppliersLibrarySearch || "").trim();
   const hasActiveFilter =
+    !!activeQuery ||
     !!currentCaseAnalysisState.suppliersLibraryRegFilter ||
     (currentCaseAnalysisState.suppliersLibraryStatusFilter || "all") !== "all";
 
   const summary = document.createElement("div");
-  summary.textContent = hasActiveFilter
-    ? `Showing ${filteredSuppliers.length} of ${suppliers.length} suppliers`
-    : `Suppliers found: ${
-        typeof currentCaseAnalysisState.suppliersLibrary?.total === "number"
-          ? currentCaseAnalysisState.suppliersLibrary.total
-          : suppliers.length
-      }`;
+  if (activeQuery) {
+    summary.textContent = filteredSuppliers.length === 0
+      ? `No suppliers matched "${activeQuery}"`
+      : `${filteredSuppliers.length} result${filteredSuppliers.length === 1 ? "" : "s"} for "${activeQuery}"`;
+  } else if (hasActiveFilter) {
+    summary.textContent = `Showing ${filteredSuppliers.length} of ${suppliers.length} suppliers`;
+  } else {
+    summary.textContent = `Suppliers found: ${
+      typeof currentCaseAnalysisState.suppliersLibrary?.total === "number"
+        ? currentCaseAnalysisState.suppliersLibrary.total
+        : suppliers.length
+    }`;
+  }
   Object.assign(summary.style, {
     fontSize: "13px",
     color: hasActiveFilter ? "#0176d3" : "#4b5563",
