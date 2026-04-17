@@ -1021,21 +1021,30 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message?.type === "EXT_ADD_SUPPLIER_CONTACT") {
     const { supplierId, ...contactData } = message.payload || {};
     callComplianceApiMethod("POST", `/suppliers/${supplierId}/contacts`, contactData)
-      .then(sendResponse);
+      .then(async (result) => {
+        if (result.ok) await chrome.storage.local.remove("suppliersLibraryCache");
+        sendResponse(result);
+      });
     return true;
   }
 
   if (message?.type === "EXT_UPDATE_SUPPLIER_CONTACT") {
     const { supplierId, contactId, ...contactData } = message.payload || {};
     callComplianceApiMethod("PATCH", `/suppliers/${supplierId}/contacts/${contactId}`, contactData)
-      .then(sendResponse);
+      .then(async (result) => {
+        if (result.ok) await chrome.storage.local.remove("suppliersLibraryCache");
+        sendResponse(result);
+      });
     return true;
   }
 
   if (message?.type === "EXT_DELETE_SUPPLIER_CONTACT") {
     const { supplierId, contactId } = message.payload || {};
     callComplianceApiMethod("DELETE", `/suppliers/${supplierId}/contacts/${contactId}`, {})
-      .then(sendResponse);
+      .then(async (result) => {
+        if (result.ok) await chrome.storage.local.remove("suppliersLibraryCache");
+        sendResponse(result);
+      });
     return true;
   }
 });

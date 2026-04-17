@@ -3755,7 +3755,15 @@ function createSupplierContactsSection(supplier) {
 
       if (!resp?.ok) {
         currentCaseAnalysisState.supplierContactForm.saving = false;
-        currentCaseAnalysisState.supplierContactForm.error = resp?.error || "Failed to save contact";
+        currentCaseAnalysisState.supplierContactForm.error = resp?.error || resp?.json?.error || "Failed to save contact";
+        rerenderCurrentCaseToast();
+        return;
+      }
+
+      const savedContact = resp.json?.contact;
+      if (!savedContact) {
+        currentCaseAnalysisState.supplierContactForm.saving = false;
+        currentCaseAnalysisState.supplierContactForm.error = "Server returned no contact data";
         rerenderCurrentCaseToast();
         return;
       }
@@ -3766,9 +3774,9 @@ function createSupplierContactsSection(supplier) {
         const s = lib.suppliers.find((x) => x.supplierId === supplierId);
         if (s) {
           if (f.mode === "add") {
-            s.contacts = [...(s.contacts || []), resp.contact];
+            s.contacts = [...(s.contacts || []), savedContact];
           } else {
-            s.contacts = (s.contacts || []).map((c) => c.contactId === f.contactId ? resp.contact : c);
+            s.contacts = (s.contacts || []).map((c) => c.contactId === f.contactId ? savedContact : c);
           }
         }
       }
