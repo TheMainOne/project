@@ -324,12 +324,53 @@ function isVisible(el) {
   return rect.width > 0 && rect.height > 0;
 }
 
+function captureFocusState(root) {
+  if (!root) return null;
+  const el = document.activeElement;
+  if (!el || !root.contains(el)) return null;
+  const focusId = el.getAttribute && el.getAttribute("data-focus-id");
+  if (!focusId) return null;
+  const state = { focusId };
+  if (typeof el.selectionStart === "number") {
+    state.selectionStart = el.selectionStart;
+    state.selectionEnd = el.selectionEnd;
+    state.selectionDirection = el.selectionDirection || "none";
+  }
+  return state;
+}
+ 
+function restoreFocusState(root, state) {
+  if (!root || !state) return;
+  const el = root.querySelector(`[data-focus-id="${state.focusId}"]`);
+  if (!el) return;
+  el.focus();
+  if (
+    typeof state.selectionStart === "number" &&
+    typeof el.setSelectionRange === "function"
+  ) {
+    try {
+      el.setSelectionRange(
+        state.selectionStart,
+        state.selectionEnd,
+        state.selectionDirection
+      );
+    } catch (_) {
+      /* setSelectionRange not supported on this input type */
+    }
+  }
+}
+
+
 function rerenderCurrentCaseToast() {
   if (!currentCaseAnalysisState.payload || !currentCaseAnalysisState.response) return;
+  const toast = document.querySelector("#sf-compliance-case-toast");
+  const body = toast ? toast.querySelector("#sf-compliance-case-toast-body") : null;
+  const focusState = captureFocusState(body);
   renderCaseToastAnalysis(
     currentCaseAnalysisState.payload,
     currentCaseAnalysisState.response
   );
+  restoreFocusState(body, focusState);
 }
 
 async function applyManualMaterialUpdate(materialIndex, newValue) {
@@ -1501,11 +1542,12 @@ function createFormField(label, inputEl) {
   return wrapper;
 }
 
-function createTextInput(value, placeholder, onChange) {
+function createTextInput(value, placeholder, onChange, focusId) {
   const input = document.createElement("input");
   input.type = "text";
   input.value = value || "";
   input.placeholder = placeholder || "";
+  if (focusId) input.setAttribute("data-focus-id", focusId);
   Object.assign(input.style, {
     width: "100%",
     boxSizing: "border-box",
@@ -1691,9 +1733,13 @@ function createAddStatementTabContent() {
     "Search existing suppliers...",
     (v) => {
       form.supplierSearchQuery = v;
-      clearTimeout(searchInput._debounce);
-      searchInput._debounce = setTimeout(() => searchSuppliersForForm(v), 300);
-    }
+ clearTimeout(form._supplierSearchDebounce);
+      form._supplierSearchDebounce = setTimeout(
+        () => searchSuppliersForForm(v),
+        300
+      );
+    },
+    "supplier-search-input"
   );
   searchWrapper.appendChild(searchInput);
 
