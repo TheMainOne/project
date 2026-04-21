@@ -436,7 +436,7 @@ complianceExtRouter.post(
         supplier: supplierInput,
         document: docInput,
         coverage,
-        regulations: regulationCodes,
+        regulations: regulationsInput,
         assertionType,
       } = req.body;
 
@@ -454,9 +454,9 @@ complianceExtRouter.post(
         });
       }
 
-      if (!Array.isArray(regulationCodes) || regulationCodes.length === 0) {
+       if (!Array.isArray(regulationsInput) || regulationsInput.length === 0) {
         return res.status(400).json({
-          error: "regulations must be a non-empty array of regulation codes",
+           error: "regulations must be a non-empty array",
         });
       }
 
@@ -469,10 +469,32 @@ complianceExtRouter.post(
         "informational",
       ];
 
-      if (!validAssertionTypes.includes(assertionType)) {
-        return res.status(400).json({
-          error: `assertionType must be one of: ${validAssertionTypes.join(", ")}`,
-        });
+      // Accept two shapes:
+      //   1) regulations: ["CODE1", "CODE2"] + top-level assertionType (legacy)
+      //   2) regulations: [{ code, assertionType }, ...] (per-regulation)
+      // Per-regulation type wins; falls back to top-level assertionType.
+      const regulationEntries = [];
+      for (const entry of regulationsInput) {
+        if (typeof entry === "string") {
+          regulationEntries.push({ code: entry, assertionType });
+        } else if (entry && typeof entry === "object" && entry.code) {
+          regulationEntries.push({
+            code: entry.code,
+            assertionType: entry.assertionType || assertionType,
+          });
+        } else {
+          return res.status(400).json({
+            error: "Each regulation must be a code string or { code, assertionType } object",
+          });
+        }
+      }
+ 
+      for (const entry of regulationEntries) {
+        if (!validAssertionTypes.includes(entry.assertionType)) {
+          return res.status(400).json({
+            error: `assertionType for "${entry.code}" must be one of: ${validAssertionTypes.join(", ")}`,
+          });
+        }
       }
 
       // ---------- Supplier: find or create ----------
@@ -578,11 +600,17 @@ complianceExtRouter.post(
 
       // ---------- Assertions: one per regulation ----------
 
-      const normalizedRegCodes = [
-        ...new Set(
-          regulationCodes.map((c) => String(c).trim().toUpperCase()).filter(Boolean)
-        ),
-      ];
+       // Map normalized code -> assertionType; dedupe while keeping first type seen.
+      const assertionTypeByCode = new Map();
+      for (const entry of regulationEntries) {
+        const normalized = String(entry.code).trim().toUpperCase();
+        if (!normalized) continue;
+        if (!assertionTypeByCode.has(normalized)) {
+          assertionTypeByCode.set(normalized, entry.assertionType);
+        }
+      }
+ 
+      const normalizedRegCodes = [...assertionTypeByCode.keys()];
 
       const regulations = await Regulation.find({
         code: { $in: normalizedRegCodes },
@@ -599,11 +627,13 @@ complianceExtRouter.post(
       const createdAssertions = [];
 
       for (const regulation of regulations) {
+        const perRegAssertionType = assertionTypeByCode.get(regulation.code);
+
         const assertion = await ComplianceAssertion.create({
           supplierId: supplier._id,
           documentId: complianceDoc._id,
           regulationId: regulation._id,
-          assertionType,
+          assertionType: perRegAssertionType,
           coverageLevel,
           scope,
           statementText: docInput.statementText || docInput.title || "",
@@ -617,13 +647,14 @@ complianceExtRouter.post(
           assertionId: assertion._id,
           regulationCode: regulation.code,
           regulationName: regulation.name,
+          assertionType: perRegAssertionType,
         });
 
         console.log(
           "[ADD-STATEMENT] Created assertion:",
           assertion._id,
           regulation.code,
-          assertionType
+          perRegAssertionType
         );
       }
 

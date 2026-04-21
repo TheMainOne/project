@@ -75,8 +75,9 @@ manualLookupLoading: false,
     dwkItemNumbers: "",
     supplierPartNumbers: "",
 
-    assertionType: "compliant",
+    defaultAssertionType: "compliant",
     selectedRegulations: [],
+    regulationAssertionTypes: {},
 
     availableRegulations: [],
     supplierSearchResults: [],
@@ -196,8 +197,9 @@ manualLookupLoading: false,
       dwkItemNumbers: "",
       supplierPartNumbers: "",
 
-      assertionType: "compliant",
+      defaultAssertionType: "compliant",
       selectedRegulations: [],
+      regulationAssertionTypes: {},
 
       availableRegulations: [],
       supplierSearchResults: [],
@@ -1502,8 +1504,11 @@ async function submitAddStatement() {
         ? form.supplierPartNumbers.split(/[\n,;\s]+/).map((n) => n.trim()).filter(Boolean)
         : [],
     },
-    regulations: form.selectedRegulations,
-    assertionType: form.assertionType,
+    regulations: form.selectedRegulations.map((code) => ({
+      code,
+      assertionType: form.regulationAssertionTypes[code] || form.defaultAssertionType,
+    })),
+    assertionType: form.defaultAssertionType,
   };
 
   const response = await sendMessageAsync({
@@ -1645,6 +1650,7 @@ function createAddStatementTabContent() {
       form.dwkItemNumbers = "";
       form.supplierPartNumbers = "";
       form.selectedRegulations = [];
+      form.regulationAssertionTypes = {};
       rerenderCurrentCaseToast();
     };
     success.appendChild(addMoreBtn);
@@ -1683,8 +1689,9 @@ function createAddStatementTabContent() {
       form.coverageType = "supplier_all";
       form.dwkItemNumbers = "";
       form.supplierPartNumbers = "";
-      form.assertionType = "compliant";
+      form.defaultAssertionType = "compliant";
       form.selectedRegulations = [];
+      form.regulationAssertionTypes = {};
       rerenderCurrentCaseToast();
     };
     success.appendChild(resetBtn);
@@ -2004,14 +2011,59 @@ function createAddStatementTabContent() {
   Object.assign(assertTitle.style, { fontWeight: "700", fontSize: "15px", marginBottom: "10px" });
   assertSection.appendChild(assertTitle);
 
-  assertSection.appendChild(createFormField("Assertion Type", createSelectInput(form.assertionType, [
+  const assertionTypeOptions = [
     { value: "compliant", label: "Compliant" },
     { value: "free_from", label: "Free From" },
     { value: "contains", label: "Contains" },
     { value: "non_compliant", label: "Non-Compliant" },
     { value: "partial", label: "Partial" },
     { value: "informational", label: "Informational" },
-  ], (v) => { form.assertionType = v; })));
+];
+ 
+  // Default assertion type + bulk Apply-to-all control
+  const defaultRow = document.createElement("div");
+  Object.assign(defaultRow.style, {
+    display: "flex",
+    gap: "8px",
+    alignItems: "flex-end",
+    marginBottom: "10px",
+  });
+ 
+  const defaultField = createFormField(
+    "Default Assertion Type (applied to newly selected regulations)",
+    createSelectInput(form.defaultAssertionType, assertionTypeOptions, (v) => {
+      form.defaultAssertionType = v;
+    })
+  );
+  defaultField.style.flex = "1";
+  defaultField.style.marginBottom = "0";
+  defaultRow.appendChild(defaultField);
+ 
+  const applyAllBtn = document.createElement("button");
+  applyAllBtn.type = "button";
+  applyAllBtn.textContent = "Apply to all selected";
+  applyAllBtn.disabled = form.selectedRegulations.length === 0;
+  Object.assign(applyAllBtn.style, {
+    padding: "8px 12px",
+    border: "1px solid #0176d3",
+    borderRadius: "8px",
+    background: applyAllBtn.disabled ? "#cbd5e1" : "#0176d3",
+    color: "#fff",
+    cursor: applyAllBtn.disabled ? "default" : "pointer",
+    fontSize: "12px",
+    fontWeight: "600",
+    whiteSpace: "nowrap",
+    height: "34px",
+  });
+  applyAllBtn.onclick = () => {
+    form.selectedRegulations.forEach((code) => {
+      form.regulationAssertionTypes[code] = form.defaultAssertionType;
+    });
+    rerenderCurrentCaseToast();
+  };
+  defaultRow.appendChild(applyAllBtn);
+ 
+  assertSection.appendChild(defaultRow);
 
   // Regulations checkboxes
   const regLabel = document.createElement("div");
@@ -2056,8 +2108,10 @@ function createAddStatementTabContent() {
       checkbox.onchange = () => {
         if (checkbox.checked) {
           form.selectedRegulations.push(reg.code);
+          form.regulationAssertionTypes[reg.code] = form.defaultAssertionType;
         } else {
           form.selectedRegulations = form.selectedRegulations.filter((c) => c !== reg.code);
+           delete form.regulationAssertionTypes[reg.code];
         }
         rerenderCurrentCaseToast();
       };
@@ -2068,6 +2122,92 @@ function createAddStatementTabContent() {
     });
 
     assertSection.appendChild(regGrid);
+
+     // Per-regulation assertion types for selected regulations
+    if (form.selectedRegulations.length > 0) {
+      const perRegSection = document.createElement("div");
+      Object.assign(perRegSection.style, {
+        marginTop: "12px",
+        padding: "10px",
+        border: "1px solid #d0d7de",
+        borderRadius: "8px",
+        background: "#ffffff",
+      });
+ 
+      const perRegHeader = document.createElement("div");
+      Object.assign(perRegHeader.style, {
+        display: "flex",
+        justifyContent: "space-between",
+        alignItems: "center",
+        marginBottom: "8px",
+      });
+ 
+      const perRegTitle = document.createElement("div");
+      perRegTitle.textContent = `Assertion type per selected regulation (${form.selectedRegulations.length})`;
+      Object.assign(perRegTitle.style, {
+        fontWeight: "600",
+        fontSize: "12px",
+        color: "#374151",
+      });
+      perRegHeader.appendChild(perRegTitle);
+ 
+      const hint = document.createElement("div");
+      hint.textContent = "Set a type for each regulation";
+      Object.assign(hint.style, {
+        fontSize: "11px",
+        color: "#6b7280",
+      });
+      perRegHeader.appendChild(hint);
+ 
+      perRegSection.appendChild(perRegHeader);
+ 
+      const perRegGrid = document.createElement("div");
+      Object.assign(perRegGrid.style, {
+        display: "grid",
+        gridTemplateColumns: "1fr 1fr",
+        gap: "6px",
+      });
+ 
+      form.selectedRegulations.forEach((code) => {
+        const row = document.createElement("div");
+        Object.assign(row.style, {
+          display: "flex",
+          alignItems: "center",
+          gap: "6px",
+          padding: "4px 6px",
+          border: "1px solid #e5e7eb",
+          borderRadius: "6px",
+          background: "#f9fafb",
+        });
+ 
+        const codeSpan = document.createElement("span");
+        codeSpan.textContent = code;
+        Object.assign(codeSpan.style, {
+          fontSize: "12px",
+          fontWeight: "600",
+          minWidth: "70px",
+          color: "#111827",
+        });
+        row.appendChild(codeSpan);
+ 
+        const currentType = form.regulationAssertionTypes[code] || form.defaultAssertionType;
+        const perSelect = createSelectInput(currentType, assertionTypeOptions, (v) => {
+          form.regulationAssertionTypes[code] = v;
+          rerenderCurrentCaseToast();
+        });
+        Object.assign(perSelect.style, {
+          flex: "1",
+          padding: "4px 6px",
+          fontSize: "12px",
+        });
+        row.appendChild(perSelect);
+ 
+        perRegGrid.appendChild(row);
+      });
+ 
+      perRegSection.appendChild(perRegGrid);
+      assertSection.appendChild(perRegSection);
+    }
 
     // --- Кнопка + New Regulation и форма ---
     const newRegBtn = document.createElement("button");
