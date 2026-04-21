@@ -6038,25 +6038,7 @@ function renderCaseToastAuthRequired(payload, message = "Sign in required") {
   body.appendChild(createInfoRow("Status", message));
 }
 
-function updateLauncherState() {
-  const launcher = getOrCreateAuthLauncher();
-
-  if (authState.authenticated) {
-    launcher.textContent = "CA";
-    launcher.title = authState.user?.email
-      ? `Compliance Assistant — signed in as ${authState.user.email}`
-      : "Compliance Assistant — connected";
-    launcher.style.background = "#0a7b34";
-    launcher.style.color = "#ffffff";
-    launcher.style.borderColor = "#08662b";
-  } else {
-    launcher.textContent = "CA";
-    launcher.title = "Compliance Assistant — sign in required";
-    launcher.style.background = "#ffffff";
-    launcher.style.color = "#111111";
-    launcher.style.borderColor = "#d0d7de";
-  }
-}
+function updateLauncherState() {}
 
 function toggleAuthCard() {
   const card = getOrCreateAuthCard();
@@ -6075,62 +6057,10 @@ function toggleAuthCard() {
   }
 }
 
-function getOrCreateAuthLauncher() {
-  let launcher = document.getElementById("sf-compliance-auth-launcher");
-
-  if (launcher) return launcher;
-
-  launcher = document.createElement("button");
-  launcher.id = "sf-compliance-auth-launcher";
-  launcher.type = "button";
-  launcher.textContent = "CA";
-  launcher.title = "Compliance Assistant";
-
-  Object.assign(launcher.style, {
-    position: "fixed",
-    top: "16px",
-    right: "16px",
-    zIndex: "1000001",
-    width: "42px",
-    height: "42px",
-    borderRadius: "999px",
-    border: "1px solid #d0d7de",
-    background: "#ffffff",
-    color: "#111111",
-    fontSize: "13px",
-    fontWeight: "700",
-    cursor: "pointer",
-    boxShadow: "0 8px 22px rgba(0,0,0,0.14)",
-  });
-
-  launcher.addEventListener("click", () => {
-    toggleAuthCard();
-  });
-
-  document.body.appendChild(launcher);
-
-  return launcher;
-}
-
-function ensureLauncherVisible() {
-  const launcher = getOrCreateAuthLauncher();
-  launcher.style.display = "block";
-  updateLauncherState();
-}
-
-function hideLauncher() {
-  const launcher = document.getElementById("sf-compliance-auth-launcher");
-  if (launcher) {
-    launcher.style.display = "none";
-  }
-}
-
-function showLauncher() {
-  const launcher = document.getElementById("sf-compliance-auth-launcher");
-  if (launcher) {
-    launcher.style.display = "block";
-  }
-}
+function getOrCreateAuthLauncher() { return null; }
+function ensureLauncherVisible() {}
+function hideLauncher() {}
+function showLauncher() {}
 
 function getOrCreateAuthCard() {
   let card = document.getElementById("sf-compliance-auth-card");
@@ -6181,6 +6111,30 @@ function getOrCreateAuthCard() {
     </div>
 
     <div id="sf-compliance-auth-form">
+      <div style="display:flex; gap:0; margin-bottom:12px; border:1px solid #d0d7de; border-radius:9px; overflow:hidden;">
+        <button
+          id="sf-compliance-tab-login"
+          type="button"
+          style="flex:1; padding:7px; border:none; background:#0176d3; color:#fff; font-size:12px; font-weight:700; cursor:pointer;"
+        >Sign in</button>
+        <button
+          id="sf-compliance-tab-register"
+          type="button"
+          style="flex:1; padding:7px; border:none; background:#ffffff; color:#444; font-size:12px; font-weight:600; cursor:pointer;"
+        >Register</button>
+      </div>
+
+      <div id="sf-compliance-name-row" style="display:none; margin-bottom:8px;">
+        <label style="display:block; font-weight:600; margin-bottom:4px;">Name</label>
+        <input
+          id="sf-compliance-auth-name"
+          type="text"
+          autocomplete="name"
+          style="width:100%; box-sizing:border-box; padding:8px 10px; border:1px solid #c9d1d9; border-radius:8px;"
+          placeholder="Your name"
+        />
+      </div>
+
       <div style="margin-bottom:8px;">
         <label style="display:block; font-weight:600; margin-bottom:4px;">Email</label>
         <input
@@ -6238,12 +6192,36 @@ function getOrCreateAuthCard() {
 
   document.body.appendChild(card);
 
+  const nameInput = card.querySelector("#sf-compliance-auth-name");
+  const nameRow = card.querySelector("#sf-compliance-name-row");
   const emailInput = card.querySelector("#sf-compliance-auth-email");
   const passwordInput = card.querySelector("#sf-compliance-auth-password");
   const submitBtn = card.querySelector("#sf-compliance-auth-submit");
   const signOutBtn = card.querySelector("#sf-compliance-auth-signout");
   const closeBtn = card.querySelector("#sf-compliance-auth-close");
   const openPanelBtn = card.querySelector("#sf-compliance-open-panel");
+  const tabLogin = card.querySelector("#sf-compliance-tab-login");
+  const tabRegister = card.querySelector("#sf-compliance-tab-register");
+
+  card._authMode = "login";
+
+  function setAuthMode(mode) {
+    card._authMode = mode;
+    const isRegister = mode === "register";
+
+    nameRow.style.display = isRegister ? "block" : "none";
+    submitBtn.textContent = isRegister ? "Create account" : "Sign in";
+
+    tabLogin.style.background = isRegister ? "#ffffff" : "#0176d3";
+    tabLogin.style.color = isRegister ? "#444" : "#fff";
+    tabRegister.style.background = isRegister ? "#0176d3" : "#ffffff";
+    tabRegister.style.color = isRegister ? "#fff" : "#444";
+
+    setAuthStatus("");
+  }
+
+  tabLogin.addEventListener("click", () => setAuthMode("login"));
+  tabRegister.addEventListener("click", () => setAuthMode("register"));
 
   const handleEnter = (event) => {
     if (event.key === "Enter") {
@@ -6252,6 +6230,7 @@ function getOrCreateAuthCard() {
     }
   };
 
+  nameInput.addEventListener("keydown", handleEnter);
   emailInput.addEventListener("keydown", handleEnter);
   passwordInput.addEventListener("keydown", handleEnter);
   submitBtn.addEventListener("click", handleAuthSubmit);
@@ -6277,13 +6256,19 @@ function setAuthBusy(isBusy) {
   const card = getOrCreateAuthCard();
   const submitBtn = card.querySelector("#sf-compliance-auth-submit");
   const signOutBtn = card.querySelector("#sf-compliance-auth-signout");
+  const nameInput = card.querySelector("#sf-compliance-auth-name");
   const emailInput = card.querySelector("#sf-compliance-auth-email");
   const passwordInput = card.querySelector("#sf-compliance-auth-password");
+  const isRegister = card._authMode === "register";
 
   if (submitBtn) {
     submitBtn.disabled = isBusy;
     submitBtn.style.opacity = isBusy ? "0.7" : "1";
-    submitBtn.textContent = isBusy ? "Signing in..." : "Sign in";
+    if (isBusy) {
+      submitBtn.textContent = isRegister ? "Creating account..." : "Signing in...";
+    } else {
+      submitBtn.textContent = isRegister ? "Create account" : "Sign in";
+    }
   }
 
   if (signOutBtn) {
@@ -6291,6 +6276,7 @@ function setAuthBusy(isBusy) {
     signOutBtn.style.opacity = isBusy ? "0.7" : "1";
   }
 
+  if (nameInput) nameInput.disabled = isBusy;
   if (emailInput) emailInput.disabled = isBusy;
   if (passwordInput) passwordInput.disabled = isBusy;
 }
@@ -6305,6 +6291,8 @@ function syncAuthCardUi() {
   const submitBtn = card.querySelector("#sf-compliance-auth-submit");
   const signOutBtn = card.querySelector("#sf-compliance-auth-signout");
   const openPanelBtn = card.querySelector("#sf-compliance-open-panel");
+  const tabRow = card.querySelector("#sf-compliance-tab-login")?.parentElement;
+  const nameRow = card.querySelector("#sf-compliance-name-row");
 
   if (emailInput && authState.lastEmail && !emailInput.value) {
     emailInput.value = authState.lastEmail;
@@ -6316,13 +6304,11 @@ function syncAuthCardUi() {
       authState.user?.email || authState.user?.name || "Authenticated user";
     connectionLine.textContent = "Connected";
 
-    if (passwordInput) {
-      passwordInput.value = "";
-    }
+    if (tabRow) tabRow.style.display = "none";
+    if (nameRow) nameRow.style.display = "none";
+    if (passwordInput) passwordInput.value = "";
 
-    if (submitBtn) {
-      submitBtn.style.display = "none";
-    }
+    if (submitBtn) submitBtn.style.display = "none";
 
     if (signOutBtn) {
       signOutBtn.style.display = "inline-block";
@@ -6338,18 +6324,15 @@ function syncAuthCardUi() {
     userLine.textContent = "";
     connectionLine.textContent = "";
 
+    if (tabRow) tabRow.style.display = "flex";
+
     if (submitBtn) {
       submitBtn.style.display = "inline-block";
       submitBtn.style.flex = "1";
     }
 
-    if (signOutBtn) {
-      signOutBtn.style.display = "none";
-    }
-
-    if (openPanelBtn) {
-      openPanelBtn.style.display = "none";
-    }
+    if (signOutBtn) signOutBtn.style.display = "none";
+    if (openPanelBtn) openPanelBtn.style.display = "none";
   }
 
   updateLauncherState();
@@ -6387,11 +6370,19 @@ function hideAuthCard() {
 
 async function handleAuthSubmit() {
   const card = getOrCreateAuthCard();
+  const isRegister = card._authMode === "register";
+  const nameInput = card.querySelector("#sf-compliance-auth-name");
   const emailInput = card.querySelector("#sf-compliance-auth-email");
   const passwordInput = card.querySelector("#sf-compliance-auth-password");
 
+  const name = String(nameInput?.value || "").trim();
   const email = String(emailInput?.value || "").trim();
   const password = String(passwordInput?.value || "");
+
+  if (isRegister && !name) {
+    setAuthStatus("Enter your name.", "#b42318");
+    return;
+  }
 
   if (!email || !password) {
     setAuthStatus("Enter email and password.", "#b42318");
@@ -6399,24 +6390,20 @@ async function handleAuthSubmit() {
   }
 
   setAuthBusy(true);
-  setAuthStatus("Signing in...");
+  setAuthStatus(isRegister ? "Creating account..." : "Signing in...");
 
-  const response = await sendMessageAsync({
-    type: "AUTH_LOGIN",
-    payload: { email, password },
-  });
+  const response = await sendMessageAsync(
+    isRegister
+      ? { type: "AUTH_REGISTER", payload: { name, email, password } }
+      : { type: "AUTH_LOGIN", payload: { email, password } }
+  );
 
   setAuthBusy(false);
 
   if (!response?.ok) {
-    authState = {
-      ...authState,
-      authenticated: false,
-      user: null,
-      lastEmail: email,
-    };
+    authState = { ...authState, authenticated: false, user: null, lastEmail: email };
     syncAuthCardUi();
-    setAuthStatus(response?.error || "Sign in failed.", "#b42318");
+    setAuthStatus(response?.error || (isRegister ? "Registration failed." : "Sign in failed."), "#b42318");
     return;
   }
 
@@ -6426,9 +6413,8 @@ async function handleAuthSubmit() {
     lastEmail: email,
   };
 
-  if (passwordInput) {
-    passwordInput.value = "";
-  }
+  if (passwordInput) passwordInput.value = "";
+  if (nameInput) nameInput.value = "";
 
   syncAuthCardUi();
   setAuthStatus("Connected.", "#0a7b34");
@@ -10165,7 +10151,6 @@ window.addEventListener("hashchange", handlePotentialRouteChange);
 
 chrome.runtime.onMessage.addListener((message) => {
   if (message?.type === "OPEN_PANEL") {
-    ensureLauncherVisible();
     const card = getOrCreateAuthCard();
     card.style.display = "block";
     syncAuthCardUi();

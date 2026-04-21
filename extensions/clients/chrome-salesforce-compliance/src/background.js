@@ -335,6 +335,68 @@ async function postJson(url, body, token = null) {
   return parseResponse(res);
 }
 
+async function registerAndIssueExtensionToken({ name, email, password }) {
+  try {
+    const normalizedEmail = String(email || "").trim().toLowerCase();
+    const safeName = String(name || "").trim();
+
+    const registerResult = await postJson(`${AUTH_BASE_URL}/register`, {
+      name: safeName,
+      email: normalizedEmail,
+      password,
+    });
+
+    if (!registerResult.ok) {
+      return {
+        ok: false,
+        error: getErrorMessage(registerResult, "Registration failed"),
+      };
+    }
+
+    const accessToken = registerResult?.json?.tokens?.accessToken;
+    const refreshToken = registerResult?.json?.tokens?.refreshToken;
+    const user = registerResult?.json?.user || null;
+
+    if (!accessToken || !refreshToken) {
+      return {
+        ok: false,
+        error: "Registration succeeded but tokens were not returned",
+      };
+    }
+
+    const extensionResult = await postJson(
+      `${AUTH_BASE_URL}/extension-token`,
+      { scopes: ["compliance:read", "compliance:analyze"] },
+      accessToken
+    );
+
+    if (!extensionResult.ok) {
+      return {
+        ok: false,
+        error: getErrorMessage(extensionResult, "Failed to issue extension token"),
+      };
+    }
+
+    const complianceToken = extensionResult?.json?.token;
+
+    if (!complianceToken) {
+      return { ok: false, error: "Extension token was not returned" };
+    }
+
+    await setStoredAuth({ complianceToken, refreshToken, user, lastEmail: normalizedEmail });
+
+    return {
+      ok: true,
+      authenticated: true,
+      user,
+      scope: extensionResult?.json?.scope || "",
+    };
+  } catch (err) {
+    console.error("registerAndIssueExtensionToken failed:", err);
+    return { ok: false, error: err?.message || "Registration failed" };
+  }
+}
+
 async function loginAndIssueExtensionToken({ email, password }) {
   try {
     const normalizedEmail = String(email || "").trim().toLowerCase();
@@ -950,7 +1012,7 @@ chrome.alarms.onAlarm.addListener(async (alarm) => {
 
 const ALLOWED_MESSAGE_TYPES = new Set([
   "SF_MATERIALS_LOOKUP", "SF_SUPPLIERS_LIBRARY", "AUTH_GET_STATE", "AUTH_LOGIN",
-  "AUTH_LOGOUT", "SF_CASE_CONTEXT", "EXT_ADD_STATEMENT", "EXT_FETCH_REGULATIONS",
+  "AUTH_REGISTER", "AUTH_LOGOUT", "SF_CASE_CONTEXT", "EXT_ADD_STATEMENT", "EXT_FETCH_REGULATIONS",
   "EXT_SEARCH_SUPPLIERS", "EXT_ADD_REGULATION", "EXT_GET_OUTREACH", "EXT_CREATE_OUTREACH",
   "EXT_UPDATE_OUTREACH", "EXT_DELETE_OUTREACH", "EXT_SAVE_COMPLIANCE_SNAPSHOT",
   "EXT_GET_COMPLIANCE_SNAPSHOTS", "EXT_SET_REMINDER", "EXT_CANCEL_REMINDER",
@@ -986,6 +1048,11 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
   if (message?.type === "AUTH_LOGIN") {
     loginAndIssueExtensionToken(message.payload || {}).then(sendResponse);
+    return true;
+  }
+
+  if (message?.type === "AUTH_REGISTER") {
+    registerAndIssueExtensionToken(message.payload || {}).then(sendResponse);
     return true;
   }
 

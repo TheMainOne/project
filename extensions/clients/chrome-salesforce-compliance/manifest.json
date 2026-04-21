@@ -3,11 +3,11 @@
   "name": "Salesforce Compliance Assistant",
   "version": "0.1.0",
   "description": "Reads Salesforce case context and helps handle customer inquiries related to compliance.",
-  "permissions": ["storage", "activeTab", "tabs", "scripting", "alarms", "notifications"],
   "action": {
     "default_popup": "popup.html",
     "default_title": "Compliance Assistant"
   },
+  "permissions": ["storage", "activeTab", "tabs", "scripting", "alarms", "notifications"],
   "host_permissions": [
     "<all_urls>"
   ],
