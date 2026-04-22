@@ -7275,6 +7275,28 @@ function buildAnalyticsData(suppliersLibrary) {
     return "missing";
   }
 
+function classifyNonCompliance(assertionsForReg) {
+    const assertions = Array.isArray(assertionsForReg) ? assertionsForReg : [];
+    const active = assertions.filter(isAssertionActive);
+    const hasNonCompliant = active.some(
+      (a) => String(a?.assertionType || "").toLowerCase() === "non_compliant"
+    );
+    if (!hasNonCompliant) return null;
+ 
+    const hasFullScopeNC = active.some(
+      (a) =>
+        String(a?.assertionType || "").toLowerCase() === "non_compliant" &&
+        normalizeCoverageBucket(a) === "supplier_all"
+    );
+    const hasPositive = active.some((a) => {
+      const t = String(a?.assertionType || "").toLowerCase();
+      return t === "compliant" || t === "partial" || t === "free_from" || t === "contains";
+    });
+ 
+    return hasFullScopeNC && !hasPositive ? "full" : "partial";
+  }
+ 
+
   // Collect all unique regulation codes from assertions first, fallback to regulationSummary
   const allRegCodes = new Map();
 
@@ -7355,12 +7377,16 @@ const cells = regulations.map((reg) => {
   const assertionsForReg = assertionsByReg.get(reg.code) || [];
   const status = resolveRegulationStatus(assertionsForReg);
   const scopeSummary = buildScopeSummary(assertionsForReg);
+   const nonComplianceTier = status === "non_compliant"
+    ? classifyNonCompliance(assertionsForReg)
+    : null;
 
   return {
     regulationCode: reg.code,
     status,
     scopeSummary,
     assertions: assertionsForReg,
+    nonComplianceTier,
   };
 });
 
@@ -7389,17 +7415,26 @@ const cells = regulations.map((reg) => {
     (row) => row.coveredCount === row.totalCount && row.totalCount > 0
   ).length;
 
-  const withGaps = matrix.filter((row) => {
-    const hasAnyCoverage = row.cells.some(
-      (c) =>
-        c.status === "covered" ||
-        c.status === "partial" ||
-        c.status === "informational" ||
-        c.status === "expired"
-    );
-    const notFullyCovered = row.coveredCount < row.totalCount;
-    return hasAnyCoverage && notFullyCovered;
-  }).length;
+const withGaps = matrix.filter((row) => {
+  const hasAnyCoverage = row.cells.some(
+    (c) =>
+      c.status === "covered" ||
+      c.status === "partial" ||
+      c.status === "informational" ||
+      c.status === "expired" ||
+      c.status === "non_compliant"
+  );
+
+  const hasGap = row.cells.some(
+    (c) =>
+      c.status === "missing" ||
+      c.status === "partial" ||
+      c.status === "expired" ||
+      c.status === "non_compliant"
+  );
+
+  return hasAnyCoverage && hasGap;
+}).length;
 
   const noCoverage = matrix.filter((row) =>
     row.cells.every((c) => c.status === "missing")
@@ -7462,6 +7497,8 @@ const cells = regulations.map((reg) => {
     let missing = 0;
     let expired = 0;
     let nonCompliant = 0;
+    let nonCompliantFull = 0;
+    let nonCompliantPartial = 0;
     let informational = 0;
 
     matrix.forEach((row) => {
@@ -7471,23 +7508,54 @@ const cells = regulations.map((reg) => {
       if (status === "covered") covered++;
       else if (status === "partial") partial++;
       else if (status === "expired") expired++;
-      else if (status === "non_compliant") nonCompliant++;
-      else if (status === "informational") informational++;
+      else if (status === "non_compliant") {
+        nonCompliant++;
+ if (cell?.nonComplianceTier === "full") nonCompliantFull++;
+        else nonCompliantPartial++;
+      } else if (status === "informational") informational++;
       else missing++;
     });
 
-    return {
-      code: reg.code,
-      name: reg.name,
-      covered,
-      partial,
-      missing,
-      expired,
-      nonCompliant,
-      informational,
-      total: totalSuppliers,
-      coverageRate: totalSuppliers > 0 ? covered / totalSuppliers : 0,
-    };
+const total = totalSuppliers;
+
+const coverageRate = total > 0 ? covered / total : 0;
+const partialRate = total > 0 ? partial / total : 0;
+const expiredRate = total > 0 ? expired / total : 0;
+const nonCompliantRate = total > 0 ? nonCompliant / total : 0;
+const missingRate = total > 0 ? missing / total : 0;
+
+// Чем выше riskScore, тем хуже regulation.
+// non_compliant даём самый большой вес.
+const riskScore =
+  nonCompliant * 5 +
+  expired * 3 +
+  partial * 2 +
+  missing * 1;
+
+return {
+  code: reg.code,
+  name: reg.name,
+
+  covered,
+  partial,
+  missing,
+  expired,
+  informational,
+
+  nonCompliant,
+  nonCompliantFull,
+  nonCompliantPartial,
+
+  total,
+
+  coverageRate,
+  partialRate,
+  expiredRate,
+  nonCompliantRate,
+  missingRate,
+
+  riskScore,
+};
   });
 
   // Expiring soon
@@ -8763,7 +8831,8 @@ function createRegulationBreakdownSection(data) {
       { count: reg.partial, color: "#f59e0b" },
       { count: reg.informational, color: "#38bdf8" },
       { count: reg.expired, color: "#9ca3af" },
-      { count: reg.nonCompliant, color: "#ef4444" },
+      { count: reg.nonCompliantPartial, color: "#f87171" },
+      { count: reg.nonCompliantFull, color: "#dc2626" },
     ];
 
     segments.forEach((seg) => {
@@ -8788,7 +8857,16 @@ function createRegulationBreakdownSection(data) {
       textAlign: "right",
       fontSize: "13px",
       fontWeight: "700",
-      color: reg.coverageRate >= 0.8 ? "#16a34a" : reg.coverageRate >= 0.5 ? "#92400e" : "#dc2626",
+      color:
+  reg.nonCompliantFull > 0
+    ? "#b91c1c"
+    : reg.nonCompliantPartial > 0
+      ? "#dc2626"
+      : reg.coverageRate >= 0.8
+        ? "#16a34a"
+        : reg.coverageRate >= 0.5
+          ? "#92400e"
+          : "#dc2626",
     });
     numbers.textContent = `${reg.covered}/${reg.total} (${Math.round(reg.coverageRate * 100)}%)`;
     row.appendChild(numbers);
@@ -8797,6 +8875,54 @@ function createRegulationBreakdownSection(data) {
   });
 
   section.appendChild(list);
+   
+  // Legend
+const legend = document.createElement("div");
+  Object.assign(legend.style, {
+    display: "flex",
+    flexWrap: "wrap",
+    gap: "12px 20px",
+    marginTop: "16px",
+    padding: "10px 14px",
+    background: "#f9fafb",
+    borderRadius: "8px",
+    border: "1px solid #e5e7eb",
+  });
+ 
+  const legendItems = [
+    { color: "#22c55e", label: "Covered" },
+    { color: "#f59e0b", label: "Partial" },
+    { color: "#38bdf8", label: "Informational" },
+    { color: "#9ca3af", label: "Expired" },
+    { color: "#f87171", label: "Non-compliant (some items)" },
+    { color: "#dc2626", label: "Non-compliant (all items)" },
+  ];
+ 
+  legendItems.forEach(({ color, label }) => {
+    const item = document.createElement("div");
+    Object.assign(item.style, {
+      display: "flex",
+      alignItems: "center",
+      gap: "6px",
+      fontSize: "12px",
+      color: "#374151",
+    });
+ 
+    const dot = document.createElement("span");
+    Object.assign(dot.style, {
+      width: "12px",
+      height: "12px",
+      borderRadius: "3px",
+      background: color,
+      flexShrink: "0",
+    });
+ 
+    item.appendChild(dot);
+    item.appendChild(document.createTextNode(label));
+    legend.appendChild(item);
+  });
+ 
+  section.appendChild(legend);
   return section;
 }
 
