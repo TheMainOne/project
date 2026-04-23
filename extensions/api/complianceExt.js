@@ -15,6 +15,7 @@ import { bulkLookupMaterialComponentSuppliers } from "../../services/compliance/
 import { extractRequestedRegulationsFromCase } from "../sf-compliance/services/requestedRegulations.js";
 import { getCoverageForLookupResults } from "../services/complianceCoverage.js";
 import { getSuppliersLibrary } from "../sf-compliance/services/suppliersLibraryService.js";
+import { parseSupplierDocument } from "../sf-compliance/services/parseSupplierDocument.js";
 
 const complianceExtRouter = express.Router();
 
@@ -908,6 +909,51 @@ complianceExtRouter.delete(
     } catch (error) {
       console.error("[SUPPLIER CONTACT DELETE] failed:", error);
       return res.status(500).json({ ok: false, error: error.message });
+    }
+  }
+);
+
+// ============================================================
+// POST /parse-document — Claude AI extraction of compliance assertions
+// ============================================================
+
+complianceExtRouter.post(
+  "/parse-document",
+  requireExtensionAuth,
+  requireExtensionScope("compliance:analyze"),
+  async (req, res) => {
+    try {
+      const { documentText, documentTitle } = req.body;
+
+      if (!documentText || String(documentText).trim().length < 20) {
+        return res.status(400).json({
+          ok: false,
+          error: "documentText is required and must be at least 20 characters",
+        });
+      }
+
+      const regulations = await Regulation.find({ isActive: true })
+        .select("code name")
+        .lean();
+
+      const result = await parseSupplierDocument({
+        documentText: String(documentText),
+        documentTitle: documentTitle ? String(documentTitle) : undefined,
+        regulations,
+      });
+
+      await writeAudit({ userId: req.user.id, action: "parse-document", outcome: "success" });
+
+      return res.json({ ok: true, ...result });
+    } catch (error) {
+      console.error("[PARSE-DOCUMENT] failed:", error);
+
+      await writeAudit({ userId: req.user.id, action: "parse-document", outcome: "error" }).catch(() => {});
+
+      return res.status(500).json({
+        ok: false,
+        error: error.message || "Document parsing failed",
+      });
     }
   }
 );

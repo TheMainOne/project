@@ -114,6 +114,20 @@ manualLookupLoading: false,
 
   complianceSnapshots: [],
 
+  parseDocState: {
+    open: false,
+    text: "",
+    title: "",
+    url: "",
+    loading: false,
+    error: null,
+    result: null,
+    checkedIndices: [],
+    saving: false,
+    saveError: null,
+    saveSuccess: false,
+  },
+
   analyticsExpandedSections: {
     nonCompliant: true,
     complianceMatrix: false,
@@ -235,6 +249,20 @@ manualLookupLoading: false,
     },
 
     complianceSnapshots: [],
+
+    parseDocState: {
+      open: false,
+      text: "",
+      title: "",
+      url: "",
+      loading: false,
+      error: null,
+      result: null,
+      checkedIndices: [],
+      saving: false,
+      saveError: null,
+      saveSuccess: false,
+    },
 
     analyticsExpandedSections: {
       nonCompliant: true,
@@ -4271,6 +4299,617 @@ function createSupplierContactsSection(supplier) {
   return section;
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Parse Document with Claude AI
+// ─────────────────────────────────────────────────────────────────────────────
+
+function createParseDocumentSection(supplier) {
+  const ps = currentCaseAnalysisState.parseDocState;
+
+  const section = document.createElement("div");
+  Object.assign(section.style, { marginTop: "22px" });
+
+  // ── Header ──────────────────────────────────────────────────────────────────
+  const header = document.createElement("div");
+  Object.assign(header.style, {
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "space-between",
+    cursor: "pointer",
+    padding: "10px 14px",
+    background: ps.open ? "#f0fdf4" : "#f8fafc",
+    border: `1px solid ${ps.open ? "#86efac" : "#d9dee7"}`,
+    borderRadius: ps.open ? "12px 12px 0 0" : "12px",
+  });
+
+  const headerLeft = document.createElement("div");
+  Object.assign(headerLeft.style, { display: "flex", alignItems: "center", gap: "8px" });
+  const arrowEl = document.createElement("span");
+  arrowEl.textContent = ps.open ? "▾" : "▸";
+  Object.assign(arrowEl.style, { fontSize: "13px", color: "#6b7280" });
+  const titleEl = document.createElement("span");
+  titleEl.textContent = "Parse Document with Claude AI";
+  Object.assign(titleEl.style, { fontWeight: "700", fontSize: "14px", color: "#111827" });
+  const betaTag = document.createElement("span");
+  betaTag.textContent = "AI";
+  Object.assign(betaTag.style, {
+    padding: "1px 6px", borderRadius: "4px", fontSize: "10px", fontWeight: "700",
+    background: "#e0f2fe", color: "#0284c7",
+  });
+  headerLeft.appendChild(arrowEl);
+  headerLeft.appendChild(titleEl);
+  headerLeft.appendChild(betaTag);
+  header.appendChild(headerLeft);
+
+  if (!ps.open) {
+    if (ps.saveSuccess) {
+      const successTag = document.createElement("span");
+      successTag.textContent = "✓ Saved to Library";
+      Object.assign(successTag.style, {
+        fontSize: "12px", fontWeight: "600", color: "#059669",
+        background: "#dcfce7", padding: "2px 8px", borderRadius: "6px",
+      });
+      header.appendChild(successTag);
+    } else {
+      const hint = document.createElement("span");
+      hint.textContent = "Paste PDF text → extract assertions automatically";
+      Object.assign(hint.style, { fontSize: "12px", color: "#9ca3af" });
+      header.appendChild(hint);
+    }
+  }
+
+  header.addEventListener("click", () => {
+    currentCaseAnalysisState.parseDocState = { ...ps, open: !ps.open };
+    rerenderCurrentCaseToast();
+  });
+  section.appendChild(header);
+
+  if (!ps.open) return section;
+
+  // ── Body ─────────────────────────────────────────────────────────────────────
+  const body = document.createElement("div");
+  Object.assign(body.style, {
+    padding: "14px 16px",
+    border: "1px solid #86efac",
+    borderTop: "none",
+    borderRadius: "0 0 12px 12px",
+    background: "#ffffff",
+  });
+
+  if (!ps.result) {
+    // ── Input form ──────────────────────────────────────────────────────────────
+    const titleRow = document.createElement("div");
+    Object.assign(titleRow.style, { display: "flex", gap: "8px", marginBottom: "8px" });
+
+    const titleInput = document.createElement("input");
+    titleInput.type = "text";
+    titleInput.placeholder = "Document title (optional)";
+    titleInput.value = ps.title || "";
+    Object.assign(titleInput.style, {
+      flex: "1", padding: "7px 10px", border: "1px solid #d0d7de",
+      borderRadius: "8px", fontSize: "13px",
+    });
+    titleInput.addEventListener("input", (e) => {
+      currentCaseAnalysisState.parseDocState = { ...currentCaseAnalysisState.parseDocState, title: e.target.value };
+    });
+
+    const urlInput = document.createElement("input");
+    urlInput.type = "url";
+    urlInput.placeholder = "Document URL (optional)";
+    urlInput.value = ps.url || "";
+    Object.assign(urlInput.style, {
+      flex: "1", padding: "7px 10px", border: "1px solid #d0d7de",
+      borderRadius: "8px", fontSize: "13px",
+    });
+    urlInput.addEventListener("input", (e) => {
+      currentCaseAnalysisState.parseDocState = { ...currentCaseAnalysisState.parseDocState, url: e.target.value };
+    });
+
+    titleRow.appendChild(titleInput);
+    titleRow.appendChild(urlInput);
+    body.appendChild(titleRow);
+
+    const textarea = document.createElement("textarea");
+    textarea.placeholder = "Paste document text here — e.g. from a PDF declaration, certificate, or SDS…";
+    textarea.value = ps.text || "";
+    Object.assign(textarea.style, {
+      width: "100%", minHeight: "140px", padding: "10px",
+      border: "1px solid #d0d7de", borderRadius: "8px",
+      fontSize: "13px", resize: "vertical", boxSizing: "border-box",
+      fontFamily: "inherit", marginBottom: "10px",
+    });
+    textarea.addEventListener("input", (e) => {
+      currentCaseAnalysisState.parseDocState = { ...currentCaseAnalysisState.parseDocState, text: e.target.value };
+    });
+    body.appendChild(textarea);
+
+    if (ps.error) {
+      const errEl = document.createElement("div");
+      errEl.textContent = `Error: ${ps.error}`;
+      Object.assign(errEl.style, {
+        padding: "8px 12px", background: "#fef2f2", border: "1px solid #fca5a5",
+        borderRadius: "8px", fontSize: "12px", color: "#dc2626", marginBottom: "10px",
+      });
+      body.appendChild(errEl);
+    }
+
+    const parseBtn = document.createElement("button");
+    parseBtn.type = "button";
+    parseBtn.disabled = ps.loading || !ps.text?.trim();
+    parseBtn.textContent = ps.loading ? "Parsing…" : "Parse with Claude AI";
+    Object.assign(parseBtn.style, {
+      padding: "8px 18px", borderRadius: "8px", border: "none",
+      background: parseBtn.disabled ? "#e5e7eb" : "#0176d3",
+      color: parseBtn.disabled ? "#9ca3af" : "#ffffff",
+      fontSize: "13px", fontWeight: "700", cursor: parseBtn.disabled ? "default" : "pointer",
+    });
+    parseBtn.addEventListener("click", async () => {
+      const state = currentCaseAnalysisState.parseDocState;
+      if (!state.text?.trim()) return;
+      currentCaseAnalysisState.parseDocState = { ...state, loading: true, error: null };
+      rerenderCurrentCaseToast();
+
+      const resp = await sendMessageAsync({
+        type: "EXT_PARSE_DOCUMENT",
+        payload: { documentText: state.text, documentTitle: state.title || undefined },
+      });
+
+      if (!resp?.ok) {
+        currentCaseAnalysisState.parseDocState = {
+          ...currentCaseAnalysisState.parseDocState,
+          loading: false,
+          error: resp?.error || "Parsing failed",
+        };
+        rerenderCurrentCaseToast();
+        return;
+      }
+
+      const assertions = Array.isArray(resp.assertions) ? resp.assertions : [];
+      currentCaseAnalysisState.parseDocState = {
+        ...currentCaseAnalysisState.parseDocState,
+        loading: false,
+        result: resp,
+        checkedIndices: assertions.map((_, i) => i),
+      };
+      rerenderCurrentCaseToast();
+    });
+    body.appendChild(parseBtn);
+  } else {
+    // ── Results ──────────────────────────────────────────────────────────────────
+    const docInfo = ps.result.documentInfo || {};
+    const assertions = Array.isArray(ps.result.assertions) ? ps.result.assertions : [];
+    const checkedSet = new Set(ps.checkedIndices || []);
+
+    const resultHeader = document.createElement("div");
+    Object.assign(resultHeader.style, {
+      display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "10px",
+    });
+    const resultTitle = document.createElement("div");
+    resultTitle.textContent = `Found ${assertions.length} assertion${assertions.length !== 1 ? "s" : ""}`;
+    Object.assign(resultTitle.style, { fontWeight: "700", fontSize: "14px", color: "#111827" });
+    resultHeader.appendChild(resultTitle);
+
+    const resetBtn = document.createElement("button");
+    resetBtn.type = "button";
+    resetBtn.textContent = "← Parse another";
+    Object.assign(resetBtn.style, {
+      padding: "4px 10px", borderRadius: "6px", border: "1px solid #d0d7de",
+      background: "#fff", color: "#374151", fontSize: "12px", cursor: "pointer",
+    });
+    resetBtn.addEventListener("click", () => {
+      currentCaseAnalysisState.parseDocState = {
+        ...currentCaseAnalysisState.parseDocState,
+        result: null, checkedIndices: [], saveSuccess: false, saveError: null,
+      };
+      rerenderCurrentCaseToast();
+    });
+    resultHeader.appendChild(resetBtn);
+    body.appendChild(resultHeader);
+
+    if (docInfo.issueDate || docInfo.validUntil || docInfo.documentType) {
+      const docMeta = document.createElement("div");
+      Object.assign(docMeta.style, {
+        fontSize: "12px", color: "#6b7280", marginBottom: "10px",
+        display: "flex", gap: "12px", flexWrap: "wrap",
+      });
+      if (docInfo.documentType) {
+        const t = document.createElement("span");
+        t.textContent = `Type: ${docInfo.documentType.replace(/_/g, " ")}`;
+        docMeta.appendChild(t);
+      }
+      if (docInfo.issueDate) {
+        const t = document.createElement("span");
+        t.textContent = `Issued: ${docInfo.issueDate.slice(0, 10)}`;
+        docMeta.appendChild(t);
+      }
+      if (docInfo.validUntil) {
+        const t = document.createElement("span");
+        t.textContent = `Valid until: ${docInfo.validUntil.slice(0, 10)}`;
+        docMeta.appendChild(t);
+      }
+      body.appendChild(docMeta);
+    }
+
+    const TYPE_COLORS = {
+      compliant:     { bg: "#dcfce7", text: "#166534" },
+      free_from:     { bg: "#d1fae5", text: "#065f46" },
+      contains:      { bg: "#fef9c3", text: "#713f12" },
+      non_compliant: { bg: "#fee2e2", text: "#991b1b" },
+      partial:       { bg: "#fef3c7", text: "#92400e" },
+      informational: { bg: "#e0f2fe", text: "#075985" },
+    };
+
+    assertions.forEach((assertion, idx) => {
+      const isChecked = checkedSet.has(idx);
+      const colors = TYPE_COLORS[assertion.assertionType] || { bg: "#f3f4f6", text: "#374151" };
+
+      const card = document.createElement("div");
+      Object.assign(card.style, {
+        display: "flex", gap: "10px", alignItems: "flex-start",
+        padding: "10px 12px", borderRadius: "10px",
+        background: isChecked ? "#fafafa" : "#f9fafb",
+        border: `1px solid ${isChecked ? "#e5e7eb" : "#f3f4f6"}`,
+        marginBottom: "6px",
+        opacity: isChecked ? "1" : "0.5",
+      });
+
+      const checkbox = document.createElement("input");
+      checkbox.type = "checkbox";
+      checkbox.checked = isChecked;
+      Object.assign(checkbox.style, { marginTop: "2px", flexShrink: "0", cursor: "pointer" });
+      checkbox.addEventListener("change", () => {
+        const newSet = new Set(currentCaseAnalysisState.parseDocState.checkedIndices || []);
+        if (checkbox.checked) newSet.add(idx);
+        else newSet.delete(idx);
+        currentCaseAnalysisState.parseDocState = {
+          ...currentCaseAnalysisState.parseDocState,
+          checkedIndices: [...newSet],
+        };
+        rerenderCurrentCaseToast();
+      });
+      card.appendChild(checkbox);
+
+      const cardBody = document.createElement("div");
+      cardBody.style.flex = "1";
+
+      const cardTop = document.createElement("div");
+      Object.assign(cardTop.style, { display: "flex", gap: "6px", alignItems: "center", marginBottom: "4px", flexWrap: "wrap" });
+
+      const regBadge = document.createElement("span");
+      regBadge.textContent = assertion.regulationCode || "Unknown";
+      Object.assign(regBadge.style, {
+        fontWeight: "700", fontSize: "12px", padding: "2px 8px",
+        borderRadius: "6px", background: "#e0e7ff", color: "#3730a3",
+      });
+      cardTop.appendChild(regBadge);
+
+      const typeBadge = document.createElement("span");
+      typeBadge.textContent = (assertion.assertionType || "informational").replace(/_/g, " ");
+      Object.assign(typeBadge.style, {
+        fontWeight: "600", fontSize: "11px", padding: "2px 8px",
+        borderRadius: "6px", background: colors.bg, color: colors.text,
+      });
+      cardTop.appendChild(typeBadge);
+
+      if (assertion.coverageLevel) {
+        const covBadge = document.createElement("span");
+        covBadge.textContent = assertion.coverageLevel.replace(/_/g, " ");
+        Object.assign(covBadge.style, {
+          fontSize: "11px", padding: "2px 8px", borderRadius: "6px",
+          background: "#f3f4f6", color: "#6b7280",
+        });
+        cardTop.appendChild(covBadge);
+      }
+      cardBody.appendChild(cardTop);
+
+      if (assertion.statementText) {
+        const stmt = document.createElement("div");
+        stmt.textContent = `"${assertion.statementText}"`;
+        Object.assign(stmt.style, {
+          fontSize: "12px", color: "#4b5563", fontStyle: "italic",
+          borderLeft: "2px solid #e5e7eb", paddingLeft: "8px", marginTop: "4px",
+        });
+        cardBody.appendChild(stmt);
+      }
+
+      const scopeItems = [
+        ...(assertion.scope?.dwkItemNumbers || []),
+        ...(assertion.scope?.supplierPartNumbers || []),
+        ...(assertion.scope?.families || []),
+      ].filter(Boolean);
+      if (scopeItems.length) {
+        const scopeEl = document.createElement("div");
+        scopeEl.textContent = `Scope: ${scopeItems.slice(0, 5).join(", ")}${scopeItems.length > 5 ? ` +${scopeItems.length - 5} more` : ""}`;
+        Object.assign(scopeEl.style, { fontSize: "11px", color: "#6b7280", marginTop: "4px" });
+        cardBody.appendChild(scopeEl);
+      }
+
+      card.appendChild(cardBody);
+      body.appendChild(card);
+    });
+
+    // ── Save bar ──────────────────────────────────────────────────────────────────
+    const saveBar = document.createElement("div");
+    Object.assign(saveBar.style, {
+      marginTop: "12px", paddingTop: "12px", borderTop: "1px solid #e5e7eb",
+      display: "flex", alignItems: "center", gap: "10px", flexWrap: "wrap",
+    });
+
+    const checkedCount = checkedSet.size;
+    const saveBtn = document.createElement("button");
+    saveBtn.type = "button";
+    saveBtn.disabled = ps.saving || checkedCount === 0;
+    saveBtn.textContent = ps.saving
+      ? "Saving…"
+      : `Save ${checkedCount} assertion${checkedCount !== 1 ? "s" : ""} to Library`;
+    Object.assign(saveBtn.style, {
+      padding: "8px 16px", borderRadius: "8px", border: "none",
+      background: saveBtn.disabled ? "#e5e7eb" : "#059669",
+      color: saveBtn.disabled ? "#9ca3af" : "#ffffff",
+      fontSize: "13px", fontWeight: "700", cursor: saveBtn.disabled ? "default" : "pointer",
+    });
+
+    saveBtn.addEventListener("click", async () => {
+      const state = currentCaseAnalysisState.parseDocState;
+      const allAssertions = Array.isArray(state.result?.assertions) ? state.result.assertions : [];
+      const selectedAssertions = [...new Set(state.checkedIndices || [])]
+        .filter((i) => i >= 0 && i < allAssertions.length)
+        .map((i) => allAssertions[i]);
+
+      if (!selectedAssertions.length) return;
+
+      currentCaseAnalysisState.parseDocState = { ...state, saving: true, saveError: null, saveSuccess: false };
+      rerenderCurrentCaseToast();
+
+      const docInfo = state.result.documentInfo || {};
+      const payload = {
+        supplier: {
+          supplierCode: supplier.supplierCode || "UNKNOWN",
+          supplierName: supplier.supplierName || "Unknown",
+        },
+        document: {
+          title: state.title || docInfo.title || `Parsed document — ${supplier.supplierName}`,
+          url: state.url || "parsed://ai-extracted",
+          documentType: docInfo.documentType || "declaration",
+          issueDate: docInfo.issueDate || null,
+          validUntil: docInfo.validUntil || null,
+        },
+        regulations: selectedAssertions.map((a) => ({
+          code: a.regulationCode,
+          assertionType: a.assertionType,
+        })),
+        coverage: {
+          type: selectedAssertions[0]?.coverageLevel || "supplier_all",
+          dwkItemNumbers: selectedAssertions[0]?.scope?.dwkItemNumbers || [],
+          supplierPartNumbers: selectedAssertions[0]?.scope?.supplierPartNumbers || [],
+          families: selectedAssertions[0]?.scope?.families || [],
+          notes: selectedAssertions[0]?.scope?.notes || "",
+        },
+      };
+
+      const resp = await sendMessageAsync({ type: "EXT_ADD_STATEMENT", payload });
+
+      if (!resp?.ok) {
+        currentCaseAnalysisState.parseDocState = {
+          ...currentCaseAnalysisState.parseDocState,
+          saving: false,
+          saveError: resp?.error || "Save failed",
+        };
+        rerenderCurrentCaseToast();
+        return;
+      }
+
+      currentCaseAnalysisState.parseDocState = {
+        open: false, text: "", title: "", url: "",
+        loading: false, error: null, result: null, checkedIndices: [],
+        saving: false, saveError: null, saveSuccess: true,
+      };
+      currentCaseAnalysisState.suppliersLibrary = null;
+      rerenderCurrentCaseToast();
+    });
+    saveBar.appendChild(saveBtn);
+
+    if (ps.saveError) {
+      const errEl = document.createElement("span");
+      errEl.textContent = ps.saveError;
+      Object.assign(errEl.style, { fontSize: "12px", color: "#dc2626" });
+      saveBar.appendChild(errEl);
+    }
+
+    body.appendChild(saveBar);
+  }
+
+  section.appendChild(body);
+  return section;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Outreach mini-section for supplier detail
+// ─────────────────────────────────────────────────────────────────────────────
+
+function createSupplierOutreachMini(supplier) {
+  const section = document.createElement("div");
+  Object.assign(section.style, { marginTop: "22px" });
+
+  const header = document.createElement("div");
+  Object.assign(header.style, {
+    display: "flex", alignItems: "center", justifyContent: "space-between",
+    marginBottom: "10px",
+  });
+
+  const titleEl = document.createElement("div");
+  titleEl.textContent = "Outreach";
+  Object.assign(titleEl.style, { fontSize: "18px", fontWeight: "700", color: "#111827" });
+  header.appendChild(titleEl);
+
+  const logBtn = document.createElement("button");
+  logBtn.type = "button";
+  logBtn.textContent = "+ Log Outreach";
+  Object.assign(logBtn.style, {
+    padding: "5px 12px", borderRadius: "8px", border: "1px solid #0176d3",
+    background: "#eff6ff", color: "#0176d3", fontSize: "12px", fontWeight: "600", cursor: "pointer",
+  });
+  logBtn.addEventListener("click", () => {
+    currentCaseAnalysisState.outreachShowForm = true;
+    currentCaseAnalysisState.outreachForm = {
+      supplierId: supplier.supplierId || "",
+      supplierName: supplier.supplierName || "",
+      supplierSearchQuery: supplier.supplierName || "",
+      supplierSearchResults: [],
+      contactEmail: (supplier.contacts || []).find((c) => c.email)?.email || "",
+      subject: "",
+      method: "email",
+      sentAt: new Date().toISOString().slice(0, 10),
+      followUpDays: "14",
+      notes: "",
+      regulationTags: [],
+      caseId: currentCaseAnalysisState.payload?.caseId || "",
+      submitting: false,
+      submitError: null,
+    };
+    activeCaseToastTab = "suppliers";
+    suppliersSubTab = "outreach";
+    rerenderCurrentCaseToast();
+  });
+  header.appendChild(logBtn);
+  section.appendChild(header);
+
+  const outreachList = currentCaseAnalysisState.outreachList;
+
+  if (!outreachList) {
+    const loadingEl = document.createElement("div");
+    loadingEl.textContent = "Loading outreach records…";
+    Object.assign(loadingEl.style, { fontSize: "13px", color: "#9ca3af" });
+    section.appendChild(loadingEl);
+    return section;
+  }
+
+  const supplierRecords = outreachList.filter(
+    (r) => r.supplierId === supplier.supplierId || r.supplierName === supplier.supplierName
+  );
+
+  if (!supplierRecords.length) {
+    const emptyEl = document.createElement("div");
+    emptyEl.textContent = "No outreach recorded yet for this supplier.";
+    Object.assign(emptyEl.style, { fontSize: "13px", color: "#9ca3af", fontStyle: "italic" });
+    section.appendChild(emptyEl);
+    return section;
+  }
+
+  // Mini stats bar
+  const counts = { sent: 0, awaiting: 0, responded: 0, overdue: 0, closed: 0 };
+  supplierRecords.forEach((r) => {
+    const status = getEffectiveOutreachStatus(r);
+    counts[status] = (counts[status] || 0) + 1;
+  });
+
+  const statsBar = document.createElement("div");
+  Object.assign(statsBar.style, {
+    display: "flex", gap: "8px", flexWrap: "wrap", marginBottom: "10px",
+  });
+
+  const STAT_COLORS = {
+    awaiting:  { bg: "#fef3c7", text: "#92400e" },
+    overdue:   { bg: "#fee2e2", text: "#991b1b" },
+    responded: { bg: "#dcfce7", text: "#166534" },
+    sent:      { bg: "#f3f4f6", text: "#374151" },
+    closed:    { bg: "#f3f4f6", text: "#9ca3af" },
+  };
+
+  Object.entries(counts).forEach(([status, count]) => {
+    if (!count) return;
+    const colors = STAT_COLORS[status] || { bg: "#f3f4f6", text: "#374151" };
+    const pill = document.createElement("span");
+    pill.textContent = `${count} ${status}`;
+    Object.assign(pill.style, {
+      padding: "2px 10px", borderRadius: "999px", fontSize: "11px", fontWeight: "600",
+      background: colors.bg, color: colors.text,
+    });
+    statsBar.appendChild(pill);
+  });
+
+  section.appendChild(statsBar);
+
+  // Last 3 records
+  const recent = [...supplierRecords]
+    .sort((a, b) => new Date(b.sentAt) - new Date(a.sentAt))
+    .slice(0, 3);
+
+  recent.forEach((record) => {
+    const effectiveStatus = getEffectiveOutreachStatus(record);
+    const isOverdue = effectiveStatus === "overdue";
+
+    const card = document.createElement("div");
+    Object.assign(card.style, {
+      display: "flex", alignItems: "flex-start", gap: "10px",
+      padding: "8px 12px", borderRadius: "10px",
+      background: isOverdue ? "#fff7f7" : "#fafafa",
+      border: `1px solid ${isOverdue ? "#fca5a5" : "#e5e7eb"}`,
+      marginBottom: "6px",
+    });
+
+    const statusDot = document.createElement("div");
+    const dotColor = effectiveStatus === "responded" ? "#22c55e"
+      : effectiveStatus === "overdue" ? "#ef4444"
+      : effectiveStatus === "awaiting" ? "#f59e0b"
+      : "#9ca3af";
+    Object.assign(statusDot.style, {
+      width: "8px", height: "8px", borderRadius: "999px",
+      background: dotColor, marginTop: "5px", flexShrink: "0",
+    });
+    card.appendChild(statusDot);
+
+    const cardBody = document.createElement("div");
+    cardBody.style.flex = "1";
+
+    const subjectEl = document.createElement("div");
+    subjectEl.textContent = record.subject || "(no subject)";
+    Object.assign(subjectEl.style, {
+      fontWeight: "600", fontSize: "12px", color: "#111827", marginBottom: "2px",
+    });
+    cardBody.appendChild(subjectEl);
+
+    const metaEl = document.createElement("div");
+    Object.assign(metaEl.style, { fontSize: "11px", color: "#6b7280", display: "flex", gap: "10px", flexWrap: "wrap" });
+    const sentEl = document.createElement("span");
+    sentEl.textContent = `Sent ${formatOutreachDate(record.sentAt)}`;
+    metaEl.appendChild(sentEl);
+    if (record.nextFollowUpAt && effectiveStatus !== "responded") {
+      const fuEl = document.createElement("span");
+      fuEl.textContent = `Follow-up: ${formatOutreachDate(record.nextFollowUpAt)}`;
+      fuEl.style.color = isOverdue ? "#dc2626" : "#6b7280";
+      metaEl.appendChild(fuEl);
+    }
+    cardBody.appendChild(metaEl);
+
+    card.appendChild(cardBody);
+
+    const statusBadge = createOutreachStatusBadge(effectiveStatus);
+    card.appendChild(statusBadge);
+
+    section.appendChild(card);
+  });
+
+  if (supplierRecords.length > 3) {
+    const moreBtn = document.createElement("button");
+    moreBtn.type = "button";
+    moreBtn.textContent = `View all ${supplierRecords.length} records →`;
+    Object.assign(moreBtn.style, {
+      marginTop: "6px", padding: "5px 10px", borderRadius: "8px",
+      border: "1px solid #d0d7de", background: "#fff", color: "#374151",
+      fontSize: "12px", fontWeight: "600", cursor: "pointer",
+    });
+    moreBtn.addEventListener("click", () => {
+      activeCaseToastTab = "suppliers";
+      suppliersSubTab = "outreach";
+      rerenderCurrentCaseToast();
+    });
+    section.appendChild(moreBtn);
+  }
+
+  return section;
+}
+
 function createSupplierLibraryDetail(supplier) {
   const wrapper = document.createElement("div");
 
@@ -4358,6 +4997,7 @@ function createSupplierLibraryDetail(supplier) {
 
   wrapper.appendChild(stats);
   wrapper.appendChild(createSupplierContactsSection(supplier));
+  wrapper.appendChild(createSupplierOutreachMini(supplier));
   wrapper.appendChild(
     createSupplierLibraryRegulationSummary(
       Array.isArray(supplier?.regulationSummary) ? supplier.regulationSummary : []
@@ -4368,6 +5008,7 @@ function createSupplierLibraryDetail(supplier) {
       Array.isArray(supplier?.assertions) ? supplier.assertions : []
     )
   );
+  wrapper.appendChild(createParseDocumentSection(supplier));
 
   return wrapper;
 }
