@@ -7899,7 +7899,7 @@ function createAnalyticsStatsBar(stats) {
   return wrapper;
 }
 
-function getMatrixCellColor(status) {
+function getMatrixCellColor(status, tier) {
   switch (status) {
     case "covered":
       return { bg: "#dcfce7", text: "#166534", symbol: "✓" };
@@ -7908,6 +7908,7 @@ function getMatrixCellColor(status) {
     case "expired":
       return { bg: "#f3f4f6", text: "#6b7280", symbol: "⏱" };
     case "non_compliant":
+      if (tier === "partial") return { bg: "#ffedd5", text: "#9a3412", symbol: "⚠" };
       return { bg: "#fee2e2", text: "#991b1b", symbol: "✗" };
     case "informational":
       return { bg: "#e0f2fe", text: "#075985", symbol: "i" };
@@ -8592,12 +8593,13 @@ function createComplianceMatrix(data) {
           const ageStr = age !== null ? formatAge(age) : "no date";
           tdTitle = `${row.supplierName} — ${cell.regulationCode}\nNewest doc: ${ageStr}`;
         } else {
-          colorInfo = getMatrixCellColor(cell.status);
+          colorInfo = getMatrixCellColor(cell.status, cell.nonComplianceTier);
           const humanScope = humanizeScopeSummary(cell.scopeSummary);
           const scopeLabel =
             cell.status === "covered" ? `Covered: ${humanScope}` :
             cell.status === "partial" ? `Partial: ${humanScope}` :
-            cell.status === "non_compliant" ? `Non-compliant: ${humanScope}` :
+            cell.status === "non_compliant" && cell.nonComplianceTier === "full" ? `Non-compliant (all materials): ${humanScope}` :
+            cell.status === "non_compliant" ? `Non-compliant (specific materials): ${humanScope}` :
             cell.status === "expired" ? `Expired: ${humanScope}` :
             cell.status === "informational" ? `Informational: ${humanScope}` :
             "Missing: no assertions";
@@ -8658,18 +8660,19 @@ function createComplianceMatrix(data) {
         { status: "no_data", label: "No date", bg: freshnessColor("no_data").bg, text: freshnessColor("no_data").color },
       ]
     : [
-        { status: "covered",       label: "Covered = all supplier items", ...getMatrixCellColor("covered") },
-        { status: "partial",       label: "Partial = specific items / subset / family", ...getMatrixCellColor("partial") },
-        { status: "expired",       label: "Expired", ...getMatrixCellColor("expired") },
-        { status: "non_compliant", label: "Non-compliant", ...getMatrixCellColor("non_compliant") },
-        { status: "informational", label: "Info only", ...getMatrixCellColor("informational") },
-        { status: "missing",       label: "Missing = no assertions", ...getMatrixCellColor("missing") },
+        { status: "covered",                        label: "Covered = all supplier items",              ...getMatrixCellColor("covered") },
+        { status: "partial",                        label: "Partial = specific items / subset / family", ...getMatrixCellColor("partial") },
+        { status: "expired",                        label: "Expired",                                    ...getMatrixCellColor("expired") },
+        { status: "non_compliant", tier: "full",    label: "Non-compliant (all materials)",              ...getMatrixCellColor("non_compliant", "full") },
+        { status: "non_compliant", tier: "partial", label: "Non-compliant (specific materials only)",    ...getMatrixCellColor("non_compliant", "partial") },
+        { status: "informational",                  label: "Info only",                                  ...getMatrixCellColor("informational") },
+        { status: "missing",                        label: "Missing = no assertions",                    ...getMatrixCellColor("missing") },
       ];
 
   statuses.forEach((item) => {
     const colorInfo = currentMode === "freshness"
       ? { bg: item.bg, text: item.text, symbol: "●" }
-      : getMatrixCellColor(item.status);
+      : getMatrixCellColor(item.status, item.tier);
     const legendItem = document.createElement("div");
     Object.assign(legendItem.style, {
       display: "flex",
@@ -10111,7 +10114,7 @@ function createSupplierComparisonPanel(selectedCodes, allRows, regulations) {
     selectedRows.forEach((row) => {
       const cell = row.cells.find((c) => c.regulationCode === reg.code);
       const status = cell?.status || "missing";
-      const colorInfo = getMatrixCellColor(status);
+      const colorInfo = getMatrixCellColor(status, cell?.nonComplianceTier);
 
       const td = document.createElement("td");
       Object.assign(td.style, {
@@ -10179,6 +10182,15 @@ function createNonCompliantSection(data) {
 
   if (!nonCompliantRows.length) return null;
 
+  // Rows where at least one NC cell covers all materials (tier === "full")
+  const fullNCRows = nonCompliantRows.filter((row) =>
+    row.cells.some((c) => c.status === "non_compliant" && c.nonComplianceTier === "full")
+  );
+  // Rows where NC cells cover only specific materials (all partial tier)
+  const partialNCRows = nonCompliantRows.filter((row) =>
+    !row.cells.some((c) => c.status === "non_compliant" && c.nonComplianceTier === "full")
+  );
+
   const section = document.createElement("div");
   Object.assign(section.style, {
     marginBottom: "28px",
@@ -10188,8 +10200,11 @@ function createNonCompliantSection(data) {
     borderRadius: "14px",
   });
 
+  const countParts = [];
+  if (fullNCRows.length) countParts.push(`${fullNCRows.length} fully`);
+  if (partialNCRows.length) countParts.push(`${partialNCRows.length} partially`);
   const title = document.createElement("div");
-  title.textContent = `Non-Compliant Suppliers (${nonCompliantRows.length})`;
+  title.textContent = `Non-Compliant Suppliers (${nonCompliantRows.length}: ${countParts.join(", ")})`;
   Object.assign(title.style, {
     fontSize: "16px",
     fontWeight: "800",
@@ -10199,7 +10214,7 @@ function createNonCompliantSection(data) {
   section.appendChild(title);
 
   const subtitle = document.createElement("div");
-  subtitle.textContent = "Suppliers with active non-compliant assertions — requires immediate attention";
+  subtitle.textContent = "Suppliers with active non-compliant assertions. ✗ = all materials affected, ⚠ = specific materials only.";
   Object.assign(subtitle.style, {
     fontSize: "13px",
     color: "#b91c1c",
@@ -10207,14 +10222,84 @@ function createNonCompliantSection(data) {
   });
   section.appendChild(subtitle);
 
-  const list = document.createElement("div");
-  Object.assign(list.style, {
-    display: "flex",
-    flexDirection: "column",
-    gap: "8px",
-  });
+  function buildNCCellTag(cell) {
+    const isFull = cell.nonComplianceTier === "full";
+    const tag = document.createElement("div");
+    Object.assign(tag.style, {
+      display: "inline-flex",
+      flexDirection: "column",
+      gap: "2px",
+      padding: "3px 8px",
+      borderRadius: "8px",
+      background: isFull ? "#fee2e2" : "#ffedd5",
+      border: `1px solid ${isFull ? "#fca5a5" : "#fdba74"}`,
+    });
 
-  nonCompliantRows.forEach((row) => {
+    const topLine = document.createElement("div");
+    Object.assign(topLine.style, {
+      display: "flex",
+      alignItems: "center",
+      gap: "4px",
+    });
+
+    const badge = document.createElement("span");
+    badge.textContent = isFull ? "✗" : "⚠";
+    Object.assign(badge.style, {
+      fontWeight: "900",
+      fontSize: "11px",
+      color: isFull ? "#991b1b" : "#9a3412",
+    });
+    topLine.appendChild(badge);
+
+    const regCode = document.createElement("span");
+    regCode.textContent = cell.regulationCode;
+    Object.assign(regCode.style, {
+      fontWeight: "700",
+      fontSize: "11px",
+      color: isFull ? "#991b1b" : "#9a3412",
+    });
+    topLine.appendChild(regCode);
+    tag.appendChild(topLine);
+
+    if (!isFull) {
+      const ncAssertions = (cell.assertions || []).filter((a) => {
+        if (String(a?.assertionType || "").toLowerCase() !== "non_compliant") return false;
+        if (a?.status && a.status !== "active") return false;
+        if (a?.validUntil && new Date(a.validUntil) < new Date()) return false;
+        return true;
+      });
+      const scopeItems = [
+        ...ncAssertions.flatMap((a) => a?.scope?.dwkItemNumbers || []),
+        ...ncAssertions.flatMap((a) => a?.scope?.supplierPartNumbers || []),
+        ...ncAssertions.flatMap((a) => a?.scope?.families || []),
+      ].filter(Boolean);
+
+      const scopeLine = document.createElement("div");
+      Object.assign(scopeLine.style, {
+        fontSize: "10px",
+        color: "#92400e",
+        fontStyle: "italic",
+        maxWidth: "180px",
+        overflow: "hidden",
+        textOverflow: "ellipsis",
+        whiteSpace: "nowrap",
+      });
+      if (scopeItems.length) {
+        const shown = scopeItems.slice(0, 3).join(", ");
+        scopeLine.textContent = scopeItems.length > 3 ? `${shown} +${scopeItems.length - 3} more` : shown;
+      } else {
+        const humanScope = cell.scopeSummary && cell.scopeSummary !== "supplier_all"
+          ? cell.scopeSummary.replace(/_/g, " ")
+          : "specific materials";
+        scopeLine.textContent = humanScope;
+      }
+      tag.appendChild(scopeLine);
+    }
+
+    return tag;
+  }
+
+  function buildSupplierCard(row, isFullGroup) {
     const card = document.createElement("div");
     Object.assign(card.style, {
       display: "flex",
@@ -10222,18 +10307,18 @@ function createNonCompliantSection(data) {
       gap: "12px",
       padding: "10px 14px",
       background: "#ffffff",
-      border: "1px solid #fca5a5",
+      border: `1px solid ${isFullGroup ? "#fca5a5" : "#fdba74"}`,
       borderRadius: "10px",
     });
 
     const icon = document.createElement("div");
-    icon.textContent = "✗";
+    icon.textContent = isFullGroup ? "✗" : "⚠";
     Object.assign(icon.style, {
       width: "24px",
       height: "24px",
       borderRadius: "999px",
-      background: "#fee2e2",
-      color: "#dc2626",
+      background: isFullGroup ? "#fee2e2" : "#ffedd5",
+      color: isFullGroup ? "#dc2626" : "#ea580c",
       fontWeight: "900",
       fontSize: "13px",
       display: "flex",
@@ -10251,41 +10336,68 @@ function createNonCompliantSection(data) {
       fontWeight: "700",
       fontSize: "13px",
       color: "#111827",
-      marginBottom: "4px",
+      marginBottom: "6px",
     });
     nameEl.textContent = row.supplierName + (row.supplierCode ? ` (${row.supplierCode})` : "");
     info.appendChild(nameEl);
 
-    const regsEl = document.createElement("div");
-    Object.assign(regsEl.style, {
+    const tagsEl = document.createElement("div");
+    Object.assign(tagsEl.style, {
       display: "flex",
       flexWrap: "wrap",
-      gap: "4px",
+      gap: "6px",
     });
 
     row.cells
       .filter((c) => c.status === "non_compliant")
-      .forEach((cell) => {
-        const tag = document.createElement("span");
-        Object.assign(tag.style, {
-          padding: "2px 8px",
-          borderRadius: "999px",
-          background: "#fee2e2",
-          border: "1px solid #fca5a5",
-          fontWeight: "600",
-          fontSize: "11px",
-          color: "#991b1b",
-        });
-        tag.textContent = cell.regulationCode;
-        regsEl.appendChild(tag);
-      });
+      .forEach((cell) => tagsEl.appendChild(buildNCCellTag(cell)));
 
-    info.appendChild(regsEl);
+    info.appendChild(tagsEl);
     card.appendChild(info);
-    list.appendChild(card);
-  });
+    return card;
+  }
 
-  section.appendChild(list);
+  if (fullNCRows.length) {
+    if (partialNCRows.length) {
+      const groupLabel = document.createElement("div");
+      groupLabel.textContent = "Critical — non-compliant for all materials";
+      Object.assign(groupLabel.style, {
+        fontSize: "12px",
+        fontWeight: "700",
+        color: "#991b1b",
+        textTransform: "uppercase",
+        letterSpacing: "0.04em",
+        marginBottom: "6px",
+      });
+      section.appendChild(groupLabel);
+    }
+
+    const list = document.createElement("div");
+    Object.assign(list.style, { display: "flex", flexDirection: "column", gap: "8px" });
+    fullNCRows.forEach((row) => list.appendChild(buildSupplierCard(row, true)));
+    section.appendChild(list);
+  }
+
+  if (partialNCRows.length) {
+    const groupLabel = document.createElement("div");
+    groupLabel.textContent = "Warning — non-compliant for specific materials only";
+    Object.assign(groupLabel.style, {
+      fontSize: "12px",
+      fontWeight: "700",
+      color: "#9a3412",
+      textTransform: "uppercase",
+      letterSpacing: "0.04em",
+      marginTop: fullNCRows.length ? "14px" : "0",
+      marginBottom: "6px",
+    });
+    section.appendChild(groupLabel);
+
+    const list = document.createElement("div");
+    Object.assign(list.style, { display: "flex", flexDirection: "column", gap: "8px" });
+    partialNCRows.forEach((row) => list.appendChild(buildSupplierCard(row, false)));
+    section.appendChild(list);
+  }
+
   return section;
 }
 
