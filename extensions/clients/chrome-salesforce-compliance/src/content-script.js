@@ -128,6 +128,29 @@ manualLookupLoading: false,
 let activeCaseRequestToken = 0;
 let lastCompletedRecordId = null;
 let isCaseToastExpanded = false;
+let isCaseToastMinimized = false;
+let panelPosition = { x: null, y: null };
+let panelSize = { width: 860, height: null };
+let _isDragging = false;
+let _dragOffsetX = 0;
+let _dragOffsetY = 0;
+let _isResizing = false;
+let _resizeStartX = 0;
+let _resizeStartY = 0;
+let _resizeStartWidth = 0;
+let _resizeStartHeight = 0;
+let _panelInteractionListenersAttached = false;
+
+chrome.storage.local.get(["panelLayout"], (result) => {
+  if (result.panelLayout) {
+    if (result.panelLayout.position && result.panelLayout.position.x !== null) {
+      panelPosition = result.panelLayout.position;
+    }
+    if (result.panelLayout.size) {
+      panelSize = result.panelLayout.size;
+    }
+  }
+});
 
 function resetCaseAnalysisState() {
   activeCaseToastTab = "overview";
@@ -373,6 +396,7 @@ function rerenderCurrentCaseToast() {
     currentCaseAnalysisState.response
   );
   restoreFocusState(body, focusState);
+  applyMinimizeState();
 }
 
 async function applyManualMaterialUpdate(materialIndex, newValue) {
@@ -678,6 +702,157 @@ function isCaseRecordPage() {
   return !!getRecordIdFromUrl();
 }
 
+function initSkeletonStyles() {
+  if (document.getElementById("sf-skeleton-styles")) return;
+  const style = document.createElement("style");
+  style.id = "sf-skeleton-styles";
+  style.textContent = `
+    @keyframes sf-shimmer {
+      0% { background-position: -400px 0 }
+      100% { background-position: 400px 0 }
+    }
+    .sf-skeleton-line {
+      background: linear-gradient(90deg, #f0f0f0 25%, #e0e0e0 50%, #f0f0f0 75%);
+      background-size: 800px 100%;
+      animation: sf-shimmer 1.4s infinite;
+      border-radius: 4px;
+      height: 14px;
+      margin-bottom: 8px;
+    }
+    .sf-skeleton-circle {
+      background: linear-gradient(90deg, #f0f0f0 25%, #e0e0e0 50%, #f0f0f0 75%);
+      background-size: 800px 100%;
+      animation: sf-shimmer 1.4s infinite;
+      border-radius: 50%;
+      flex-shrink: 0;
+    }
+  `;
+  document.head.appendChild(style);
+}
+
+function createSkeletonBlock(lineWidths) {
+  const wrapper = document.createElement("div");
+  wrapper.style.padding = "4px 0";
+  lineWidths.forEach((width) => {
+    const line = document.createElement("div");
+    line.className = "sf-skeleton-line";
+    line.style.width = width;
+    wrapper.appendChild(line);
+  });
+  return wrapper;
+}
+
+function createSuppliersSkeletonLoader() {
+  initSkeletonStyles();
+  const wrapper = document.createElement("div");
+  wrapper.style.padding = "8px 0";
+  for (let i = 0; i < 5; i++) {
+    const row = document.createElement("div");
+    Object.assign(row.style, {
+      display: "flex",
+      alignItems: "center",
+      gap: "12px",
+      padding: "10px 12px",
+      marginBottom: "6px",
+      border: "1px solid #e5e7eb",
+      borderRadius: "8px",
+    });
+    const circle = document.createElement("div");
+    circle.className = "sf-skeleton-circle";
+    Object.assign(circle.style, { width: "36px", height: "36px" });
+    const lines = document.createElement("div");
+    lines.style.flex = "1";
+    lines.appendChild(createSkeletonBlock(["40%", "70%", "50%"]));
+    row.appendChild(circle);
+    row.appendChild(lines);
+    wrapper.appendChild(row);
+  }
+  return wrapper;
+}
+
+function createOutreachSkeletonLoader() {
+  initSkeletonStyles();
+  const wrapper = document.createElement("div");
+  wrapper.style.padding = "8px 0";
+  for (let i = 0; i < 3; i++) {
+    const card = document.createElement("div");
+    Object.assign(card.style, {
+      padding: "12px 14px",
+      marginBottom: "8px",
+      border: "1px solid #e5e7eb",
+      borderRadius: "8px",
+    });
+    card.appendChild(createSkeletonBlock(["50%", "85%", "30%"]));
+    wrapper.appendChild(card);
+  }
+  return wrapper;
+}
+
+function createRegulationsSkeletonLoader() {
+  initSkeletonStyles();
+  const wrapper = document.createElement("div");
+  wrapper.style.padding = "4px 0";
+  wrapper.appendChild(createSkeletonBlock(["35%", "55%", "45%"]));
+  return wrapper;
+}
+
+function initPanelInteractionListeners() {
+  if (_panelInteractionListenersAttached) return;
+  _panelInteractionListenersAttached = true;
+
+  document.addEventListener("mousemove", (e) => {
+    const toast = document.getElementById("sf-compliance-case-toast");
+    if (!toast) return;
+
+    if (_isDragging) {
+      const newX = e.clientX - _dragOffsetX;
+      const newY = e.clientY - _dragOffsetY;
+      panelPosition.x = Math.max(0, Math.min(newX, window.innerWidth - toast.offsetWidth));
+      panelPosition.y = Math.max(0, Math.min(newY, window.innerHeight - 50));
+      toast.style.right = "";
+      toast.style.left = panelPosition.x + "px";
+      toast.style.top = panelPosition.y + "px";
+    }
+
+    if (_isResizing) {
+      const deltaX = e.clientX - _resizeStartX;
+      const deltaY = e.clientY - _resizeStartY;
+      panelSize.width = Math.max(420, _resizeStartWidth + deltaX);
+      panelSize.height = Math.max(260, _resizeStartHeight + deltaY);
+      toast.style.width = panelSize.width + "px";
+      toast.style.height = panelSize.height + "px";
+      toast.style.maxHeight = "none";
+    }
+  });
+
+  document.addEventListener("mouseup", () => {
+    if (!_isDragging && !_isResizing) return;
+    _isDragging = false;
+    _isResizing = false;
+    document.body.style.userSelect = "";
+    const header = document.querySelector("#sf-compliance-case-toast-header");
+    if (header) header.style.cursor = "grab";
+    chrome.storage.local.set({ panelLayout: { position: panelPosition, size: panelSize } });
+  });
+}
+
+function applyMinimizeState() {
+  const tabs = document.querySelector("#sf-compliance-case-toast-tabs");
+  const body = document.querySelector("#sf-compliance-case-toast-body");
+  const resizeHandle = document.querySelector("#sf-compliance-resize-handle");
+  const minimizeBtn = document.querySelector("#sf-compliance-minimize-btn");
+  if (!tabs || !body) return;
+  tabs.style.display = isCaseToastMinimized ? "none" : "";
+  body.style.display = isCaseToastMinimized ? "none" : "";
+  if (resizeHandle) resizeHandle.style.display = isCaseToastMinimized ? "none" : "";
+  if (minimizeBtn) minimizeBtn.textContent = isCaseToastMinimized ? "□" : "−";
+}
+
+function toggleCaseToastMinimized() {
+  isCaseToastMinimized = !isCaseToastMinimized;
+  applyMinimizeState();
+}
+
 function applyCaseToastLayout(toast) {
   if (!toast) return;
 
@@ -694,17 +869,25 @@ function applyCaseToastLayout(toast) {
       borderRadius: "16px",
     });
   } else {
-    toast.style.left = "";
-    toast.style.height = "";
+    if (panelPosition.x !== null && panelPosition.y !== null) {
+      toast.style.right = "";
+      toast.style.left = panelPosition.x + "px";
+      toast.style.top = panelPosition.y + "px";
+    } else {
+      toast.style.left = "";
+      toast.style.top = "16px";
+      toast.style.right = "16px";
+    }
+    toast.style.width = panelSize.width + "px";
+    toast.style.height = panelSize.height ? panelSize.height + "px" : "";
     Object.assign(toast.style, {
-      top: "16px",
-      right: "16px",
-      width: "860px",
       minWidth: "420px",
       maxWidth: "calc(100vw - 32px)",
-      maxHeight: "82vh",
+      maxHeight: panelSize.height ? "none" : "82vh",
       borderRadius: "12px",
     });
+    const resizeHandle = toast.querySelector("#sf-compliance-resize-handle");
+    if (resizeHandle) resizeHandle.style.display = "";
   }
 }
 
@@ -712,8 +895,16 @@ function toggleCaseToastExpanded() {
   const toast = document.getElementById("sf-compliance-case-toast");
   if (!toast) return;
 
+  if (isCaseToastMinimized) {
+    isCaseToastMinimized = false;
+    applyMinimizeState();
+  }
+
   isCaseToastExpanded = !isCaseToastExpanded;
   applyCaseToastLayout(toast);
+
+  const resizeHandle = toast.querySelector("#sf-compliance-resize-handle");
+  if (resizeHandle) resizeHandle.style.display = isCaseToastExpanded ? "none" : "";
 
   const expandBtn = document.getElementById("sf-compliance-expand-btn");
   if (expandBtn) {
@@ -754,7 +945,6 @@ function getOrCreateCaseToast() {
     width: "860px",
     maxWidth: "calc(100vw - 32px)",
     maxHeight: "82vh",
-    fontSize: "13px",
     lineHeight: "1.45",
     display: "flex",
     flexDirection: "column",
@@ -771,6 +961,19 @@ function getOrCreateCaseToast() {
     alignItems: "center",
     padding: "0 14px 10px 14px",
     marginBottom: "0",
+    cursor: "grab",
+    userSelect: "none",
+  });
+
+  header.addEventListener("mousedown", (e) => {
+    if (e.target.closest("button") || isCaseToastExpanded) return;
+    _isDragging = true;
+    const rect = toast.getBoundingClientRect();
+    _dragOffsetX = e.clientX - rect.left;
+    _dragOffsetY = e.clientY - rect.top;
+    header.style.cursor = "grabbing";
+    document.body.style.userSelect = "none";
+    e.preventDefault();
   });
 
   const title = document.createElement("div");
@@ -836,7 +1039,33 @@ function getOrCreateCaseToast() {
     }
   });
 
+  const minimizeBtn = document.createElement("button");
+  minimizeBtn.type = "button";
+  minimizeBtn.id = "sf-compliance-minimize-btn";
+  minimizeBtn.textContent = isCaseToastMinimized ? "□" : "−";
+  minimizeBtn.title = "Minimize";
+
+  Object.assign(minimizeBtn.style, {
+    background: "#ffffff",
+    border: "1px solid #d0d7de",
+    borderRadius: "8px",
+    fontSize: "16px",
+    cursor: "pointer",
+    lineHeight: "1",
+    width: "32px",
+    height: "32px",
+    display: "inline-flex",
+    alignItems: "center",
+    justifyContent: "center",
+    flexShrink: "0",
+  });
+
+  minimizeBtn.addEventListener("click", () => {
+    toggleCaseToastMinimized();
+  });
+
   headerActions.appendChild(expandBtn);
+  headerActions.appendChild(minimizeBtn);
   headerActions.appendChild(closeBtn);
 
   header.appendChild(title);
@@ -899,13 +1128,46 @@ tabs.appendChild(materialsTab);
 tabs.appendChild(suppliersTab);
 tabs.appendChild(lookupTab);
 
+  const resizeHandle = document.createElement("div");
+  resizeHandle.id = "sf-compliance-resize-handle";
+  Object.assign(resizeHandle.style, {
+    position: "absolute",
+    bottom: "0",
+    right: "0",
+    width: "18px",
+    height: "18px",
+    cursor: "nw-resize",
+    zIndex: "1",
+    display: "flex",
+    alignItems: "flex-end",
+    justifyContent: "flex-end",
+    padding: "3px",
+    boxSizing: "border-box",
+  });
+  resizeHandle.innerHTML = `<svg width="10" height="10" viewBox="0 0 10 10" style="opacity:0.35"><circle cx="8.5" cy="8.5" r="1.2" fill="#666"/><circle cx="5" cy="8.5" r="1.2" fill="#666"/><circle cx="8.5" cy="5" r="1.2" fill="#666"/></svg>`;
+
+  resizeHandle.addEventListener("mousedown", (e) => {
+    if (isCaseToastExpanded) return;
+    _isResizing = true;
+    _resizeStartX = e.clientX;
+    _resizeStartY = e.clientY;
+    const rect = toast.getBoundingClientRect();
+    _resizeStartWidth = rect.width;
+    _resizeStartHeight = rect.height;
+    document.body.style.userSelect = "none";
+    e.preventDefault();
+    e.stopPropagation();
+  });
+
   toast.appendChild(header);
   toast.appendChild(tabs);
   toast.appendChild(body);
+  toast.appendChild(resizeHandle);
 
   hideLauncher();
   document.body.appendChild(toast);
   applyCaseToastLayout(toast);
+  initPanelInteractionListeners();
 
   return toast;
 }
@@ -2073,11 +2335,7 @@ function createAddStatementTabContent() {
 
   if (form.availableRegulations.length === 0) {
     loadRegulationsIfNeeded();
-    const loading = document.createElement("div");
-    loading.textContent = "Loading regulations...";
-    loading.style.color = "#6b7280";
-    loading.style.fontSize = "13px";
-    assertSection.appendChild(loading);
+    assertSection.appendChild(createRegulationsSkeletonLoader());
   } else {
     const regGrid = document.createElement("div");
     Object.assign(regGrid.style, {
@@ -5372,15 +5630,7 @@ function createSuppliersTabContent() {
     }
 
     if (currentCaseAnalysisState.suppliersLibraryLoading) {
-      const loading = document.createElement("div");
-      Object.assign(loading.style, {
-        padding: "40px 20px",
-        textAlign: "center",
-        color: "#6b7280",
-        fontSize: "14px",
-      });
-      loading.textContent = "Loading suppliers data for analytics...";
-      wrapper.appendChild(loading);
+      wrapper.appendChild(createSuppliersSkeletonLoader());
       return wrapper;
     }
 
@@ -5408,15 +5658,7 @@ function createSuppliersTabContent() {
     }
 
     if (currentCaseAnalysisState.outreachLoading) {
-      const loading = document.createElement("div");
-      Object.assign(loading.style, {
-        padding: "40px 20px",
-        textAlign: "center",
-        color: "#6b7280",
-        fontSize: "14px",
-      });
-      loading.textContent = "Loading outreach records...";
-      wrapper.appendChild(loading);
+      wrapper.appendChild(createOutreachSkeletonLoader());
       return wrapper;
     }
 
