@@ -129,6 +129,18 @@ async function handleSuppliersLibraryLookup(payload = {}) {
     });
   }
 
+  if (!libraryResult.ok && (libraryResult.errorType === "network" || libraryResult.errorType === "timeout")) {
+    const stored = await chrome.storage.local.get("suppliersLibraryCache");
+    if (stored.suppliersLibraryCache?.result) {
+      return {
+        ok: true,
+        suppliersLibraryResult: stored.suppliersLibraryCache.result,
+        fromCache: true,
+        cachedAt: stored.suppliersLibraryCache.fetchedAt,
+      };
+    }
+  }
+
   return {
     ok: libraryResult.ok,
     suppliersLibraryResult: libraryResult,
@@ -699,6 +711,16 @@ async function handleCaseContext(rawPayload) {
     callComplianceApi("/analyze", { caseId: effectiveCaseId, payload }),
   ]);
 
+  // Network/timeout failure → fall back to cached analysis if available
+  const isOffline = (r) => !r.ok && (r.errorType === "network" || r.errorType === "timeout");
+  if (isOffline(caseContextResult) || isOffline(analyzeResult)) {
+    const stored = await chrome.storage.local.get("caseAnalysisCache");
+    const cached = (stored.caseAnalysisCache || {})[effectiveCaseId];
+    if (cached) {
+      return { ...cached.response, fromCache: true, cachedAt: cached.cachedAt };
+    }
+  }
+
   if (caseContextResult.authRequired || analyzeResult.authRequired) {
     return {
       ok: false,
@@ -738,12 +760,23 @@ if (materialQueries.length > 0) {
     }
   }
 
-  return {
+  const result = {
     ok: analyzeResult.ok && componentSuppliersResult.ok,
     caseContextResult,
     analyzeResult,
     componentSuppliersResult,
   };
+
+  if (result.ok) {
+    const stored = await chrome.storage.local.get("caseAnalysisCache");
+    const cache = stored.caseAnalysisCache || {};
+    cache[effectiveCaseId] = { cachedAt: Date.now(), response: result };
+    const keys = Object.keys(cache);
+    if (keys.length > 20) delete cache[keys[0]];
+    await chrome.storage.local.set({ caseAnalysisCache: cache });
+  }
+
+  return result;
 }
 
 async function handleAddStatement(payload) {

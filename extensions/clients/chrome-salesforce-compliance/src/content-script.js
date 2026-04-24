@@ -123,6 +123,10 @@ manualLookupLoading: false,
     atRisk: true,
     expiringSoon: true,
   },
+
+  cachedAt: null,
+  suppliersLibraryCachedAt: null,
+  globalSearchQuery: "",
 };
 
 let activeCaseRequestToken = 0;
@@ -269,6 +273,10 @@ manualLookupLoading: false,
       atRisk: true,
       expiringSoon: true,
     },
+
+    cachedAt: null,
+    suppliersLibraryCachedAt: null,
+    globalSearchQuery: "",
   };
 }
 
@@ -566,6 +574,7 @@ async function loadSuppliersLibrary(search = "", forceRefresh = false) {
   };
   currentCaseAnalysisState.suppliersLibraryLoading = false;
   currentCaseAnalysisState.suppliersLibraryError = null;
+  currentCaseAnalysisState.suppliersLibraryCachedAt = response.fromCache ? (response.cachedAt || null) : null;
 
   const selectedStillExists = suppliers.some(
     (item) =>
@@ -701,6 +710,36 @@ function getRecordIdFromUrl() {
 
 function isCaseRecordPage() {
   return !!getRecordIdFromUrl();
+}
+
+function formatCacheAge(ts) {
+  if (!ts) return "unknown";
+  const diff = Date.now() - ts;
+  const mins = Math.floor(diff / 60000);
+  const hours = Math.floor(diff / 3600000);
+  const days = Math.floor(diff / 86400000);
+  if (mins < 2) return "just now";
+  if (hours < 1) return `${mins}m ago`;
+  if (days < 1) return `${hours}h ago`;
+  return `${days}d ago`;
+}
+
+function createOfflineBanner(cachedAt) {
+  const banner = document.createElement("div");
+  Object.assign(banner.style, {
+    background: "#fef3c7",
+    color: "#92400e",
+    fontSize: "11px",
+    padding: "5px 10px",
+    borderRadius: "6px",
+    marginBottom: "10px",
+    border: "1px solid #fde68a",
+    display: "flex",
+    alignItems: "center",
+    gap: "5px",
+  });
+  banner.textContent = `⚠ Offline — cached data from ${formatCacheAge(cachedAt)}`;
+  return banner;
 }
 
 function initSkeletonStyles() {
@@ -1082,7 +1121,42 @@ function getOrCreateCaseToast() {
   headerActions.appendChild(minimizeBtn);
   headerActions.appendChild(closeBtn);
 
+  const searchWrapper = document.createElement("div");
+  Object.assign(searchWrapper.style, { flex: "1", margin: "0 10px" });
+
+  const searchInput = document.createElement("input");
+  searchInput.id = "sf-compliance-global-search";
+  searchInput.type = "text";
+  searchInput.placeholder = "Search suppliers, materials, outreach...";
+  searchInput.value = currentCaseAnalysisState.globalSearchQuery || "";
+  Object.assign(searchInput.style, {
+    width: "100%",
+    padding: "5px 10px",
+    fontSize: "12px",
+    border: "1px solid #d0d7de",
+    borderRadius: "8px",
+    outline: "none",
+    background: "#f9fafb",
+    color: "#111111",
+    boxSizing: "border-box",
+  });
+
+  let _searchDebounceTimer = null;
+  searchInput.addEventListener("input", (e) => {
+    clearTimeout(_searchDebounceTimer);
+    _searchDebounceTimer = setTimeout(() => {
+      currentCaseAnalysisState.globalSearchQuery = e.target.value.trim();
+      rerenderCurrentCaseToast();
+    }, 300);
+  });
+
+  // Prevent header drag when interacting with input
+  searchInput.addEventListener("mousedown", (e) => e.stopPropagation());
+
+  searchWrapper.appendChild(searchInput);
+
   header.appendChild(title);
+  header.appendChild(searchWrapper);
   header.appendChild(headerActions);
 
   const tabs = document.createElement("div");
@@ -5575,6 +5649,10 @@ function createSuppliersTabContent() {
   const wrapper = document.createElement("div");
   wrapper.style.marginTop = "8px";
 
+  if (currentCaseAnalysisState.suppliersLibraryCachedAt) {
+    wrapper.appendChild(createOfflineBanner(currentCaseAnalysisState.suppliersLibraryCachedAt));
+  }
+
   // --- Sub-tab bar ---
   const subTabBar = document.createElement("div");
   Object.assign(subTabBar.style, {
@@ -6019,6 +6097,127 @@ function renderCaseToastInitial(payload) {
   body.appendChild(statusRow);
 }
 
+function _matchesQuery(text, q) {
+  return String(text || "").toLowerCase().includes(q);
+}
+
+function createGlobalSearchResults(query) {
+  const q = query.toLowerCase();
+  const wrapper = document.createElement("div");
+
+  const makeSection = (title) => {
+    const sec = document.createElement("div");
+    sec.style.marginBottom = "14px";
+    const hdr = document.createElement("div");
+    Object.assign(hdr.style, {
+      fontSize: "11px", fontWeight: "600", color: "#6b7280",
+      textTransform: "uppercase", letterSpacing: "0.04em", marginBottom: "6px",
+    });
+    hdr.textContent = title;
+    sec.appendChild(hdr);
+    return sec;
+  };
+
+  const makeRow = (primary, secondary, onClick) => {
+    const row = document.createElement("div");
+    Object.assign(row.style, {
+      display: "flex", justifyContent: "space-between", alignItems: "center",
+      padding: "6px 8px", borderRadius: "6px", cursor: "pointer",
+      border: "1px solid #e5e7eb", marginBottom: "4px", gap: "8px",
+    });
+    row.addEventListener("mouseover", () => row.style.background = "#f3f4f6");
+    row.addEventListener("mouseout", () => row.style.background = "");
+    const lbl = document.createElement("div");
+    Object.assign(lbl.style, { fontSize: "12px", fontWeight: "600", flex: "1", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" });
+    lbl.textContent = primary;
+    const sub = document.createElement("div");
+    Object.assign(sub.style, { fontSize: "11px", color: "#6b7280", flexShrink: "0" });
+    sub.textContent = secondary;
+    row.appendChild(lbl);
+    row.appendChild(sub);
+    row.addEventListener("click", onClick);
+    return row;
+  };
+
+  let total = 0;
+
+  // --- Suppliers ---
+  const suppliers = currentCaseAnalysisState.suppliersLibrary?.suppliers || [];
+  const suppMatches = suppliers.filter((s) =>
+    _matchesQuery(s.supplierName, q) ||
+    _matchesQuery(s.supplierCode, q) ||
+    (Array.isArray(s.aliases) && s.aliases.some((a) => _matchesQuery(a, q)))
+  ).slice(0, 5);
+
+  if (suppMatches.length > 0) {
+    const sec = makeSection("Suppliers");
+    suppMatches.forEach((s) => {
+      const regCount = Array.isArray(s.regulationSummary) ? s.regulationSummary.length : 0;
+      sec.appendChild(makeRow(s.supplierName, `${regCount} reg`, () => {
+        currentCaseAnalysisState.globalSearchQuery = "";
+        currentCaseAnalysisState.selectedSupplierLibraryId = s.supplierId;
+        activeCaseToastTab = "suppliers";
+        suppliersSubTab = "library";
+        rerenderCurrentCaseToast();
+      }));
+    });
+    wrapper.appendChild(sec);
+    total += suppMatches.length;
+  }
+
+  // --- Materials ---
+  const results = currentCaseAnalysisState.response?.componentSuppliersResult?.json?.results ||
+    currentCaseAnalysisState.lookupResults?.json?.results || [];
+  const matMatches = results.filter((r) =>
+    _matchesQuery(r.material, q) || _matchesQuery(r.query, q)
+  ).slice(0, 5);
+
+  if (matMatches.length > 0) {
+    const sec = makeSection("Materials");
+    matMatches.forEach((r) => {
+      sec.appendChild(makeRow(r.material || r.query, "", () => {
+        currentCaseAnalysisState.globalSearchQuery = "";
+        activeCaseToastTab = "materials";
+        rerenderCurrentCaseToast();
+      }));
+    });
+    wrapper.appendChild(sec);
+    total += matMatches.length;
+  }
+
+  // --- Outreach ---
+  const outreach = Array.isArray(currentCaseAnalysisState.outreachList)
+    ? currentCaseAnalysisState.outreachList : [];
+  const outMatches = outreach.filter((o) =>
+    _matchesQuery(o.supplierName, q) ||
+    _matchesQuery(o.subject, q) ||
+    _matchesQuery(o.notes, q)
+  ).slice(0, 5);
+
+  if (outMatches.length > 0) {
+    const sec = makeSection("Outreach");
+    outMatches.forEach((o) => {
+      sec.appendChild(makeRow(o.supplierName, o.status || "", () => {
+        currentCaseAnalysisState.globalSearchQuery = "";
+        activeCaseToastTab = "suppliers";
+        suppliersSubTab = "outreach";
+        rerenderCurrentCaseToast();
+      }));
+    });
+    wrapper.appendChild(sec);
+    total += outMatches.length;
+  }
+
+  if (total === 0) {
+    const empty = document.createElement("div");
+    Object.assign(empty.style, { fontSize: "12px", color: "#9ca3af", fontStyle: "italic", padding: "12px 0" });
+    empty.textContent = `No results for "${query}"`;
+    wrapper.appendChild(empty);
+  }
+
+  return wrapper;
+}
+
 function renderCaseToastAnalysis(payload, response) {
   const toast = getOrCreateCaseToast();
   const body = toast.querySelector("#sf-compliance-case-toast-body");
@@ -6027,6 +6226,11 @@ function renderCaseToastAnalysis(payload, response) {
   const rerender = () => {
     clearToastBody(body);
     setCaseToastTab(activeCaseToastTab);
+
+    if (currentCaseAnalysisState.globalSearchQuery) {
+      body.appendChild(createGlobalSearchResults(currentCaseAnalysisState.globalSearchQuery));
+      return;
+    }
 
     const analyzeJson =
       response?.analyzeResult?.json ||
@@ -6107,6 +6311,10 @@ function renderCaseToastAnalysis(payload, response) {
       !currentCaseAnalysisState.suppliersLibraryError
     ) {
       loadSuppliersLibrary(currentCaseAnalysisState.suppliersLibrarySearch || "");
+    }
+
+    if (currentCaseAnalysisState.cachedAt) {
+      body.appendChild(createOfflineBanner(currentCaseAnalysisState.cachedAt));
     }
 
     if (activeCaseToastTab === "overview") {
@@ -7076,6 +7284,7 @@ async function trySendCaseContext() {
 
   if (response?.ok) {
     currentCaseAnalysisState.payload = payload;
+    currentCaseAnalysisState.cachedAt = response.fromCache ? (response.cachedAt || null) : null;
     renderCaseToastAnalysis(payload, response);
     lastSentCaseUrl = window.location.href;
     lastCompletedRecordId = recordId;
