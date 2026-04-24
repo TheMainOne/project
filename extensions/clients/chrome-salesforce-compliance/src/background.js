@@ -1017,7 +1017,7 @@ const ALLOWED_MESSAGE_TYPES = new Set([
   "EXT_UPDATE_OUTREACH", "EXT_DELETE_OUTREACH", "EXT_SAVE_COMPLIANCE_SNAPSHOT",
   "EXT_GET_COMPLIANCE_SNAPSHOTS", "EXT_SET_REMINDER", "EXT_CANCEL_REMINDER",
   "EXT_GET_REMINDERS", "EXT_ADD_SUPPLIER_CONTACT", "EXT_UPDATE_SUPPLIER_CONTACT",
-  "EXT_DELETE_SUPPLIER_CONTACT", "EXT_PARSE_DOCUMENT",
+  "EXT_DELETE_SUPPLIER_CONTACT",
 ]);
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
@@ -1163,18 +1163,6 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     } catch {
       sendResponse({ ok: false, error: "Invalid supplierId or contactId" });
     }
-    return true;
-  }
-
-  if (message?.type === "EXT_PARSE_DOCUMENT") {
-    callComplianceApiMethod("POST", "/parse-document", message.payload || {})
-      .then((result) => {
-        if (result.authRequired) {
-          sendResponse({ ok: false, authRequired: true, error: result.error || "Authentication required" });
-          return;
-        }
-        sendResponse(result.ok ? { ok: true, ...result.json } : { ok: false, error: result.error || "Parse failed" });
-      });
     return true;
   }
 
