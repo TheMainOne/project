@@ -6166,23 +6166,97 @@ function createGlobalSearchResults(query) {
   }
 
   // --- Materials ---
-  const materials = Array.isArray(currentCaseAnalysisState.overriddenMaterials)
-    ? currentCaseAnalysisState.overriddenMaterials : [];
-  const matMatches = materials.filter((m) =>
-    _matchesQuery(m.part_number, q) || _matchesQuery(m.description, q)
-  ).slice(0, 5);
+  // Merge all BOM data sources: AI-extracted list, automatic BOM lookup, manual lookup
+  const seenMaterials = new Set();
+  const matMatches = [];
 
-  if (matMatches.length > 0) {
+  const addMatResult = (label, sub) => {
+    const key = label.toLowerCase();
+    if (label && label !== "—" && !seenMaterials.has(key)) {
+      seenMaterials.add(key);
+      matMatches.push({ label, sub });
+    }
+  };
+
+  // 1. AI-extracted part numbers (editable list in Materials tab)
+  (Array.isArray(currentCaseAnalysisState.overriddenMaterials) ? currentCaseAnalysisState.overriddenMaterials : []).forEach((m) => {
+    if (_matchesQuery(m.part_number, q) || _matchesQuery(m.description, q))
+      addMatResult(m.part_number || "—", m.description || "");
+  });
+
+  // 2. BOM lookup results (automatic case lookup + manual override from Materials tab edits)
+  const effectiveBomResults = (currentCaseAnalysisState.lookupResults || currentCaseAnalysisState.response?.componentSuppliersResult)?.json?.results || [];
+  effectiveBomResults.forEach((r) => {
+    const label = r.normalizedQuery || r.query || r.material || "";
+    const matchFields = [r.query, r.normalizedQuery, r.material];
+    if (matchFields.some((f) => _matchesQuery(f, q)))
+      addMatResult(label || "—", "");
+  });
+
+  // 3. Manual Lookup tab results
+  (currentCaseAnalysisState.manualLookupResults?.json?.results || []).forEach((r) => {
+    const label = r.normalizedQuery || r.query || r.material || "";
+    const matchFields = [r.query, r.normalizedQuery, r.material];
+    if (matchFields.some((f) => _matchesQuery(f, q)))
+      addMatResult(label || "—", "");
+  });
+
+  const matMatchesTrimmed = matMatches.slice(0, 5);
+
+  if (matMatchesTrimmed.length > 0) {
     const sec = makeSection("Materials");
-    matMatches.forEach((m) => {
-      sec.appendChild(makeRow(m.part_number || "—", m.description || "", () => {
+    matMatchesTrimmed.forEach(({ label, sub }) => {
+      sec.appendChild(makeRow(label, sub, () => {
         currentCaseAnalysisState.globalSearchQuery = "";
         activeCaseToastTab = "materials";
         rerenderCurrentCaseToast();
       }));
     });
     wrapper.appendChild(sec);
-    total += matMatches.length;
+    total += matMatchesTrimmed.length;
+  }
+
+  // --- Regulations ---
+  const requestedRegs = Array.isArray(currentCaseAnalysisState.analysis?.requested_regulations)
+    ? currentCaseAnalysisState.analysis.requested_regulations : [];
+  // Also gather regulation codes from supplier library entries
+  const libRegs = new Map();
+  (currentCaseAnalysisState.suppliersLibrary?.suppliers || []).forEach((s) => {
+    (Array.isArray(s.regulationSummary) ? s.regulationSummary : []).forEach((r) => {
+      const code = r.regulationCode || r.code || "";
+      const name = r.regulationName || r.name || "";
+      if (code && !libRegs.has(code.toLowerCase())) libRegs.set(code.toLowerCase(), { code, name });
+    });
+  });
+
+  const seenRegs = new Set();
+  const regMatches = [];
+
+  requestedRegs.forEach((code) => {
+    const c = String(code || "");
+    if (_matchesQuery(c, q) && !seenRegs.has(c.toLowerCase())) {
+      seenRegs.add(c.toLowerCase());
+      regMatches.push({ code: c, name: "" });
+    }
+  });
+  libRegs.forEach(({ code, name }) => {
+    if ((_matchesQuery(code, q) || _matchesQuery(name, q)) && !seenRegs.has(code.toLowerCase())) {
+      seenRegs.add(code.toLowerCase());
+      regMatches.push({ code, name });
+    }
+  });
+
+  if (regMatches.length > 0) {
+    const sec = makeSection("Regulations");
+    regMatches.slice(0, 5).forEach(({ code, name }) => {
+      sec.appendChild(makeRow(code, name, () => {
+        currentCaseAnalysisState.globalSearchQuery = "";
+        activeCaseToastTab = "overview";
+        rerenderCurrentCaseToast();
+      }));
+    });
+    wrapper.appendChild(sec);
+    total += regMatches.length;
   }
 
   // --- Outreach ---
