@@ -838,15 +838,27 @@ function initPanelInteractionListeners() {
 }
 
 function applyMinimizeState() {
+  const toast = document.querySelector("#sf-compliance-case-toast");
   const tabs = document.querySelector("#sf-compliance-case-toast-tabs");
   const body = document.querySelector("#sf-compliance-case-toast-body");
   const resizeHandle = document.querySelector("#sf-compliance-resize-handle");
   const minimizeBtn = document.querySelector("#sf-compliance-minimize-btn");
   if (!tabs || !body) return;
+
   tabs.style.display = isCaseToastMinimized ? "none" : "";
   body.style.display = isCaseToastMinimized ? "none" : "";
   if (resizeHandle) resizeHandle.style.display = isCaseToastMinimized ? "none" : "";
   if (minimizeBtn) minimizeBtn.textContent = isCaseToastMinimized ? "□" : "−";
+
+  if (toast) {
+    if (isCaseToastMinimized) {
+      toast.style.height = "auto";
+      toast.style.maxHeight = "none";
+    } else if (!isCaseToastExpanded) {
+      toast.style.height = panelSize.height ? panelSize.height + "px" : "";
+      toast.style.maxHeight = panelSize.height ? "none" : "82vh";
+    }
+  }
 }
 
 function toggleCaseToastMinimized() {
