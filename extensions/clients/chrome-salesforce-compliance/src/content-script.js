@@ -6166,16 +6166,16 @@ function createGlobalSearchResults(query) {
   }
 
   // --- Materials ---
-  const results = currentCaseAnalysisState.response?.componentSuppliersResult?.json?.results ||
-    currentCaseAnalysisState.lookupResults?.json?.results || [];
-  const matMatches = results.filter((r) =>
-    _matchesQuery(r.material, q) || _matchesQuery(r.query, q)
+  const materials = Array.isArray(currentCaseAnalysisState.overriddenMaterials)
+    ? currentCaseAnalysisState.overriddenMaterials : [];
+  const matMatches = materials.filter((m) =>
+    _matchesQuery(m.part_number, q) || _matchesQuery(m.description, q)
   ).slice(0, 5);
 
   if (matMatches.length > 0) {
     const sec = makeSection("Materials");
-    matMatches.forEach((r) => {
-      sec.appendChild(makeRow(r.material || r.query, "", () => {
+    matMatches.forEach((m) => {
+      sec.appendChild(makeRow(m.part_number || "—", m.description || "", () => {
         currentCaseAnalysisState.globalSearchQuery = "";
         activeCaseToastTab = "materials";
         rerenderCurrentCaseToast();
