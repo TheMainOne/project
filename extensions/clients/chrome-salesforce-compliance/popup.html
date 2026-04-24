@@ -8,38 +8,154 @@
     * { box-sizing: border-box; margin: 0; padding: 0; }
 
     body {
-      width: 260px;
+      width: 280px;
       font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
       background: #ffffff;
       color: #111111;
     }
 
     .header {
-      padding: 16px 18px 12px;
+      padding: 14px 16px 10px;
       border-bottom: 1px solid #e5e7eb;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
     }
 
     .header-title {
-      font-size: 14px;
+      font-size: 13px;
       font-weight: 700;
       color: #111111;
-      letter-spacing: -0.01em;
     }
 
-    .header-sub {
+    .auth-badge {
       font-size: 11px;
       color: #6b7280;
-      margin-top: 2px;
     }
 
-    .body {
-      padding: 14px 18px 16px;
+    .auth-badge.connected { color: #0a7b34; }
+
+    /* Sections */
+    .section {
+      padding: 10px 16px;
+      border-bottom: 1px solid #e5e7eb;
+    }
+
+    .section-title {
+      font-size: 11px;
+      font-weight: 600;
+      color: #6b7280;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      margin-bottom: 8px;
+    }
+
+    /* Reminders */
+    .reminder-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+      padding: 3px 0;
+      font-size: 12px;
+      gap: 8px;
+    }
+
+    .reminder-name {
+      flex: 1;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      color: #111111;
+    }
+
+    .reminder-time {
+      font-size: 11px;
+      color: #6b7280;
+      white-space: nowrap;
+      flex-shrink: 0;
+    }
+
+    .reminder-time.overdue {
+      color: #b42318;
+      font-weight: 600;
+    }
+
+    .reminder-time.soon {
+      color: #92400e;
+    }
+
+    .empty-note {
+      font-size: 12px;
+      color: #9ca3af;
+      font-style: italic;
+    }
+
+    /* Metrics */
+    .metric-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 3px 0;
+      font-size: 12px;
+    }
+
+    .metric-label { color: #6b7280; }
+
+    .metric-right {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .metric-value {
+      font-weight: 600;
+      color: #111111;
+      min-width: 28px;
+      text-align: right;
+    }
+
+    .progress-bar {
+      width: 60px;
+      height: 6px;
+      background: #e5e7eb;
+      border-radius: 3px;
+      overflow: hidden;
+    }
+
+    .progress-fill {
+      height: 100%;
+      border-radius: 3px;
+      background: #0176d3;
+      transition: width 0.3s;
+    }
+
+    .progress-fill.warn { background: #d97706; }
+    .progress-fill.danger { background: #b42318; }
+
+    /* Skeleton */
+    @keyframes shimmer {
+      0% { background-position: -300px 0 }
+      100% { background-position: 300px 0 }
+    }
+
+    .skel {
+      background: linear-gradient(90deg, #f0f0f0 25%, #e8e8e8 50%, #f0f0f0 75%);
+      background-size: 600px 100%;
+      animation: shimmer 1.2s infinite;
+      border-radius: 3px;
+      height: 12px;
+      margin: 4px 0;
+    }
+
+    /* Footer */
+    .footer {
+      padding: 12px 16px 14px;
     }
 
     .btn {
       display: block;
       width: 100%;
-      padding: 9px 14px;
+      padding: 8px 14px;
       background: #111111;
       color: #ffffff;
       font-size: 13px;
@@ -54,25 +170,48 @@
     .btn:hover { background: #374151; }
 
     .status {
-      margin-top: 10px;
+      margin-top: 8px;
       font-size: 11px;
       color: #6b7280;
       text-align: center;
-      min-height: 16px;
+      min-height: 14px;
     }
 
     .status.error { color: #b42318; }
+
+    #dashboard { display: none; }
   </style>
 </head>
 <body>
   <div class="header">
     <div class="header-title">Compliance Assistant</div>
-    <div class="header-sub">Open on the current page</div>
+    <div class="auth-badge" id="authBadge">Loading...</div>
   </div>
-  <div class="body">
+
+  <div id="dashboard">
+    <div class="section" id="remindersSection">
+      <div class="section-title">Reminders</div>
+      <div id="remindersBody">
+        <div class="skel" style="width:70%"></div>
+        <div class="skel" style="width:50%"></div>
+      </div>
+    </div>
+
+    <div class="section" id="metricsSection">
+      <div class="section-title">Global Metrics</div>
+      <div id="metricsBody">
+        <div class="skel" style="width:80%"></div>
+        <div class="skel" style="width:60%"></div>
+        <div class="skel" style="width:70%"></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="footer">
     <button class="btn" id="openBtn">Open Assistant</button>
     <div class="status" id="status"></div>
   </div>
+
   <script src="popup.js"></script>
 </body>
 </html>
