@@ -128,6 +128,7 @@ manualLookupLoading: false,
 let activeCaseRequestToken = 0;
 let lastCompletedRecordId = null;
 let isCaseToastExpanded = false;
+let wasPanelOpen = true; // auto-open panel by default; set to false when user explicitly closes
 let isCaseToastMinimized = false;
 let panelPosition = { x: null, y: null };
 let panelSize = { width: 860, height: null };
@@ -1032,6 +1033,7 @@ function getOrCreateCaseToast() {
   });
 
   closeBtn.addEventListener("click", () => {
+    wasPanelOpen = false;
     toast.remove();
     if (isCaseRecordPage()) {
       showLauncher();
@@ -7013,10 +7015,16 @@ async function trySendCaseContext() {
     return;
   }
 
+  const panelAlreadyOpen = !!document.getElementById("sf-compliance-case-toast");
+  if (!panelAlreadyOpen && !wasPanelOpen) {
+    return;
+  }
+
   const requestToken = ++activeCaseRequestToken;
 
   console.log("SF payload:", payload);
 
+  wasPanelOpen = true;
   renderCaseToastInitial(payload);
 
   const response = await sendMessageAsync({
@@ -7124,26 +7132,57 @@ function handlePotentialRouteChange() {
   if (currentUrl !== lastSeenUrl) {
     console.log("Route changed:", currentUrl);
     lastSeenUrl = currentUrl;
+    const hadPanel = !!document.getElementById("sf-compliance-case-toast");
     lastSentCaseUrl = null;
     lastCompletedRecordId = null;
     activeCaseRequestToken += 1;
 
     resetCaseAnalysisState();
-    removeCaseToast();
-
     ensureLauncherVisible();
 
     if (!isCaseRecordPage()) {
+      removeCaseToast();
       hideAuthCard();
       return;
+    }
+
+    if (hadPanel && wasPanelOpen && authState.authenticated) {
+      renderCaseToastSwitching();
+    } else {
+      removeCaseToast();
     }
 
     if (authState.authenticated) {
       scheduleChecks();
     } else {
+      removeCaseToast();
       showAuthCard("Sign in to use Compliance Assistant.");
     }
   }
+}
+
+function renderCaseToastSwitching() {
+  initSkeletonStyles();
+  const toast = getOrCreateCaseToast();
+  const body = toast.querySelector("#sf-compliance-case-toast-body");
+  if (!body) return;
+  clearToastBody(body);
+
+  const label = document.createElement("div");
+  Object.assign(label.style, {
+    fontSize: "12px",
+    color: "#6b7280",
+    marginBottom: "14px",
+    fontStyle: "italic",
+  });
+  label.textContent = "Loading new case...";
+  body.appendChild(label);
+
+  body.appendChild(createSkeletonBlock(["40%", "60%"]));
+  const sep = document.createElement("div");
+  sep.style.marginTop = "12px";
+  body.appendChild(sep);
+  body.appendChild(createSuppliersSkeletonLoader());
 }
 
 // ============================================================
@@ -10817,6 +10856,7 @@ window.addEventListener("hashchange", handlePotentialRouteChange);
 
 chrome.runtime.onMessage.addListener((message) => {
   if (message?.type === "OPEN_PANEL") {
+    wasPanelOpen = true;
     const card = getOrCreateAuthCard();
     card.style.display = "block";
     syncAuthCardUi();
