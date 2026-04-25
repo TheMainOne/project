@@ -11383,10 +11383,15 @@ function createCollapsibleSection(key, title, contentFn) {
 
 function createSnapshotTrendChart() {
   const allSnapshots = currentCaseAnalysisState.complianceSnapshots || [];
-  // Only use v2 snapshots (new metric formula). Old ones had different scale and cause spikes.
-  const data = [...allSnapshots].filter(s => s.v === 2).reverse(); // oldest → newest
+  // Prefer v2 snapshots; fall back to all snapshots if not enough v2 ones.
+  // Values are clamped to [0,100] to prevent spikes from old format differences.
+  let data = [...allSnapshots].filter(s => s.v === 2).reverse();
+  if (data.length < 2) {
+    // Try all snapshots as fallback, clamp values to valid range
+    data = [...allSnapshots].reverse();
+  }
 
-  if (data.length < 2) return null;
+  if (data.length < 1) return null;
 
   const svgNS = "http://www.w3.org/2000/svg";
   const W = 400, H = 130;
@@ -11457,33 +11462,36 @@ function createSnapshotTrendChart() {
     svg.appendChild(lbl);
   });
 
-  // Draw one series
+  // Draw one series (handles single-point gracefully)
   const drawSeries = (values, color, gradId) => {
     const pts = values
-      .map((v, i) => v !== null ? { x: xScale(i), y: yScale(v), v, i } : null)
+      .map((v, i) => {
+        const clamped = v !== null && v !== undefined ? Math.min(100, Math.max(0, v)) : null;
+        return clamped !== null ? { x: xScale(i), y: yScale(clamped), v: clamped, i } : null;
+      })
       .filter(Boolean);
-    if (pts.length < 2) return;
+    if (pts.length === 0) return;
 
-    const linePath = smoothPath(pts);
+    if (pts.length >= 2) {
+      const linePath = smoothPath(pts);
+      // Gradient area
+      const areaD = `M ${pts[0].x} ${yScale(0)} L ${pts[0].x} ${pts[0].y} ` +
+        smoothPath(pts).replace(/^M [^ ]+ [^ ]+/, "") +
+        ` L ${pts[pts.length - 1].x} ${yScale(0)} Z`;
+      const area = document.createElementNS(svgNS, "path");
+      area.setAttribute("d", areaD);
+      area.setAttribute("fill", `url(#${gradId})`);
+      svg.appendChild(area);
 
-    // Gradient area
-    const areaD = `M ${pts[0].x} ${yScale(0)} L ${pts[0].x} ${pts[0].y} ` +
-      smoothPath(pts).replace(/^M [^ ]+ [^ ]+/, "") +
-      ` L ${pts[pts.length - 1].x} ${yScale(0)} Z`;
-    const area = document.createElementNS(svgNS, "path");
-    area.setAttribute("d", areaD);
-    area.setAttribute("fill", `url(#${gradId})`);
-    svg.appendChild(area);
+      const path = document.createElementNS(svgNS, "path");
+      path.setAttribute("d", linePath); path.setAttribute("fill", "none");
+      path.setAttribute("stroke", color); path.setAttribute("stroke-width", "2");
+      path.setAttribute("stroke-linejoin", "round"); path.setAttribute("stroke-linecap", "round");
+      svg.appendChild(path);
+    }
 
-    // Line
-    const path = document.createElementNS(svgNS, "path");
-    path.setAttribute("d", linePath); path.setAttribute("fill", "none");
-    path.setAttribute("stroke", color); path.setAttribute("stroke-width", "2");
-    path.setAttribute("stroke-linejoin", "round"); path.setAttribute("stroke-linecap", "round");
-    svg.appendChild(path);
-
-    // Dots: show all if sparse (≤12), only last if dense
-    const showAll = n <= 12;
+    // Dots: show all if sparse (≤12), only last if dense; always show single point
+    const showAll = n <= 12 || pts.length === 1;
     const dotPts = showAll ? pts : [pts[pts.length - 1]];
     dotPts.forEach(p => {
       const dateStr = data[p.i]?.date
@@ -11491,7 +11499,7 @@ function createSnapshotTrendChart() {
         : "";
       const circle = document.createElementNS(svgNS, "circle");
       circle.setAttribute("cx", p.x); circle.setAttribute("cy", p.y);
-      circle.setAttribute("r", showAll ? "2.5" : "4");
+      circle.setAttribute("r", pts.length === 1 ? "5" : showAll ? "2.5" : "4");
       circle.setAttribute("fill", color);
       circle.setAttribute("stroke", "#fff"); circle.setAttribute("stroke-width", "2");
       const t = document.createElementNS(svgNS, "title");
@@ -11544,7 +11552,9 @@ function createSnapshotTrendChart() {
   const lastDate = data[n - 1]?.date ? new Date(data[n - 1].date).toLocaleDateString(undefined, { month: "short", day: "numeric" }) : "";
   const subtitle = document.createElement("div");
   Object.assign(subtitle.style, { fontSize: "11px", color: "#9ca3af", marginTop: "2px" });
-  subtitle.textContent = `${n} snapshots · ${firstDate} – ${lastDate}`;
+  subtitle.textContent = n === 1
+    ? `1 snapshot · ${firstDate} · trend builds over time`
+    : `${n} snapshots · ${firstDate} – ${lastDate}`;
   titleBlock.appendChild(titleEl);
   titleBlock.appendChild(subtitle);
 
