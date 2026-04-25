@@ -127,6 +127,9 @@ manualLookupLoading: false,
   cachedAt: null,
   suppliersLibraryCachedAt: null,
   globalSearchQuery: "",
+  globalSearchMaterialsQuery: "",
+  globalSearchMaterialsResults: null,
+  globalSearchMaterialsLoading: false,
 };
 
 let activeCaseRequestToken = 0;
@@ -277,6 +280,9 @@ manualLookupLoading: false,
     cachedAt: null,
     suppliersLibraryCachedAt: null,
     globalSearchQuery: "",
+    globalSearchMaterialsQuery: "",
+    globalSearchMaterialsResults: null,
+    globalSearchMaterialsLoading: false,
   };
 }
 
@@ -539,6 +545,43 @@ async function runManualLookup() {
     },
     currentCaseAnalysisState.response || {}
   );
+}
+
+async function runGlobalMaterialsSearch(query) {
+  if (!query || query.length < 2) {
+    currentCaseAnalysisState.globalSearchMaterialsQuery = "";
+    currentCaseAnalysisState.globalSearchMaterialsResults = null;
+    currentCaseAnalysisState.globalSearchMaterialsLoading = false;
+    return;
+  }
+
+  currentCaseAnalysisState.globalSearchMaterialsQuery = query;
+  currentCaseAnalysisState.globalSearchMaterialsLoading = true;
+  currentCaseAnalysisState.globalSearchMaterialsResults = null;
+  rerenderCurrentCaseToast();
+
+  const allRegCodes = [...(currentCaseAnalysisState.analysis?.requested_regulations || [])];
+  const regResp = await sendMessageAsync({ type: "EXT_FETCH_REGULATIONS" });
+  if (regResp?.ok && Array.isArray(regResp.regulations)) {
+    regResp.regulations.forEach((r) => { if (!allRegCodes.includes(r.code)) allRegCodes.push(r.code); });
+  }
+
+  const response = await sendMessageAsync({
+    type: "SF_MATERIALS_LOOKUP",
+    payload: {
+      caseId: currentCaseAnalysisState.payload?.caseId || currentCaseAnalysisState.payload?.recordId || "manual-lookup",
+      queries: [query],
+      requestedRegulations: allRegCodes,
+    },
+  });
+
+  if (currentCaseAnalysisState.globalSearchMaterialsQuery !== query) return;
+
+  currentCaseAnalysisState.globalSearchMaterialsLoading = false;
+  currentCaseAnalysisState.globalSearchMaterialsResults = response?.ok
+    ? (response.componentSuppliersResult?.json?.results || [])
+    : [];
+  rerenderCurrentCaseToast();
 }
 
 async function loadSuppliersLibrary(search = "", forceRefresh = false) {
@@ -1122,7 +1165,7 @@ function getOrCreateCaseToast() {
   headerActions.appendChild(closeBtn);
 
   const searchWrapper = document.createElement("div");
-  Object.assign(searchWrapper.style, { flex: "1", margin: "0 10px" });
+  Object.assign(searchWrapper.style, { flex: "1", margin: "0 10px", position: "relative" });
 
   const searchInput = document.createElement("input");
   searchInput.id = "sf-compliance-global-search";
@@ -1131,7 +1174,7 @@ function getOrCreateCaseToast() {
   searchInput.value = currentCaseAnalysisState.globalSearchQuery || "";
   Object.assign(searchInput.style, {
     width: "100%",
-    padding: "5px 10px",
+    padding: "5px 24px 5px 10px",
     fontSize: "12px",
     border: "1px solid #d0d7de",
     borderRadius: "8px",
@@ -1141,12 +1184,42 @@ function getOrCreateCaseToast() {
     boxSizing: "border-box",
   });
 
+  const clearBtn = document.createElement("button");
+  clearBtn.textContent = "×";
+  Object.assign(clearBtn.style, {
+    position: "absolute", right: "6px", top: "50%",
+    transform: "translateY(-50%)",
+    background: "none", border: "none", cursor: "pointer",
+    fontSize: "14px", lineHeight: "1", color: "#9ca3af",
+    padding: "0 2px",
+    display: currentCaseAnalysisState.globalSearchQuery ? "" : "none",
+  });
+  clearBtn.addEventListener("mousedown", (e) => e.stopPropagation());
+  clearBtn.addEventListener("click", () => {
+    searchInput.value = "";
+    clearTimeout(_searchDebounceTimer);
+    currentCaseAnalysisState.globalSearchQuery = "";
+    currentCaseAnalysisState.globalSearchMaterialsQuery = "";
+    currentCaseAnalysisState.globalSearchMaterialsResults = null;
+    currentCaseAnalysisState.globalSearchMaterialsLoading = false;
+    clearBtn.style.display = "none";
+    rerenderCurrentCaseToast();
+  });
+
   let _searchDebounceTimer = null;
   searchInput.addEventListener("input", (e) => {
     clearTimeout(_searchDebounceTimer);
+    clearBtn.style.display = e.target.value ? "" : "none";
     _searchDebounceTimer = setTimeout(() => {
-      currentCaseAnalysisState.globalSearchQuery = e.target.value.trim();
+      const val = e.target.value.trim();
+      currentCaseAnalysisState.globalSearchQuery = val;
+      if (!val) {
+        currentCaseAnalysisState.globalSearchMaterialsQuery = "";
+        currentCaseAnalysisState.globalSearchMaterialsResults = null;
+        currentCaseAnalysisState.globalSearchMaterialsLoading = false;
+      }
       rerenderCurrentCaseToast();
+      if (val) runGlobalMaterialsSearch(val);
     }, 300);
   });
 
@@ -1154,6 +1227,7 @@ function getOrCreateCaseToast() {
   searchInput.addEventListener("mousedown", (e) => e.stopPropagation());
 
   searchWrapper.appendChild(searchInput);
+  searchWrapper.appendChild(clearBtn);
 
   header.appendChild(title);
   header.appendChild(searchWrapper);
@@ -6165,55 +6239,52 @@ function createGlobalSearchResults(query) {
     total += suppMatches.length;
   }
 
-  // --- Materials ---
-  // Merge all BOM data sources: AI-extracted list, automatic BOM lookup, manual lookup
-  const seenMaterials = new Set();
-  const matMatches = [];
+  // --- Materials (live API lookup) ---
+  const matLoading = currentCaseAnalysisState.globalSearchMaterialsLoading;
+  const matResults = currentCaseAnalysisState.globalSearchMaterialsResults;
+  const matQ = currentCaseAnalysisState.globalSearchMaterialsQuery;
+  const matReady = matQ === query;
 
-  const addMatResult = (label, sub) => {
-    const key = label.toLowerCase();
-    if (label && label !== "—" && !seenMaterials.has(key)) {
-      seenMaterials.add(key);
-      matMatches.push({ label, sub });
-    }
-  };
-
-  // 1. AI-extracted part numbers (editable list in Materials tab)
-  (Array.isArray(currentCaseAnalysisState.overriddenMaterials) ? currentCaseAnalysisState.overriddenMaterials : []).forEach((m) => {
-    if (_matchesQuery(m.part_number, q) || _matchesQuery(m.description, q))
-      addMatResult(m.part_number || "—", m.description || "");
-  });
-
-  // 2. BOM lookup results (automatic case lookup + manual override from Materials tab edits)
-  const effectiveBomResults = (currentCaseAnalysisState.lookupResults || currentCaseAnalysisState.response?.componentSuppliersResult)?.json?.results || [];
-  effectiveBomResults.forEach((r) => {
-    const label = r.normalizedQuery || r.query || r.material || "";
-    const matchFields = [r.query, r.normalizedQuery, r.material];
-    if (matchFields.some((f) => _matchesQuery(f, q)))
-      addMatResult(label || "—", "");
-  });
-
-  // 3. Manual Lookup tab results
-  (currentCaseAnalysisState.manualLookupResults?.json?.results || []).forEach((r) => {
-    const label = r.normalizedQuery || r.query || r.material || "";
-    const matchFields = [r.query, r.normalizedQuery, r.material];
-    if (matchFields.some((f) => _matchesQuery(f, q)))
-      addMatResult(label || "—", "");
-  });
-
-  const matMatchesTrimmed = matMatches.slice(0, 5);
-
-  if (matMatchesTrimmed.length > 0) {
+  {
     const sec = makeSection("Materials");
-    matMatchesTrimmed.forEach(({ label, sub }) => {
-      sec.appendChild(makeRow(label, sub, () => {
-        currentCaseAnalysisState.globalSearchQuery = "";
-        activeCaseToastTab = "materials";
-        rerenderCurrentCaseToast();
-      }));
-    });
-    wrapper.appendChild(sec);
-    total += matMatchesTrimmed.length;
+
+    if (matLoading && matReady) {
+      const loading = document.createElement("div");
+      Object.assign(loading.style, { fontSize: "12px", color: "#9ca3af", fontStyle: "italic" });
+      loading.textContent = "Searching BOM database...";
+      sec.appendChild(loading);
+      wrapper.appendChild(sec);
+      total += 1;
+    } else if (matResults && matReady) {
+      const found = matResults.filter((r) => r.found);
+      if (found.length > 0) {
+        found.slice(0, 5).forEach((r) => {
+          const suppCount = r.supplierCount ?? (Array.isArray(r.suppliers) ? r.suppliers.length : 0);
+          sec.appendChild(makeRow(
+            r.normalizedQuery || r.query || "—",
+            `${suppCount} supplier${suppCount !== 1 ? "s" : ""}`,
+            () => {
+              currentCaseAnalysisState.globalSearchQuery = "";
+              currentCaseAnalysisState.globalSearchMaterialsQuery = "";
+              currentCaseAnalysisState.globalSearchMaterialsResults = null;
+              currentCaseAnalysisState.manualLookupInput = r.query || r.normalizedQuery || "";
+              currentCaseAnalysisState.manualLookupResults = { json: { results: matResults } };
+              activeCaseToastTab = "lookup";
+              rerenderCurrentCaseToast();
+            }
+          ));
+        });
+        wrapper.appendChild(sec);
+        total += found.length;
+      } else {
+        const notFound = document.createElement("div");
+        Object.assign(notFound.style, { fontSize: "12px", color: "#9ca3af", fontStyle: "italic" });
+        notFound.textContent = "Not found in BOM database";
+        sec.appendChild(notFound);
+        wrapper.appendChild(sec);
+        total += 1;
+      }
+    }
   }
 
   // --- Regulations ---
@@ -6251,7 +6322,9 @@ function createGlobalSearchResults(query) {
     regMatches.slice(0, 5).forEach(({ code, name }) => {
       sec.appendChild(makeRow(code, name, () => {
         currentCaseAnalysisState.globalSearchQuery = "";
-        activeCaseToastTab = "overview";
+        currentCaseAnalysisState.suppliersLibraryRegFilter = code;
+        activeCaseToastTab = "suppliers";
+        suppliersSubTab = "library";
         rerenderCurrentCaseToast();
       }));
     });
