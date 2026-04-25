@@ -130,6 +130,8 @@ manualLookupLoading: false,
   globalSearchMaterialsQuery: "",
   globalSearchMaterialsResults: null,
   globalSearchMaterialsLoading: false,
+
+  activityLogFilter: "all",
 };
 
 let activeCaseRequestToken = 0;
@@ -283,6 +285,8 @@ manualLookupLoading: false,
     globalSearchMaterialsQuery: "",
     globalSearchMaterialsResults: null,
     globalSearchMaterialsLoading: false,
+
+    activityLogFilter: "all",
   };
 }
 
@@ -5948,6 +5952,7 @@ function createSuppliersTabContent() {
   subTabBar.appendChild(createSubTabBtn("Analytics", "analytics"));
   subTabBar.appendChild(createSubTabBtn("New Statement", "new_statement"));
   subTabBar.appendChild(createSubTabBtn("Outreach", "outreach"));
+  subTabBar.appendChild(createSubTabBtn("Log", "log"));
 
   wrapper.appendChild(subTabBar);
 
@@ -6020,6 +6025,31 @@ function createSuppliersTabContent() {
     wrapper.appendChild(
       createOutreachTabContent(currentCaseAnalysisState.outreachList || [])
     );
+    return wrapper;
+  }
+
+  // --- Log sub-tab ---
+  if (suppliersSubTab === "log") {
+    const needsOutreach =
+      !currentCaseAnalysisState.outreachList &&
+      !currentCaseAnalysisState.outreachLoading &&
+      !currentCaseAnalysisState.outreachError;
+    const needsLibrary =
+      (currentCaseAnalysisState.suppliersLibrary?.suppliers?.length ?? 0) === 0 &&
+      !currentCaseAnalysisState.suppliersLibraryLoading &&
+      !currentCaseAnalysisState.suppliersLibraryError;
+    if (needsOutreach) loadOutreachList();
+    if (needsLibrary) loadSuppliersLibrary("");
+
+    if (
+      currentCaseAnalysisState.outreachLoading ||
+      currentCaseAnalysisState.suppliersLibraryLoading
+    ) {
+      wrapper.appendChild(createOutreachSkeletonLoader());
+      return wrapper;
+    }
+
+    wrapper.appendChild(createActivityLogContent());
     return wrapper;
   }
 
@@ -11599,6 +11629,262 @@ function createSnapshotTrendChart() {
   section.appendChild(legend);
 
   return section;
+}
+
+function buildActivityEvents() {
+  const events = [];
+  const now = new Date();
+  const in90 = new Date(now.getTime() + 90 * 24 * 60 * 60 * 1000);
+
+  const outreachList = currentCaseAnalysisState.outreachList || [];
+  for (const record of outreachList) {
+    if (record.sentAt) {
+      events.push({
+        type: "outreach_sent",
+        date: new Date(record.sentAt),
+        title: `Outreach sent to ${record.supplierName}`,
+        subtitle: record.subject || "",
+        supplierId: record.supplierId,
+        supplierName: record.supplierName,
+        color: "#d97706",
+      });
+    }
+    if (record.respondedAt) {
+      events.push({
+        type: "outreach_responded",
+        date: new Date(record.respondedAt),
+        title: `${record.supplierName} responded`,
+        subtitle: record.subject || "",
+        supplierId: record.supplierId,
+        supplierName: record.supplierName,
+        color: "#059669",
+      });
+    }
+  }
+
+  const suppliers = currentCaseAnalysisState.suppliersLibrary?.suppliers || [];
+  for (const supplier of suppliers) {
+    const assertions = supplier.assertions || [];
+    for (const assertion of assertions) {
+      const issueDate = assertion.document?.issueDate || assertion.validFrom;
+      const validUntil = assertion.document?.validUntil || assertion.validUntil;
+      const docTitle = assertion.document?.title || assertion.regulation?.code || "Document";
+      const regCode = assertion.regulation?.code || "";
+      const subtext = `${docTitle}${regCode ? ` · ${regCode}` : ""}`;
+
+      if (issueDate) {
+        events.push({
+          type: "doc_issued",
+          date: new Date(issueDate),
+          title: `${supplier.supplierName} — document issued`,
+          subtitle: subtext,
+          supplierId: supplier.supplierId,
+          supplierName: supplier.supplierName,
+          color: "#0176d3",
+        });
+      }
+
+      if (validUntil) {
+        const expDate = new Date(validUntil);
+        if (expDate < now) {
+          events.push({
+            type: "doc_expired",
+            date: expDate,
+            title: `${supplier.supplierName} — document expired`,
+            subtitle: subtext,
+            supplierId: supplier.supplierId,
+            supplierName: supplier.supplierName,
+            color: "#dc2626",
+          });
+        } else if (expDate <= in90) {
+          events.push({
+            type: "doc_expiring",
+            date: expDate,
+            title: `${supplier.supplierName} — document expiring`,
+            subtitle: subtext,
+            supplierId: supplier.supplierId,
+            supplierName: supplier.supplierName,
+            color: "#ea580c",
+          });
+        }
+      }
+    }
+  }
+
+  events.sort((a, b) => b.date - a.date);
+  return events;
+}
+
+function createActivityLogContent() {
+  const wrapper = document.createElement("div");
+
+  const allEvents = buildActivityEvents();
+
+  // Filter pills
+  const filterBar = document.createElement("div");
+  Object.assign(filterBar.style, {
+    display: "flex", gap: "6px", marginBottom: "14px", flexWrap: "wrap",
+  });
+
+  const filterDefs = [
+    { key: "all",       label: "All" },
+    { key: "outreach",  label: "Outreach" },
+    { key: "documents", label: "Documents" },
+    { key: "expiring",  label: "Expiring" },
+  ];
+
+  filterDefs.forEach(({ key, label }) => {
+    const pill = document.createElement("button");
+    pill.type = "button";
+    const isActive = (currentCaseAnalysisState.activityLogFilter || "all") === key;
+    pill.textContent = label;
+    Object.assign(pill.style, {
+      padding: "3px 10px",
+      borderRadius: "12px",
+      border: isActive ? "none" : "1px solid #d0d7de",
+      background: isActive ? "#0176d3" : "#fff",
+      color: isActive ? "#fff" : "#374151",
+      fontSize: "11px",
+      cursor: "pointer",
+      fontWeight: isActive ? "600" : "400",
+    });
+    pill.onclick = () => {
+      currentCaseAnalysisState.activityLogFilter = key;
+      rerenderCurrentCaseToast();
+    };
+    filterBar.appendChild(pill);
+  });
+
+  wrapper.appendChild(filterBar);
+
+  // Apply filter
+  const filter = currentCaseAnalysisState.activityLogFilter || "all";
+  let events = allEvents;
+  if (filter === "outreach") {
+    events = allEvents.filter(e => e.type === "outreach_sent" || e.type === "outreach_responded");
+  } else if (filter === "documents") {
+    events = allEvents.filter(e => e.type === "doc_issued");
+  } else if (filter === "expiring") {
+    events = allEvents.filter(e => e.type === "doc_expired" || e.type === "doc_expiring");
+  }
+
+  if (events.length === 0) {
+    const empty = document.createElement("div");
+    Object.assign(empty.style, {
+      textAlign: "center", padding: "40px 0", color: "#9ca3af", fontSize: "13px",
+    });
+    empty.textContent = allEvents.length === 0
+      ? "No activity data available yet."
+      : "No events match this filter.";
+    wrapper.appendChild(empty);
+    return wrapper;
+  }
+
+  // Group into date buckets
+  const now = new Date();
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const yesterday = new Date(today.getTime() - 86400000);
+  const past7   = new Date(today.getTime() -  7 * 86400000);
+  const past30  = new Date(today.getTime() - 30 * 86400000);
+  const past90  = new Date(today.getTime() - 90 * 86400000);
+
+  const getBucket = (date) => {
+    const d = new Date(date.getFullYear(), date.getMonth(), date.getDate());
+    if (d >= today)     return "Today";
+    if (d >= yesterday) return "Yesterday";
+    if (d >= past7)     return "Past 7 days";
+    if (d >= past30)    return "Past 30 days";
+    if (d >= past90)    return "Past 3 months";
+    return "Older";
+  };
+
+  const buckets = {};
+  const bucketOrder = ["Today", "Yesterday", "Past 7 days", "Past 30 days", "Past 3 months", "Older"];
+
+  for (const event of events) {
+    const b = getBucket(event.date);
+    if (!buckets[b]) buckets[b] = [];
+    buckets[b].push(event);
+  }
+
+  for (const bucketName of bucketOrder) {
+    const bucketEvents = buckets[bucketName];
+    if (!bucketEvents?.length) continue;
+
+    const header = document.createElement("div");
+    header.textContent = bucketName;
+    Object.assign(header.style, {
+      fontSize: "11px", fontWeight: "600", color: "#6b7280",
+      textTransform: "uppercase", letterSpacing: "0.05em",
+      marginTop: "14px", marginBottom: "6px",
+      paddingBottom: "4px", borderBottom: "1px solid #e5e7eb",
+    });
+    wrapper.appendChild(header);
+
+    for (const event of bucketEvents) {
+      const row = document.createElement("div");
+      Object.assign(row.style, {
+        display: "flex", alignItems: "flex-start", gap: "10px",
+        padding: "7px 8px", borderRadius: "8px",
+        cursor: event.supplierId ? "pointer" : "default",
+        marginBottom: "1px",
+      });
+      row.addEventListener("mouseenter", () => { row.style.background = "#f9fafb"; });
+      row.addEventListener("mouseleave", () => { row.style.background = ""; });
+
+      const dot = document.createElement("div");
+      Object.assign(dot.style, {
+        width: "8px", height: "8px", borderRadius: "50%",
+        background: event.color, marginTop: "4px", flexShrink: "0",
+      });
+      row.appendChild(dot);
+
+      const textCol = document.createElement("div");
+      Object.assign(textCol.style, { flex: "1", minWidth: "0" });
+
+      const titleEl = document.createElement("div");
+      titleEl.textContent = event.title;
+      Object.assign(titleEl.style, {
+        fontSize: "12px", color: "#111827", fontWeight: "500",
+        overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
+      });
+      textCol.appendChild(titleEl);
+
+      if (event.subtitle) {
+        const sub = document.createElement("div");
+        sub.textContent = event.subtitle;
+        Object.assign(sub.style, {
+          fontSize: "11px", color: "#6b7280",
+          overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
+        });
+        textCol.appendChild(sub);
+      }
+      row.appendChild(textCol);
+
+      const d = event.date;
+      const dateEl = document.createElement("div");
+      const sameYear = d.getFullYear() === now.getFullYear();
+      dateEl.textContent = sameYear
+        ? `${d.getMonth() + 1}/${d.getDate()}`
+        : `${d.getMonth() + 1}/${d.getDate()}/${String(d.getFullYear()).slice(-2)}`;
+      Object.assign(dateEl.style, {
+        fontSize: "10px", color: "#9ca3af", flexShrink: "0", marginTop: "3px",
+      });
+      row.appendChild(dateEl);
+
+      if (event.supplierId) {
+        row.onclick = () => {
+          currentCaseAnalysisState.selectedSupplierLibraryId = event.supplierId;
+          suppliersSubTab = "library";
+          rerenderCurrentCaseToast();
+        };
+      }
+
+      wrapper.appendChild(row);
+    }
+  }
+
+  return wrapper;
 }
 
 function createAnalyticsDashboard(suppliersLibrary) {
