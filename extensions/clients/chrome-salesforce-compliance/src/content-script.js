@@ -637,12 +637,13 @@ async function loadSuppliersLibrary(search = "", forceRefresh = false) {
   const analyticsData = buildAnalyticsData(currentCaseAnalysisState.suppliersLibrary);
   if (analyticsData.stats.totalSuppliers > 0) {
     const compliancePercent = Math.round(
-      (analyticsData.stats.fullyCovered / analyticsData.stats.totalSuppliers) * 100
+      (analyticsData.stats.hasActiveDocs / analyticsData.stats.totalSuppliers) * 100
     );
-    const coveragePercent = Math.round((analyticsData.stats.overallCoverageRate || 0) * 100);
+    const coveragePercent = Math.round((analyticsData.stats.avgRelevantCoverage || 0) * 100);
     sendMessageAsync({
       type: "EXT_SAVE_COMPLIANCE_SNAPSHOT",
       payload: {
+        v: 2,
         compliancePercent,
         coveragePercent,
         totalSuppliers: analyticsData.stats.totalSuppliers,
@@ -5958,12 +5959,14 @@ function createSuppliersTabContent() {
 
   // --- Analytics sub-tab ---
   if (suppliersSubTab === "analytics") {
+    // Analytics always needs full unfiltered supplier data
+    const libHasSuppliers = (currentCaseAnalysisState.suppliersLibrary?.suppliers?.length ?? 0) > 0;
     if (
-      !currentCaseAnalysisState.suppliersLibrary &&
+      !libHasSuppliers &&
       !currentCaseAnalysisState.suppliersLibraryLoading &&
       !currentCaseAnalysisState.suppliersLibraryError
     ) {
-      loadSuppliersLibrary(currentCaseAnalysisState.suppliersLibrarySearch || "");
+      loadSuppliersLibrary("");
     }
 
     if (currentCaseAnalysisState.suppliersLibraryLoading) {
@@ -5978,9 +5981,17 @@ function createSuppliersTabContent() {
       return wrapper;
     }
 
-    wrapper.appendChild(
-      createAnalyticsDashboard(currentCaseAnalysisState.suppliersLibrary)
-    );
+    try {
+      wrapper.appendChild(
+        createAnalyticsDashboard(currentCaseAnalysisState.suppliersLibrary)
+      );
+    } catch (e) {
+      console.error("[Analytics] Dashboard render error:", e);
+      const errDiv = document.createElement("div");
+      Object.assign(errDiv.style, { padding: "16px", color: "#b42318", fontSize: "13px" });
+      errDiv.textContent = `⚠ Analytics failed to render: ${e.message}`;
+      wrapper.appendChild(errDiv);
+    }
     return wrapper;
   }
 
@@ -8280,6 +8291,56 @@ const withGaps = matrix.filter((row) => {
 
   const overallCoverageRate = totalCells > 0 ? coveredCells / totalCells : 0;
 
+  // --- Engagement metrics (B) ---
+  // Based on supplier assertions, not on global regulation universe
+  const hasActiveDocs = suppliers.filter((s) => {
+    const assertions = Array.isArray(s.assertions) ? s.assertions : [];
+    return assertions.some(isAssertionActive);
+  }).length;
+
+  const needsRenewal = suppliers.filter((s) => {
+    const assertions = Array.isArray(s.assertions) ? s.assertions : [];
+    const hasActive = assertions.some(isAssertionActive);
+    const hasExpired = assertions.some(isAssertionExpired);
+    return !hasActive && hasExpired;
+  }).length;
+
+  const noEngagement = suppliers.filter((s) => {
+    const assertions = Array.isArray(s.assertions) ? s.assertions : [];
+    return assertions.length === 0;
+  }).length;
+
+  // --- Average relevant coverage per supplier (C) ---
+  // For each supplier: covered / (own unique regulations with any assertion)
+  // Average only across suppliers that have at least one relevant regulation
+  const perSupplierCoverages = matrix
+    .map((row) => {
+      const relevantCells = row.cells.filter((c) => c.status !== "missing");
+      if (relevantCells.length === 0) return null;
+      const coveredRelevant = relevantCells.filter((c) => c.status === "covered").length;
+      return coveredRelevant / relevantCells.length;
+    })
+    .filter((v) => v !== null);
+
+  const avgRelevantCoverage = perSupplierCoverages.length > 0
+    ? perSupplierCoverages.reduce((a, b) => a + b, 0) / perSupplierCoverages.length
+    : 0;
+
+  // --- Average doc freshness per supplier (C) ---
+  // active assertions / total assertions, averaged across engaged suppliers
+  const perSupplierFreshness = suppliers
+    .map((s) => {
+      const assertions = Array.isArray(s.assertions) ? s.assertions : [];
+      if (assertions.length === 0) return null;
+      const activeCount = assertions.filter(isAssertionActive).length;
+      return activeCount / assertions.length;
+    })
+    .filter((v) => v !== null);
+
+  const avgDocFreshness = perSupplierFreshness.length > 0
+    ? perSupplierFreshness.reduce((a, b) => a + b, 0) / perSupplierFreshness.length
+    : 0;
+
   // At risk suppliers (sorted by gaps)
   const atRisk = matrix
     .map((row) => {
@@ -8573,6 +8634,11 @@ return {
       expiredCells,
       nonCompliantCells,
       informationalCells,
+      hasActiveDocs,
+      needsRenewal,
+      noEngagement,
+      avgRelevantCoverage,
+      avgDocFreshness,
     },
     atRisk,
     expiringSoon,
@@ -8633,89 +8699,101 @@ function createAnalyticsStatCard(label, value, subtext, accentColor) {
 }
 
 function createAnalyticsStatsBar(stats) {
+  if (!stats) return null;
+
+  const totalSuppliers = stats.totalSuppliers || 0;
+  const hasActiveDocs = stats.hasActiveDocs ?? 0;
+  const needsRenewal = stats.needsRenewal ?? 0;
+  const noEngagement = stats.noEngagement ?? 0;
+  const totalRegulations = stats.totalRegulations ?? 0;
+  const avgRelevantCoverage = stats.avgRelevantCoverage ?? 0;
+  const avgDocFreshness = stats.avgDocFreshness ?? 0;
+
   const wrapper = document.createElement("div");
   Object.assign(wrapper.style, {
     display: "grid",
-    gridTemplateColumns: "repeat(5, 1fr)",
-    gap: "12px",
-    marginBottom: "24px",
+    gridTemplateColumns: "repeat(auto-fill, minmax(130px, 1fr))",
+    gap: "10px",
+    marginBottom: "20px",
   });
 
+  // Card 1: Total suppliers
   wrapper.appendChild(
     createAnalyticsStatCard(
       "Suppliers",
-      stats.totalSuppliers,
-      `${stats.totalRegulations} regulations tracked`,
+      totalSuppliers,
+      `${totalRegulations} regulations tracked`,
       "#111827"
     )
   );
 
+  // Card 2: Suppliers with active docs
+  const activePct = totalSuppliers > 0
+    ? Math.round((hasActiveDocs / totalSuppliers) * 100) : 0;
   wrapper.appendChild(
     createAnalyticsStatCard(
-      "Fully Covered",
-      stats.fullyCovered,
-      `${stats.totalSuppliers > 0 ? Math.round((stats.fullyCovered / stats.totalSuppliers) * 100) : 0}% of suppliers`,
+      "Active",
+      hasActiveDocs,
+      `${activePct}% have valid docs`,
       "#16a34a"
     )
   );
 
+  // Card 3: Suppliers needing renewal
   wrapper.appendChild(
     createAnalyticsStatCard(
-      "With Gaps",
-      stats.withGaps,
-      "partial coverage",
+      "Needs Renewal",
+      needsRenewal,
+      "expired, no active docs",
       "#ea580c"
     )
   );
 
+  // Card 4: Suppliers with no docs
   wrapper.appendChild(
     createAnalyticsStatCard(
-      "No Coverage",
-      stats.noCoverage,
-      "no statements",
+      "No Docs",
+      noEngagement,
+      "no statements yet",
       "#dc2626"
     )
   );
 
-  const currentCoverage = Math.round(stats.overallCoverageRate * 100);
-  const coverageColor = stats.overallCoverageRate >= 0.8 ? "#16a34a" : stats.overallCoverageRate >= 0.5 ? "#ea580c" : "#dc2626";
+  // Card 5: Average relevant coverage
+  const avgCovPct = Math.round(avgRelevantCoverage * 100);
+  const avgFreshPct = Math.round(avgDocFreshness * 100);
+  const coverageColor = avgCovPct >= 80 ? "#16a34a" : avgCovPct >= 50 ? "#ea580c" : "#dc2626";
 
-  // Compute trend: compare current coverage with most recent previous snapshot
-  const snapshots = currentCaseAnalysisState.complianceSnapshots || [];
-  let trendEl = null;
-  if (snapshots.length > 0) {
-    const prev = snapshots[0];
-    const delta = currentCoverage - (prev.coveragePercent || 0);
-    if (delta !== 0) {
-      const prevDate = prev.date ? new Date(prev.date).toLocaleDateString() : "previously";
-      trendEl = document.createElement("span");
-      trendEl.title = `Was ${prev.coveragePercent}% on ${prevDate}`;
-      trendEl.textContent = delta > 0 ? ` ↑${delta}%` : ` ↓${Math.abs(delta)}%`;
-      Object.assign(trendEl.style, {
-        fontSize: "13px",
-        fontWeight: "700",
-        color: delta > 0 ? "#16a34a" : "#dc2626",
-        marginLeft: "4px",
-        verticalAlign: "middle",
-      });
-    }
-  }
-
-  const coverageCard = createAnalyticsStatCard(
-    "Coverage Rate",
-    `${currentCoverage}%`,
-    `${stats.coveredCells} / ${stats.totalCells} cells`,
+  const avgCard = createAnalyticsStatCard(
+    "Avg. Coverage",
+    `${avgCovPct}%`,
+    `${avgFreshPct}% docs fresh`,
     coverageColor
   );
 
-  if (trendEl) {
-    // Append trend arrow next to the value element (second child of card)
-    const valueEl = coverageCard.children[1];
-    if (valueEl) valueEl.appendChild(trendEl);
-  }
+  // Trend arrow from last snapshot (v2 only)
+  try {
+    const snapshots = (currentCaseAnalysisState.complianceSnapshots || []).filter(s => s.v === 2);
+    if (snapshots.length > 1) {
+      const prev = snapshots[snapshots.length - 2];
+      const delta = avgCovPct - (prev.coveragePercent || 0);
+      if (delta !== 0) {
+        const prevDate = prev.date ? new Date(prev.date).toLocaleDateString() : "previously";
+        const trendEl = document.createElement("span");
+        trendEl.title = `Was ${prev.coveragePercent || 0}% on ${prevDate}`;
+        trendEl.textContent = delta > 0 ? ` ↑${delta}%` : ` ↓${Math.abs(delta)}%`;
+        Object.assign(trendEl.style, {
+          fontSize: "12px", fontWeight: "700",
+          color: delta > 0 ? "#16a34a" : "#dc2626",
+          marginLeft: "4px",
+        });
+        const valueEl = avgCard.querySelector("div:nth-child(2)");
+        if (valueEl) valueEl.appendChild(trendEl);
+      }
+    }
+  } catch (_) { /* trend arrow is non-critical */ }
 
-  wrapper.appendChild(coverageCard);
-
+  wrapper.appendChild(avgCard);
   return wrapper;
 }
 
@@ -11303,13 +11381,233 @@ function createCollapsibleSection(key, title, contentFn) {
   return wrapper;
 }
 
+function createSnapshotTrendChart() {
+  const allSnapshots = currentCaseAnalysisState.complianceSnapshots || [];
+  // Only use v2 snapshots (new metric formula). Old ones had different scale and cause spikes.
+  const data = [...allSnapshots].filter(s => s.v === 2).reverse(); // oldest → newest
+
+  if (data.length < 2) return null;
+
+  const svgNS = "http://www.w3.org/2000/svg";
+  const W = 400, H = 130;
+  const PAD = { top: 12, right: 12, bottom: 24, left: 36 };
+  const chartW = W - PAD.left - PAD.right;
+  const chartH = H - PAD.top - PAD.bottom;
+  const n = data.length;
+
+  const xScale = (i) => PAD.left + (n > 1 ? (i / (n - 1)) * chartW : chartW / 2);
+  const yScale = (v) => PAD.top + chartH * (1 - Math.min(100, Math.max(0, v ?? 0)) / 100);
+
+  // Smooth Catmull-Rom path through points
+  function smoothPath(pts) {
+    if (pts.length < 2) return "";
+    if (pts.length === 2) return `M ${pts[0].x} ${pts[0].y} L ${pts[1].x} ${pts[1].y}`;
+    const a = 1 / 5;
+    let d = `M ${pts[0].x} ${pts[0].y}`;
+    for (let i = 0; i < pts.length - 1; i++) {
+      const p0 = pts[Math.max(0, i - 1)];
+      const p1 = pts[i];
+      const p2 = pts[i + 1];
+      const p3 = pts[Math.min(pts.length - 1, i + 2)];
+      const cp1x = (p1.x + (p2.x - p0.x) * a).toFixed(2);
+      const cp1y = (p1.y + (p2.y - p0.y) * a).toFixed(2);
+      const cp2x = (p2.x - (p3.x - p1.x) * a).toFixed(2);
+      const cp2y = (p2.y - (p3.y - p1.y) * a).toFixed(2);
+      d += ` C ${cp1x} ${cp1y}, ${cp2x} ${cp2y}, ${p2.x.toFixed(2)} ${p2.y.toFixed(2)}`;
+    }
+    return d;
+  }
+
+  // --- Build SVG ---
+  const svg = document.createElementNS(svgNS, "svg");
+  svg.setAttribute("viewBox", `0 0 ${W} ${H}`);
+  svg.setAttribute("preserveAspectRatio", "none");
+  Object.assign(svg.style, { width: "100%", height: `${H}px`, display: "block" });
+
+  // Gradient defs
+  const defs = document.createElementNS(svgNS, "defs");
+  [["grad-blue", "#0176d3"], ["grad-green", "#16a34a"]].forEach(([id, color]) => {
+    const grad = document.createElementNS(svgNS, "linearGradient");
+    grad.setAttribute("id", id); grad.setAttribute("x1", "0"); grad.setAttribute("y1", "0");
+    grad.setAttribute("x2", "0"); grad.setAttribute("y2", "1");
+    const s1 = document.createElementNS(svgNS, "stop");
+    s1.setAttribute("offset", "0%"); s1.setAttribute("stop-color", color); s1.setAttribute("stop-opacity", "0.18");
+    const s2 = document.createElementNS(svgNS, "stop");
+    s2.setAttribute("offset", "100%"); s2.setAttribute("stop-color", color); s2.setAttribute("stop-opacity", "0");
+    grad.appendChild(s1); grad.appendChild(s2);
+    defs.appendChild(grad);
+  });
+  svg.appendChild(defs);
+
+  // Grid lines (0, 50, 100 only — cleaner)
+  [0, 50, 100].forEach((v) => {
+    const y = yScale(v);
+    const line = document.createElementNS(svgNS, "line");
+    line.setAttribute("x1", PAD.left); line.setAttribute("x2", W - PAD.right);
+    line.setAttribute("y1", y); line.setAttribute("y2", y);
+    line.setAttribute("stroke", v === 0 ? "#e5e7eb" : "#f3f4f6");
+    line.setAttribute("stroke-width", "1");
+    svg.appendChild(line);
+
+    const lbl = document.createElementNS(svgNS, "text");
+    lbl.setAttribute("x", PAD.left - 5); lbl.setAttribute("y", y + 3.5);
+    lbl.setAttribute("text-anchor", "end");
+    lbl.setAttribute("fill", "#d1d5db"); lbl.setAttribute("font-size", "9");
+    lbl.textContent = `${v}%`;
+    svg.appendChild(lbl);
+  });
+
+  // Draw one series
+  const drawSeries = (values, color, gradId) => {
+    const pts = values
+      .map((v, i) => v !== null ? { x: xScale(i), y: yScale(v), v, i } : null)
+      .filter(Boolean);
+    if (pts.length < 2) return;
+
+    const linePath = smoothPath(pts);
+
+    // Gradient area
+    const areaD = `M ${pts[0].x} ${yScale(0)} L ${pts[0].x} ${pts[0].y} ` +
+      smoothPath(pts).replace(/^M [^ ]+ [^ ]+/, "") +
+      ` L ${pts[pts.length - 1].x} ${yScale(0)} Z`;
+    const area = document.createElementNS(svgNS, "path");
+    area.setAttribute("d", areaD);
+    area.setAttribute("fill", `url(#${gradId})`);
+    svg.appendChild(area);
+
+    // Line
+    const path = document.createElementNS(svgNS, "path");
+    path.setAttribute("d", linePath); path.setAttribute("fill", "none");
+    path.setAttribute("stroke", color); path.setAttribute("stroke-width", "2");
+    path.setAttribute("stroke-linejoin", "round"); path.setAttribute("stroke-linecap", "round");
+    svg.appendChild(path);
+
+    // Dots: show all if sparse (≤12), only last if dense
+    const showAll = n <= 12;
+    const dotPts = showAll ? pts : [pts[pts.length - 1]];
+    dotPts.forEach(p => {
+      const dateStr = data[p.i]?.date
+        ? new Date(data[p.i].date).toLocaleDateString(undefined, { month: "short", day: "numeric" })
+        : "";
+      const circle = document.createElementNS(svgNS, "circle");
+      circle.setAttribute("cx", p.x); circle.setAttribute("cy", p.y);
+      circle.setAttribute("r", showAll ? "2.5" : "4");
+      circle.setAttribute("fill", color);
+      circle.setAttribute("stroke", "#fff"); circle.setAttribute("stroke-width", "2");
+      const t = document.createElementNS(svgNS, "title");
+      t.textContent = `${dateStr}: ${p.v}%`;
+      circle.appendChild(t);
+      svg.appendChild(circle);
+    });
+  };
+
+  drawSeries(data.map(d => d.coveragePercent ?? null), "#0176d3", "grad-blue");
+  drawSeries(data.map(d => d.compliancePercent ?? null), "#16a34a", "grad-green");
+
+  // X-axis labels: first, mid, last — deduplicated by minimum 40px gap
+  const candidates = [0, Math.floor((n - 1) / 2), n - 1];
+  [...new Set(candidates)].forEach((i, idx, arr) => {
+    if (i >= n) return;
+    // Skip if too close to previous label (in viewBox units)
+    if (idx > 0 && xScale(i) - xScale(arr[idx - 1]) < 40) return;
+    const d = data[i];
+    if (!d?.date) return;
+    const dateStr = new Date(d.date).toLocaleDateString(undefined, { month: "short", day: "numeric" });
+    const lbl = document.createElementNS(svgNS, "text");
+    lbl.setAttribute("x", xScale(i)); lbl.setAttribute("y", H - 6);
+    lbl.setAttribute("text-anchor", i === 0 ? "start" : i === n - 1 ? "end" : "middle");
+    lbl.setAttribute("fill", "#c0c4cc"); lbl.setAttribute("font-size", "9");
+    lbl.textContent = dateStr;
+    svg.appendChild(lbl);
+  });
+
+  // --- Assemble card ---
+  const section = document.createElement("div");
+  Object.assign(section.style, {
+    marginBottom: "20px", padding: "16px 18px",
+    border: "1px solid #e9ecef", borderRadius: "14px", background: "#ffffff",
+    boxShadow: "0 1px 4px rgba(0,0,0,0.04)",
+  });
+
+  // Header row
+  const header = document.createElement("div");
+  Object.assign(header.style, {
+    display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "4px",
+  });
+
+  const titleBlock = document.createElement("div");
+  const titleEl = document.createElement("div");
+  Object.assign(titleEl.style, { fontSize: "13px", fontWeight: "700", color: "#111827" });
+  titleEl.textContent = "Coverage Trend";
+
+  const firstDate = data[0]?.date ? new Date(data[0].date).toLocaleDateString(undefined, { month: "short", day: "numeric" }) : "";
+  const lastDate = data[n - 1]?.date ? new Date(data[n - 1].date).toLocaleDateString(undefined, { month: "short", day: "numeric" }) : "";
+  const subtitle = document.createElement("div");
+  Object.assign(subtitle.style, { fontSize: "11px", color: "#9ca3af", marginTop: "2px" });
+  subtitle.textContent = `${n} snapshots · ${firstDate} – ${lastDate}`;
+  titleBlock.appendChild(titleEl);
+  titleBlock.appendChild(subtitle);
+
+  // Current values (top-right)
+  const latest = data[n - 1];
+  const valuesRow = document.createElement("div");
+  Object.assign(valuesRow.style, { display: "flex", gap: "16px", alignItems: "center" });
+  [
+    { label: "Avg. Coverage", val: latest.coveragePercent ?? 0, color: "#0176d3" },
+    { label: "Active %", val: latest.compliancePercent ?? 0, color: "#16a34a" },
+  ].forEach(({ label, val, color }) => {
+    const item = document.createElement("div");
+    Object.assign(item.style, { textAlign: "right" });
+    const num = document.createElement("div");
+    Object.assign(num.style, { fontSize: "15px", fontWeight: "700", color, lineHeight: "1.1" });
+    num.textContent = `${val}%`;
+    const lbl = document.createElement("div");
+    Object.assign(lbl.style, { fontSize: "10px", color: "#9ca3af", marginTop: "1px" });
+    lbl.textContent = label;
+    item.appendChild(num);
+    item.appendChild(lbl);
+    valuesRow.appendChild(item);
+  });
+
+  header.appendChild(titleBlock);
+  header.appendChild(valuesRow);
+  section.appendChild(header);
+  section.appendChild(svg);
+
+  // Legend
+  const legend = document.createElement("div");
+  Object.assign(legend.style, { display: "flex", gap: "16px", marginTop: "8px" });
+  [["Avg. Coverage", "#0176d3"], ["Active %", "#16a34a"]].forEach(([label, color]) => {
+    const item = document.createElement("div");
+    Object.assign(item.style, { display: "flex", alignItems: "center", gap: "5px", fontSize: "11px", color: "#9ca3af" });
+    const dot = document.createElement("div");
+    Object.assign(dot.style, { width: "20px", height: "2px", borderRadius: "1px", background: color });
+    item.appendChild(dot);
+    item.appendChild(document.createTextNode(label));
+    legend.appendChild(item);
+  });
+  section.appendChild(legend);
+
+  return section;
+}
+
 function createAnalyticsDashboard(suppliersLibrary) {
   const wrapper = document.createElement("div");
   wrapper.style.marginTop = "8px";
 
-  const data = buildAnalyticsData(suppliersLibrary);
+  let data;
+  try {
+    data = buildAnalyticsData(suppliersLibrary);
+  } catch (e) {
+    console.error("[Analytics] buildAnalyticsData error:", e);
+    const errDiv = document.createElement("div");
+    Object.assign(errDiv.style, { padding: "16px", color: "#b42318", fontSize: "13px" });
+    errDiv.textContent = `⚠ Analytics data error: ${e.message}`;
+    wrapper.appendChild(errDiv);
+    return wrapper;
+  }
 
-  if (!data.suppliers.length) {
+  if (!data || !data.suppliers || !data.suppliers.length) {
     const empty = document.createElement("div");
     Object.assign(empty.style, {
       padding: "24px",
@@ -11317,7 +11615,7 @@ function createAnalyticsDashboard(suppliersLibrary) {
       color: "#6b7280",
       fontSize: "14px",
     });
-    empty.textContent = "No supplier data loaded. Search for suppliers in the Library tab first.";
+    empty.textContent = "No supplier data loaded. Visit the Library tab to load suppliers first.";
     wrapper.appendChild(empty);
     return wrapper;
   }
@@ -11336,6 +11634,7 @@ function createAnalyticsDashboard(suppliersLibrary) {
   }
 
   safeAppend(() => createAnalyticsStatsBar(data.stats), "Stats");
+  safeAppend(() => createSnapshotTrendChart(), "Trend Chart");
 
   const nonCompliantCount = data.matrix.filter((r) => r.cells.some((c) => c.status === "non_compliant")).length;
   const atRiskCount = data.atRisk.length;
