@@ -3884,17 +3884,20 @@ function createSuppliersLibrarySearchBar() {
     fontSize: "14px",
   });
 
+  let _libSearchDebounce = null;
   input.addEventListener("input", (event) => {
     const val = event.target.value || "";
     const cursorPos = event.target.selectionStart;
     currentCaseAnalysisState.suppliersLibrarySearch = val;
-    rerenderCurrentCaseToast();
-    // Restore focus and cursor position after DOM rebuild
-    const rebuilt = document.getElementById("sf-compliance-lib-search");
-    if (rebuilt) {
-      rebuilt.focus();
-      rebuilt.setSelectionRange(cursorPos, cursorPos);
-    }
+    clearTimeout(_libSearchDebounce);
+    _libSearchDebounce = setTimeout(() => {
+      rerenderCurrentCaseToast();
+      const rebuilt = document.getElementById("sf-compliance-lib-search");
+      if (rebuilt) {
+        rebuilt.focus();
+        rebuilt.setSelectionRange(cursorPos, cursorPos);
+      }
+    }, 250);
   });
 
   input.addEventListener("keydown", (event) => {
@@ -4691,6 +4694,172 @@ function createSupplierContactsSection(supplier) {
   return section;
 }
 
+function createSupplierHistoryTimeline(supplier) {
+  const supplierId = supplier?.supplierId;
+
+  // --- Collect events ---
+  const events = [];
+
+  // Documents from assertions
+  (Array.isArray(supplier?.assertions) ? supplier.assertions : []).forEach((a) => {
+    const regCode = a?.regulation?.code || "";
+    const docTitle = a?.document?.title || a?.document?.fileName || "Document";
+
+    if (a?.document?.issueDate) {
+      const ts = new Date(a.document.issueDate).getTime();
+      if (!isNaN(ts)) events.push({ ts, type: "doc_issued", label: docTitle, sub: regCode });
+    }
+    if (a?.document?.validUntil) {
+      const ts = new Date(a.document.validUntil).getTime();
+      if (!isNaN(ts)) {
+        const expired = ts < Date.now();
+        events.push({ ts, type: expired ? "doc_expired" : "doc_expiry", label: docTitle, sub: regCode });
+      }
+    }
+  });
+
+  // Outreach records linked to this supplier
+  (Array.isArray(currentCaseAnalysisState.outreachList) ? currentCaseAnalysisState.outreachList : [])
+    .filter((r) => r.supplierId === supplierId || r.supplierName === supplier?.supplierName)
+    .forEach((r) => {
+      if (r.sentAt) {
+        const ts = new Date(r.sentAt).getTime();
+        if (!isNaN(ts)) events.push({ ts, type: "outreach_sent", label: r.subject || "Outreach", sub: r.method || "" });
+      }
+      if (r.respondedAt) {
+        const ts = new Date(r.respondedAt).getTime();
+        if (!isNaN(ts)) events.push({ ts, type: "outreach_responded", label: r.subject || "Outreach", sub: "" });
+      }
+    });
+
+  events.sort((a, b) => b.ts - a.ts);
+
+  // --- Render ---
+  const section = document.createElement("div");
+  Object.assign(section.style, { marginTop: "22px" });
+
+  const header = document.createElement("div");
+  Object.assign(header.style, {
+    display: "flex", alignItems: "center", justifyContent: "space-between",
+    cursor: "pointer", userSelect: "none", marginBottom: "10px",
+  });
+
+  const headerTitle = document.createElement("div");
+  Object.assign(headerTitle.style, {
+    fontSize: "15px", fontWeight: "700", color: "#111827",
+  });
+  headerTitle.textContent = "Activity History";
+
+  const countBadge = document.createElement("span");
+  Object.assign(countBadge.style, {
+    fontSize: "11px", background: "#f3f4f6", color: "#6b7280",
+    borderRadius: "10px", padding: "1px 7px", fontWeight: "600",
+  });
+  countBadge.textContent = String(events.length);
+
+  const chevron = document.createElement("span");
+  Object.assign(chevron.style, { fontSize: "12px", color: "#9ca3af", marginLeft: "6px" });
+  chevron.textContent = "▲";
+
+  header.appendChild(headerTitle);
+  const headerRight = document.createElement("div");
+  Object.assign(headerRight.style, { display: "flex", alignItems: "center", gap: "6px" });
+  headerRight.appendChild(countBadge);
+  headerRight.appendChild(chevron);
+  header.appendChild(headerRight);
+
+  const body = document.createElement("div");
+
+  if (events.length === 0) {
+    const empty = document.createElement("div");
+    Object.assign(empty.style, { fontSize: "13px", color: "#9ca3af", fontStyle: "italic" });
+    empty.textContent = "No recorded activity yet";
+    body.appendChild(empty);
+  } else {
+    const TYPE_CONFIG = {
+      doc_issued:     { dot: "#0176d3", icon: "📄", verb: "Document issued" },
+      doc_expiry:     { dot: "#f59e0b", icon: "⏳", verb: "Expires" },
+      doc_expired:    { dot: "#b42318", icon: "⚠", verb: "Document expired" },
+      outreach_sent:  { dot: "#d97706", icon: "✉", verb: "Outreach sent" },
+      outreach_responded: { dot: "#0a7b34", icon: "✓", verb: "Response received" },
+    };
+
+    const timeline = document.createElement("div");
+    Object.assign(timeline.style, { position: "relative", paddingLeft: "18px" });
+
+    const line = document.createElement("div");
+    Object.assign(line.style, {
+      position: "absolute", left: "6px", top: "6px",
+      bottom: "6px", width: "2px", background: "#e5e7eb", borderRadius: "1px",
+    });
+    timeline.appendChild(line);
+
+    events.forEach((ev) => {
+      const cfg = TYPE_CONFIG[ev.type] || { dot: "#6b7280", icon: "•", verb: ev.type };
+      const dateStr = new Date(ev.ts).toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" });
+
+      const row = document.createElement("div");
+      Object.assign(row.style, {
+        position: "relative", display: "flex", alignItems: "flex-start",
+        gap: "10px", paddingBottom: "14px",
+      });
+
+      const dot = document.createElement("div");
+      Object.assign(dot.style, {
+        position: "absolute", left: "-15px", top: "3px",
+        width: "10px", height: "10px", borderRadius: "50%",
+        background: cfg.dot, flexShrink: "0", border: "2px solid #fff",
+        boxShadow: `0 0 0 1px ${cfg.dot}`,
+      });
+      row.appendChild(dot);
+
+      const content = document.createElement("div");
+      Object.assign(content.style, { minWidth: "0" });
+
+      const topLine = document.createElement("div");
+      Object.assign(topLine.style, { display: "flex", alignItems: "baseline", gap: "6px", flexWrap: "wrap" });
+
+      const verb = document.createElement("span");
+      Object.assign(verb.style, { fontSize: "12px", fontWeight: "600", color: "#111827" });
+      verb.textContent = `${cfg.icon} ${cfg.verb}`;
+
+      const labelSpan = document.createElement("span");
+      Object.assign(labelSpan.style, {
+        fontSize: "12px", color: "#374151", flex: "1",
+        overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: "220px",
+      });
+      labelSpan.title = ev.label;
+      labelSpan.textContent = ev.label;
+
+      topLine.appendChild(verb);
+      topLine.appendChild(labelSpan);
+      content.appendChild(topLine);
+
+      const meta = document.createElement("div");
+      Object.assign(meta.style, { fontSize: "11px", color: "#9ca3af", marginTop: "2px" });
+      meta.textContent = ev.sub ? `${dateStr} · ${ev.sub}` : dateStr;
+      content.appendChild(meta);
+
+      row.appendChild(content);
+      timeline.appendChild(row);
+    });
+
+    body.appendChild(timeline);
+  }
+
+  // Collapsible toggle
+  let collapsed = false;
+  header.addEventListener("click", () => {
+    collapsed = !collapsed;
+    body.style.display = collapsed ? "none" : "";
+    chevron.textContent = collapsed ? "▼" : "▲";
+  });
+
+  section.appendChild(header);
+  section.appendChild(body);
+  return section;
+}
+
 function createSupplierLibraryDetail(supplier) {
   const wrapper = document.createElement("div");
 
@@ -4788,6 +4957,8 @@ function createSupplierLibraryDetail(supplier) {
       Array.isArray(supplier?.assertions) ? supplier.assertions : []
     )
   );
+
+  wrapper.appendChild(createSupplierHistoryTimeline(supplier));
 
   return wrapper;
 }
