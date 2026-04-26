@@ -11417,15 +11417,14 @@ function createSnapshotTrendChart() {
   // Values are clamped to [0,100] to prevent spikes from old format differences.
   let data = [...allSnapshots].filter(s => s.v === 2).reverse();
   if (data.length < 2) {
-    // Try all snapshots as fallback, clamp values to valid range
     data = [...allSnapshots].reverse();
   }
 
   if (data.length < 1) return null;
 
   const svgNS = "http://www.w3.org/2000/svg";
-  const W = 400, H = 130;
-  const PAD = { top: 12, right: 12, bottom: 24, left: 36 };
+  const W = 780, H = 110;
+  const PAD = { top: 12, right: 14, bottom: 24, left: 42 };
   const chartW = W - PAD.left - PAD.right;
   const chartH = H - PAD.top - PAD.bottom;
   const n = data.length;
@@ -11433,7 +11432,6 @@ function createSnapshotTrendChart() {
   const xScale = (i) => PAD.left + (n > 1 ? (i / (n - 1)) * chartW : chartW / 2);
   const yScale = (v) => PAD.top + chartH * (1 - Math.min(100, Math.max(0, v ?? 0)) / 100);
 
-  // Smooth Catmull-Rom path through points
   function smoothPath(pts) {
     if (pts.length < 2) return "";
     if (pts.length === 2) return `M ${pts[0].x} ${pts[0].y} L ${pts[1].x} ${pts[1].y}`;
@@ -11453,11 +11451,9 @@ function createSnapshotTrendChart() {
     return d;
   }
 
-  // --- Build SVG ---
   const svg = document.createElementNS(svgNS, "svg");
   svg.setAttribute("viewBox", `0 0 ${W} ${H}`);
-  svg.setAttribute("preserveAspectRatio", "none");
-  Object.assign(svg.style, { width: "100%", height: `${H}px`, display: "block" });
+  Object.assign(svg.style, { width: "100%", height: "auto", display: "block" });
 
   // Gradient defs
   const defs = document.createElementNS(svgNS, "defs");
@@ -11466,33 +11462,32 @@ function createSnapshotTrendChart() {
     grad.setAttribute("id", id); grad.setAttribute("x1", "0"); grad.setAttribute("y1", "0");
     grad.setAttribute("x2", "0"); grad.setAttribute("y2", "1");
     const s1 = document.createElementNS(svgNS, "stop");
-    s1.setAttribute("offset", "0%"); s1.setAttribute("stop-color", color); s1.setAttribute("stop-opacity", "0.18");
+    s1.setAttribute("offset", "0%"); s1.setAttribute("stop-color", color); s1.setAttribute("stop-opacity", "0.25");
     const s2 = document.createElementNS(svgNS, "stop");
-    s2.setAttribute("offset", "100%"); s2.setAttribute("stop-color", color); s2.setAttribute("stop-opacity", "0");
+    s2.setAttribute("offset", "100%"); s2.setAttribute("stop-color", color); s2.setAttribute("stop-opacity", "0.02");
     grad.appendChild(s1); grad.appendChild(s2);
     defs.appendChild(grad);
   });
   svg.appendChild(defs);
 
-  // Grid lines (0, 50, 100 only — cleaner)
+  // Grid lines: 0 / 50 / 100
   [0, 50, 100].forEach((v) => {
     const y = yScale(v);
     const line = document.createElementNS(svgNS, "line");
     line.setAttribute("x1", PAD.left); line.setAttribute("x2", W - PAD.right);
     line.setAttribute("y1", y); line.setAttribute("y2", y);
-    line.setAttribute("stroke", v === 0 ? "#e5e7eb" : "#f3f4f6");
+    line.setAttribute("stroke", v === 0 ? "#e2e8f0" : "#f1f5f9");
     line.setAttribute("stroke-width", "1");
     svg.appendChild(line);
 
     const lbl = document.createElementNS(svgNS, "text");
-    lbl.setAttribute("x", PAD.left - 5); lbl.setAttribute("y", y + 3.5);
+    lbl.setAttribute("x", PAD.left - 6); lbl.setAttribute("y", y + 3.5);
     lbl.setAttribute("text-anchor", "end");
-    lbl.setAttribute("fill", "#d1d5db"); lbl.setAttribute("font-size", "9");
+    lbl.setAttribute("fill", "#94a3b8"); lbl.setAttribute("font-size", "9");
     lbl.textContent = `${v}%`;
     svg.appendChild(lbl);
   });
 
-  // Draw one series (handles single-point gracefully)
   const drawSeries = (values, color, gradId) => {
     const pts = values
       .map((v, i) => {
@@ -11503,8 +11498,6 @@ function createSnapshotTrendChart() {
     if (pts.length === 0) return;
 
     if (pts.length >= 2) {
-      const linePath = smoothPath(pts);
-      // Gradient area
       const areaD = `M ${pts[0].x} ${yScale(0)} L ${pts[0].x} ${pts[0].y} ` +
         smoothPath(pts).replace(/^M [^ ]+ [^ ]+/, "") +
         ` L ${pts[pts.length - 1].x} ${yScale(0)} Z`;
@@ -11514,13 +11507,12 @@ function createSnapshotTrendChart() {
       svg.appendChild(area);
 
       const path = document.createElementNS(svgNS, "path");
-      path.setAttribute("d", linePath); path.setAttribute("fill", "none");
-      path.setAttribute("stroke", color); path.setAttribute("stroke-width", "2");
+      path.setAttribute("d", smoothPath(pts)); path.setAttribute("fill", "none");
+      path.setAttribute("stroke", color); path.setAttribute("stroke-width", "2.5");
       path.setAttribute("stroke-linejoin", "round"); path.setAttribute("stroke-linecap", "round");
       svg.appendChild(path);
     }
 
-    // Dots: show all if sparse (≤12), only last if dense; always show single point
     const showAll = n <= 12 || pts.length === 1;
     const dotPts = showAll ? pts : [pts[pts.length - 1]];
     dotPts.forEach(p => {
@@ -11529,7 +11521,7 @@ function createSnapshotTrendChart() {
         : "";
       const circle = document.createElementNS(svgNS, "circle");
       circle.setAttribute("cx", p.x); circle.setAttribute("cy", p.y);
-      circle.setAttribute("r", pts.length === 1 ? "5" : showAll ? "2.5" : "4");
+      circle.setAttribute("r", pts.length === 1 ? "5" : showAll ? "3" : "4");
       circle.setAttribute("fill", color);
       circle.setAttribute("stroke", "#fff"); circle.setAttribute("stroke-width", "2");
       const t = document.createElementNS(svgNS, "title");
@@ -11542,19 +11534,18 @@ function createSnapshotTrendChart() {
   drawSeries(data.map(d => d.coveragePercent ?? null), "#0176d3", "grad-blue");
   drawSeries(data.map(d => d.compliancePercent ?? null), "#16a34a", "grad-green");
 
-  // X-axis labels: first, mid, last — deduplicated by minimum 40px gap
+  // X-axis labels: first, mid, last
   const candidates = [0, Math.floor((n - 1) / 2), n - 1];
   [...new Set(candidates)].forEach((i, idx, arr) => {
     if (i >= n) return;
-    // Skip if too close to previous label (in viewBox units)
     if (idx > 0 && xScale(i) - xScale(arr[idx - 1]) < 40) return;
     const d = data[i];
     if (!d?.date) return;
     const dateStr = new Date(d.date).toLocaleDateString(undefined, { month: "short", day: "numeric" });
     const lbl = document.createElementNS(svgNS, "text");
-    lbl.setAttribute("x", xScale(i)); lbl.setAttribute("y", H - 6);
+    lbl.setAttribute("x", xScale(i)); lbl.setAttribute("y", H - 7);
     lbl.setAttribute("text-anchor", i === 0 ? "start" : i === n - 1 ? "end" : "middle");
-    lbl.setAttribute("fill", "#c0c4cc"); lbl.setAttribute("font-size", "9");
+    lbl.setAttribute("fill", "#94a3b8"); lbl.setAttribute("font-size", "9");
     lbl.textContent = dateStr;
     svg.appendChild(lbl);
   });
@@ -11562,70 +11553,68 @@ function createSnapshotTrendChart() {
   // --- Assemble card ---
   const section = document.createElement("div");
   Object.assign(section.style, {
-    marginBottom: "20px", padding: "16px 18px",
-    border: "1px solid #e9ecef", borderRadius: "14px", background: "#ffffff",
-    boxShadow: "0 1px 4px rgba(0,0,0,0.04)",
+    marginBottom: "20px", padding: "16px 18px 14px",
+    border: "1px solid #e2e8f0", borderRadius: "14px",
+    background: "linear-gradient(160deg, #fafcff 0%, #ffffff 100%)",
+    boxShadow: "0 1px 6px rgba(0,0,0,0.05)",
   });
 
-  // Header row
-  const header = document.createElement("div");
-  Object.assign(header.style, {
-    display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "4px",
-  });
+  // Header: title + subtitle only
+  const firstDate = data[0]?.date ? new Date(data[0].date).toLocaleDateString(undefined, { month: "short", day: "numeric" }) : "";
+  const lastDate  = data[n - 1]?.date ? new Date(data[n - 1].date).toLocaleDateString(undefined, { month: "short", day: "numeric" }) : "";
 
-  const titleBlock = document.createElement("div");
   const titleEl = document.createElement("div");
-  Object.assign(titleEl.style, { fontSize: "13px", fontWeight: "700", color: "#111827" });
+  Object.assign(titleEl.style, { fontSize: "13px", fontWeight: "700", color: "#0f172a", marginBottom: "2px" });
   titleEl.textContent = "Coverage Trend";
 
-  const firstDate = data[0]?.date ? new Date(data[0].date).toLocaleDateString(undefined, { month: "short", day: "numeric" }) : "";
-  const lastDate = data[n - 1]?.date ? new Date(data[n - 1].date).toLocaleDateString(undefined, { month: "short", day: "numeric" }) : "";
   const subtitle = document.createElement("div");
-  Object.assign(subtitle.style, { fontSize: "11px", color: "#9ca3af", marginTop: "2px" });
+  Object.assign(subtitle.style, { fontSize: "11px", color: "#94a3b8", marginBottom: "10px" });
   subtitle.textContent = n === 1
     ? `1 snapshot · ${firstDate} · trend builds over time`
     : `${n} snapshots · ${firstDate} – ${lastDate}`;
-  titleBlock.appendChild(titleEl);
-  titleBlock.appendChild(subtitle);
 
-  // Current values (top-right)
-  const latest = data[n - 1];
-  const valuesRow = document.createElement("div");
-  Object.assign(valuesRow.style, { display: "flex", gap: "16px", alignItems: "center" });
-  [
-    { label: "Avg. Coverage", val: latest.coveragePercent ?? 0, color: "#0176d3" },
-    { label: "Active %", val: latest.compliancePercent ?? 0, color: "#16a34a" },
-  ].forEach(({ label, val, color }) => {
-    const item = document.createElement("div");
-    Object.assign(item.style, { textAlign: "right" });
-    const num = document.createElement("div");
-    Object.assign(num.style, { fontSize: "15px", fontWeight: "700", color, lineHeight: "1.1" });
-    num.textContent = `${val}%`;
-    const lbl = document.createElement("div");
-    Object.assign(lbl.style, { fontSize: "10px", color: "#9ca3af", marginTop: "1px" });
-    lbl.textContent = label;
-    item.appendChild(num);
-    item.appendChild(lbl);
-    valuesRow.appendChild(item);
-  });
-
-  header.appendChild(titleBlock);
-  header.appendChild(valuesRow);
-  section.appendChild(header);
+  section.appendChild(titleEl);
+  section.appendChild(subtitle);
   section.appendChild(svg);
 
-  // Legend
+  // Enhanced legend: line swatch + label + bold current value
+  const latest = data[n - 1];
   const legend = document.createElement("div");
-  Object.assign(legend.style, { display: "flex", gap: "16px", marginTop: "8px" });
-  [["Avg. Coverage", "#0176d3"], ["Active %", "#16a34a"]].forEach(([label, color]) => {
+  Object.assign(legend.style, {
+    display: "flex", gap: "20px", marginTop: "10px",
+    paddingTop: "10px", borderTop: "1px solid #f1f5f9",
+  });
+
+  [
+    { label: "Avg. Coverage", val: latest.coveragePercent ?? 0, color: "#0176d3" },
+    { label: "Active %",      val: latest.compliancePercent ?? 0, color: "#16a34a" },
+  ].forEach(({ label, val, color }) => {
     const item = document.createElement("div");
-    Object.assign(item.style, { display: "flex", alignItems: "center", gap: "5px", fontSize: "11px", color: "#9ca3af" });
-    const dot = document.createElement("div");
-    Object.assign(dot.style, { width: "20px", height: "2px", borderRadius: "1px", background: color });
-    item.appendChild(dot);
-    item.appendChild(document.createTextNode(label));
+    Object.assign(item.style, { display: "flex", alignItems: "center", gap: "8px" });
+
+    const swatch = document.createElement("div");
+    Object.assign(swatch.style, {
+      width: "24px", height: "3px", borderRadius: "2px", background: color, flexShrink: "0",
+    });
+    item.appendChild(swatch);
+
+    const text = document.createElement("div");
+    Object.assign(text.style, { display: "flex", alignItems: "baseline", gap: "5px" });
+
+    const lbl = document.createElement("span");
+    Object.assign(lbl.style, { fontSize: "11px", color: "#64748b" });
+    lbl.textContent = label;
+
+    const num = document.createElement("span");
+    Object.assign(num.style, { fontSize: "13px", fontWeight: "700", color });
+    num.textContent = `${Math.round(val)}%`;
+
+    text.appendChild(lbl);
+    text.appendChild(num);
+    item.appendChild(text);
     legend.appendChild(item);
   });
+
   section.appendChild(legend);
 
   return section;
