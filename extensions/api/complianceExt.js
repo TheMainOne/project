@@ -786,18 +786,54 @@ complianceExtRouter.patch(
   async (req, res) => {
     try {
       const allowed = ["status", "respondedAt", "notes", "nextFollowUpAt", "contactEmail"];
-      const update = {};
+      const setUpdate = {};
       for (const key of allowed) {
-        if (key in req.body) update[key] = req.body[key];
+        if (key in req.body) setUpdate[key] = req.body[key];
       }
 
-      if (update.status === "responded" && !update.respondedAt) {
-        update.respondedAt = new Date();
+     if (setUpdate.status === "responded" && !setUpdate.respondedAt) {
+        setUpdate.respondedAt = new Date();
+      }
+
+      const followUpAgain = req.body?.followUpAgain === true;
+      const updateOps = {};
+      if (Object.keys(setUpdate).length > 0) {
+        updateOps.$set = setUpdate;
+      }
+
+      if (followUpAgain) {
+        const followUpAt = req.body.followUpAt ? new Date(req.body.followUpAt) : new Date();
+        if (isNaN(followUpAt.getTime())) {
+          return res.status(400).json({ ok: false, error: "Invalid followUpAt date" });
+        }
+
+        const nextFollowUpAt =
+          req.body.nextFollowUpAt && !isNaN(new Date(req.body.nextFollowUpAt).getTime())
+            ? new Date(req.body.nextFollowUpAt)
+            : null;
+
+        updateOps.$set = {
+          ...(updateOps.$set || {}),
+          status: "awaiting",
+          lastFollowedUpAt: followUpAt,
+        };
+        updateOps.$inc = { followUpCount: 1 };
+        updateOps.$push = {
+          followUpEvents: {
+            at: followUpAt,
+            nextFollowUpAt,
+            by: req.user.id,
+          },
+        };
+      }
+
+      if (Object.keys(updateOps).length === 0) {
+        return res.status(400).json({ ok: false, error: "No valid fields to update" });
       }
 
       const record = await SupplierOutreach.findByIdAndUpdate(
         req.params.id,
-        { $set: update },
+         updateOps,
         { new: true }
       ).lean();
 

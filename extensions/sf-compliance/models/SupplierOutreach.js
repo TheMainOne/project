@@ -19,6 +19,21 @@ const SupplierOutreachSchema = new mongoose.Schema(
     },
     sentAt: { type: Date, required: true, default: Date.now },
     nextFollowUpAt: { type: Date, default: null },
+    followUpCount: { type: Number, default: 0, min: 0 },
+    lastFollowedUpAt: { type: Date, default: null },
+    followUpEvents: {
+      type: [
+        new mongoose.Schema(
+          {
+            at: { type: Date, required: true },
+            nextFollowUpAt: { type: Date, default: null },
+            by: { type: String, default: "", trim: true },
+          },
+          { _id: false }
+        ),
+      ],
+      default: [],
+    },
     status: {
       type: String,
       enum: ["sent", "awaiting", "responded", "overdue", "closed"],

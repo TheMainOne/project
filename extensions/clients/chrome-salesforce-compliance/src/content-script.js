@@ -672,7 +672,7 @@ async function loadOutreachList() {
     return;
   }
 
-  currentCaseAnalysisState.outreachList = response.records || [];
+currentCaseAnalysisState.outreachList = (response.records || []).map(normalizeOutreachRecord);
   currentCaseAnalysisState.outreachLoading = false;
   currentCaseAnalysisState.outreachError = null;
 
@@ -684,6 +684,31 @@ async function loadOutreachList() {
 
   rerenderCurrentCaseToast();
 }
+
+
+function normalizeOutreachRecord(record) {
+  const safeRecord = record && typeof record === "object" ? record : {};
+  const followUpEvents = Array.isArray(safeRecord.followUpEvents)
+    ? safeRecord.followUpEvents
+        .filter((event) => event && event.at)
+        .sort((a, b) => new Date(a.at).getTime() - new Date(b.at).getTime())
+    : [];
+
+  const followUpCountFromEvents = followUpEvents.length;
+  const followUpCountRaw = Number(safeRecord.followUpCount);
+  const followUpCount = Number.isFinite(followUpCountRaw)
+    ? Math.max(followUpCountRaw, followUpCountFromEvents)
+    : followUpCountFromEvents;
+
+  return {
+    ...safeRecord,
+    followUpEvents,
+    followUpCount,
+    lastFollowedUpAt:
+      safeRecord.lastFollowedUpAt || followUpEvents[followUpEvents.length - 1]?.at || null,
+  };
+}
+
 
 function createManualLookupCard(partNumber, supplierLookup) {
   return createMaterialSupplierCard(
@@ -4801,7 +4826,10 @@ function createSupplierHistoryTimeline(supplier) {
 
     events.forEach((ev) => {
       const cfg = TYPE_CONFIG[ev.type] || { dot: "#6b7280", icon: "•", verb: ev.type };
-      const dateStr = new Date(ev.ts).toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" });
+     const evDate = parseOutreachDateValue(ev.ts);
+      const dateStr = evDate
+        ? evDate.toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric", timeZone: "UTC" })
+        : "—";
 
       const row = document.createElement("div");
       Object.assign(row.style, {
@@ -4979,18 +5007,59 @@ function getEffectiveOutreachStatus(record) {
   return record.status || "sent";
 }
 
+function parseOutreachDateValue(value) {
+  if (!value) return null;
+  const str = String(value).trim();
+  const datePart = str.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (datePart) {
+    const y = Number(datePart[1]);
+    const m = Number(datePart[2]);
+    const d = Number(datePart[3]);
+    if (!Number.isNaN(y) && !Number.isNaN(m) && !Number.isNaN(d)) {
+      return new Date(Date.UTC(y, m - 1, d));
+    }
+  }
+  const parsed = new Date(str);
+  return Number.isNaN(parsed.getTime()) ? null : parsed;
+}
+
+
+function parseOutreachDateValue(value) {
+  if (!value) return null;
+  const str = String(value).trim();
+  const datePart = str.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (datePart) {
+    const y = Number(datePart[1]);
+    const m = Number(datePart[2]);
+    const d = Number(datePart[3]);
+    if (!Number.isNaN(y) && !Number.isNaN(m) && !Number.isNaN(d)) {
+      return new Date(Date.UTC(y, m - 1, d));
+    }
+  }
+  const parsed = new Date(str);
+  return Number.isNaN(parsed.getTime()) ? null : parsed;
+}
+
 function formatOutreachDate(dateStr) {
   if (!dateStr) return "—";
-  const d = new Date(dateStr);
-  if (isNaN(d)) return "—";
-  return d.toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" });
+const d = parseOutreachDateValue(dateStr);
+  if (!d) return "—";
+  return d.toLocaleDateString("en-GB", {
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+    timeZone: "UTC",
+  });
 }
 
 function formatDaysAgo(dateStr) {
   if (!dateStr) return "";
-  const d = new Date(dateStr);
-  if (isNaN(d)) return "";
-  const diff = Math.floor((Date.now() - d.getTime()) / 86400000);
+ const d = parseOutreachDateValue(dateStr);
+  if (!d) return "";
+  const now = new Date();
+  const todayUtc = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate());
+  const dateUtc = Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate());
+  const diff = Math.floor((todayUtc - dateUtc) / 86400000);
   if (diff === 0) return "today";
   if (diff === 1) return "1 day ago";
   return `${diff} days ago`;
@@ -5037,6 +5106,8 @@ function createOutreachStatsBar(records) {
       : null;
 
   const overdue = records.filter((r) => getEffectiveOutreachStatus(r) === "overdue").length;
+    const totalFollowUps = records.reduce((acc, r) => acc + (Number(r.followUpCount) || 0), 0);
+  const withFollowUps = records.filter((r) => (Number(r.followUpCount) || 0) > 0).length;
 
   const bar = document.createElement("div");
   Object.assign(bar.style, {
@@ -5086,6 +5157,12 @@ function createOutreachStatsBar(records) {
   if (overdue > 0) {
     divider();
     addStat("Overdue", overdue, "#dc2626");
+  }
+   if (totalFollowUps > 0) {
+    divider();
+    addStat("Follow-ups", totalFollowUps, "#0176d3");
+    divider();
+    addStat("Touched", withFollowUps, "#1d4ed8");
   }
 
   return bar;
@@ -5505,8 +5582,10 @@ function createOutreachForm() {
 function createOutreachTimeline(record, effectiveStatus) {
   function fmtDate(iso) {
     if (!iso) return null;
-    const d = new Date(iso);
-    return isNaN(d.getTime()) ? null : d.toLocaleDateString(undefined, { month: "short", day: "numeric" });
+   const d = parseOutreachDateValue(iso);
+    return d
+      ? d.toLocaleDateString(undefined, { month: "short", day: "numeric", timeZone: "UTC" })
+      : null;
   }
 
   const steps = [];
@@ -5526,6 +5605,15 @@ function createOutreachTimeline(record, effectiveStatus) {
       date: fmtDate(record.nextFollowUpAt),
       done: isPast,
       color: isOverdue ? "#dc2626" : isPast ? "#6b7280" : "#0176d3",
+    });
+  }
+
+    if ((Number(record.followUpCount) || 0) > 0) {
+    steps.push({
+      label: `Follow-ups (${record.followUpCount})`,
+      date: fmtDate(record.lastFollowedUpAt),
+      done: true,
+      color: "#0176d3",
     });
   }
 
@@ -5650,6 +5738,20 @@ function createOutreachCard(record) {
     metaRow.appendChild(fuLabel);
   }
 
+  if ((Number(record.followUpCount) || 0) > 0) {
+    const followUpsLabel = document.createElement("span");
+    followUpsLabel.textContent = `↻ Follow-ups: ${record.followUpCount}`;
+    followUpsLabel.style.color = "#1d4ed8";
+    followUpsLabel.style.fontWeight = "700";
+    metaRow.appendChild(followUpsLabel);
+
+    if (record.lastFollowedUpAt) {
+      const lastFollowUpLabel = document.createElement("span");
+      lastFollowUpLabel.textContent = `Last follow-up: ${formatOutreachDate(record.lastFollowedUpAt)}`;
+      metaRow.appendChild(lastFollowUpLabel);
+    }
+  }
+
   if (record.regulationTags?.length > 0) {
     const tagsLabel = document.createElement("span");
     tagsLabel.textContent = record.regulationTags.join(", ");
@@ -5715,7 +5817,13 @@ function createOutreachCard(record) {
       d.setDate(d.getDate() + 7);
       const resp = await sendMessageAsync({
         type: "EXT_UPDATE_OUTREACH",
-        payload: { id: record._id, status: "awaiting", nextFollowUpAt: d.toISOString() },
+        payload: {
+          id: record._id,
+          status: "awaiting",
+          nextFollowUpAt: d.toISOString(),
+          followUpAgain: true,
+          followUpAt: new Date().toISOString(),
+        },
       });
       if (resp?.ok) {
         currentCaseAnalysisState.outreachList = null;
@@ -11627,10 +11735,11 @@ function buildActivityEvents() {
 
   const outreachList = currentCaseAnalysisState.outreachList || [];
   for (const record of outreachList) {
+    const sentDate = parseOutreachDateValue(record.sentAt);
     if (record.sentAt) {
       events.push({
         type: "outreach_sent",
-        date: new Date(record.sentAt),
+        date: sentDate || new Date(record.sentAt),
         title: `Outreach sent to ${record.supplierName}`,
         subtitle: record.subject || "",
         supplierId: record.supplierId,
@@ -11638,10 +11747,11 @@ function buildActivityEvents() {
         color: "#d97706",
       });
     }
+    const respondedDate = parseOutreachDateValue(record.respondedAt);
     if (record.respondedAt) {
       events.push({
         type: "outreach_responded",
-        date: new Date(record.respondedAt),
+        date: respondedDate || new Date(record.respondedAt),
         title: `${record.supplierName} responded`,
         subtitle: record.subject || "",
         supplierId: record.supplierId,
@@ -11771,19 +11881,19 @@ function createActivityLogContent() {
 
   // Group into date buckets
   const now = new Date();
-  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-  const yesterday = new Date(today.getTime() - 86400000);
-  const past7   = new Date(today.getTime() -  7 * 86400000);
-  const past30  = new Date(today.getTime() - 30 * 86400000);
-  const past90  = new Date(today.getTime() - 90 * 86400000);
+const todayUtc = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate());
+  const yesterdayUtc = todayUtc - 86400000;
+  const past7Utc = todayUtc - 7 * 86400000;
+  const past30Utc = todayUtc - 30 * 86400000;
+  const past90Utc = todayUtc - 90 * 86400000;
 
   const getBucket = (date) => {
-    const d = new Date(date.getFullYear(), date.getMonth(), date.getDate());
-    if (d >= today)     return "Today";
-    if (d >= yesterday) return "Yesterday";
-    if (d >= past7)     return "Past 7 days";
-    if (d >= past30)    return "Past 30 days";
-    if (d >= past90)    return "Past 3 months";
+const dUtc = Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate());
+    if (dUtc >= todayUtc) return "Today";
+    if (dUtc >= yesterdayUtc) return "Yesterday";
+    if (dUtc >= past7Utc) return "Past 7 days";
+    if (dUtc >= past30Utc) return "Past 30 days";
+    if (dUtc >= past90Utc) return "Past 3 months";
     return "Older";
   };
 
@@ -11852,10 +11962,10 @@ function createActivityLogContent() {
 
       const d = event.date;
       const dateEl = document.createElement("div");
-      const sameYear = d.getFullYear() === now.getFullYear();
+      const sameYear = d.getUTCFullYear() === now.getUTCFullYear();
       dateEl.textContent = sameYear
-        ? `${d.getMonth() + 1}/${d.getDate()}`
-        : `${d.getMonth() + 1}/${d.getDate()}/${String(d.getFullYear()).slice(-2)}`;
+        ? `${d.getUTCMonth() + 1}/${d.getUTCDate()}`
+        : `${d.getUTCMonth() + 1}/${d.getUTCDate()}/${String(d.getUTCFullYear()).slice(-2)}`;
       Object.assign(dateEl.style, {
         fontSize: "10px", color: "#9ca3af", flexShrink: "0", marginTop: "3px",
       });
