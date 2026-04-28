@@ -5597,6 +5597,15 @@ function createOutreachTimeline(record, effectiveStatus) {
     color: "#6b7280",
   });
 
+  if ((Number(record.followUpCount) || 0) > 0) {
+    steps.push({
+      label: `Follow-ups (${record.followUpCount})`,
+      date: fmtDate(record.lastFollowedUpAt),
+      done: true,
+      color: "#0176d3",
+    });
+  }
+
   if (record.nextFollowUpAt) {
     const isOverdue = effectiveStatus === "overdue";
     const isPast = new Date(record.nextFollowUpAt) < new Date();
@@ -5605,15 +5614,6 @@ function createOutreachTimeline(record, effectiveStatus) {
       date: fmtDate(record.nextFollowUpAt),
       done: isPast,
       color: isOverdue ? "#dc2626" : isPast ? "#6b7280" : "#0176d3",
-    });
-  }
-
-    if ((Number(record.followUpCount) || 0) > 0) {
-    steps.push({
-      label: `Follow-ups (${record.followUpCount})`,
-      date: fmtDate(record.lastFollowedUpAt),
-      done: true,
-      color: "#0176d3",
     });
   }
 
