@@ -793,20 +793,6 @@ async function handleAddStatement(payload) {
   };
 }
 
-async function handleExtractDocument(payload) {
-  const result = await callComplianceApi("/extract-document", payload);
-
-  if (result.authRequired) {
-    return { ok: false, authRequired: true, error: result.error || "Authentication required" };
-  }
-
-  return {
-    ok: result.ok,
-    result: result.json,
-    error: result.error,
-  };
-}
-
 async function handleFetchRegulations() {
   const result = await callComplianceApi("/regulations", {});
 
@@ -1064,7 +1050,7 @@ const ALLOWED_MESSAGE_TYPES = new Set([
   "EXT_UPDATE_OUTREACH", "EXT_DELETE_OUTREACH", "EXT_SAVE_COMPLIANCE_SNAPSHOT",
   "EXT_GET_COMPLIANCE_SNAPSHOTS", "EXT_SET_REMINDER", "EXT_CANCEL_REMINDER",
   "EXT_GET_REMINDERS", "EXT_ADD_SUPPLIER_CONTACT", "EXT_UPDATE_SUPPLIER_CONTACT",
-  "EXT_DELETE_SUPPLIER_CONTACT", "EXT_EXTRACT_DOCUMENT",
+  "EXT_DELETE_SUPPLIER_CONTACT",
 ]);
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
@@ -1119,11 +1105,6 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   }
   if (message?.type === "EXT_ADD_STATEMENT") {
     handleAddStatement(message.payload || {}).then(sendResponse);
-    return true;
-  }
-
-  if (message?.type === "EXT_EXTRACT_DOCUMENT") {
-    handleExtractDocument(message.payload || {}).then(sendResponse);
     return true;
   }
 

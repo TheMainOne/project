@@ -11,7 +11,6 @@ import {
   validateAnalyzeBody,
 } from "../../validators/complianceExtension.js";
 import { analyzeComplianceCase } from "../services/complianceCaseAnalyzer.js";
-import { extractComplianceDocument } from "../services/complianceDocumentExtractor.js";
 import { bulkLookupMaterialComponentSuppliers } from "../../services/compliance/itemLookupService.js";
 import { extractRequestedRegulationsFromCase } from "../sf-compliance/services/requestedRegulations.js";
 import { getCoverageForLookupResults } from "../services/complianceCoverage.js";
@@ -153,36 +152,6 @@ const result = {
     });
 
     return res.json({ ok: true, caseId, result });
-  }
-);
-
-complianceExtRouter.post(
-  "/extract-document",
-  requireExtensionAuth,
-  requireExtensionScope("compliance:read"),
-  async (req, res) => {
-    const { url, knownRegulations = [] } = req.body;
-
-    if (!url || typeof url !== "string" || !url.startsWith("http")) {
-      return res.json({ ok: false, error: "Valid url is required" });
-    }
-
-    let result;
-    try {
-      result = await extractComplianceDocument({ url, knownRegulations });
-    } catch (err) {
-      console.error("[EXTRACT-DOCUMENT] Failed:", err);
-      await writeAudit({ userId: req.user.id, action: "document.extract", outcome: "error" });
-      return res.status(500).json({ ok: false, error: "Extraction failed", details: err?.message });
-    }
-
-    await writeAudit({
-      userId: req.user.id,
-      action: "document.extract",
-      outcome: result.ok ? "success" : "error",
-    });
-
-    return res.json(result);
   }
 );
 

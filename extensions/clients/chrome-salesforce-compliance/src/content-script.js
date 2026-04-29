@@ -86,10 +86,6 @@ manualLookupLoading: false,
     submitting: false,
     submitResult: null,
     submitError: null,
-
-    aiExtracting: false,
-    aiExtractedFields: {},
-    aiExtractionError: null,
   },
 
   outreachList: null,
@@ -245,10 +241,6 @@ manualLookupLoading: false,
       submitting: false,
       submitResult: null,
       submitError: null,
-
-      aiExtracting: false,
-      aiExtractedFields: {},
-      aiExtractionError: null,
     },
 
     outreachList: null,
@@ -2051,84 +2043,6 @@ function createSelectInput(value, options, onChange) {
   return select;
 }
 
-function createAiBadge() {
-  const badge = document.createElement("span");
-  badge.textContent = "AI";
-  Object.assign(badge.style, {
-    fontSize: "9px",
-    background: "#ede9fe",
-    color: "#7c3aed",
-    border: "1px solid #c4b5fd",
-    borderRadius: "3px",
-    padding: "0 4px",
-    marginLeft: "5px",
-    verticalAlign: "middle",
-    fontWeight: "600",
-    lineHeight: "14px",
-    display: "inline-block",
-  });
-  return badge;
-}
-
-async function triggerAiDocumentExtraction() {
-  const form = currentCaseAnalysisState.addStatementForm;
-  if (!form.docUrl) return;
-
-  form.aiExtracting = true;
-  form.aiExtractionError = null;
-  rerenderCurrentCaseToast();
-
-  const response = await sendMessageAsync({
-    type: "EXT_EXTRACT_DOCUMENT",
-    payload: {
-      url: form.docUrl,
-      knownRegulations: (form.availableRegulations || []).map((r) => r.code),
-    },
-  });
-
-  form.aiExtracting = false;
-
-  if (!response?.ok || !response?.result?.ok) {
-    form.aiExtractionError =
-      response?.result?.error || response?.error || "Extraction failed";
-    rerenderCurrentCaseToast();
-    return;
-  }
-
-  const data = response.result;
-  const filled = {};
-
-  if (data.title && !form.docTitle) { form.docTitle = data.title; filled.docTitle = true; }
-  if (data.documentType) { form.docType = data.documentType; filled.docType = true; }
-  if (data.issueDate) { form.docIssueDate = data.issueDate; filled.docIssueDate = true; }
-  if (data.validUntil) { form.docValidUntil = data.validUntil; filled.docValidUntil = true; }
-  if (data.statementText && !form.docStatementText) { form.docStatementText = data.statementText; filled.docStatementText = true; }
-  if (data.coverageType) { form.coverageType = data.coverageType; filled.coverageType = true; }
-  if (data.supplierName && !form.supplierName) { form.supplierName = data.supplierName; filled.supplierName = true; }
-
-  if (Array.isArray(data.regulations) && data.regulations.length > 0) {
-    const availableCodes = new Set((form.availableRegulations || []).map((r) => r.code));
-    const newCodes = data.regulations
-      .filter((r) => availableCodes.has(r.code))
-      .map((r) => r.code);
-
-    if (newCodes.length > 0) {
-      const merged = Array.from(new Set([...form.selectedRegulations, ...newCodes]));
-      form.selectedRegulations = merged;
-
-      data.regulations.forEach((r) => {
-        if (availableCodes.has(r.code)) {
-          form.regulationAssertionTypes[r.code] = r.assertionType;
-        }
-      });
-      filled.regulations = true;
-    }
-  }
-
-  form.aiExtractedFields = filled;
-  rerenderCurrentCaseToast();
-}
-
 function createAddStatementTabContent() {
   const form = currentCaseAnalysisState.addStatementForm;
   const wrapper = document.createElement("div");
@@ -2400,9 +2314,9 @@ function createAddStatementTabContent() {
       supplierSection.appendChild(
         createFormField("Supplier Code *", createTextInput(form.supplierCode, "e.g. SILGAN", (v) => { form.supplierCode = v; }))
       );
-      const supplierNameField = createFormField("Supplier Name *", createTextInput(form.supplierName, "e.g. Silgan Dispensing Systems", (v) => { form.supplierName = v; }));
-      if (form.aiExtractedFields?.supplierName) supplierNameField.querySelector("label").appendChild(createAiBadge());
-      supplierSection.appendChild(supplierNameField);
+      supplierSection.appendChild(
+        createFormField("Supplier Name *", createTextInput(form.supplierName, "e.g. Silgan Dispensing Systems", (v) => { form.supplierName = v; }))
+      );
       supplierSection.appendChild(
         createFormField("Aliases (comma-separated)", createTextInput(form.supplierAliases, "e.g. SILGAN, Silgan DS", (v) => { form.supplierAliases = v; }))
       );
@@ -2426,73 +2340,11 @@ function createAddStatementTabContent() {
   Object.assign(docTitle.style, { fontWeight: "700", fontSize: "15px", marginBottom: "10px" });
   docSection.appendChild(docTitle);
 
-  const titleField = createFormField("Title *", createTextInput(form.docTitle, "Statement title", (v) => { form.docTitle = v; }));
-  if (form.aiExtractedFields?.docTitle) titleField.querySelector("label").appendChild(createAiBadge());
-  docSection.appendChild(titleField);
-
+  docSection.appendChild(createFormField("Title *", createTextInput(form.docTitle, "Statement title", (v) => { form.docTitle = v; })));
   docSection.appendChild(createFormField("File Name", createTextInput(form.docFileName, "filename.pdf", (v) => { form.docFileName = v; })));
+  docSection.appendChild(createFormField("SharePoint URL *", createTextInput(form.docUrl, "https://...sharepoint.com/...", (v) => { form.docUrl = v; })));
 
-  // URL field with "Extract with AI" button
-  const urlWrapper = document.createElement("div");
-  urlWrapper.style.marginBottom = "10px";
-
-  const urlLabel = document.createElement("label");
-  urlLabel.textContent = "SharePoint URL *";
-  Object.assign(urlLabel.style, {
-    display: "block",
-    fontWeight: "600",
-    fontSize: "13px",
-    marginBottom: "4px",
-    color: "#374151",
-  });
-  urlWrapper.appendChild(urlLabel);
-
-  const urlRow = document.createElement("div");
-  Object.assign(urlRow.style, { display: "flex", gap: "8px", alignItems: "center" });
-
-  const urlInput = createTextInput(form.docUrl, "https://...sharepoint.com/...", (v) => { form.docUrl = v; });
-  urlInput.style.flex = "1";
-  urlRow.appendChild(urlInput);
-
-  const extractBtn = document.createElement("button");
-  extractBtn.textContent = form.aiExtracting ? "Extracting…" : "Extract with AI";
-  extractBtn.disabled = form.aiExtracting || !form.docUrl;
-  Object.assign(extractBtn.style, {
-    padding: "7px 11px",
-    fontSize: "11px",
-    background: form.aiExtracting || !form.docUrl ? "#e5e7eb" : "#7c3aed",
-    color: form.aiExtracting || !form.docUrl ? "#9ca3af" : "#fff",
-    border: "none",
-    borderRadius: "8px",
-    cursor: form.aiExtracting || !form.docUrl ? "not-allowed" : "pointer",
-    whiteSpace: "nowrap",
-    fontWeight: "600",
-    flexShrink: "0",
-  });
-  extractBtn.onclick = () => triggerAiDocumentExtraction();
-
-  // Re-evaluate button state when URL input changes
-  urlInput.addEventListener("input", () => {
-    const hasUrl = !!urlInput.value.trim();
-    extractBtn.disabled = !hasUrl;
-    extractBtn.style.background = hasUrl ? "#7c3aed" : "#e5e7eb";
-    extractBtn.style.color = hasUrl ? "#fff" : "#9ca3af";
-    extractBtn.style.cursor = hasUrl ? "pointer" : "not-allowed";
-  });
-
-  urlRow.appendChild(extractBtn);
-  urlWrapper.appendChild(urlRow);
-
-  if (form.aiExtractionError) {
-    const errEl = document.createElement("div");
-    errEl.textContent = form.aiExtractionError;
-    Object.assign(errEl.style, { color: "#ef4444", fontSize: "11px", marginTop: "4px" });
-    urlWrapper.appendChild(errEl);
-  }
-
-  docSection.appendChild(urlWrapper);
-
-  const docTypeField = createFormField("Document Type", createSelectInput(form.docType, [
+  docSection.appendChild(createFormField("Document Type", createSelectInput(form.docType, [
     { value: "certificate", label: "Certificate" },
     { value: "comprehensive_statement", label: "Comprehensive Statement" },
     { value: "declaration", label: "Declaration" },
@@ -2501,9 +2353,7 @@ function createAddStatementTabContent() {
     { value: "test_report", label: "Test Report" },
     { value: "email_confirmation", label: "Email Confirmation" },
     { value: "other", label: "Other" },
-  ], (v) => { form.docType = v; }));
-  if (form.aiExtractedFields?.docType) docTypeField.querySelector("label").appendChild(createAiBadge());
-  docSection.appendChild(docTypeField);
+  ], (v) => { form.docType = v; })));
 
   const dateRow = document.createElement("div");
   dateRow.style.display = "flex";
@@ -2511,15 +2361,11 @@ function createAddStatementTabContent() {
 
   const issueDateInput = createTextInput(form.docIssueDate, "YYYY-MM-DD", (v) => { form.docIssueDate = v; });
   issueDateInput.type = "date";
-  const issueDateField = createFormField("Issue Date", issueDateInput);
-  if (form.aiExtractedFields?.docIssueDate) issueDateField.querySelector("label").appendChild(createAiBadge());
-  dateRow.appendChild(issueDateField);
+  dateRow.appendChild(createFormField("Issue Date", issueDateInput));
 
   const validUntilInput = createTextInput(form.docValidUntil, "YYYY-MM-DD", (v) => { form.docValidUntil = v; });
   validUntilInput.type = "date";
-  const validUntilField = createFormField("Valid Until", validUntilInput);
-  if (form.aiExtractedFields?.docValidUntil) validUntilField.querySelector("label").appendChild(createAiBadge());
-  dateRow.appendChild(validUntilField);
+  dateRow.appendChild(createFormField("Valid Until", validUntilInput));
 
   docSection.appendChild(dateRow);
 
@@ -2537,9 +2383,7 @@ function createAddStatementTabContent() {
     resize: "vertical",
   });
   stTextarea.oninput = (e) => { form.docStatementText = e.target.value; };
-  const stTextField = createFormField("Statement Text", stTextarea);
-  if (form.aiExtractedFields?.docStatementText) stTextField.querySelector("label").appendChild(createAiBadge());
-  docSection.appendChild(stTextField);
+  docSection.appendChild(createFormField("Statement Text", stTextarea));
 
   wrapper.appendChild(docSection);
 
@@ -2558,15 +2402,13 @@ function createAddStatementTabContent() {
   Object.assign(covTitle.style, { fontWeight: "700", fontSize: "15px", marginBottom: "10px" });
   covSection.appendChild(covTitle);
 
-  const coverageTypeField = createFormField("Coverage Type", createSelectInput(form.coverageType, [
+  covSection.appendChild(createFormField("Coverage Type", createSelectInput(form.coverageType, [
     { value: "supplier_all", label: "All supplier items" },
     { value: "item_single", label: "Single item" },
     { value: "item_list", label: "Item list" },
     { value: "supplier_subset", label: "Supplier subset" },
     { value: "material_family", label: "Material family" },
-  ], (v) => { form.coverageType = v; rerenderCurrentCaseToast(); }));
-  if (form.aiExtractedFields?.coverageType) coverageTypeField.querySelector("label").appendChild(createAiBadge());
-  covSection.appendChild(coverageTypeField);
+  ], (v) => { form.coverageType = v; rerenderCurrentCaseToast(); })));
 
   if (form.coverageType !== "supplier_all") {
     covSection.appendChild(createFormField("DWK Item Numbers (one per line or comma-separated)", (() => {
@@ -2620,8 +2462,7 @@ function createAddStatementTabContent() {
 
   const assertTitle = document.createElement("div");
   assertTitle.textContent = "Assertion & Regulations";
-  Object.assign(assertTitle.style, { fontWeight: "700", fontSize: "15px", marginBottom: "10px", display: "flex", alignItems: "center", gap: "6px" });
-  if (form.aiExtractedFields?.regulations) assertTitle.appendChild(createAiBadge());
+  Object.assign(assertTitle.style, { fontWeight: "700", fontSize: "15px", marginBottom: "10px" });
   assertSection.appendChild(assertTitle);
 
   const assertionTypeOptions = [
