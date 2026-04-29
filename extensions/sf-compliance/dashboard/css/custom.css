@@ -1,0 +1,92 @@
+/* Nav tabs */
+.nav-tab {
+  padding: 0.25rem 0.75rem;
+  border-radius: 0.375rem;
+  font-size: 0.8125rem;
+  font-weight: 500;
+  color: #6b7280;
+  text-decoration: none;
+  transition: background 0.15s, color 0.15s;
+}
+.nav-tab:hover { background: #f3f4f6; color: #111827; }
+.nav-tab-active { background: #eef2ff; color: #4f46e5; }
+
+/* Status badges */
+.status-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.125rem 0.5rem;
+  border-radius: 9999px;
+  font-size: 0.6875rem;
+  font-weight: 500;
+  white-space: nowrap;
+}
+.badge-indigo  { background: #eef2ff; color: #4f46e5; }
+.badge-amber   { background: #fffbeb; color: #b45309; }
+.badge-violet  { background: #f5f3ff; color: #6d28d9; }
+.badge-green   { background: #ecfdf5; color: #065f46; }
+.badge-gray    { background: #f3f4f6; color: #4b5563; }
+.badge-red     { background: #fef2f2; color: #991b1b; }
+
+/* Expiry badges */
+.expiry-badge {
+  display: inline-block;
+  padding: 0.125rem 0.5rem;
+  border-radius: 0.25rem;
+  font-size: 0.6875rem;
+  font-weight: 500;
+}
+.expiry-green  { background: #ecfdf5; color: #065f46; }
+.expiry-amber  { background: #fffbeb; color: #92400e; }
+.expiry-red    { background: #fef2f2; color: #991b1b; }
+
+/* Filter inputs */
+.filter-input {
+  border: 1px solid #d1d5db;
+  border-radius: 0.5rem;
+  padding: 0.375rem 0.625rem;
+  font-size: 0.8125rem;
+  color: #111827;
+  background: #fff;
+  outline: none;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+.filter-input:focus { border-color: #6366f1; box-shadow: 0 0 0 3px rgba(99,102,241,0.15); }
+
+.filter-select {
+  border: 1px solid #d1d5db;
+  border-radius: 0.5rem;
+  padding: 0.375rem 0.625rem;
+  font-size: 0.8125rem;
+  color: #111827;
+  background: #fff;
+  outline: none;
+  cursor: pointer;
+  transition: border-color 0.15s;
+}
+.filter-select:focus { border-color: #6366f1; }
+
+/* Pagination buttons */
+.pagination-btn {
+  padding: 0.25rem 0.625rem;
+  border: 1px solid #e5e7eb;
+  border-radius: 0.375rem;
+  font-size: 0.75rem;
+  background: #fff;
+  color: #374151;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+.pagination-btn:hover:not([disabled]) { background: #f9fafb; }
+.pagination-btn[disabled] { opacity: 0.4; cursor: not-allowed; }
+
+/* Loading spinner */
+@keyframes spin { to { transform: rotate(360deg); } }
+.spinner {
+  width: 2rem;
+  height: 2rem;
+  border: 3px solid #e5e7eb;
+  border-top-color: #6366f1;
+  border-radius: 9999px;
+  animation: spin 0.7s linear infinite;
+}

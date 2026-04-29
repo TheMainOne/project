@@ -23,6 +23,7 @@ import complianceExtRouter from "./extensions/api/complianceExt.js";
 import complianceDocumentsRouter from "./extensions/api/complianceDocuments.js";
 import complianceAssertionsRouter from "./extensions/api/complianceAssertions.js";
 import complianceCoverageRouter from "./extensions/api/complianceCoverage.js";
+import complianceDashboardRouter from "./extensions/api/complianceDashboard.js";
 import telegramRouter from "./services/telegram/telegram.js";
 import Notification from "./models/Notification.js";
 import NotificationDestination from "./models/NotificationDestination.js";
@@ -180,6 +181,8 @@ mongoose
     app.use("/api/compliance", complianceRouter);
     app.use("/api/compliance-suppliers", complianceSuppliersRouter);
     app.use("/api/compliance-coverage", complianceCoverageRouter);
+    app.use("/compliance-dashboard", express.static(path.join(__dirname, "extensions/sf-compliance/dashboard")));
+    app.use("/api/compliance-dashboard", complianceDashboardRouter);
 
 const aiwRouter = express.Router();
 

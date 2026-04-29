@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Compliance Dashboard</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="stylesheet" href="/compliance-dashboard/css/custom.css" />
+</head>
+<body class="bg-gray-50 text-gray-900 min-h-screen">
+
+  <!-- Auth overlay -->
+  <div id="auth-overlay" class="hidden fixed inset-0 z-50 bg-gray-900/80 flex items-center justify-center">
+    <div class="bg-white rounded-2xl shadow-xl p-8 w-full max-w-md">
+      <h2 class="text-xl font-semibold mb-2">Compliance Dashboard</h2>
+      <p class="text-sm text-gray-500 mb-4">Paste your access token to continue.</p>
+      <textarea
+        id="token-input"
+        rows="4"
+        class="w-full border border-gray-300 rounded-lg p-3 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-indigo-500 resize-none"
+        placeholder="eyJhbGci..."
+      ></textarea>
+      <button
+        id="token-submit"
+        class="mt-3 w-full bg-indigo-600 hover:bg-indigo-700 text-white font-medium py-2 rounded-lg transition"
+      >
+        Enter Dashboard
+      </button>
+      <p id="token-error" class="hidden mt-2 text-sm text-red-500">Token cannot be empty.</p>
+    </div>
+  </div>
+
+  <!-- Top navigation -->
+  <header class="bg-white border-b border-gray-200 sticky top-0 z-40">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+      <div class="flex items-center justify-between h-14">
+        <div class="flex items-center gap-3">
+          <span class="font-semibold text-gray-900 text-sm tracking-tight">Compliance</span>
+          <span class="text-gray-300 text-xs">|</span>
+          <nav class="flex gap-1" id="nav-tabs">
+            <a href="#overview"   class="nav-tab" data-section="overview">Overview</a>
+            <a href="#cases"      class="nav-tab" data-section="cases">Cases</a>
+            <a href="#suppliers"  class="nav-tab" data-section="suppliers">Suppliers</a>
+            <a href="#evidence"   class="nav-tab" data-section="evidence">Evidence</a>
+          </nav>
+        </div>
+        <button
+          id="logout-btn"
+          class="text-xs text-gray-400 hover:text-gray-600 transition"
+        >
+          Sign out
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <!-- Main content -->
+  <main class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+
+    <section id="section-overview" class="hidden"></section>
+    <section id="section-cases"    class="hidden"></section>
+    <section id="section-suppliers" class="hidden"></section>
+    <section id="section-evidence" class="hidden"></section>
+
+  </main>
+
+  <!-- Loading spinner (global) -->
+  <div id="global-loader" class="hidden fixed inset-0 z-30 bg-white/60 flex items-center justify-center">
+    <div class="spinner"></div>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4/dist/chart.umd.min.js"></script>
+  <script src="/compliance-dashboard/js/api.js"></script>
+  <script src="/compliance-dashboard/js/overview.js"></script>
+  <script src="/compliance-dashboard/js/cases.js"></script>
+  <script src="/compliance-dashboard/js/suppliers.js"></script>
+  <script src="/compliance-dashboard/js/evidence.js"></script>
+  <script src="/compliance-dashboard/js/app.js"></script>
+
+</body>
+</html>
