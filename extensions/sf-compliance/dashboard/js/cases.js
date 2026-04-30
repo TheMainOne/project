@@ -18,6 +18,14 @@
     closed: "Closed",
   };
 
+  const STATUS_TOOLTIP = {
+    new:              "Case received, not yet assigned",
+    in_progress:      "Actively being reviewed",
+    pending_supplier: "Waiting on supplier to provide documents or information",
+    resolved:         "All compliance requirements met",
+    closed:           "Case closed without resolution or as duplicate",
+  };
+
   function buildHTML() {
     return `
       <div class="flex flex-wrap gap-3 mb-6 items-end">
@@ -106,7 +114,7 @@
             <tr class="hover:bg-gray-50 transition">
               <td class="px-4 py-3 font-mono text-xs text-indigo-600">${c.sfCaseId}</td>
               <td class="px-4 py-3 text-gray-800 max-w-xs truncate" title="${esc(c.subject)}">${esc(c.subject)}</td>
-              <td class="px-4 py-3"><span class="status-badge ${STATUS_BADGE[c.status] || "badge-gray"}">${STATUS_LABEL[c.status] || c.status}</span></td>
+              <td class="px-4 py-3"><span class="status-badge ${STATUS_BADGE[c.status] || "badge-gray"} cursor-default" title="${STATUS_TOOLTIP[c.status] || c.status}">${STATUS_LABEL[c.status] || c.status}</span></td>
               <td class="px-4 py-3 text-gray-500">${c.requestedMaterials?.length ?? 0}</td>
               <td class="px-4 py-3 text-gray-500">${c.detectedRegulations?.length ?? 0}</td>
               <td class="px-4 py-3 text-gray-500">${c.assignee || "—"}</td>

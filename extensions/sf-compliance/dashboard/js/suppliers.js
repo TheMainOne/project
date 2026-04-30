@@ -1,6 +1,7 @@
 (function () {
   let currentPage = 1;
   let currentQ = "";
+  let currentSort = { by: "name", dir: "asc" };
 
   const OUTREACH_BADGE = {
     sent: "badge-indigo",
@@ -10,15 +11,63 @@
     closed: "badge-gray",
   };
 
+  const OUTREACH_TOOLTIP = {
+    sent:      "Email sent, waiting for supplier to respond",
+    awaiting:  "Follow-up due — supplier has not responded yet",
+    responded: "Supplier has replied",
+    overdue:   "Follow-up deadline passed with no response",
+    closed:    "Outreach closed",
+  };
+
+  const SORT_OPTIONS = [
+    { value: "name",     label: "Name" },
+    { value: "active",   label: "Active assertions" },
+    { value: "outreach", label: "Last outreach" },
+  ];
+
+  function sortSuppliers(suppliers) {
+    return [...suppliers].sort((a, b) => {
+      let av, bv;
+      if (currentSort.by === "name") {
+        av = (a.supplierName || "").toLowerCase();
+        bv = (b.supplierName || "").toLowerCase();
+      } else if (currentSort.by === "active") {
+        av = a.assertionCounts?.active ?? 0;
+        bv = b.assertionCounts?.active ?? 0;
+      } else if (currentSort.by === "outreach") {
+        av = a.latestOutreach?.sentAt ? new Date(a.latestOutreach.sentAt).getTime() : 0;
+        bv = b.latestOutreach?.sentAt ? new Date(b.latestOutreach.sentAt).getTime() : 0;
+      }
+      if (av < bv) return currentSort.dir === "asc" ? -1 : 1;
+      if (av > bv) return currentSort.dir === "asc" ? 1 : -1;
+      return 0;
+    });
+  }
+
   function buildHTML() {
     return `
-      <div class="mb-6">
+      <div class="flex flex-wrap items-center gap-3 mb-6">
         <input
           type="search"
           id="suppliers-search"
           class="filter-input w-full max-w-sm"
           placeholder="Search by name or code…"
         />
+        <div class="flex items-center gap-2 ml-auto">
+          <label class="text-xs text-gray-500">Sort:</label>
+          <select id="suppliers-sort" class="filter-select">
+            ${SORT_OPTIONS.map(o => `<option value="${o.value}"${o.value === currentSort.by ? " selected" : ""}>${o.label}</option>`).join("")}
+          </select>
+          <button id="suppliers-sort-dir" class="pagination-btn text-xs" title="Toggle direction">
+            ${currentSort.dir === "asc" ? "↑ Asc" : "↓ Desc"}
+          </button>
+        </div>
+      </div>
+      <div class="flex flex-wrap gap-2 mb-4 text-xs text-gray-400">
+        <span class="font-medium text-gray-500">Outreach:</span>
+        ${Object.entries(OUTREACH_TOOLTIP).map(([status, tip]) =>
+          `<span class="status-badge ${OUTREACH_BADGE[status]} cursor-default" title="${tip}">${status}</span>`
+        ).join("")}
       </div>
       <div id="suppliers-grid" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4"></div>
       <div id="suppliers-pagination" class="flex items-center justify-between mt-6 text-sm text-gray-500"></div>
@@ -64,7 +113,7 @@
               <div class="text-xs font-mono text-gray-400 mt-0.5">${esc(s.supplierCode)}</div>
             </div>
             ${outreach
-              ? `<span class="status-badge ${OUTREACH_BADGE[outreach.status] || "badge-gray"} shrink-0">${outreach.status}</span>`
+              ? `<span class="status-badge ${OUTREACH_BADGE[outreach.status] || "badge-gray"} shrink-0 cursor-default" title="${OUTREACH_TOOLTIP[outreach.status] || outreach.status}">${outreach.status}</span>`
               : ""}
           </div>
           <div class="flex gap-2 flex-wrap">
@@ -104,7 +153,8 @@
     if (currentQ) params.q = currentQ;
     try {
       const data = await API.get("/api/compliance-dashboard/suppliers" + API.buildQuery(params));
-      renderGrid(data.suppliers || []);
+      const sorted = sortSuppliers(data.suppliers || []);
+      renderGrid(sorted);
       renderPagination(data.total, data.page, Math.ceil(data.total / 24));
     } catch (e) {
       document.getElementById("suppliers-grid").innerHTML =
@@ -127,8 +177,7 @@
     currentPage = 1;
     currentQ = "";
 
-    const searchInput = document.getElementById("suppliers-search");
-    searchInput?.addEventListener(
+    document.getElementById("suppliers-search")?.addEventListener(
       "input",
       API.debounce((e) => {
         currentQ = e.target.value.trim();
@@ -136,6 +185,19 @@
         load();
       }, 300)
     );
+
+    document.getElementById("suppliers-sort")?.addEventListener("change", (e) => {
+      currentSort.by = e.target.value;
+      currentPage = 1;
+      load();
+    });
+
+    document.getElementById("suppliers-sort-dir")?.addEventListener("click", () => {
+      currentSort.dir = currentSort.dir === "asc" ? "desc" : "asc";
+      document.getElementById("suppliers-sort-dir").textContent =
+        currentSort.dir === "asc" ? "↑ Asc" : "↓ Desc";
+      load();
+    });
 
     load();
   };

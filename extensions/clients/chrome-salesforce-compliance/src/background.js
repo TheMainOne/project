@@ -1041,7 +1041,7 @@ chrome.alarms.onAlarm.addListener(async (alarm) => {
 
   chrome.notifications.create(`outreach_notif_${recordId}`, {
     type: "basic",
-    iconUrl: "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==",
+    iconUrl: "icons/icon48.png",
     title: "Outreach follow-up reminder",
     message: `${reminder.supplierName}: ${reminder.subject}`,
     priority: 1,
