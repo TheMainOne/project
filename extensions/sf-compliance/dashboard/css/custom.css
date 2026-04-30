@@ -90,3 +90,33 @@
   border-radius: 9999px;
   animation: spin 0.7s linear infinite;
 }
+
+/* Skeleton shimmer */
+@keyframes skel-shimmer {
+  0%   { background-position: -600px 0; }
+  100% { background-position:  600px 0; }
+}
+
+.skel-line {
+  height: 0.75rem;
+  border-radius: 0.25rem;
+  background: linear-gradient(90deg, #f0f0f0 25%, #e4e4e4 50%, #f0f0f0 75%);
+  background-size: 1200px 100%;
+  animation: skel-shimmer 1.4s infinite linear;
+}
+
+.skel-badge {
+  display: inline-block;
+  height: 1.25rem;
+  width: 4rem;
+  border-radius: 9999px;
+  background: linear-gradient(90deg, #f0f0f0 25%, #e4e4e4 50%, #f0f0f0 75%);
+  background-size: 1200px 100%;
+  animation: skel-shimmer 1.4s infinite linear;
+}
+
+.skel-card {
+  background: linear-gradient(90deg, #f0f0f0 25%, #e4e4e4 50%, #f0f0f0 75%);
+  background-size: 1200px 100%;
+  animation: skel-shimmer 1.4s infinite linear;
+}

@@ -25,6 +25,25 @@
     `;
   }
 
+  function renderGridSkeleton() {
+    const grid = document.getElementById("suppliers-grid");
+    grid.innerHTML = Array(6).fill(0).map(() => `
+      <div class="bg-white rounded-xl border border-gray-200 p-5 flex flex-col gap-3">
+        <div class="flex items-start justify-between gap-2">
+          <div class="flex flex-col gap-1.5 flex-1">
+            <div class="skel-line" style="width:65%"></div>
+            <div class="skel-line" style="width:40%"></div>
+          </div>
+        </div>
+        <div class="flex gap-2">
+          <div class="skel-badge"></div>
+          <div class="skel-badge"></div>
+        </div>
+        <div class="skel-line" style="width:55%"></div>
+      </div>
+    `).join("");
+  }
+
   function renderGrid(suppliers) {
     const grid = document.getElementById("suppliers-grid");
     if (!suppliers.length) {
@@ -80,18 +99,16 @@
   }
 
   async function load() {
+    renderGridSkeleton();
     const params = { page: currentPage, limit: 24 };
     if (currentQ) params.q = currentQ;
-    API.loader(true);
     try {
       const data = await API.get("/api/compliance-dashboard/suppliers" + API.buildQuery(params));
       renderGrid(data.suppliers || []);
       renderPagination(data.total, data.page, Math.ceil(data.total / 24));
     } catch (e) {
       document.getElementById("suppliers-grid").innerHTML =
-        `<p class="text-red-500 text-sm">Error: ${e.message}</p>`;
-    } finally {
-      API.loader(false);
+        `<p class="text-red-500 text-sm col-span-3 text-center py-10">Error: ${e.message}</p>`;
     }
   }
 

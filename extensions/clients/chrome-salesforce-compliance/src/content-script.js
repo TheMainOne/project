@@ -10,163 +10,8 @@ let authState = {
   user: null,
   lastEmail: "",
 };
-let currentCaseAnalysisState = {
-  payload: null,
-  analysis: null,
-  response: null,
-  overriddenMaterials: null,
-  lookupResults: null,
-  editingMaterialIndex: null,
-
-manualLookupInput: "",
-manualLookupResults: null,
-manualLookupLoading: false,
-
-
-  suppliersLibrary: null,
-  suppliersLibraryLoading: false,
-  suppliersLibraryError: null,
-  suppliersLibrarySearch: "",
-  suppliersLibraryRegFilter: "",
-  suppliersLibraryStatusFilter: "all",
-  suppliersLibraryDocSearch: "",
-  selectedSupplierLibraryId: null,
-  supplierContactForm: null,   // null | { mode: "add"|"edit", contactId?, name, email, phone, role, notes, saving, error }
-  supplierContactDeleting: null, // contactId being deleted
-
-  analyticsMatrixFilter: "all",
-  analyticsMatrixSearch: "",
-  analyticsMatrixSort: { by: "coverageRate", dir: "asc" },
-  analyticsMatrixView: "table",
-  analyticsMatrixMode: "status",
-  analyticsRegSort: "coverage_asc",
-  analyticsComparisonSelected: [],
-
-  freshnessSort: { by: "oldestDoc", dir: "desc" },
-  freshnessExpanded: [],
-  atRiskExpanded: [],
-  stmtBrowserSupplier: "",
-  stmtBrowserReg: "",
-  stmtBrowserAge: "all",
-
-  addStatementForm: {
-    supplierCode: "",
-    supplierName: "",
-    supplierAliases: "",
-    isNewSupplier: false,
-    selectedSupplierId: null,
-
-    showNewRegulationForm: false,
-    newRegCode: "",
-    newRegName: "",
-    newRegCategory: "general",
-    addingRegulation: false,
-    addRegulationError: null,
-
-    docTitle: "",
-    docFileName: "",
-    docUrl: "",
-    docType: "certificate",
-    docIssueDate: "",
-    docValidUntil: "",
-    docStatementText: "",
-
-    coverageType: "supplier_all",
-    dwkItemNumbers: "",
-    supplierPartNumbers: "",
-
-    defaultAssertionType: "compliant",
-    selectedRegulations: [],
-    regulationAssertionTypes: {},
-
-    availableRegulations: [],
-    supplierSearchResults: [],
-    supplierSearchQuery: "",
-
-    submitting: false,
-    submitResult: null,
-    submitError: null,
-  },
-
-  outreachList: null,
-  outreachLoading: false,
-  outreachError: null,
-  outreachFilter: "all",
-  outreachShowForm: false,
-  outreachReminders: {},
-  outreachReminderPickerFor: null,
-  outreachReminderDate: "",
-  outreachForm: {
-    supplierId: "",
-    supplierName: "",
-    supplierSearchQuery: "",
-    supplierSearchResults: [],
-    contactEmail: "",
-    subject: "",
-    method: "email",
-    sentAt: "",
-    followUpDays: "7",
-    notes: "",
-    regulationTags: [],
-    submitting: false,
-    submitError: null,
-  },
-
-  complianceSnapshots: [],
-
-  analyticsExpandedSections: {
-    nonCompliant: true,
-    complianceMatrix: false,
-    supplierFreshness: false,
-    statementBrowser: false,
-    regulationBreakdown: false,
-    atRisk: true,
-    expiringSoon: true,
-  },
-
-  cachedAt: null,
-  suppliersLibraryCachedAt: null,
-  globalSearchQuery: "",
-  globalSearchMaterialsQuery: "",
-  globalSearchMaterialsResults: null,
-  globalSearchMaterialsLoading: false,
-
-  activityLogFilter: "all",
-};
-
-let activeCaseRequestToken = 0;
-let lastCompletedRecordId = null;
-let isCaseToastExpanded = false;
-let wasPanelOpen = true; // auto-open panel by default; set to false when user explicitly closes
-let isCaseToastMinimized = false;
-let panelPosition = { x: null, y: null };
-let panelSize = { width: 860, height: null };
-let _isDragging = false;
-let _dragOffsetX = 0;
-let _dragOffsetY = 0;
-let _isResizing = false;
-let _resizeStartX = 0;
-let _resizeStartY = 0;
-let _resizeStartWidth = 0;
-let _resizeStartHeight = 0;
-let _panelInteractionListenersAttached = false;
-
-chrome.storage.local.get(["panelLayout"], (result) => {
-  if (result.panelLayout) {
-    if (result.panelLayout.position && result.panelLayout.position.x !== null) {
-      panelPosition = result.panelLayout.position;
-    }
-    if (result.panelLayout.size) {
-      panelSize = result.panelLayout.size;
-    }
-  }
-});
-
-function resetCaseAnalysisState() {
-  activeCaseToastTab = "overview";
-  suppliersSubTab = "library";
-
-  currentCaseAnalysisState = {
+function createInitialState() {
+  return {
     payload: null,
     analysis: null,
     response: null,
@@ -174,9 +19,9 @@ function resetCaseAnalysisState() {
     lookupResults: null,
     editingMaterialIndex: null,
 
-manualLookupInput: "",
-manualLookupResults: null,
-manualLookupLoading: false,
+    manualLookupInput: "",
+    manualLookupResults: null,
+    manualLookupLoading: false,
 
     suppliersLibrary: null,
     suppliersLibraryLoading: false,
@@ -212,11 +57,11 @@ manualLookupLoading: false,
       selectedSupplierId: null,
 
       showNewRegulationForm: false,
-    newRegCode: "",
-    newRegName: "",
-    newRegCategory: "general",
-    addingRegulation: false,
-    addRegulationError: null,
+      newRegCode: "",
+      newRegName: "",
+      newRegCategory: "general",
+      addingRegulation: false,
+      addRegulationError: null,
 
       docTitle: "",
       docFileName: "",
@@ -288,6 +133,42 @@ manualLookupLoading: false,
 
     activityLogFilter: "all",
   };
+}
+
+let currentCaseAnalysisState = createInitialState();
+
+let activeCaseRequestToken = 0;
+let lastCompletedRecordId = null;
+let isCaseToastExpanded = false;
+let wasPanelOpen = true; // auto-open panel by default; set to false when user explicitly closes
+let isCaseToastMinimized = false;
+let panelPosition = { x: null, y: null };
+let panelSize = { width: 860, height: null };
+let _isDragging = false;
+let _dragOffsetX = 0;
+let _dragOffsetY = 0;
+let _isResizing = false;
+let _resizeStartX = 0;
+let _resizeStartY = 0;
+let _resizeStartWidth = 0;
+let _resizeStartHeight = 0;
+let _panelInteractionListenersAttached = false;
+
+chrome.storage.local.get(["panelLayout"], (result) => {
+  if (result.panelLayout) {
+    if (result.panelLayout.position && result.panelLayout.position.x !== null) {
+      panelPosition = result.panelLayout.position;
+    }
+    if (result.panelLayout.size) {
+      panelSize = result.panelLayout.size;
+    }
+  }
+});
+
+function resetCaseAnalysisState() {
+  activeCaseToastTab = "overview";
+  suppliersSubTab = "library";
+  currentCaseAnalysisState = createInitialState();
 }
 
 function removeCaseToast() {

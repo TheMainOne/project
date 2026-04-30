@@ -49,6 +49,39 @@
     `;
   }
 
+  function renderTableSkeleton() {
+    const wrap = document.getElementById("cases-table-wrap");
+    const skelRow = () => `
+      <tr>
+        <td class="px-4 py-3"><div class="skel-line" style="width:5rem"></div></td>
+        <td class="px-4 py-3"><div class="skel-line" style="width:75%"></div></td>
+        <td class="px-4 py-3"><div class="skel-badge"></div></td>
+        <td class="px-4 py-3"><div class="skel-line" style="width:1.5rem"></div></td>
+        <td class="px-4 py-3"><div class="skel-line" style="width:1.5rem"></div></td>
+        <td class="px-4 py-3"><div class="skel-line" style="width:4rem"></div></td>
+        <td class="px-4 py-3"><div class="skel-line" style="width:5rem"></div></td>
+      </tr>
+    `;
+    wrap.innerHTML = `
+      <table class="w-full text-sm">
+        <thead class="bg-gray-50 border-b border-gray-200">
+          <tr class="text-left text-xs text-gray-500">
+            <th class="px-4 py-3 font-medium">SF Case ID</th>
+            <th class="px-4 py-3 font-medium">Subject</th>
+            <th class="px-4 py-3 font-medium">Status</th>
+            <th class="px-4 py-3 font-medium">Materials</th>
+            <th class="px-4 py-3 font-medium">Regulations</th>
+            <th class="px-4 py-3 font-medium">Assignee</th>
+            <th class="px-4 py-3 font-medium">Created</th>
+          </tr>
+        </thead>
+        <tbody class="divide-y divide-gray-100">
+          ${Array(5).fill(0).map(skelRow).join("")}
+        </tbody>
+      </table>
+    `;
+  }
+
   function renderTable(cases) {
     const wrap = document.getElementById("cases-table-wrap");
     if (!cases.length) {
@@ -101,8 +134,8 @@
   }
 
   async function load() {
+    renderTableSkeleton();
     const params = { page: currentPage, limit: 25, ...currentFilters };
-    API.loader(true);
     try {
       const data = await API.get("/api/compliance-dashboard/cases" + API.buildQuery(params));
       renderTable(data.cases || []);
@@ -110,8 +143,6 @@
     } catch (e) {
       document.getElementById("cases-table-wrap").innerHTML =
         `<p class="text-red-500 text-sm p-4">Error: ${e.message}</p>`;
-    } finally {
-      API.loader(false);
     }
   }
 

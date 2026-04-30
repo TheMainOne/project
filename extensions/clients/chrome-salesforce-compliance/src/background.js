@@ -261,6 +261,9 @@ function extractPartNumbersForLookup(analyzeResult, payload) {
 // Refresh token is kept only in memory — never persisted to storage.
 let _sessionRefreshToken = null;
 
+// Singleton promise: prevents concurrent refresh races when multiple calls see an expired token.
+let _tokenRefreshInFlight = null;
+
 async function getStoredAuth() {
   const result = await chrome.storage.local.get([
     STORAGE_KEYS.complianceToken,
@@ -571,7 +574,14 @@ async function ensureComplianceToken() {
     return { ok: true, complianceToken };
   }
 
-  const refreshResult = await refreshAndIssueExtensionToken();
+  // If a refresh is already in flight, piggyback on it instead of starting another.
+  if (!_tokenRefreshInFlight) {
+    _tokenRefreshInFlight = refreshAndIssueExtensionToken().finally(() => {
+      _tokenRefreshInFlight = null;
+    });
+  }
+
+  const refreshResult = await _tokenRefreshInFlight;
 
   if (!refreshResult.ok) {
     return {

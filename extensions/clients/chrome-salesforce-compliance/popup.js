@@ -138,33 +138,54 @@ function renderMetrics(snapshots) {
   });
 }
 
+function showDashboardError(message) {
+  const remindersBody = document.getElementById("remindersBody");
+  const metricsBody = document.getElementById("metricsBody");
+  remindersBody.innerHTML = `<div class="error-note">${message} <button class="retry-btn" id="retryBtn">Retry</button></div>`;
+  metricsBody.innerHTML = "";
+  document.getElementById("retryBtn")?.addEventListener("click", () => {
+    remindersBody.innerHTML = '<div class="skel" style="width:70%"></div><div class="skel" style="width:50%"></div>';
+    metricsBody.innerHTML = '<div class="skel" style="width:80%"></div><div class="skel" style="width:60%"></div><div class="skel" style="width:70%"></div>';
+    loadDashboard();
+  });
+}
+
 async function loadDashboard() {
   const authBadge = document.getElementById("authBadge");
   const dashboard = document.getElementById("dashboard");
 
+  let auth;
   try {
-    const auth = await chrome.runtime.sendMessage({ type: "AUTH_GET_STATE" });
+    auth = await chrome.runtime.sendMessage({ type: "AUTH_GET_STATE" });
+  } catch {
+    authBadge.textContent = "Unavailable";
+    authBadge.className = "auth-badge";
+    return;
+  }
 
-    if (!auth?.authenticated) {
-      authBadge.textContent = "Not signed in";
-      authBadge.className = "auth-badge";
-      return;
-    }
+  if (!auth?.authenticated) {
+    authBadge.textContent = "Not signed in";
+    authBadge.className = "auth-badge";
+    return;
+  }
 
-    authBadge.textContent = auth.lastEmail || "Connected";
-    authBadge.className = "auth-badge connected";
-    dashboard.style.display = "block";
+  authBadge.textContent = auth.lastEmail || "Connected";
+  authBadge.className = "auth-badge connected";
+  dashboard.style.display = "block";
 
-    const [remindersRes, snapshotsRes] = await Promise.all([
+  let remindersRes, snapshotsRes;
+  try {
+    [remindersRes, snapshotsRes] = await Promise.all([
       chrome.runtime.sendMessage({ type: "EXT_GET_REMINDERS" }),
       chrome.runtime.sendMessage({ type: "EXT_GET_COMPLIANCE_SNAPSHOTS" }),
     ]);
-
-    renderReminders(remindersRes?.reminders || {});
-    renderMetrics(snapshotsRes?.snapshots || []);
   } catch {
-    authBadge.textContent = "—";
+    showDashboardError("Failed to load data.");
+    return;
   }
+
+  renderReminders(remindersRes?.reminders || {});
+  renderMetrics(snapshotsRes?.snapshots || []);
 }
 
 loadDashboard();
