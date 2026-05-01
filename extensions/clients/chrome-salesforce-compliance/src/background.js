@@ -847,6 +847,38 @@ async function handleAddRegulation(payload) {
   };
 }
 
+
+async function handleRefreshDocument(payload) {
+  const documentId = String(payload?.documentId || "").trim();
+  if (!documentId) {
+    return { ok: false, error: "documentId is required" };
+  }
+
+  const body = { documentId };
+  if ("issueDate" in (payload || {})) body.issueDate = payload.issueDate || null;
+  if ("validUntil" in (payload || {})) body.validUntil = payload.validUntil || null;
+  if ("receivedDate" in (payload || {})) body.receivedDate = payload.receivedDate || null;
+  if ("notes" in (payload || {})) body.notes = payload.notes;
+  if ("cascadeAssertions" in (payload || {})) body.cascadeAssertions = payload.cascadeAssertions;
+  if ("reactivate" in (payload || {})) body.reactivate = payload.reactivate;
+
+  const result = await callComplianceApi("/refresh-document", body);
+
+  if (result.authRequired) {
+    return { ok: false, authRequired: true, error: result.error || "Authentication required" };
+  }
+
+  if (result.ok) {
+    await chrome.storage.local.remove("suppliersLibraryCache");
+  }
+
+  return {
+    ok: result.ok,
+    result: result.json,
+    error: result.json?.error || result.error,
+  };
+}
+
 async function callComplianceApiMethod(method, path, body = null, allowRetry = true) {
   try {
     const tokenState = await ensureComplianceToken();
@@ -1060,7 +1092,7 @@ const ALLOWED_MESSAGE_TYPES = new Set([
   "EXT_UPDATE_OUTREACH", "EXT_DELETE_OUTREACH", "EXT_SAVE_COMPLIANCE_SNAPSHOT",
   "EXT_GET_COMPLIANCE_SNAPSHOTS", "EXT_SET_REMINDER", "EXT_CANCEL_REMINDER",
   "EXT_GET_REMINDERS", "EXT_ADD_SUPPLIER_CONTACT", "EXT_UPDATE_SUPPLIER_CONTACT",
-  "EXT_DELETE_SUPPLIER_CONTACT",
+  "EXT_DELETE_SUPPLIER_CONTACT", "EXT_REFRESH_DOCUMENT",
 ]);
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
@@ -1130,6 +1162,11 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
     if (message?.type === "EXT_ADD_REGULATION") {
     handleAddRegulation(message.payload || {}).then(sendResponse);
+    return true;
+  }
+
+  if (message?.type === "EXT_REFRESH_DOCUMENT") {
+    handleRefreshDocument(message.payload || {}).then(sendResponse);
     return true;
   }
 

@@ -702,6 +702,138 @@ complianceExtRouter.post(
 
 
 // ============================================================
+// POST /refresh-document — обновление дат для существующего
+// документа без повторной загрузки. Подходит для случая, когда
+// поставщик присылает тот же документ с новыми датами.
+// ============================================================
+
+complianceExtRouter.post(
+  "/refresh-document",
+  requireExtensionAuth,
+  requireExtensionScope("compliance:analyze"),
+  async (req, res) => {
+    try {
+      const documentId = String(req.body?.documentId || "").trim();
+      const issueDateRaw = req.body?.issueDate ?? null;
+      const validUntilRaw = req.body?.validUntil ?? null;
+      const receivedDateRaw = req.body?.receivedDate ?? null;
+      const cascadeAssertions = req.body?.cascadeAssertions !== false;
+      const reactivate = req.body?.reactivate !== false;
+      const notes = typeof req.body?.notes === "string" ? req.body.notes : null;
+
+      if (!documentId) {
+        return res.status(400).json({ ok: false, error: "documentId is required" });
+      }
+
+      const parseDate = (value, label) => {
+        if (value === null || value === undefined || value === "") return null;
+        const date = new Date(value);
+        if (isNaN(date.getTime())) {
+          throw new Error(`Invalid ${label}`);
+        }
+        return date;
+      };
+
+      let issueDate, validUntil, receivedDate;
+      try {
+        issueDate = parseDate(issueDateRaw, "issueDate");
+        validUntil = parseDate(validUntilRaw, "validUntil");
+        receivedDate = parseDate(receivedDateRaw, "receivedDate");
+      } catch (parseError) {
+        return res.status(400).json({ ok: false, error: parseError.message });
+      }
+
+      if (issueDateRaw === undefined && validUntilRaw === undefined && receivedDateRaw === undefined) {
+        return res.status(400).json({
+          ok: false,
+          error: "At least one of issueDate, validUntil, or receivedDate must be provided",
+        });
+      }
+
+      const document = await ComplianceDocument.findById(documentId);
+      if (!document) {
+        return res.status(404).json({ ok: false, error: "Document not found" });
+      }
+
+      const docUpdate = {};
+      if (issueDateRaw !== undefined) docUpdate.issueDate = issueDate;
+      if (validUntilRaw !== undefined) docUpdate.validUntil = validUntil;
+      if (receivedDateRaw !== undefined) {
+        docUpdate.receivedDate = receivedDate || new Date();
+      }
+      if (notes !== null) docUpdate.notes = notes;
+
+      if (reactivate && document.status === "expired") {
+        const stillValid = !validUntil || validUntil.getTime() >= Date.now();
+        if (stillValid) docUpdate.status = "active";
+      }
+
+      Object.assign(document, docUpdate);
+      await document.save();
+
+      let assertionsUpdated = 0;
+      if (cascadeAssertions) {
+        const assertionUpdate = {};
+        if (issueDateRaw !== undefined) assertionUpdate.issueDate = issueDate;
+        if (validUntilRaw !== undefined) assertionUpdate.validUntil = validUntil;
+
+        if (Object.keys(assertionUpdate).length > 0) {
+          const result = await ComplianceAssertion.updateMany(
+            { documentId: document._id },
+            { $set: assertionUpdate }
+          );
+          assertionsUpdated = result.modifiedCount || result.nModified || 0;
+        }
+
+        if (reactivate) {
+          const stillValid = !validUntil || validUntil.getTime() >= Date.now();
+          if (stillValid) {
+            await ComplianceAssertion.updateMany(
+              { documentId: document._id, status: "expired" },
+              { $set: { status: "active" } }
+            );
+          }
+        }
+      }
+
+      await writeAudit({
+        userId: req.user.id,
+        action: "refresh-document",
+        outcome: "success",
+      });
+
+      return res.json({
+        ok: true,
+        document: {
+          id: String(document._id),
+          title: document.title,
+          fileName: document.fileName,
+          issueDate: document.issueDate,
+          validUntil: document.validUntil,
+          receivedDate: document.receivedDate,
+          status: document.status,
+        },
+        assertionsUpdated,
+      });
+    } catch (error) {
+      console.error("[REFRESH-DOCUMENT ROUTE] failed:", error);
+
+      await writeAudit({
+        userId: req.user.id,
+        action: "refresh-document",
+        outcome: "error",
+      });
+
+      return res.status(500).json({
+        ok: false,
+        error: "Failed to refresh document",
+        details: error?.message || String(error),
+      });
+    }
+  }
+);
+
+// ============================================================
 // Outreach tracker — CRUD
 // ============================================================
 

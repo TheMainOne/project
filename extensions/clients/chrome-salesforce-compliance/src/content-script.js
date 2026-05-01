@@ -3037,6 +3037,83 @@ function formatShortDate(value) {
   return date.toLocaleDateString();
 }
 
+
+function formatDateForInput(value) {
+  if (!value) return "";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+  const pad = (n) => String(n).padStart(2, "0");
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
+}
+
+function openRefreshDocumentForm(documentSnapshot) {
+  if (!documentSnapshot?.documentId) return;
+  const today = formatDateForInput(new Date());
+  currentCaseAnalysisState.refreshDocumentForm = {
+    documentId: documentSnapshot.documentId,
+    documentTitle: documentSnapshot.title || documentSnapshot.fileName || "",
+    issueDate: formatDateForInput(documentSnapshot.issueDate),
+    validUntil: formatDateForInput(documentSnapshot.validUntil),
+    receivedDate: today,
+    saving: false,
+    error: null,
+    success: false,
+  };
+  rerenderCurrentCaseToast();
+}
+
+function closeRefreshDocumentForm() {
+  currentCaseAnalysisState.refreshDocumentForm = null;
+  rerenderCurrentCaseToast();
+}
+
+async function submitRefreshDocument() {
+  const form = currentCaseAnalysisState.refreshDocumentForm;
+  if (!form || !form.documentId) return;
+
+  if (!form.issueDate && !form.validUntil && !form.receivedDate) {
+    form.error = "Provide at least one new date";
+    rerenderCurrentCaseToast();
+    return;
+  }
+
+  form.saving = true;
+  form.error = null;
+  rerenderCurrentCaseToast();
+
+  const response = await sendMessageAsync({
+    type: "EXT_REFRESH_DOCUMENT",
+    payload: {
+      documentId: form.documentId,
+      issueDate: form.issueDate || null,
+      validUntil: form.validUntil || null,
+      receivedDate: form.receivedDate || null,
+    },
+  });
+
+  form.saving = false;
+
+  if (response?.ok && response?.result?.ok) {
+    form.success = true;
+    form.error = null;
+    rerenderCurrentCaseToast();
+    await loadSuppliersLibrary(
+      currentCaseAnalysisState.suppliersLibrarySearch || "",
+      true
+    );
+    if (currentCaseAnalysisState.refreshDocumentForm === form) {
+      currentCaseAnalysisState.refreshDocumentForm = null;
+      rerenderCurrentCaseToast();
+    }
+  } else {
+    form.error =
+      response?.result?.error ||
+      response?.error ||
+      "Failed to refresh document dates";
+    rerenderCurrentCaseToast();
+  }
+}
+
 function summarizeStatusesForSupplier(statuses = []) {
   const normalized = statuses
     .map((value) => String(value || "").trim().toLowerCase())
@@ -4296,8 +4373,162 @@ function createSupplierLibraryStatementsSection(assertions = []) {
       "";
 
     card.appendChild(createOpenFileButton(fileUrl));
+    const documentSnapshot = statement?.document
+      ? {
+          documentId: statement.document.documentId,
+          title: statement.document.title,
+          fileName: statement.document.fileName,
+          issueDate: statement.document.issueDate || statement.issueDate,
+          validUntil: statement.document.validUntil || statement.validUntil,
+        }
+      : null;
+
+    if (documentSnapshot?.documentId) {
+      card.appendChild(createRefreshDocumentBlock(documentSnapshot));
+    }
     wrapper.appendChild(card);
   });
+
+  return wrapper;
+}
+
+
+
+function createRefreshDocumentBlock(documentSnapshot) {
+  const wrapper = document.createElement("div");
+  wrapper.style.marginTop = "10px";
+
+  const form = currentCaseAnalysisState.refreshDocumentForm;
+  const isOpen = form?.documentId === documentSnapshot.documentId;
+
+  const toggleBtn = document.createElement("button");
+  toggleBtn.type = "button";
+  toggleBtn.textContent = isOpen ? "✕ Cancel refresh" : "↻ Refresh dates";
+  Object.assign(toggleBtn.style, {
+    padding: "6px 12px",
+    border: "1px solid #0176d3",
+    borderRadius: "8px",
+    background: isOpen ? "#f9fafb" : "#eff6ff",
+    color: "#0176d3",
+    fontSize: "12px",
+    fontWeight: "600",
+    cursor: "pointer",
+  });
+  toggleBtn.onclick = () => {
+    if (isOpen) {
+      closeRefreshDocumentForm();
+    } else {
+      openRefreshDocumentForm(documentSnapshot);
+    }
+  };
+  wrapper.appendChild(toggleBtn);
+
+  if (!isOpen) return wrapper;
+
+  const panel = document.createElement("div");
+  Object.assign(panel.style, {
+    marginTop: "10px",
+    padding: "12px 14px",
+    border: "1px solid #d0d7de",
+    borderRadius: "10px",
+    background: "#f9fafb",
+  });
+
+  const hint = document.createElement("div");
+  hint.textContent =
+    "Same document, new dates. Updates this document and propagates dates to its statements.";
+  Object.assign(hint.style, {
+    fontSize: "12px",
+    color: "#4b5563",
+    marginBottom: "10px",
+  });
+  panel.appendChild(hint);
+
+  const dateRow = document.createElement("div");
+  Object.assign(dateRow.style, {
+    display: "grid",
+    gridTemplateColumns: "repeat(3, minmax(0, 1fr))",
+    gap: "10px",
+  });
+
+  const issueInput = createTextInput(form.issueDate, "YYYY-MM-DD", (v) => {
+    form.issueDate = v;
+  });
+  issueInput.type = "date";
+  dateRow.appendChild(createFormField("Issue Date", issueInput));
+
+  const validInput = createTextInput(form.validUntil, "YYYY-MM-DD", (v) => {
+    form.validUntil = v;
+  });
+  validInput.type = "date";
+  dateRow.appendChild(createFormField("Valid Until", validInput));
+
+  const receivedInput = createTextInput(form.receivedDate, "YYYY-MM-DD", (v) => {
+    form.receivedDate = v;
+  });
+  receivedInput.type = "date";
+  dateRow.appendChild(createFormField("Received Date", receivedInput));
+
+  panel.appendChild(dateRow);
+
+  if (form.error) {
+    const err = document.createElement("div");
+    err.textContent = form.error;
+    Object.assign(err.style, {
+      marginTop: "8px",
+      color: "#b91c1c",
+      fontSize: "13px",
+    });
+    panel.appendChild(err);
+  }
+
+  const actions = document.createElement("div");
+  Object.assign(actions.style, {
+    display: "flex",
+    gap: "8px",
+    marginTop: "10px",
+  });
+
+  const saveBtn = document.createElement("button");
+  saveBtn.type = "button";
+  saveBtn.textContent = form.saving ? "Saving…" : "Save new dates";
+  saveBtn.disabled = form.saving;
+  Object.assign(saveBtn.style, {
+    padding: "8px 14px",
+    border: "1px solid #0176d3",
+    borderRadius: "8px",
+    background: form.saving ? "#cbd5e1" : "#0176d3",
+    color: "#ffffff",
+    fontSize: "13px",
+    fontWeight: "600",
+    cursor: form.saving ? "default" : "pointer",
+  });
+  saveBtn.onclick = () => {
+    submitRefreshDocument();
+  };
+  actions.appendChild(saveBtn);
+
+  const cancelBtn = document.createElement("button");
+  cancelBtn.type = "button";
+  cancelBtn.textContent = "Cancel";
+  cancelBtn.disabled = form.saving;
+  Object.assign(cancelBtn.style, {
+    padding: "8px 14px",
+    border: "1px solid #d0d7de",
+    borderRadius: "8px",
+    background: "#ffffff",
+    color: "#374151",
+    fontSize: "13px",
+    fontWeight: "600",
+    cursor: form.saving ? "default" : "pointer",
+  });
+  cancelBtn.onclick = () => {
+    closeRefreshDocumentForm();
+  };
+  actions.appendChild(cancelBtn);
+
+  panel.appendChild(actions);
+  wrapper.appendChild(panel);
 
   return wrapper;
 }
