@@ -848,6 +848,7 @@ async function handleAddRegulation(payload) {
 }
 
 
+
 async function handleRefreshDocument(payload) {
   const documentId = String(payload?.documentId || "").trim();
   if (!documentId) {
@@ -859,6 +860,9 @@ async function handleRefreshDocument(payload) {
   if ("validUntil" in (payload || {})) body.validUntil = payload.validUntil || null;
   if ("receivedDate" in (payload || {})) body.receivedDate = payload.receivedDate || null;
   if ("notes" in (payload || {})) body.notes = payload.notes;
+  if ("url" in (payload || {})) body.url = payload.url;
+  if ("fileName" in (payload || {})) body.fileName = payload.fileName;
+  if ("storageDocumentId" in (payload || {})) body.storageDocumentId = payload.storageDocumentId;
   if ("cascadeAssertions" in (payload || {})) body.cascadeAssertions = payload.cascadeAssertions;
   if ("reactivate" in (payload || {})) body.reactivate = payload.reactivate;
 
@@ -878,6 +882,7 @@ async function handleRefreshDocument(payload) {
     error: result.json?.error || result.error,
   };
 }
+
 
 async function callComplianceApiMethod(method, path, body = null, allowRetry = true) {
   try {

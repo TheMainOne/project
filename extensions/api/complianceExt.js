@@ -833,6 +833,164 @@ complianceExtRouter.post(
   }
 );
 
+
+complianceExtRouter.post(
+  "/refresh-document",
+  requireExtensionAuth,
+  requireExtensionScope("compliance:analyze"),
+  async (req, res) => {
+    try {
+      const documentId = String(req.body?.documentId || "").trim();
+      const issueDateRaw = req.body?.issueDate ?? null;
+      const validUntilRaw = req.body?.validUntil ?? null;
+      const receivedDateRaw = req.body?.receivedDate ?? null;
+      const cascadeAssertions = req.body?.cascadeAssertions !== false;
+      const reactivate = req.body?.reactivate !== false;
+      const notes = typeof req.body?.notes === "string" ? req.body.notes : null;
+      const newUrl = typeof req.body?.url === "string" ? req.body.url.trim() : null;
+      const newFileName = typeof req.body?.fileName === "string" ? req.body.fileName.trim() : null;
+      const newStorageDocumentId =
+        typeof req.body?.storageDocumentId === "string"
+          ? req.body.storageDocumentId.trim()
+          : null;
+
+      if (!documentId) {
+        return res.status(400).json({ ok: false, error: "documentId is required" });
+      }
+
+      const parseDate = (value, label) => {
+        if (value === null || value === undefined || value === "") return null;
+        const date = new Date(value);
+        if (isNaN(date.getTime())) {
+          throw new Error(`Invalid ${label}`);
+        }
+        return date;
+      };
+
+      let issueDate, validUntil, receivedDate;
+      try {
+        issueDate = parseDate(issueDateRaw, "issueDate");
+        validUntil = parseDate(validUntilRaw, "validUntil");
+        receivedDate = parseDate(receivedDateRaw, "receivedDate");
+      } catch (parseError) {
+        return res.status(400).json({ ok: false, error: parseError.message });
+      }
+
+      const hasAnyChange =
+        issueDateRaw !== undefined ||
+        validUntilRaw !== undefined ||
+        receivedDateRaw !== undefined ||
+        newUrl !== null ||
+        newFileName !== null ||
+        newStorageDocumentId !== null ||
+        notes !== null;
+
+      if (!hasAnyChange) {
+        return res.status(400).json({
+          ok: false,
+          error:
+            "At least one of issueDate, validUntil, receivedDate, url, fileName, or storageDocumentId must be provided",
+        });
+      }
+
+      if (newUrl !== null && newUrl !== "") {
+        try {
+          const parsed = new URL(newUrl);
+          if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+            throw new Error("URL must use http or https");
+          }
+        } catch (urlError) {
+          return res.status(400).json({ ok: false, error: "Invalid url" });
+        }
+      }
+
+      const document = await ComplianceDocument.findById(documentId);
+      if (!document) {
+        return res.status(404).json({ ok: false, error: "Document not found" });
+      }
+
+      if (issueDateRaw !== undefined) document.issueDate = issueDate;
+      if (validUntilRaw !== undefined) document.validUntil = validUntil;
+      if (receivedDateRaw !== undefined) {
+        document.receivedDate = receivedDate || new Date();
+      }
+      if (notes !== null) document.notes = notes;
+      if (newFileName !== null) document.fileName = newFileName;
+      if (newUrl !== null) document.storage.url = newUrl;
+      if (newStorageDocumentId !== null) document.storage.documentId = newStorageDocumentId;
+
+      if (reactivate && document.status === "expired") {
+        const stillValid = !validUntil || validUntil.getTime() >= Date.now();
+        if (stillValid) document.status = "active";
+      }
+
+      await document.save();
+
+      let assertionsUpdated = 0;
+      if (cascadeAssertions) {
+        const assertionUpdate = {};
+        if (issueDateRaw !== undefined) assertionUpdate.issueDate = issueDate;
+        if (validUntilRaw !== undefined) assertionUpdate.validUntil = validUntil;
+
+        if (Object.keys(assertionUpdate).length > 0) {
+          const result = await ComplianceAssertion.updateMany(
+            { documentId: document._id },
+            { $set: assertionUpdate }
+          );
+          assertionsUpdated = result.modifiedCount || result.nModified || 0;
+        }
+
+        if (reactivate) {
+          const stillValid = !validUntil || validUntil.getTime() >= Date.now();
+          if (stillValid) {
+            await ComplianceAssertion.updateMany(
+              { documentId: document._id, status: "expired" },
+              { $set: { status: "active" } }
+            );
+          }
+        }
+      }
+
+      await writeAudit({
+        userId: req.user.id,
+        action: "refresh-document",
+        outcome: "success",
+      });
+
+      return res.json({
+        ok: true,
+        document: {
+          id: String(document._id),
+          title: document.title,
+          fileName: document.fileName,
+          url: document.storage?.url || "",
+          storageDocumentId: document.storage?.documentId || "",
+          issueDate: document.issueDate,
+          validUntil: document.validUntil,
+          receivedDate: document.receivedDate,
+          status: document.status,
+        },
+        assertionsUpdated,
+      });
+    } catch (error) {
+      console.error("[REFRESH-DOCUMENT ROUTE] failed:", error);
+
+      await writeAudit({
+        userId: req.user.id,
+        action: "refresh-document",
+        outcome: "error",
+      });
+
+      return res.status(500).json({
+        ok: false,
+        error: "Failed to refresh document",
+        details: error?.message || String(error),
+      });
+    }
+  }
+);
+
+
 // ============================================================
 // Outreach tracker — CRUD
 // ============================================================

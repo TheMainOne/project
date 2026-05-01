@@ -4373,11 +4373,15 @@ function createSupplierLibraryStatementsSection(assertions = []) {
       "";
 
     card.appendChild(createOpenFileButton(fileUrl));
-    const documentSnapshot = statement?.document
+     const documentSnapshot = statement?.document
       ? {
           documentId: statement.document.documentId,
           title: statement.document.title,
           fileName: statement.document.fileName,
+          url:
+            statement.document.url ||
+            statement.document.storage?.url ||
+            "",
           issueDate: statement.document.issueDate || statement.issueDate,
           validUntil: statement.document.validUntil || statement.validUntil,
         }
@@ -4391,7 +4395,6 @@ function createSupplierLibraryStatementsSection(assertions = []) {
 
   return wrapper;
 }
-
 
 
 function createRefreshDocumentBlock(documentSnapshot) {
@@ -4470,6 +4473,68 @@ function createRefreshDocumentBlock(documentSnapshot) {
   dateRow.appendChild(createFormField("Received Date", receivedInput));
 
   panel.appendChild(dateRow);
+
+  const fileToggleRow = document.createElement("label");
+  Object.assign(fileToggleRow.style, {
+    display: "flex",
+    alignItems: "center",
+    gap: "8px",
+    marginTop: "12px",
+    fontSize: "13px",
+    color: "#374151",
+    cursor: "pointer",
+  });
+  const fileToggle = document.createElement("input");
+  fileToggle.type = "checkbox";
+  fileToggle.checked = !!form.replaceFile;
+  fileToggle.addEventListener("change", (e) => {
+    form.replaceFile = e.target.checked;
+    rerenderCurrentCaseToast();
+  });
+  fileToggleRow.appendChild(fileToggle);
+  const fileToggleText = document.createElement("span");
+  fileToggleText.textContent = "Replace file (new URL from supplier)";
+  fileToggleRow.appendChild(fileToggleText);
+  panel.appendChild(fileToggleRow);
+
+  if (form.replaceFile) {
+    if (form.currentUrl) {
+      const currentLine = document.createElement("div");
+      currentLine.textContent = `Current: ${form.currentUrl}`;
+      Object.assign(currentLine.style, {
+        marginTop: "8px",
+        fontSize: "12px",
+        color: "#6b7280",
+        wordBreak: "break-all",
+      });
+      panel.appendChild(currentLine);
+    }
+
+    const fileRow = document.createElement("div");
+    Object.assign(fileRow.style, {
+      display: "grid",
+      gridTemplateColumns: "minmax(0, 2fr) minmax(0, 1fr)",
+      gap: "10px",
+      marginTop: "8px",
+    });
+
+    const urlInput = createTextInput(form.url, "https://...", (v) => {
+      form.url = v;
+    });
+    urlInput.type = "url";
+    fileRow.appendChild(createFormField("New file URL", urlInput));
+
+    const fileNameInput = createTextInput(
+      form.fileName,
+      form.currentFileName || "filename.pdf",
+      (v) => {
+        form.fileName = v;
+      }
+    );
+    fileRow.appendChild(createFormField("New file name (optional)", fileNameInput));
+
+    panel.appendChild(fileRow);
+  }
 
   if (form.error) {
     const err = document.createElement("div");
