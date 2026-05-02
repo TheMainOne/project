@@ -30,6 +30,7 @@ function createInitialState() {
     suppliersLibraryRegFilter: "",
     suppliersLibraryStatusFilter: "all",
     suppliersLibraryDocSearch: "",
+    suppliersLibraryViewMode: "cards",
     selectedSupplierLibraryId: null,
     supplierContactForm: null,
     supplierContactDeleting: null,
@@ -3071,8 +3072,9 @@ async function submitRefreshDocument() {
   const form = currentCaseAnalysisState.refreshDocumentForm;
   if (!form || !form.documentId) return;
 
-  if (!form.issueDate && !form.validUntil && !form.receivedDate) {
-    form.error = "Provide at least one new date";
+  const hasNewUrl = form.replaceFile && !!form.url;
+  if (!form.issueDate && !form.validUntil && !form.receivedDate && !hasNewUrl) {
+    form.error = "Provide at least one new date or a new file URL";
     rerenderCurrentCaseToast();
     return;
   }
@@ -3081,14 +3083,20 @@ async function submitRefreshDocument() {
   form.error = null;
   rerenderCurrentCaseToast();
 
+  const payload = {
+    documentId: form.documentId,
+    issueDate: form.issueDate || null,
+    validUntil: form.validUntil || null,
+    receivedDate: form.receivedDate || null,
+  };
+  if (hasNewUrl) {
+    payload.url = form.url;
+    if (form.fileName) payload.fileName = form.fileName;
+  }
+
   const response = await sendMessageAsync({
     type: "EXT_REFRESH_DOCUMENT",
-    payload: {
-      documentId: form.documentId,
-      issueDate: form.issueDate || null,
-      validUntil: form.validUntil || null,
-      receivedDate: form.receivedDate || null,
-    },
+    payload,
   });
 
   form.saving = false;
@@ -3882,7 +3890,7 @@ function createSuppliersLibrarySearchBar() {
       rerenderCurrentCaseToast();
       const rebuilt = document.getElementById("sf-compliance-lib-search");
       if (rebuilt) {
-        rebuilt.focus();
+        rebuilt.focus({ preventScroll: true });
         rebuilt.setSelectionRange(cursorPos, cursorPos);
       }
     }, 250);
@@ -4148,6 +4156,45 @@ function createSupplierLibraryStatementsSection(assertions = []) {
   });
   header.appendChild(title);
 
+  const headerRight = document.createElement("div");
+  Object.assign(headerRight.style, {
+    display: "flex",
+    alignItems: "center",
+    gap: "8px",
+  });
+
+  const viewMode = currentCaseAnalysisState.suppliersLibraryViewMode || "cards";
+  const viewToggle = document.createElement("div");
+  Object.assign(viewToggle.style, {
+    display: "flex",
+    border: "1px solid #d0d7de",
+    borderRadius: "8px",
+    overflow: "hidden",
+    flexShrink: "0",
+  });
+  [["cards", "▤"], ["compact", "☰"]].forEach(([mode, icon]) => {
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.title = mode === "cards" ? "Card view" : "Compact view";
+    btn.textContent = icon;
+    const isActive = viewMode === mode;
+    Object.assign(btn.style, {
+      padding: "5px 10px",
+      border: "none",
+      background: isActive ? "#0176d3" : "#ffffff",
+      color: isActive ? "#ffffff" : "#6b7280",
+      fontSize: "14px",
+      cursor: isActive ? "default" : "pointer",
+      lineHeight: "1",
+    });
+    btn.addEventListener("click", () => {
+      currentCaseAnalysisState.suppliersLibraryViewMode = mode;
+      rerenderCurrentCaseToast();
+    });
+    viewToggle.appendChild(btn);
+  });
+  headerRight.appendChild(viewToggle);
+
   const docSearchInput = document.createElement("input");
   docSearchInput.type = "text";
   docSearchInput.placeholder = "Search by regulation, document…";
@@ -4160,11 +4207,20 @@ function createSupplierLibraryStatementsSection(assertions = []) {
     width: "200px",
     outline: "none",
   });
+  docSearchInput.id = "sf-compliance-statements-search";
   docSearchInput.addEventListener("input", (e) => {
-    currentCaseAnalysisState.suppliersLibraryDocSearch = e.target.value || "";
+    const val = e.target.value || "";
+    const cursorPos = e.target.selectionStart;
+    currentCaseAnalysisState.suppliersLibraryDocSearch = val;
     rerenderCurrentCaseToast();
+    const rebuilt = document.getElementById("sf-compliance-statements-search");
+    if (rebuilt) {
+      rebuilt.focus({ preventScroll: true });
+      rebuilt.setSelectionRange(cursorPos, cursorPos);
+    }
   });
-  header.appendChild(docSearchInput);
+  headerRight.appendChild(docSearchInput);
+  header.appendChild(headerRight);
 
   wrapper.appendChild(header);
 
@@ -4219,179 +4275,263 @@ function createSupplierLibraryStatementsSection(assertions = []) {
     wrapper.appendChild(matchNote);
   }
 
-  filteredAssertions.forEach((statement) => {
-    const card = document.createElement("div");
-    Object.assign(card.style, {
-      background: "#ffffff",
+  if (viewMode === "compact") {
+    const table = document.createElement("div");
+    Object.assign(table.style, {
       border: "1px solid #d9dee7",
-      borderRadius: "16px",
-      padding: "16px 18px",
-      marginTop: "10px",
+      borderRadius: "10px",
+      overflow: "hidden",
+      marginTop: "8px",
     });
 
-    const header = document.createElement("div");
-    Object.assign(header.style, {
-      display: "flex",
-      justifyContent: "space-between",
-      alignItems: "flex-start",
-      gap: "12px",
-      marginBottom: "10px",
-    });
-
-    const left = document.createElement("div");
-
-    const regTitle = document.createElement("div");
-    regTitle.textContent =
-      statement?.regulation?.name || statement?.regulation?.code || "Unknown regulation";
-    Object.assign(regTitle.style, {
-      fontSize: "16px",
-      fontWeight: "700",
-      color: "#111827",
-      marginBottom: "4px",
-    });
-
-    const meta = document.createElement("div");
-    meta.textContent = `${statement?.assertionType || "assertion"} • ${
-      statement?.coverageLevel || "scope"
-    }`;
-    Object.assign(meta.style, {
-      fontSize: "13px",
-      color: "#6b7280",
-    });
-
-    left.appendChild(regTitle);
-    left.appendChild(meta);
-
-    const statusBadge = createCoverageBadge(
-      statement?.status === "active" ? "covered" : statement?.status || "missing"
-    );
-
-    header.appendChild(left);
-    header.appendChild(statusBadge);
-    card.appendChild(header);
-
-    const docTitle =
-      statement?.document?.title || statement?.document?.fileName || "";
-    if (docTitle) {
-      const docLine = document.createElement("div");
-      docLine.textContent = `Document: ${docTitle}`;
-      Object.assign(docLine.style, {
-        fontSize: "14px",
+    filteredAssertions.forEach((statement, idx) => {
+      const row = document.createElement("div");
+      Object.assign(row.style, {
+        display: "grid",
+        gridTemplateColumns: "minmax(0, 2fr) 80px minmax(0, 2fr) 88px 88px",
+        alignItems: "center",
+        gap: "0",
+        padding: "8px 12px",
+        background: idx % 2 === 0 ? "#ffffff" : "#f9fafb",
+        borderTop: idx === 0 ? "none" : "1px solid #eeeff2",
+        fontSize: "13px",
         color: "#111827",
-        lineHeight: "1.45",
-        marginBottom: "6px",
       });
-      card.appendChild(docLine);
-    }
 
-    if (statement?.statementText) {
-      const textLine = document.createElement("div");
-      textLine.textContent = statement.statementText;
-      Object.assign(textLine.style, {
-        fontSize: "14px",
+      const regCol = document.createElement("div");
+      Object.assign(regCol.style, { paddingRight: "10px", overflow: "hidden" });
+      const regName = document.createElement("div");
+      regName.textContent =
+        statement?.regulation?.name || statement?.regulation?.code || "—";
+      Object.assign(regName.style, {
+        fontWeight: "600",
+        whiteSpace: "nowrap",
+        overflow: "hidden",
+        textOverflow: "ellipsis",
+      });
+      const metaSmall = document.createElement("div");
+      metaSmall.textContent = `${statement?.assertionType || ""} • ${statement?.coverageLevel || ""}`;
+      Object.assign(metaSmall.style, { fontSize: "11px", color: "#9ca3af", marginTop: "1px" });
+      regCol.appendChild(regName);
+      regCol.appendChild(metaSmall);
+
+      const badgeCol = document.createElement("div");
+      badgeCol.appendChild(
+        createCoverageBadge(statement?.status === "active" ? "covered" : statement?.status || "missing")
+      );
+
+      const docCol = document.createElement("div");
+      Object.assign(docCol.style, { paddingRight: "10px", overflow: "hidden" });
+      const docText = document.createElement("div");
+      docText.textContent =
+        statement?.document?.title || statement?.document?.fileName || "—";
+      Object.assign(docText.style, {
+        whiteSpace: "nowrap",
+        overflow: "hidden",
+        textOverflow: "ellipsis",
         color: "#374151",
-        lineHeight: "1.5",
+      });
+      docCol.appendChild(docText);
+
+      const makeDate = (label, val) => {
+        const col = document.createElement("div");
+        Object.assign(col.style, { paddingRight: "8px" });
+        const lbl = document.createElement("div");
+        lbl.textContent = label;
+        Object.assign(lbl.style, { fontSize: "10px", color: "#9ca3af", textTransform: "uppercase", letterSpacing: "0.04em" });
+        const val2 = document.createElement("div");
+        val2.textContent = formatShortDate(val) || "—";
+        Object.assign(val2.style, { fontWeight: "500" });
+        col.appendChild(lbl);
+        col.appendChild(val2);
+        return col;
+      };
+
+      row.appendChild(regCol);
+      row.appendChild(badgeCol);
+      row.appendChild(docCol);
+      row.appendChild(makeDate("Issue", statement?.document?.issueDate || statement?.issueDate));
+      row.appendChild(makeDate("Valid Until", statement?.document?.validUntil || statement?.validUntil));
+
+      table.appendChild(row);
+    });
+
+    wrapper.appendChild(table);
+  } else {
+    filteredAssertions.forEach((statement) => {
+      const card = document.createElement("div");
+      Object.assign(card.style, {
+        background: "#ffffff",
+        border: "1px solid #d9dee7",
+        borderRadius: "16px",
+        padding: "16px 18px",
+        marginTop: "10px",
+      });
+
+      const header = document.createElement("div");
+      Object.assign(header.style, {
+        display: "flex",
+        justifyContent: "space-between",
+        alignItems: "flex-start",
+        gap: "12px",
         marginBottom: "10px",
       });
-      card.appendChild(textLine);
-    }
 
-    const details = document.createElement("div");
-    Object.assign(details.style, {
-      display: "grid",
-      gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
-      gap: "6px 12px",
-      fontSize: "13px",
-      color: "#4b5563",
-    });
+      const left = document.createElement("div");
 
-    const rows = [
-      ["Issue Date", formatShortDate(statement?.document?.issueDate || statement?.issueDate)],
-      ["Valid Until", formatShortDate(statement?.document?.validUntil || statement?.validUntil)],
-      ["Confidence", statement?.confidence || "—"],
-      ["Status", statement?.status || "—"],
-      ["Document Type", statement?.document?.documentType || statement?.document?.title ? statement?.document?.documentType || "—" : "—"],
-      ["Provider", statement?.document?.provider || "—"],
-    ];
+      const regTitle = document.createElement("div");
+      regTitle.textContent =
+        statement?.regulation?.name || statement?.regulation?.code || "Unknown regulation";
+      Object.assign(regTitle.style, {
+        fontSize: "16px",
+        fontWeight: "700",
+        color: "#111827",
+        marginBottom: "4px",
+      });
 
-    rows.forEach(([label, value]) => {
-      const row = document.createElement("div");
-      const strong = document.createElement("strong");
-      strong.textContent = `${label}:`;
-      row.appendChild(strong);
-      row.appendChild(document.createTextNode(` ${value || "—"}`));
-      details.appendChild(row);
-    });
-
-    card.appendChild(details);
-
-    const scope = statement?.scope || {};
-    const scopeLines = [];
-
-    if (scope.allSupplierItems) {
-      scopeLines.push("Covers: All supplier items");
-    } else {
-      if (Array.isArray(scope.dwkItemNumbers) && scope.dwkItemNumbers.length > 0) {
-        scopeLines.push(`DWK Items: ${scope.dwkItemNumbers.join(", ")}`);
-      }
-      if (Array.isArray(scope.supplierPartNumbers) && scope.supplierPartNumbers.length > 0) {
-        scopeLines.push(`Supplier Parts: ${scope.supplierPartNumbers.join(", ")}`);
-      }
-      if (Array.isArray(scope.families) && scope.families.length > 0) {
-        scopeLines.push(`Families: ${scope.families.join(", ")}`);
-      }
-      if (scopeLines.length === 0) {
-        scopeLines.push("Covers: Specific items (see scope details)");
-      }
-    }
-
-    if (scopeLines.length > 0) {
-      const scopeBlock = document.createElement("div");
-      Object.assign(scopeBlock.style, {
-        marginTop: "10px",
-        padding: "8px 10px",
-        background: "#f0f4f8",
-        border: "1px solid #d9dee7",
-        borderRadius: "8px",
+      const meta = document.createElement("div");
+      meta.textContent = `${statement?.assertionType || "assertion"} • ${
+        statement?.coverageLevel || "scope"
+      }`;
+      Object.assign(meta.style, {
         fontSize: "13px",
-        color: "#374151",
-        lineHeight: "1.5",
+        color: "#6b7280",
       });
 
-      scopeLines.forEach((line) => {
-        const div = document.createElement("div");
-        div.textContent = line;
-        scopeBlock.appendChild(div);
+      left.appendChild(regTitle);
+      left.appendChild(meta);
+
+      const statusBadge = createCoverageBadge(
+        statement?.status === "active" ? "covered" : statement?.status || "missing"
+      );
+
+      header.appendChild(left);
+      header.appendChild(statusBadge);
+      card.appendChild(header);
+
+      const docTitle =
+        statement?.document?.title || statement?.document?.fileName || "";
+      if (docTitle) {
+        const docLine = document.createElement("div");
+        docLine.textContent = `Document: ${docTitle}`;
+        Object.assign(docLine.style, {
+          fontSize: "14px",
+          color: "#111827",
+          lineHeight: "1.45",
+          marginBottom: "6px",
+        });
+        card.appendChild(docLine);
+      }
+
+      if (statement?.statementText) {
+        const textLine = document.createElement("div");
+        textLine.textContent = statement.statementText;
+        Object.assign(textLine.style, {
+          fontSize: "14px",
+          color: "#374151",
+          lineHeight: "1.5",
+          marginBottom: "10px",
+        });
+        card.appendChild(textLine);
+      }
+
+      const details = document.createElement("div");
+      Object.assign(details.style, {
+        display: "grid",
+        gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
+        gap: "6px 12px",
+        fontSize: "13px",
+        color: "#4b5563",
       });
 
-      card.appendChild(scopeBlock);
-    }
+      const rows = [
+        ["Issue Date", formatShortDate(statement?.document?.issueDate || statement?.issueDate)],
+        ["Valid Until", formatShortDate(statement?.document?.validUntil || statement?.validUntil)],
+        ["Confidence", statement?.confidence || "—"],
+        ["Status", statement?.status || "—"],
+        ["Document Type", statement?.document?.documentType || statement?.document?.title ? statement?.document?.documentType || "—" : "—"],
+        ["Provider", statement?.document?.provider || "—"],
+      ];
 
-    const fileUrl =
-      statement?.document?.url ||
-      statement?.document?.storage?.url ||
-      "";
+      rows.forEach(([label, value]) => {
+        const row = document.createElement("div");
+        const strong = document.createElement("strong");
+        strong.textContent = `${label}:`;
+        row.appendChild(strong);
+        row.appendChild(document.createTextNode(` ${value || "—"}`));
+        details.appendChild(row);
+      });
 
-    card.appendChild(createOpenFileButton(fileUrl));
-     const documentSnapshot = statement?.document
-      ? {
-          documentId: statement.document.documentId,
-          title: statement.document.title,
-          fileName: statement.document.fileName,
-          url:
-            statement.document.url ||
-            statement.document.storage?.url ||
-            "",
-          issueDate: statement.document.issueDate || statement.issueDate,
-          validUntil: statement.document.validUntil || statement.validUntil,
+      card.appendChild(details);
+
+      const scope = statement?.scope || {};
+      const scopeLines = [];
+
+      if (scope.allSupplierItems) {
+        scopeLines.push("Covers: All supplier items");
+      } else {
+        if (Array.isArray(scope.dwkItemNumbers) && scope.dwkItemNumbers.length > 0) {
+          scopeLines.push(`DWK Items: ${scope.dwkItemNumbers.join(", ")}`);
         }
-      : null;
+        if (Array.isArray(scope.supplierPartNumbers) && scope.supplierPartNumbers.length > 0) {
+          scopeLines.push(`Supplier Parts: ${scope.supplierPartNumbers.join(", ")}`);
+        }
+        if (Array.isArray(scope.families) && scope.families.length > 0) {
+          scopeLines.push(`Families: ${scope.families.join(", ")}`);
+        }
+        if (scopeLines.length === 0) {
+          scopeLines.push("Covers: Specific items (see scope details)");
+        }
+      }
 
-    if (documentSnapshot?.documentId) {
-      card.appendChild(createRefreshDocumentBlock(documentSnapshot));
-    }
-    wrapper.appendChild(card);
-  });
+      if (scopeLines.length > 0) {
+        const scopeBlock = document.createElement("div");
+        Object.assign(scopeBlock.style, {
+          marginTop: "10px",
+          padding: "8px 10px",
+          background: "#f0f4f8",
+          border: "1px solid #d9dee7",
+          borderRadius: "8px",
+          fontSize: "13px",
+          color: "#374151",
+          lineHeight: "1.5",
+        });
+
+        scopeLines.forEach((line) => {
+          const div = document.createElement("div");
+          div.textContent = line;
+          scopeBlock.appendChild(div);
+        });
+
+        card.appendChild(scopeBlock);
+      }
+
+      const fileUrl =
+        statement?.document?.url ||
+        statement?.document?.storage?.url ||
+        "";
+
+      card.appendChild(createOpenFileButton(fileUrl));
+      const documentSnapshot = statement?.document
+        ? {
+            documentId: statement.document.documentId,
+            title: statement.document.title,
+            fileName: statement.document.fileName,
+            url:
+              statement.document.url ||
+              statement.document.storage?.url ||
+              "",
+            issueDate: statement.document.issueDate || statement.issueDate,
+            validUntil: statement.document.validUntil || statement.validUntil,
+          }
+        : null;
+
+      if (documentSnapshot?.documentId) {
+        card.appendChild(createRefreshDocumentBlock(documentSnapshot));
+      }
+      wrapper.appendChild(card);
+    });
+  }
 
   return wrapper;
 }

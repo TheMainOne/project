@@ -918,6 +918,7 @@ complianceExtRouter.post(
       if (newFileName !== null) document.fileName = newFileName;
       if (newUrl !== null) document.storage.url = newUrl;
       if (newStorageDocumentId !== null) document.storage.documentId = newStorageDocumentId;
+      if (newUrl !== null || newStorageDocumentId !== null) document.markModified("storage");
 
       if (reactivate && document.status === "expired") {
         const stillValid = !validUntil || validUntil.getTime() >= Date.now();
