@@ -4211,8 +4211,11 @@ function createSupplierLibraryStatementsSection(assertions = []) {
   docSearchInput.addEventListener("input", (e) => {
     const val = e.target.value || "";
     const cursorPos = e.target.selectionStart;
+    const toastBody = document.getElementById("sf-compliance-case-toast-body");
+    const savedScroll = toastBody ? toastBody.scrollTop : 0;
     currentCaseAnalysisState.suppliersLibraryDocSearch = val;
     rerenderCurrentCaseToast();
+    if (toastBody) toastBody.scrollTop = savedScroll;
     const rebuilt = document.getElementById("sf-compliance-statements-search");
     if (rebuilt) {
       rebuilt.focus({ preventScroll: true });
