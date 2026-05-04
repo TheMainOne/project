@@ -8022,6 +8022,9 @@ async function trySendCaseContext() {
     return;
   }
 
+  // Notify side panel about the detected case via background storage relay
+  chrome.runtime.sendMessage({ type: "CS_CASE_DETECTED", payload }).catch(() => {});
+
   const panelAlreadyOpen = !!document.getElementById("sf-compliance-case-toast");
   if (!panelAlreadyOpen && !wasPanelOpen) {
     return;
@@ -8151,6 +8154,7 @@ function handlePotentialRouteChange() {
     if (!isCaseRecordPage()) {
       removeCaseToast();
       hideAuthCard();
+      chrome.runtime.sendMessage({ type: "CS_CASE_LEFT" }).catch(() => {});
       return;
     }
 
@@ -12391,27 +12395,33 @@ async function bootstrap() {
   }
 }
 
-bootstrap();
+// When loaded inside sidepanel.html the page has <meta name="sp-mode">.
+// In that case sidepanel.js takes over and calls its own bootstrap().
+const _IS_SIDE_PANEL = !!document.querySelector('meta[name="sp-mode"]');
 
-let _routeChangeTimeout;
-const observer = new MutationObserver(() => {
-  clearTimeout(_routeChangeTimeout);
-  _routeChangeTimeout = setTimeout(handlePotentialRouteChange, 300);
-});
+if (!_IS_SIDE_PANEL) {
+  bootstrap();
 
-observer.observe(document.body, {
-  childList: true,
-  subtree: true,
-});
+  let _routeChangeTimeout;
+  const observer = new MutationObserver(() => {
+    clearTimeout(_routeChangeTimeout);
+    _routeChangeTimeout = setTimeout(handlePotentialRouteChange, 300);
+  });
 
-window.addEventListener("popstate", handlePotentialRouteChange);
-window.addEventListener("hashchange", handlePotentialRouteChange);
+  observer.observe(document.body, {
+    childList: true,
+    subtree: true,
+  });
 
-chrome.runtime.onMessage.addListener((message) => {
-  if (message?.type === "OPEN_PANEL") {
-    wasPanelOpen = true;
-    const card = getOrCreateAuthCard();
-    card.style.display = "block";
-    syncAuthCardUi();
-  }
-});
+  window.addEventListener("popstate", handlePotentialRouteChange);
+  window.addEventListener("hashchange", handlePotentialRouteChange);
+
+  chrome.runtime.onMessage.addListener((message) => {
+    if (message?.type === "OPEN_PANEL") {
+      wasPanelOpen = true;
+      const card = getOrCreateAuthCard();
+      card.style.display = "block";
+      syncAuthCardUi();
+    }
+  });
+}

@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="sp-mode" content="true" />
+  <title>Compliance Assistant</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    html, body {
+      height: 100%;
+      width: 100%;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif;
+      font-size: 13px;
+      color: #111111;
+      background: #ffffff;
+      overflow: hidden;
+    }
+
+    #sp-loading {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      height: 100vh;
+      color: #9ca3af;
+      font-size: 13px;
+    }
+
+    #sp-auth-view {
+      display: none;
+      flex-direction: column;
+      align-items: center;
+      justify-content: flex-start;
+      padding: 24px 16px;
+      height: 100vh;
+      overflow-y: auto;
+      background: #f9fafb;
+    }
+
+    #sp-no-case-view {
+      display: none;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      height: 100vh;
+      padding: 24px;
+      text-align: center;
+      color: #6b7280;
+      background: #ffffff;
+    }
+
+    #sp-panel-wrapper {
+      display: none;
+      height: 100vh;
+      flex-direction: column;
+      overflow: hidden;
+    }
+  </style>
+</head>
+<body>
+  <div id="sp-loading">Loading...</div>
+
+  <!-- Auth view: shown when not signed in -->
+  <div id="sp-auth-view"></div>
+
+  <!-- No-case view: shown when signed in but not on a Salesforce case page -->
+  <div id="sp-no-case-view">
+    <div style="font-size:36px; margin-bottom:14px; opacity:0.5;">📋</div>
+    <div style="font-size:15px; font-weight:700; color:#111111; margin-bottom:8px;">Compliance Assistant</div>
+    <div style="font-size:13px; line-height:1.7; max-width:220px;">
+      Open a <strong>Salesforce Case</strong> page to see compliance analysis here.
+    </div>
+  </div>
+
+  <!-- Panel wrapper: the UI panel is created here by sidepanel.js -->
+  <div id="sp-panel-wrapper"></div>
+
+  <!-- Load all UI code from content-script, then apply side-panel overrides -->
+  <script src="src/content-script.js"></script>
+  <script src="src/sidepanel.js"></script>
+</body>
+</html>

@@ -1098,6 +1098,7 @@ const ALLOWED_MESSAGE_TYPES = new Set([
   "EXT_GET_COMPLIANCE_SNAPSHOTS", "EXT_SET_REMINDER", "EXT_CANCEL_REMINDER",
   "EXT_GET_REMINDERS", "EXT_ADD_SUPPLIER_CONTACT", "EXT_UPDATE_SUPPLIER_CONTACT",
   "EXT_DELETE_SUPPLIER_CONTACT", "EXT_REFRESH_DOCUMENT",
+  "CS_CASE_DETECTED", "CS_CASE_LEFT", "OPEN_SIDE_PANEL",
 ]);
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
@@ -1264,6 +1265,30 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     } catch {
       sendResponse({ ok: false, error: "Invalid supplierId or contactId" });
     }
+    return true;
+  }
+
+  if (message?.type === "CS_CASE_DETECTED") {
+    const payload = message.payload || null;
+    if (payload && typeof payload === "object") {
+      chrome.storage.local.set({ activeCasePayload: payload });
+    }
+    sendResponse({ ok: true });
+    return true;
+  }
+
+  if (message?.type === "CS_CASE_LEFT") {
+    chrome.storage.local.remove("activeCasePayload");
+    sendResponse({ ok: true });
+    return true;
+  }
+
+  if (message?.type === "OPEN_SIDE_PANEL") {
+    const tabId = sender?.tab?.id || message.tabId;
+    if (tabId) {
+      chrome.sidePanel.open({ tabId }).catch(() => {});
+    }
+    sendResponse({ ok: true });
     return true;
   }
 });
