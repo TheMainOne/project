@@ -19,10 +19,7 @@
       "128": "icons/icon128.png"
     }
   },
-  "side_panel": {
-    "default_path": "sidepanel.html"
-  },
-  "permissions": ["storage", "activeTab", "tabs", "scripting", "alarms", "notifications", "sidePanel"],
+  "permissions": ["storage", "activeTab", "tabs", "scripting", "alarms", "notifications"],
   "host_permissions": [
     "<all_urls>"
   ],

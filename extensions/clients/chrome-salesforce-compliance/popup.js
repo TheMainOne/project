@@ -10,10 +10,19 @@ document.getElementById("openBtn").addEventListener("click", async () => {
       return;
     }
 
-    await chrome.sidePanel.open({ tabId: tab.id });
+    try {
+      await chrome.tabs.sendMessage(tab.id, { type: "OPEN_PANEL" });
+    } catch {
+      await chrome.scripting.executeScript({
+        target: { tabId: tab.id },
+        files: ["src/content-script.js"],
+      });
+      await chrome.tabs.sendMessage(tab.id, { type: "OPEN_PANEL" });
+    }
+
     window.close();
   } catch (e) {
-    statusEl.textContent = "Could not open panel on this page.";
+    statusEl.textContent = "Could not open on this page (e.g. chrome:// pages are restricted).";
     statusEl.className = "status error";
   }
 });
