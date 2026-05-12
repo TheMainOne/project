@@ -259,38 +259,66 @@ async function getWave() {
 }
 
 /* ─── UV index ─────────────────────────── */
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
 async function getUV() {
   const { OCEANCITY_LAT, OCEANCITY_LON } = process.env;
   const url = "https://api.open-meteo.com/v1/forecast";
-  try {
-    const { data } = await axios.get(url, {
-      params: {
-        latitude: OCEANCITY_LAT,
-        longitude: OCEANCITY_LON,
-        daily: "uv_index_max",
-        forecast_days: 1, // только сегодня
-        timezone: "America/New_York",
-      },
-      timeout: 10000,
-    });
 
-    const uviMax = data.daily?.uv_index_max?.[0] ?? -1;
+  const params = {
+    latitude: Number(OCEANCITY_LAT),
+    longitude: Number(OCEANCITY_LON),
+    daily: "uv_index_max",
+    forecast_days: 1,
+    timezone: "America/New_York",
+  };
 
-    let level = "низкий 🟢";
-    if (uviMax >= 11)
-      level = "экстремальный ☠️ | Избегай солнца; SPF 50+, тень";
-    else if (uviMax >= 8) level = "очень высокий 🔴 | SPF 50, шляпа, тень";
-    else if (uviMax >= 6) level = "высокий 🟠 | SPF 30‑50, очки, кепка";
-    else if (uviMax >= 3) level = "умеренный 🟡 | SPF 30, очки";
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    try {
+      const { data } = await axios.get(url, {
+        params,
+        timeout: 15000,
+      });
 
-    const text = md(
-      `🔆 UV‑индекс (пик днём): *${uviMax.toFixed(1)}* — ${level}`
-    );
-    return { text, uvi: uviMax };
-  } catch (e) {
-    console.warn("[uv] –", e.response?.status ?? e.code);
-    return { text: "🔆 *Нет данных UV*", uvi: -1 };
+      const uviMax = data.daily?.uv_index_max?.[0];
+
+      if (typeof uviMax !== "number") {
+        console.warn("[uv] missing uv_index_max:", JSON.stringify(data));
+        return { text: md("🔆 Нет данных UV"), uvi: -1 };
+      }
+
+      let level = "низкий 🟢";
+
+      if (uviMax >= 11) {
+        level = "экстремальный ☠️ | Избегай солнца; SPF 50+, тень";
+      } else if (uviMax >= 8) {
+        level = "очень высокий 🔴 | SPF 50, шляпа, тень";
+      } else if (uviMax >= 6) {
+        level = "высокий 🟠 | SPF 30-50, очки, кепка";
+      } else if (uviMax >= 3) {
+        level = "умеренный 🟡 | SPF 30, очки";
+      }
+
+      const text = md(
+        `🔆 UV-индекс (пик днём): *${uviMax.toFixed(1)}* — ${level}`
+      );
+
+      return { text, uvi: uviMax };
+    } catch (e) {
+      console.warn(`[uv] attempt ${attempt} failed:`, {
+        status: e.response?.status,
+        code: e.code,
+        message: e.message,
+        response: e.response?.data,
+      });
+
+      if (attempt < 3) {
+        await sleep(2000);
+      }
+    }
   }
+
+  return { text: md("🔆 Нет данных UV"), uvi: -1 };
 }
 
 /* ─── вспомогательная обёртка для диагностики ─────────────────────────── */
