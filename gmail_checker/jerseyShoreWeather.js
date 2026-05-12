@@ -271,7 +271,7 @@ async function getUV() {
         forecast_days: 1, // только сегодня
         timezone: "America/New_York",
       },
-      timeout: 4000,
+      timeout: 10000,
     });
 
     const uviMax = data.daily?.uv_index_max?.[0] ?? -1;
