@@ -1,8 +1,9 @@
 import axios from "axios";
 import dotenv from "dotenv";
 import path from "path";
-import { fileURLToPath } from "url";
+import Parser from "rss-parser";
 import sendTelegramMessage from "../services/telegramNotify.js";
+import { fileURLToPath } from "url";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 dotenv.config({ path: path.join(__dirname, "../.env") });
@@ -25,6 +26,81 @@ const safeUrl = (u = "") =>
     .replace(/!/g, "%21") // !
     .replace(/\./g, "\\.") //
     .replace(/-/g, "\\-"); //
+
+
+    const parser = new Parser();
+
+const interestingEventKeywords = [
+  "festival",
+  "concert",
+  "parade",
+  "fireworks",
+  "beach",
+  "boardwalk",
+  "farmers market",
+  "surf",
+  "race",
+  "challenge",
+  "memorial",
+  "music",
+  "family",
+];
+
+const boringEventKeywords = [
+  "membership",
+  "networking",
+  "workshop",
+  "meeting",
+  "support group",
+];
+
+function isInterestingEvent(item) {
+  const text = `${item.title || ""} ${item.contentSnippet || ""}`.toLowerCase();
+
+  const hasInterestingWord = interestingEventKeywords.some((word) =>
+    text.includes(word)
+  );
+
+  const hasBoringWord = boringEventKeywords.some((word) =>
+    text.includes(word)
+  );
+
+  return hasInterestingWord && !hasBoringWord;
+}
+
+async function getOceanCityEvents() {
+  try {
+    const feed = await parser.parseURL(
+      "https://chamber.oceancity.org/feed/rss/UpcomingEvents.rss"
+    );
+
+    const events = feed.items
+      .filter(isInterestingEvent)
+      .slice(0, 5)
+      .map((item) => {
+        const title = item.title || "Event";
+        const date = item.pubDate
+          ? new Date(item.pubDate).toLocaleDateString("en-US", {
+              month: "short",
+              day: "numeric",
+            })
+          : "";
+
+        return date ? `• ${date} — ${title}` : `• ${title}`;
+      });
+
+    if (!events.length) {
+      return { text: "" };
+    }
+
+    return {
+      text: md(`🎉 Скоро в Ocean City:\n${events.join("\n")}`),
+    };
+  } catch (e) {
+    console.warn("[oc-events]", e.message);
+    return { text: "" };
+  }
+}
 
 /* ─── 1. Погода ───────────────────────────────────────────────────────── */
 async function getWeather() {
@@ -273,6 +349,7 @@ async function wrap(name, fn) {
       wrap("water", getWaterTemp),
       wrap("wind", getWind),
       wrap("wave", getWave), // ← уже был, остаётся
+      wrap("oc-events", getOceanCityEvents),
     ]);
 
     const msg =
@@ -283,7 +360,8 @@ async function wrap(name, fn) {
       "\n" +
       wave +
       "\n" +
-      water;
+      water +
+        (events.text ? "\n\n" + events.text : "");
 
     console.log(">>> telegram payload <<<\n", msg);
     await sendTelegramMessage(msg); // sendTelegramMessage уже использует MarkdownV2
