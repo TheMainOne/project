@@ -713,14 +713,27 @@ function getBestTimeWindow(forecast = []) {
   const start = formatNYTime(best.date);
   const end = formatNYTime(new Date(best.date.getTime() + 3 * 60 * 60 * 1000));
 
-  const reason =
-    best.reasons.length > 0
-      ? ` — ${best.reasons.slice(0, 2).join(", ")}`
-      : "";
+ const details = [];
 
-  return {
-    text: md(`🕒 Лучшее окно: ${start}–${end}${reason}`),
-  };
+if (typeof best.temp === "number") {
+  const tempC = Math.round(best.temp);
+  const tempF = toF(tempC);
+  details.push(`воздух около ${tempC}°C (${tempF}°F)`);
+}
+
+if (typeof best.wind === "number") {
+  details.push(`ветер ${best.wind.toFixed(1)} м/с`);
+}
+
+if (typeof best.pop === "number" && best.pop >= 0.3) {
+  details.push(`шанс дождя ${Math.round(best.pop * 100)}%`);
+}
+
+const detailsText = details.length ? ` — ${details.join(", ")}` : "";
+
+return {
+  text: md(`🕒 Лучшее окно для пляжа: ${start}–${end}${detailsText}`),
+};
 }
 
 /* ─── вспомогательная обёртка для диагностики ─────────────────────────── */
