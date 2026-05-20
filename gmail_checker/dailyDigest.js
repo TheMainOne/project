@@ -81,7 +81,7 @@ async function getWeather() {
     const descRaw = cur.data.weather[0].description;
 
     out.push(
-      md(`*${c.name}:* ${tMinC}°→${tMaxC}°C (${tMinF}°→${tMaxF}°F), ${descRaw}`)
+      md(`${c.name}: ${tMinC}°→${tMaxC}°C (${tMinF}°→${tMaxF}°F), ${descRaw}`)
     );
   }
 
@@ -117,7 +117,7 @@ async function getWaterTemp() {
         const good = tempC >= 21; // ≥ 21 °C ≈ 70 °F
         const tempF = toF(tempC);
         let text = md(
-          `🌊 Температура воды (Ocean City): *${tempC}°C (${tempF}°F)*`
+          `🌊 Температура воды (Ocean City): ${tempC}°C (${tempF}°F)`
         );
         if (good) {
           text += `\n${md("☀️ Хороший день, чтобы поехать на пляж")}`; //  ← без «!»
@@ -169,7 +169,7 @@ async function getWind() {
         else if (spd > 14) remark = "штормовой ветер";
 
         const line =
-          `💨 Ветер (Ocean City): *${fmt(spd)} м/с*` +
+          `💨 Ветер (Ocean City): ${fmt(spd)} м/с` +
           (gust > spd + 2 ? ` (порывы до ${fmt(gust)} м/с)` : "") +
           ` — ${md(remark)}`;
 
@@ -240,7 +240,7 @@ async function getWave() {
 
       // готовая лаконичная строка
       return md(
-        `🏄 Волна (Ocean City): *${H} м* • *${T} с между гребнями* → ${comment}`
+        `🏄 Волна (Ocean City): ${H} м • ${T} с между гребнями → ${comment}`
       );
     } catch (e) {
       console.warn(`[wave] ${b.name} – ${e}`);
@@ -276,7 +276,7 @@ async function wrap(name, fn) {
     ]);
 
     const msg =
-      "🌅 *Доброе утро*\n\n" +
+      "🌅 Доброе утро\n\n" +
       weather +
       "\n\n" +
       wind +
