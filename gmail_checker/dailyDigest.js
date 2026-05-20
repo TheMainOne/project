@@ -639,7 +639,7 @@ function formatNYTime(date) {
   });
 }
 
-function getBestTimeWindow(forecast = []) {
+function getBestTimeWindow(forecast = [], { water, scores } = {}) {
   if (!forecast.length) {
     return { text: "" };
   }
@@ -752,8 +752,16 @@ if (typeof best.pop === "number" && best.pop >= 0.3) {
 
 const detailsText = details.length ? ` — ${details.join(", ")}` : "";
 
+const waterIsComfortable = typeof water?.tempC === "number" && water.tempC >= 18;
+const beachIsReasonable = typeof scores?.beachScore === "number" && scores.beachScore >= 6;
+
+const windowType =
+  waterIsComfortable && beachIsReasonable
+    ? "для пляжа"
+    : "для прогулки у океана";
+
 return {
-  text: md(`🕒 Лучшее окно для пляжа: ${start}–${end}${detailsText}`),
+  text: md(`🕒 Лучшее окно ${windowType}: ${start}–${end}${detailsText}`),
 };
 }
 
@@ -787,7 +795,10 @@ async function wrap(name, fn) {
     ]);
 
     const scores = getScores({ weather, water, wind, wave });
-    const bestWindow = getBestTimeWindow(weather.oceanCityForecast);
+const bestWindow = getBestTimeWindow(weather.oceanCityForecast, {
+  water,
+  scores,
+});
 
     const msg =
       "🌅 Доброе утро\n\n" +
