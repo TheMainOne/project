@@ -240,9 +240,9 @@ async function getWeather() {
   ];
 
   const out = [];
+  let oceanCityForecast = [];
 
   for (const c of cities) {
-    /* текущая погода */
     const cur = await axios.get(
       "https://api.openweathermap.org/data/2.5/weather",
       {
@@ -255,7 +255,6 @@ async function getWeather() {
       }
     );
 
-    /* прогноз на ближайшие 24 ч (8×3 ч) */
     const fc = await axios.get(
       "https://api.openweathermap.org/data/2.5/forecast",
       {
@@ -269,8 +268,7 @@ async function getWeather() {
       }
     );
 
-    /* —–– расчёт мин/макс температур —–– */
-    const temps = fc.data.list.map((p) => p.main.temp); // ← переменная обязательно нужна
+    const temps = fc.data.list.map((p) => p.main.temp);
     const tMinC = Math.round(Math.min(...temps));
     const tMaxC = Math.round(Math.max(...temps));
     const tMinF = toF(tMinC);
@@ -281,9 +279,16 @@ async function getWeather() {
     out.push(
       md(`${c.name}: ${tMinC}°→${tMaxC}°C (${tMinF}°→${tMaxF}°F), ${descRaw}`)
     );
+
+    if (c.name === "Ocean City") {
+      oceanCityForecast = fc.data.list;
+    }
   }
 
-  return out.join("\n");
+  return {
+    text: out.join("\n"),
+    oceanCityForecast,
+  };
 }
 
 /* 2. Температура воды (NOAA CO-OPS, станции AC → CM) */
@@ -317,10 +322,11 @@ async function getWaterTemp() {
         let text = md(
           `🌊 Температура воды (Ocean City): ${tempC}°C (${tempF}°F)`
         );
-        if (good) {
-          text += `\n${md("☀️ Хороший день, чтобы поехать на пляж")}`; //  ← без «!»
-        }
-        return text;
+
+        return {
+  text,
+  tempC,
+};
       }
       console.log(`[water] ${s.name} – нет свежих данных`);
     } catch (err) {
@@ -371,7 +377,11 @@ async function getWind() {
           (gust > spd + 2 ? ` (порывы до ${fmt(gust)} м/с)` : "") +
           ` — ${md(remark)}`;
 
-        return md(line);
+        return {
+  text: md(line),
+  speed: spd,
+  gust,
+};
       }
       console.warn(`[wind] ${s.name} – пустой ответ`);
     } catch (e) {
@@ -380,7 +390,11 @@ async function getWind() {
   }
 
   // если до сюда дошли — нет ни одной свежей записи
-  return md("💨 Данных о ветре нет");
+  return {
+  text: md("💨 Данных о ветре нет"),
+  speed: null,
+  gust: null,
+};
 }
 
 /* ─── 4. Волны ───────────────────────────────────────────────────────── */
@@ -437,16 +451,276 @@ async function getWave() {
           : "крупная";
 
       // готовая лаконичная строка
-      return md(
-        `🏄 Волна (Ocean City): ${H} м • ${T} с между гребнями → ${comment}`
-      );
+      return {
+  text: md(
+    `🏄 Волна (Ocean City): ${H} м • ${T} с между гребнями → ${comment}`
+  ),
+  height: +H,
+  period: T !== "–" ? Number(T) : null,
+};
     } catch (e) {
       console.warn(`[wave] ${b.name} – ${e}`);
     }
   }
 
   // если оба буя молчат — не падаем, а возвращаем заглушку
-  return md("🏄 Данных о волне нет");
+  return {
+  text: md("🏄 Данных о волне нет"),
+  height: null,
+  period: null,
+};
+}
+
+function clamp(value, min = 0, max = 10) {
+  return Math.max(min, Math.min(max, value));
+}
+
+function getScoreLabel(score) {
+  if (score >= 8) return "отлично";
+  if (score >= 6) return "нормально";
+  if (score >= 4) return "так себе";
+  return "лучше пропустить";
+}
+
+function getScores({ water, wind, wave, weather }) {
+  let beachScore = 10;
+  let surfScore = 5;
+
+  const notes = [];
+
+  // Water temperature
+  if (typeof water.tempC === "number") {
+    if (water.tempC < 14) {
+      beachScore -= 4;
+      surfScore -= 1;
+      notes.push("вода очень холодная");
+    } else if (water.tempC < 18) {
+      beachScore -= 3;
+      notes.push("вода холодная");
+    } else if (water.tempC < 21) {
+      beachScore -= 1;
+      notes.push("вода прохладная");
+    } else {
+      beachScore += 1;
+    }
+  }
+
+  // Wind
+  if (typeof wind.speed === "number") {
+    if (wind.speed <= 5) {
+      beachScore += 1;
+      surfScore += 1;
+    } else if (wind.speed > 8 && wind.speed <= 14) {
+      beachScore -= 2;
+      surfScore -= 1;
+      notes.push("ветер заметный");
+    } else if (wind.speed > 14) {
+      beachScore -= 4;
+      surfScore -= 2;
+      notes.push("очень сильный ветер");
+    }
+  }
+
+  // Waves
+  if (typeof wave.height === "number") {
+    if (wave.height < 0.5) {
+      beachScore += 1;
+      surfScore -= 2;
+    } else if (wave.height >= 0.8 && wave.height <= 1.8) {
+      surfScore += 3;
+      notes.push("волна хорошая для сёрфа");
+    } else if (wave.height > 1.8 && wave.height <= 2.4) {
+      beachScore -= 1;
+      surfScore += 1;
+      notes.push("волна крупновата");
+    } else if (wave.height > 2.4) {
+      beachScore -= 3;
+      surfScore -= 1;
+      notes.push("волна слишком крупная");
+    }
+  }
+
+  // Wave period
+  if (typeof wave.period === "number") {
+    if (wave.period >= 6 && wave.period <= 12) {
+      surfScore += 1;
+    } else if (wave.period < 5) {
+      surfScore -= 1;
+    }
+  }
+
+  // Rain / storm forecast for Ocean City
+  const next12h = weather.oceanCityForecast?.slice(0, 4) || [];
+  const willRain = next12h.some((p) => {
+    const main = p.weather?.[0]?.main || "";
+    return ["Rain", "Thunderstorm", "Drizzle", "Snow"].includes(main) || p.pop >= 0.35;
+  });
+
+  const willStorm = next12h.some((p) => {
+    const id = p.weather?.[0]?.id;
+    return id >= 200 && id < 300;
+  });
+
+  if (willStorm) {
+    beachScore -= 5;
+    surfScore -= 3;
+    notes.push("возможна гроза");
+  } else if (willRain) {
+    beachScore -= 2;
+    surfScore -= 1;
+    notes.push("возможен дождь");
+  }
+
+  beachScore = clamp(Math.round(beachScore));
+  surfScore = clamp(Math.round(surfScore));
+
+  const shortNote = notes.length
+    ? ` — ${notes.slice(0, 2).join(", ")}`
+    : "";
+
+  return {
+    beachScore,
+    surfScore,
+    text: md(
+      `🏖️ Beach score: ${beachScore}/10 — ${getScoreLabel(beachScore)}\n` +
+        `🏄 Surf score: ${surfScore}/10 — ${getScoreLabel(surfScore)}${shortNote}`
+    ),
+  };
+}
+
+function getNYDateKey(date) {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: "America/New_York",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(date);
+
+  const get = (type) => parts.find((p) => p.type === type)?.value;
+  return `${get("year")}-${get("month")}-${get("day")}`;
+}
+
+function getNYHour(date) {
+  const hour = new Intl.DateTimeFormat("en-US", {
+    timeZone: "America/New_York",
+    hour: "2-digit",
+    hour12: false,
+  }).format(date);
+
+  return Number(hour);
+}
+
+function formatNYTime(date) {
+  return date.toLocaleTimeString("en-US", {
+    hour: "numeric",
+    hour12: true,
+    timeZone: "America/New_York",
+  });
+}
+
+function getBestTimeWindow(forecast = []) {
+  if (!forecast.length) {
+    return { text: "" };
+  }
+
+  const todayNY = getNYDateKey(new Date());
+
+  let slots = forecast
+    .map((p) => {
+      const date = new Date(p.dt * 1000);
+      const hour = getNYHour(date);
+
+      return {
+        date,
+        hour,
+        temp: p.main?.temp,
+        wind: p.wind?.speed,
+        pop: p.pop ?? 0,
+        weatherMain: p.weather?.[0]?.main || "",
+      };
+    })
+    .filter((slot) => {
+      const sameDay = getNYDateKey(slot.date) === todayNY;
+      return sameDay && slot.hour >= 7 && slot.hour <= 19;
+    });
+
+  // Если скрипт запустится поздно и на сегодня слотов уже нет — берем ближайшие доступные
+  if (!slots.length) {
+    slots = forecast.slice(0, 8).map((p) => {
+      const date = new Date(p.dt * 1000);
+      return {
+        date,
+        hour: getNYHour(date),
+        temp: p.main?.temp,
+        wind: p.wind?.speed,
+        pop: p.pop ?? 0,
+        weatherMain: p.weather?.[0]?.main || "",
+      };
+    });
+  }
+
+  const scoredSlots = slots.map((slot) => {
+    let score = 0;
+    const reasons = [];
+
+    if (slot.temp >= 24 && slot.temp <= 32) {
+      score += 3;
+      reasons.push("теплее");
+    } else if (slot.temp >= 20 && slot.temp < 24) {
+      score += 2;
+    } else if (slot.temp < 18) {
+      score -= 1;
+    }
+
+    if (slot.wind < 5) {
+      score += 3;
+      reasons.push("слабый ветер");
+    } else if (slot.wind < 8) {
+      score += 1;
+    } else {
+      score -= 2;
+    }
+
+    if (slot.pop < 0.2) {
+      score += 2;
+    } else if (slot.pop >= 0.4) {
+      score -= 2;
+      reasons.push("есть шанс дождя");
+    }
+
+    if (["Rain", "Thunderstorm", "Drizzle", "Snow"].includes(slot.weatherMain)) {
+      score -= 5;
+    }
+
+    // Небольшой минус для самого активного солнца
+    if (slot.hour >= 12 && slot.hour <= 15) {
+      score -= 1;
+    }
+
+    return {
+      ...slot,
+      score,
+      reasons,
+    };
+  });
+
+  const best = scoredSlots.sort((a, b) => b.score - a.score)[0];
+
+  if (!best) {
+    return { text: "" };
+  }
+
+  const start = formatNYTime(best.date);
+  const end = formatNYTime(new Date(best.date.getTime() + 3 * 60 * 60 * 1000));
+
+  const reason =
+    best.reasons.length > 0
+      ? ` — ${best.reasons.slice(0, 2).join(", ")}`
+      : "";
+
+  return {
+    text: md(`🕒 Лучшее окно: ${start}–${end}${reason}`),
+  };
 }
 
 /* ─── вспомогательная обёртка для диагностики ─────────────────────────── */
@@ -467,26 +741,36 @@ async function wrap(name, fn) {
 (async () => {
   try {
     const [weather, water, wind, wave, events] = await Promise.all([
-  wrap("weather", getWeather),
-  wrap("water", getWaterTemp),
-  wrap("wind", getWind),
-  wrap("wave", getWave),
-  wrap("oc-events", getOceanCityEvents),
-]);
+      wrap("weather", getWeather),
+      wrap("water", getWaterTemp),
+      wrap("wind", getWind),
+      wrap("wave", getWave),
+
+      getOceanCityEvents().catch((e) => {
+        console.warn("[ocnj-events] optional block failed:", e.message);
+        return { text: "" };
+      }),
+    ]);
+
+    const scores = getScores({ weather, water, wind, wave });
+    const bestWindow = getBestTimeWindow(weather.oceanCityForecast);
 
     const msg =
-  "🌅 Доброе утро\n\n" +
-  weather +
-  "\n\n" +
-  wind +
-  "\n" +
-  wave +
-  "\n" +
-  water +
-  (events?.text ? "\n\n" + events.text : "");
+      "🌅 Доброе утро\n\n" +
+      weather.text +
+      "\n\n" +
+      wind.text +
+      "\n" +
+      wave.text +
+      "\n" +
+      water.text +
+      "\n\n" +
+      scores.text +
+      (bestWindow.text ? "\n" + bestWindow.text : "") +
+      (events?.text ? "\n\n" + events.text : "");
 
     console.log(">>> telegram payload <<<\n", msg);
-    await sendTelegramMessage(msg); // sendTelegramMessage уже использует MarkdownV2
+    await sendTelegramMessage(msg);
     console.log("Digest sent ✅");
   } catch (err) {
     console.error("Digest error:", err.message);

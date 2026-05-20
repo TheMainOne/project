@@ -29,6 +29,7 @@ async function sendTelegramMessage(message) {
       chat_id: CHAT_ID,
       text: message,
       parse_mode: "MarkdownV2",
+      disable_web_page_preview: true,
     });
     console.log("Notification sent to Telegram");
   } catch (err) {
