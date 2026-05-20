@@ -258,7 +258,7 @@ async function getWind() {
   }
 
   // если до сюда дошли — нет ни одной свежей записи
-  return "💨 *Данных о ветре нет*";
+  return md("💨 Данных о ветре нет");
 }
 
 /* ─── 4. Волны ───────────────────────────────────────────────────────── */
@@ -324,7 +324,7 @@ async function getWave() {
   }
 
   // если оба буя молчат — не падаем, а возвращаем заглушку
-  return md("🏄 *Данных о волне нет*");
+  return md("🏄 Данных о волне нет");
 }
 
 /* ─── вспомогательная обёртка для диагностики ─────────────────────────── */
@@ -344,24 +344,24 @@ async function wrap(name, fn) {
 /* ─── 4. Сборка и отправка дайджеста ──────────────────────────────────── */
 (async () => {
   try {
-    const [weather, water, wind, wave] = await Promise.all([
-      wrap("weather", getWeather),
-      wrap("water", getWaterTemp),
-      wrap("wind", getWind),
-      wrap("wave", getWave), // ← уже был, остаётся
-      wrap("oc-events", getOceanCityEvents),
-    ]);
+    const [weather, water, wind, wave, events] = await Promise.all([
+  wrap("weather", getWeather),
+  wrap("water", getWaterTemp),
+  wrap("wind", getWind),
+  wrap("wave", getWave),
+  wrap("oc-events", getOceanCityEvents),
+]);
 
     const msg =
-      "🌅 Доброе утро\n\n" +
-      weather +
-      "\n\n" +
-      wind +
-      "\n" +
-      wave +
-      "\n" +
-      water +
-        (events.text ? "\n\n" + events.text : "");
+  "🌅 Доброе утро\n\n" +
+  weather +
+  "\n\n" +
+  wind +
+  "\n" +
+  wave +
+  "\n" +
+  water +
+  (events?.text ? "\n\n" + events.text : "");
 
     console.log(">>> telegram payload <<<\n", msg);
     await sendTelegramMessage(msg); // sendTelegramMessage уже использует MarkdownV2
