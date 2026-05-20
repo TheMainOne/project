@@ -18,7 +18,7 @@
     "axios": "^1.12.2",
     "bcryptjs": "^3.0.2",
     "chardet": "^2.1.0",
-    "cheerio": "^1.1.2",
+    "cheerio": "^1.2.0",
     "cookie-parser": "^1.4.7",
     "cors": "^2.8.5",
     "crypto": "^1.0.1",
@@ -54,7 +54,6 @@
     "pdfjs-dist": "^4.10.38",
     "pino": "^9.9.0",
     "robots-parser": "^3.0.1",
-    "rss-parser": "^3.13.0",
     "uuid": "^11.1.0",
     "xlsx": "^0.18.5"
   },

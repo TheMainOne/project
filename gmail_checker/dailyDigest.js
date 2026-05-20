@@ -1,7 +1,7 @@
 import axios from "axios";
 import dotenv from "dotenv";
 import path from "path";
-import Parser from "rss-parser";
+import * as cheerio from "cheerio";
 import sendTelegramMessage from "../services/telegramNotify.js";
 import { fileURLToPath } from "url";
 
@@ -28,7 +28,10 @@ const safeUrl = (u = "") =>
     .replace(/-/g, "\\-"); //
 
 
-    const parser = new Parser();
+    const tgUrl = (u = "") =>
+  encodeURI(u)
+    .replace(/\\/g, "\\\\")
+    .replace(/\)/g, "\\)");
 
 const interestingEventKeywords = [
   "festival",
@@ -68,25 +71,231 @@ function isInterestingEvent(item) {
   return hasInterestingWord && !hasBoringWord;
 }
 
+function truncateText(text = "", max = 65) {
+  const clean = text.replace(/\s+/g, " ").trim();
+  return clean.length > max ? clean.slice(0, max - 1).trim() + "…" : clean;
+}
+
+function scoreOceanCityEvent(item) {
+  const text = `${item.title || ""} ${item.contentSnippet || ""}`.toLowerCase();
+
+  const boringWords = [
+    "membership",
+    "networking",
+    "workshop",
+    "meeting",
+    "support group",
+    "ribbon cutting",
+    "business",
+    "chamber",
+  ];
+
+  if (boringWords.some((word) => text.includes(word))) {
+    return 0;
+  }
+
+  let score = 0;
+
+  const highInterest = [
+    "fireworks",
+    "parade",
+    "festival",
+    "concert",
+    "music",
+    "sundaes in the park",
+  ];
+
+  const mediumInterest = [
+    "beach",
+    "boardwalk",
+    "farmers market",
+    "surf",
+    "race",
+    "challenge",
+    "memorial",
+    "family",
+  ];
+
+  if (highInterest.some((word) => text.includes(word))) score += 3;
+  if (mediumInterest.some((word) => text.includes(word))) score += 2;
+
+  return score;
+}
+
+const OCNJ_EVENTS_URL = "https://oceancityvacation.com/events/list/";
+
+const tgUrl = (u = "") =>
+  encodeURI(u)
+    .replace(/\\/g, "\\\\")
+    .replace(/\)/g, "\\)");
+
+function cleanText(text = "") {
+  return text.replace(/\s+/g, " ").trim();
+}
+
+function truncateText(text = "", max = 60) {
+  const clean = cleanText(text);
+  return clean.length > max ? clean.slice(0, max - 1).trim() + "…" : clean;
+}
+
+function getTodayInNewYork() {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: "America/New_York",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(new Date());
+
+  const get = (type) => parts.find((p) => p.type === type)?.value;
+
+  return `${get("year")}-${get("month")}-${get("day")}`;
+}
+
+function parseOCNJDate(raw = "") {
+  const match = raw.match(/([A-Za-z]+)\s+(\d{1,2}),\s+(\d{4})/);
+  if (!match) return null;
+
+  return new Date(`${match[1]} ${match[2]}, ${match[3]} 12:00:00`);
+}
+
+function formatEventDate(date) {
+  return date.toLocaleDateString("en-US", {
+    month: "short",
+    day: "numeric",
+  });
+}
+
+function scoreOceanCityEvent(item) {
+  const text = `${item.title || ""} ${item.description || ""} ${
+    item.venue || ""
+  }`.toLowerCase();
+
+  const boringWords = [
+    "membership",
+    "networking",
+    "workshop",
+    "meeting",
+    "support group",
+    "ribbon cutting",
+    "business",
+    "chamber",
+  ];
+
+  if (boringWords.some((word) => text.includes(word))) {
+    return 0;
+  }
+
+  let score = 0;
+
+  const highInterest = [
+    "fireworks",
+    "parade",
+    "festival",
+    "concert",
+    "music",
+    "block party",
+    "night in venice",
+    "unlocking of the ocean",
+  ];
+
+  const mediumInterest = [
+    "beach",
+    "boardwalk",
+    "farmers market",
+    "surf",
+    "race",
+    "challenge",
+    "memorial",
+    "family",
+    "car show",
+    "art show",
+  ];
+
+  if (highInterest.some((word) => text.includes(word))) score += 3;
+  if (mediumInterest.some((word) => text.includes(word))) score += 2;
+
+  return score;
+}
+
 async function getOceanCityEvents() {
   try {
-    const feed = await parser.parseURL(
-      "https://chamber.oceancity.org/feed/rss/UpcomingEvents.rss"
+    const today = getTodayInNewYork();
+
+    const { data: html } = await axios.get(
+      `${OCNJ_EVENTS_URL}?tribe-bar-date=${today}`,
+      {
+        timeout: 10000,
+        headers: {
+          "User-Agent": "Mozilla/5.0",
+        },
+      }
     );
 
-    const events = feed.items
-      .filter(isInterestingEvent)
-      .slice(0, 5)
-      .map((item) => {
-        const title = item.title || "Event";
-        const date = item.pubDate
-          ? new Date(item.pubDate).toLocaleDateString("en-US", {
-              month: "short",
-              day: "numeric",
-            })
-          : "";
+    const $ = cheerio.load(html);
+    const items = [];
 
-        return date ? `• ${date} — ${title}` : `• ${title}`;
+    $(".tribe-events-calendar-list__event").each((_, el) => {
+      const title = cleanText(
+        $(el).find(".tribe-events-calendar-list__event-title-link").first().text()
+      );
+
+      const href = $(el)
+        .find(".tribe-events-calendar-list__event-title-link")
+        .first()
+        .attr("href");
+
+      const dateRaw = cleanText(
+        $(el).find(".tribe-events-calendar-list__event-datetime").first().text()
+      );
+
+      const venue = cleanText(
+        $(el).find(".tribe-events-calendar-list__event-venue-title").first().text()
+      );
+
+      const description = cleanText(
+        $(el).find(".tribe-events-calendar-list__event-description").first().text()
+      );
+
+      if (!title) return;
+
+      const date = parseOCNJDate(dateRaw);
+      const link = href ? new URL(href, OCNJ_EVENTS_URL).toString() : "";
+      const score = scoreOceanCityEvent({ title, description, venue });
+
+      if (score <= 0) return;
+
+      items.push({
+        title,
+        date,
+        venue,
+        link,
+        score,
+      });
+    });
+
+    const now = new Date();
+    const daysAhead = 21;
+    const maxDate = new Date(now.getTime() + daysAhead * 24 * 60 * 60 * 1000);
+
+    const events = items
+      .filter((event) => !event.date || event.date <= maxDate)
+      .sort((a, b) => {
+        if (b.score !== a.score) return b.score - a.score;
+        return (a.date || 0) - (b.date || 0);
+      })
+      .slice(0, 2)
+      .map((event) => {
+        const title = truncateText(event.title);
+        const dateText = event.date ? formatEventDate(event.date) : "";
+        const venueText = event.venue ? ` (${event.venue})` : "";
+
+        const eventTitle = event.link
+          ? `[${md(title)}](${tgUrl(event.link)})`
+          : md(title);
+
+        return dateText
+          ? `• ${md(dateText)} — ${eventTitle}${md(venueText)}`
+          : `• ${eventTitle}${md(venueText)}`;
       });
 
     if (!events.length) {
@@ -94,14 +303,20 @@ async function getOceanCityEvents() {
     }
 
     return {
-      text: md(`🎉 Скоро в Ocean City:\n${events.join("\n")}`),
+      text:
+        md("🎉 Интересное в Ocean City, NJ:") +
+        "\n" +
+        events.join("\n") +
+        "\n" +
+        `[${md("Все события OCNJ")}](${tgUrl(
+          `${OCNJ_EVENTS_URL}?tribe-bar-date=${today}`
+        )})`,
     };
   } catch (e) {
-    console.warn("[oc-events]", e.message);
+    console.warn("[ocnj-events]", e.message);
     return { text: "" };
   }
 }
-
 /* ─── 1. Погода ───────────────────────────────────────────────────────── */
 async function getWeather() {
   const {
