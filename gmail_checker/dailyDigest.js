@@ -27,6 +27,7 @@ const safeUrl = (u = "") =>
     .replace(/\./g, "\\.") //
     .replace(/-/g, "\\-"); //
 
+const OCNJ_HOME_URL = "https://oceancityvacation.com/";
 const OCNJ_EVENTS_URL = "https://oceancityvacation.com/events/list/";
 
 const tgUrl = (u = "") =>
@@ -124,83 +125,85 @@ function scoreOceanCityEvent(item) {
 
 async function getOceanCityEvents() {
   try {
-    const today = getTodayInNewYork();
-
-    const { data: html } = await axios.get(
-      `${OCNJ_EVENTS_URL}?tribe-bar-date=${today}`,
-      {
-        timeout: 10000,
-        headers: {
-          "User-Agent": "Mozilla/5.0",
-        },
-      }
-    );
+    const { data: html } = await axios.get(OCNJ_HOME_URL, {
+      timeout: 10000,
+      headers: {
+        "User-Agent":
+          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120 Safari/537.36",
+        Accept:
+          "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+        "Accept-Language": "en-US,en;q=0.9",
+      },
+    });
 
     const $ = cheerio.load(html);
     const items = [];
 
-    $(".tribe-events-calendar-list__event").each((_, el) => {
-      const title = cleanText(
-        $(el).find(".tribe-events-calendar-list__event-title-link").first().text()
+    $("a").each((_, el) => {
+      const href = $(el).attr("href") || "";
+      const rawText = cleanText($(el).text());
+
+      if (!rawText) return;
+      if (!rawText.includes("Learn More")) return;
+
+      // На главной странице карточки обычно выглядят примерно так:
+      // May 22 Unlocking of the Ocean ... May 22, 2026 12:00 PM – 1:00 PM Learn More
+      const shortDateMatch = rawText.match(
+        /^(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s+\d{1,2}/i
       );
 
-      const href = $(el)
-        .find(".tribe-events-calendar-list__event-title-link")
-        .first()
-        .attr("href");
-
-      const dateRaw = cleanText(
-        $(el).find(".tribe-events-calendar-list__event-datetime").first().text()
+      const fullDateMatch = rawText.match(
+        /(January|February|March|April|May|June|July|August|September|October|November|December|Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s+\d{1,2},\s+\d{4}/i
       );
 
-      const venue = cleanText(
-        $(el).find(".tribe-events-calendar-list__event-venue-title").first().text()
-      );
+      if (!shortDateMatch || !fullDateMatch) return;
 
-      const description = cleanText(
-        $(el).find(".tribe-events-calendar-list__event-description").first().text()
-      );
+      const dateText = shortDateMatch[0];
+
+      let title = rawText
+        .slice(shortDateMatch[0].length, fullDateMatch.index)
+        .replace(/\s+/g, " ")
+        .trim();
+
+      title = title
+        .replace(/\bOcean City NJ Boardwalk\b/gi, "")
+        .replace(/\bOcean City Tabernacle\b/gi, "")
+        .replace(/\bVeteran’s Memorial Park\b/gi, "")
+        .replace(/\b9th Street Beach\b/gi, "")
+        .replace(/\bMusic Pier\b/gi, "")
+        .trim();
 
       if (!title) return;
 
-      const date = parseOCNJDate(dateRaw);
-      const link = href ? new URL(href, OCNJ_EVENTS_URL).toString() : "";
-      const score = scoreOceanCityEvent({ title, description, venue });
+      const link = href ? new URL(href, OCNJ_HOME_URL).toString() : "";
+
+      const score = scoreOceanCityEvent({
+        title,
+        description: rawText,
+        venue: "",
+      });
 
       if (score <= 0) return;
 
       items.push({
         title,
-        date,
-        venue,
+        dateText,
         link,
         score,
       });
     });
 
-    const now = new Date();
-    const daysAhead = 21;
-    const maxDate = new Date(now.getTime() + daysAhead * 24 * 60 * 60 * 1000);
-
     const events = items
-      .filter((event) => !event.date || event.date <= maxDate)
-      .sort((a, b) => {
-        if (b.score !== a.score) return b.score - a.score;
-        return (a.date || 0) - (b.date || 0);
-      })
+      .sort((a, b) => b.score - a.score)
       .slice(0, 2)
       .map((event) => {
-        const title = truncateText(event.title);
-        const dateText = event.date ? formatEventDate(event.date) : "";
-        const venueText = event.venue ? ` (${event.venue})` : "";
+        const title = truncateText(event.title, 55);
 
         const eventTitle = event.link
           ? `[${md(title)}](${tgUrl(event.link)})`
           : md(title);
 
-        return dateText
-          ? `• ${md(dateText)} — ${eventTitle}${md(venueText)}`
-          : `• ${eventTitle}${md(venueText)}`;
+        return `• ${md(event.dateText)} — ${eventTitle}`;
       });
 
     if (!events.length) {
@@ -213,12 +216,10 @@ async function getOceanCityEvents() {
         "\n" +
         events.join("\n") +
         "\n" +
-        `[${md("Все события OCNJ")}](${tgUrl(
-          `${OCNJ_EVENTS_URL}?tribe-bar-date=${today}`
-        )})`,
+        `[${md("Все события OCNJ")}](${tgUrl(OCNJ_EVENTS_URL)})`,
     };
   } catch (e) {
-    console.warn("[ocnj-events]", e.message);
+    console.warn("[ocnj-events]", e.response?.status ?? e.message);
     return { text: "" };
   }
 }
