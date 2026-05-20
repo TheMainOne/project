@@ -37,6 +37,14 @@ const NWS_HEADERS = {
   Accept: "application/geo+json,application/json",
 };
 
+const AI_NEWS_RSS_URL = "https://news.google.com/rss/search";
+
+const AI_NEWS_QUERY =
+  process.env.AI_NEWS_QUERY ||
+  '("artificial intelligence" OR OpenAI OR ChatGPT OR Anthropic OR "Google DeepMind" OR "AI regulation") when:1d';
+
+const AI_NEWS_MAX_ITEMS = Number(process.env.AI_NEWS_MAX_ITEMS || 3);
+
 /*
   Для Ocean City, NJ чаще всего используется офис PHI.
   Если понадобится, можно переопределить через .env:
@@ -65,6 +73,71 @@ function cleanText(text = "") {
 function truncateText(text = "", max = 60) {
   const clean = cleanText(text);
   return clean.length > max ? clean.slice(0, max - 1).trim() + "…" : clean;
+}
+
+function cleanGoogleNewsTitle(title = "") {
+  // Google News часто отдаёт title в формате:
+  // "Some AI headline - The Verge"
+  const clean = cleanText(title);
+
+  const parts = clean.split(" - ");
+  if (parts.length <= 1) {
+    return {
+      title: clean,
+      source: "",
+    };
+  }
+
+  const source = parts[parts.length - 1];
+  const headline = parts.slice(0, -1).join(" - ");
+
+  return {
+    title: headline,
+    source,
+  };
+}
+
+function scoreAINewsItem(item) {
+  const text = `${item.title || ""} ${item.source || ""}`.toLowerCase();
+
+  let score = 0;
+
+  const highInterest = [
+    "openai",
+    "chatgpt",
+    "anthropic",
+    "claude",
+    "google deepmind",
+    "gemini",
+    "microsoft",
+    "nvidia",
+    "ai regulation",
+    "artificial intelligence regulation",
+    "model",
+    "agent",
+    "robot",
+    "safety",
+    "copyright",
+    "lawsuit",
+  ];
+
+  const lowValue = [
+    "stock",
+    "shares",
+    "earnings",
+    "price target",
+    "analyst",
+    "market cap",
+    "crypto",
+    "meme",
+  ];
+
+  if (highInterest.some((word) => text.includes(word))) score += 2;
+  if (lowValue.some((word) => text.includes(word))) score -= 2;
+
+  // Базово оставляем AI-news, даже если score 0,
+  // но сортируем более интересные выше.
+  return score;
 }
 
 function withoutLeadingEmoji(text = "") {
@@ -344,6 +417,115 @@ async function getOceanCityEvents() {
       error: e.response?.status ?? e.message,
       totalFound: 0,
       totalMatched: 0,
+    };
+  }
+}
+
+async function getAINews() {
+  try {
+    const { data: xml } = await axios.get(AI_NEWS_RSS_URL, {
+      timeout: 10000,
+      params: {
+        q: AI_NEWS_QUERY,
+        hl: "en-US",
+        gl: "US",
+        ceid: "US:en",
+      },
+      headers: {
+        "User-Agent":
+          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120 Safari/537.36",
+        Accept: "application/rss+xml,application/xml,text/xml,*/*",
+      },
+    });
+
+    const $ = cheerio.load(xml, { xmlMode: true });
+    const parsedNews = [];
+
+    $("item").each((_, el) => {
+      const rawTitle = cleanText($(el).find("title").text());
+      const link = cleanText($(el).find("link").text());
+      const pubDateRaw = cleanText($(el).find("pubDate").text());
+
+      if (!rawTitle || !link) return;
+
+      const { title, source } = cleanGoogleNewsTitle(rawTitle);
+
+      if (!title) return;
+
+      const pubDate = pubDateRaw ? new Date(pubDateRaw) : null;
+
+      parsedNews.push({
+        title,
+        source,
+        link,
+        pubDate,
+        score: scoreAINewsItem({ title, source }),
+      });
+    });
+
+    if (!parsedNews.length) {
+      console.log("[ai-news] no news found");
+
+      return {
+        text: "",
+        status: "no_news_found",
+        totalFound: 0,
+        totalShown: 0,
+      };
+    }
+
+    const unique = [];
+    const seenTitles = new Set();
+
+    for (const item of parsedNews) {
+      const key = item.title.toLowerCase().replace(/[^\wа-яё]/gi, "");
+
+      if (seenTitles.has(key)) continue;
+
+      seenTitles.add(key);
+      unique.push(item);
+    }
+
+    const selectedNews = unique
+      .sort((a, b) => b.score - a.score)
+      .slice(0, AI_NEWS_MAX_ITEMS)
+      .map((item) => {
+        const title = truncateText(item.title, 80);
+        const sourceText = item.source ? ` — ${item.source}` : "";
+
+        const linkedTitle = item.link
+          ? `[${md(title)}](${tgUrl(item.link)})`
+          : md(title);
+
+        return `• ${linkedTitle}${md(sourceText)}`;
+      });
+
+    if (!selectedNews.length) {
+      console.log(`[ai-news] found ${parsedNews.length}, but nothing selected`);
+
+      return {
+        text: "",
+        status: "no_matching_news",
+        totalFound: parsedNews.length,
+        totalShown: 0,
+      };
+    }
+
+    return {
+      text: md("🤖 Новости AI") + "\n" + selectedNews.join("\n"),
+      status: "ok",
+      totalFound: parsedNews.length,
+      totalShown: selectedNews.length,
+    };
+  } catch (e) {
+    console.warn("[ai-news]", e.response?.status ?? e.message);
+
+    return {
+      text: "",
+      status: "fetch_error",
+      error: e.response?.status ?? e.message,
+      totalFound: 0,
+      totalShown: 0,
     };
   }
 }
@@ -1704,15 +1886,16 @@ async function optionalWrap(name, fn, fallback) {
 (async () => {
   try {
     const [
-      weather,
-      water,
-      wind,
-      wave,
-      marineWave,
-      shoreCurrentRiskRaw,
-      nwsAlerts,
-      events,
-    ] = await Promise.all([
+  weather,
+  water,
+  wind,
+  wave,
+  marineWave,
+  shoreCurrentRiskRaw,
+  nwsAlerts,
+  events,
+  aiNews,
+] = await Promise.all([
       wrap("weather", getWeather),
       wrap("water", getWaterTemp),
       wrap("wind", getWind),
@@ -1756,6 +1939,18 @@ async function optionalWrap(name, fn, fallback) {
           totalMatched: 0,
         };
       }),
+
+      getAINews().catch((e) => {
+  console.warn("[ai-news] optional block failed:", e.message);
+
+  return {
+    text: "",
+    status: "optional_block_failed",
+    error: e.message,
+    totalFound: 0,
+    totalShown: 0,
+  };
+}),
     ]);
 
     if (!events?.text) {
@@ -1779,6 +1974,14 @@ async function optionalWrap(name, fn, fallback) {
     if (!nwsAlerts?.seriousCount) {
       console.log(`[nws-alerts] no serious alerts | status: ${nwsAlerts?.status}`);
     }
+
+    if (!aiNews?.text) {
+  console.log(
+    `[ai-news] block skipped: ${aiNews?.status || "unknown"} | found: ${
+      aiNews?.totalFound ?? 0
+    } | shown: ${aiNews?.totalShown ?? 0}`
+  );
+}
 
     const shoreCurrentRisk = applyShoreCurrentRiskAlertFallback(
       shoreCurrentRiskRaw,
@@ -1845,7 +2048,8 @@ async function optionalWrap(name, fn, fallback) {
       (bestWindow?.rawLine
         ? "\n\n" + md("🕒 Лучшее окно") + "\n" + md(`• ${bestWindow.rawLine}`)
         : "") +
-      (events?.text ? "\n\n" + events.text : "");
+      (events?.text ? "\n\n" + events.text : "") +
+(aiNews?.text ? "\n\n" + aiNews.text : "");
 
     console.log(">>> telegram payload <<<\n", msg);
 
