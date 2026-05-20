@@ -1057,6 +1057,198 @@ function applyShoreCurrentRiskAlertFallback(shoreCurrentRisk, nwsAlerts) {
   };
 }
 
+function getFriendlyAlertName(event = "") {
+  const e = event.toLowerCase();
+
+  if (e.includes("severe thunderstorm warning")) {
+    return "Сильная гроза рядом";
+  }
+
+  if (e.includes("severe thunderstorm watch")) {
+    return "Сильные грозы возможны";
+  }
+
+  if (e.includes("tornado warning")) {
+    return "Торнадо рядом";
+  }
+
+  if (e.includes("tornado watch")) {
+    return "Возможны торнадо";
+  }
+
+  if (e.includes("flash flood warning")) {
+    return "Возможен внезапный паводок";
+  }
+
+  if (e.includes("flood warning")) {
+    return "Предупреждение о затоплении";
+  }
+
+  if (e.includes("coastal flood warning")) {
+    return "Серьёзное прибрежное затопление";
+  }
+
+  if (e.includes("coastal flood advisory")) {
+    return "Возможное прибрежное затопление";
+  }
+
+  if (e.includes("beach hazards statement")) {
+    return "Опасные условия на пляже";
+  }
+
+  if (e.includes("rip current statement")) {
+    return "Опасные течения у берега";
+  }
+
+  if (e.includes("high surf advisory")) {
+    return "Высокий прибой";
+  }
+
+  if (e.includes("high wind warning")) {
+    return "Опасно сильный ветер";
+  }
+
+  if (e.includes("wind advisory")) {
+    return "Сильный ветер";
+  }
+
+  if (e.includes("heat advisory")) {
+    return "Опасная жара";
+  }
+
+  if (e.includes("excessive heat warning")) {
+    return "Очень опасная жара";
+  }
+
+  if (e.includes("special marine warning")) {
+    return "Опасные условия на воде";
+  }
+
+  return event || "Погодное предупреждение";
+}
+
+function getAlertMeaning(alert = {}) {
+  const event = String(alert.event || "").toLowerCase();
+  const headline = cleanText(alert.headline || "");
+  const description = cleanText(alert.description || "");
+
+  if (event.includes("severe thunderstorm warning")) {
+    return "сильная гроза уже наблюдается или ожидается очень скоро: возможны сильный ветер, град и ливень";
+  }
+
+  if (event.includes("severe thunderstorm watch")) {
+    return "условия благоприятны для сильных гроз: возможны сильный ветер, град и ливень";
+  }
+
+  if (event.includes("tornado warning")) {
+    return "торнадо уже наблюдается или возможно очень скоро; это серьёзный alert";
+  }
+
+  if (event.includes("tornado watch")) {
+    return "условия благоприятны для формирования торнадо";
+  }
+
+  if (event.includes("flash flood warning")) {
+    return "возможен быстрый паводок или затопление низких участков";
+  }
+
+  if (event.includes("flood warning")) {
+    return "есть риск затопления дорог или низких участков";
+  }
+
+  if (event.includes("coastal flood warning")) {
+    return "возможно значительное затопление у побережья";
+  }
+
+  if (event.includes("coastal flood advisory")) {
+    return "возможны minor flooding / подтопления около берега";
+  }
+
+  if (event.includes("beach hazards statement")) {
+    return "на пляже могут быть опасные условия, включая сильные течения или высокий прибой";
+  }
+
+  if (event.includes("rip current statement")) {
+    return "у берега возможны опасные обратные течения, которые могут утянуть от берега";
+  }
+
+  if (event.includes("high surf advisory")) {
+    return "ожидается высокий прибой и более опасные условия у воды";
+  }
+
+  if (event.includes("high wind warning")) {
+    return "ожидается опасно сильный ветер";
+  }
+
+  if (event.includes("wind advisory")) {
+    return "ветер может быть достаточно сильным, чтобы мешать прогулке или пляжу";
+  }
+
+  if (event.includes("heat advisory")) {
+    return "жара может быть опасной при долгом нахождении на солнце";
+  }
+
+  if (event.includes("excessive heat warning")) {
+    return "очень высокая жара; лучше избегать долгого пребывания на солнце";
+  }
+
+  if (event.includes("special marine warning")) {
+    return "опасные условия на воде: сильный ветер, гроза или резкое ухудшение погоды";
+  }
+
+  /*
+    Fallback: если alert неизвестный, берём headline или начало description.
+    Главное — не тащить весь длинный текст из NWS.
+  */
+  if (headline) {
+    return truncateText(headline, 120);
+  }
+
+  if (description) {
+    return truncateText(description, 120);
+  }
+
+  return "подробности доступны в предупреждении NWS";
+}
+
+function getAlertAction(alert = {}) {
+  const event = String(alert.event || "").toLowerCase();
+
+  if (
+    event.includes("severe thunderstorm warning") ||
+    event.includes("tornado warning") ||
+    event.includes("flash flood warning") ||
+    event.includes("special marine warning")
+  ) {
+    return "лучше отложить поездку и следить за обновлениями";
+  }
+
+  if (
+    event.includes("severe thunderstorm watch") ||
+    event.includes("tornado watch")
+  ) {
+    return "погода может быстро ухудшиться, проверь прогноз перед выездом";
+  }
+
+  if (
+    event.includes("beach hazards") ||
+    event.includes("rip current") ||
+    event.includes("high surf")
+  ) {
+    return "купаться только рядом со спасателями";
+  }
+
+  if (event.includes("coastal flood")) {
+    return "проверь дороги и парковку рядом с берегом";
+  }
+
+  if (event.includes("heat")) {
+    return "вода, SPF, тень и меньше времени на прямом солнце";
+  }
+
+  return "";
+}
+
 function buildNWSAlertsText(nwsAlerts, shoreCurrentRisk) {
   const alerts = nwsAlerts?.alerts || [];
 
@@ -1082,11 +1274,24 @@ function buildNWSAlertsText(nwsAlerts, shoreCurrentRisk) {
   if (!filteredAlerts.length) return "";
 
   const lines = filteredAlerts.slice(0, 2).map((alert) => {
+    const friendlyName = getFriendlyAlertName(alert.event);
+    const meaning = getAlertMeaning(alert);
+    const action = getAlertAction(alert);
     const until = alert.ends ? ` до ${formatNYDateTime(alert.ends)}` : "";
-    return `• ${alert.event}${until}`;
+
+    const actionText = action ? ` Рекомендация: ${action}.` : "";
+
+    return (
+      `• ${friendlyName} (${alert.event})${until} — ${meaning}.` +
+      actionText
+    );
   });
 
-  return md("⚠️ Серьёзные погодные предупреждения:") + "\n" + lines.map(md).join("\n");
+  return (
+    md("⚠️ Серьёзные погодные предупреждения:") +
+    "\n" +
+    lines.map(md).join("\n")
+  );
 }
 
 /* ─── Scores ─────────────────────────────────────────────────────────── */
