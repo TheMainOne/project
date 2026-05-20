@@ -475,11 +475,29 @@ function clamp(value, min = 0, max = 10) {
   return Math.max(min, Math.min(max, value));
 }
 
-function getScoreLabel(score) {
-  if (score >= 8) return "отлично";
-  if (score >= 6) return "нормально";
-  if (score >= 4) return "так себе";
-  return "лучше пропустить";
+function getBeachLabel(score) {
+  if (score >= 8) return "хороший пляжный день";
+  if (score >= 6) return "нормально для пляжа";
+  if (score >= 4) return "так себе для пляжа";
+  return "лучше не планировать пляж";
+}
+
+function getSurfLabel(score) {
+  if (score >= 8) return "хорошие условия для сёрфа";
+  if (score >= 6) return "нормально для сёрфа";
+  if (score >= 4) return "средние условия для сёрфа";
+  return "не лучшие условия для сёрфа";
+}
+
+function getWetsuitAdvice(tempC) {
+  if (typeof tempC !== "number") return "";
+
+  if (tempC < 10) return "5/4 мм или толще";
+  if (tempC < 14) return "4/3 мм рекомендуется";
+  if (tempC < 18) return "3/2 мм рекомендуется";
+  if (tempC < 21) return "shorty или 3/2 мм по комфорту";
+
+  return "обычно не нужен";
 }
 
 function getScores({ water, wind, wave, weather }) {
@@ -574,18 +592,25 @@ function getScores({ water, wind, wave, weather }) {
   beachScore = clamp(Math.round(beachScore));
   surfScore = clamp(Math.round(surfScore));
 
-  const shortNote = notes.length
-    ? ` — ${notes.slice(0, 2).join(", ")}`
-    : "";
+const mainNotes = notes
+  .slice(0, 2)
+  .join(", ")
+  .replace("волна хорошая для сёрфа, вода очень холодная", "хорошая волна, но вода очень холодная")
+  .replace("вода очень холодная, волна хорошая для сёрфа", "хорошая волна, но вода очень холодная");
+const surfNote = mainNotes ? ` — ${mainNotes}` : "";
 
-  return {
-    beachScore,
-    surfScore,
-    text: md(
-      `🏖️ Beach score: ${beachScore}/10 — ${getScoreLabel(beachScore)}\n` +
-        `🏄 Surf score: ${surfScore}/10 — ${getScoreLabel(surfScore)}${shortNote}`
-    ),
-  };
+const wetsuit = getWetsuitAdvice(water.tempC);
+const wetsuitText = wetsuit ? `\n🧥 Wetsuit: ${wetsuit}` : "";
+
+return {
+  beachScore,
+  surfScore,
+  text: md(
+    `🏖️ Beach score: ${beachScore}/10 — ${getBeachLabel(beachScore)}\n` +
+      `🏄 Surf score: ${surfScore}/10 — ${getSurfLabel(surfScore)}${surfNote}` +
+      wetsuitText
+  ),
+};
 }
 
 function getNYDateKey(date) {
