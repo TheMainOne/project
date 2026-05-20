@@ -599,16 +599,12 @@ const mainNotes = notes
   .replace("вода очень холодная, волна хорошая для сёрфа", "хорошая волна, но вода очень холодная");
 const surfNote = mainNotes ? ` — ${mainNotes}` : "";
 
-const wetsuit = getWetsuitAdvice(water.tempC);
-const wetsuitText = wetsuit ? `\n🧥 Wetsuit: ${wetsuit}` : "";
-
 return {
   beachScore,
   surfScore,
   text: md(
     `🏖️ Beach score: ${beachScore}/10 — ${getBeachLabel(beachScore)}\n` +
-      `🏄 Surf score: ${surfScore}/10 — ${getSurfLabel(surfScore)}${surfNote}` +
-      wetsuitText
+      `🏄 Surf score: ${surfScore}/10 — ${getSurfLabel(surfScore)}${surfNote}`
   ),
 };
 }
@@ -804,8 +800,8 @@ async function wrap(name, fn) {
       water.text +
       "\n\n" +
       scores.text +
-      (bestWindow.text ? "\n" + bestWindow.text : "") +
-      (events?.text ? "\n\n" + events.text : "");
+(bestWindow.text ? "\n\n" + bestWindow.text : "") +
+(events?.text ? "\n\n" + events.text : "");
 
     console.log(">>> telegram payload <<<\n", msg);
     await sendTelegramMessage(msg);
