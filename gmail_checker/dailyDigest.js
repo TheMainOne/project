@@ -707,30 +707,96 @@ async function getMarineWaveForecast() {
   }
 }
 
-function buildWaveText(wave, marineWave) {
-  const baseLine = wave?.rawLine || "🏄 Данных о текущей волне нет";
-
-  if (!marineWave?.hasData || typeof marineWave.peakHeight !== "number") {
-    return wave?.text || md(baseLine);
+function getWaveTrendLabel(currentHeight, forecastHeight) {
+  if (
+    typeof currentHeight !== "number" ||
+    typeof forecastHeight !== "number"
+  ) {
+    return "ожидается";
   }
 
-  const peakHeight = marineWave.peakHeight.toFixed(1);
+  const diff = forecastHeight - currentHeight;
+
+  if (diff >= 0.4) return "усилится";
+  if (diff <= -0.4) return "снизится";
+  if (diff >= 0.2) return "немного усилится";
+  if (diff <= -0.2) return "немного снизится";
+
+  return "примерно без изменений";
+}
+
+function getReadableWaveComment(height) {
+  if (typeof height !== "number") return "";
+
+  if (height < 0.5) return "почти штиль";
+  if (height < 1) return "невысокая волна";
+  if (height < 2) return "подходит для сёрфа";
+  return "крупная волна";
+}
+
+function buildWaveText(wave, marineWave) {
+  const currentHeight = wave?.height;
+  const currentPeriod = wave?.period;
+
+  // Если нет текущих данных, но есть marine forecast
+  if (
+    typeof currentHeight !== "number" &&
+    marineWave?.hasData &&
+    typeof marineWave.peakHeight === "number"
+  ) {
+    const peakHeight = marineWave.peakHeight.toFixed(1);
+    const peakTime = formatOpenMeteoLocalTime(marineWave.peakTime);
+
+    const periodPart =
+      typeof marineWave.peakPeriod === "number"
+        ? ` • период ${Math.round(marineWave.peakPeriod)} с`
+        : "";
+
+    const timePart = peakTime ? ` к ${peakTime}` : "";
+
+    return md(
+      `🏄 Волна сейчас: данных нет\n` +
+        `📈 Прогноз волн: ${timePart} ожидается ~${peakHeight} м${periodPart}`
+    );
+  }
+
+  // Если нет ни текущей волны, ни прогноза
+  if (typeof currentHeight !== "number") {
+    return wave?.text || md("🏄 Данных о волне нет");
+  }
+
+  const currentHeightText = currentHeight.toFixed(1);
+  const currentComment = getReadableWaveComment(currentHeight);
+
+  const currentPeriodPart =
+    typeof currentPeriod === "number" ? ` • период ${currentPeriod} с` : "";
+
+  let text =
+    `🏄 Волна сейчас: ${currentHeightText} м${currentPeriodPart}` +
+    (currentComment ? ` — ${currentComment}` : "");
+
+  // Если прогноза нет — возвращаем только текущую волну
+  if (!marineWave?.hasData || typeof marineWave.peakHeight !== "number") {
+    return md(text);
+  }
+
+  const forecastHeight = marineWave.peakHeight;
+  const forecastHeightText = forecastHeight.toFixed(1);
   const peakTime = formatOpenMeteoLocalTime(marineWave.peakTime);
-  const periodPart =
+  const trend = getWaveTrendLabel(currentHeight, forecastHeight);
+
+  const forecastPeriodPart =
     typeof marineWave.peakPeriod === "number"
-      ? ` • ${Math.round(marineWave.peakPeriod)} с`
+      ? ` • период ${Math.round(marineWave.peakPeriod)} с`
       : "";
 
-  const direction = directionToCompass(marineWave.peakDirection);
-  const directionPart = direction ? ` • ${direction}` : "";
+  const timePart = peakTime ? ` к ${peakTime}` : "";
 
-  const forecastPart =
-    `прогноз 12ч: до ${peakHeight} м` +
-    (peakTime ? ` около ${peakTime}` : "") +
-    periodPart +
-    directionPart;
+  text +=
+    `\n📈 Прогноз волн: ${timePart} ${trend} до ~${forecastHeightText} м` +
+    forecastPeriodPart;
 
-  return md(`${baseLine} • ${forecastPart}`);
+  return md(text);
 }
 
 /* ─── NWS: Опасные течения у берега / Rip Current Risk ───────────────── */
