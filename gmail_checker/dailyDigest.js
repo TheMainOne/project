@@ -10,25 +10,29 @@ dotenv.config({ path: path.join(__dirname, "../.env") });
 
 /* экранирование Markdown-V2 */
 const md = (s = "") =>
-  s // 1) экранируем все спец-символы
+  s
     .replace(/([\-_*[\]()~`>#+=|{}.!\\])/g, "\\$1")
-    //               ↑  дефис первый в классе ─ теперь захватывается
-    // 2) убираем угловые скобки (Telegram их не любит)
     .replace(/[<>]/g, "");
 
 const toF = (c) => Math.round((c * 9) / 5 + 32);
 
 /* безопасный URL для Markdown-V2 */
 const safeUrl = (u = "") =>
-  encodeURI(u) // пробелы, Unicode и т.п.
-    .replace(/\(/g, "%28") // (
-    .replace(/\)/g, "%29") // )
-    .replace(/!/g, "%21") // !
-    .replace(/\./g, "\\.") //
-    .replace(/-/g, "\\-"); //
+  encodeURI(u)
+    .replace(/\(/g, "%28")
+    .replace(/\)/g, "%29")
+    .replace(/!/g, "%21")
+    .replace(/\./g, "\\.")
+    .replace(/-/g, "\\-");
 
 const OCNJ_HOME_URL = "https://oceancityvacation.com/";
 const OCNJ_EVENTS_URL = "https://oceancityvacation.com/events/list/";
+
+/*
+  false — если нет подходящих событий, блок просто не добавляется в Telegram.
+  true — если хочешь видеть в Telegram сообщение, что событий не найдено.
+*/
+const SHOW_EMPTY_OCNJ_EVENTS = false;
 
 const tgUrl = (u = "") =>
   encodeURI(u)
@@ -137,7 +141,7 @@ async function getOceanCityEvents() {
     });
 
     const $ = cheerio.load(html);
-    const items = [];
+    const parsedEvents = [];
 
     $("a").each((_, el) => {
       const href = $(el).attr("href") || "";
@@ -146,8 +150,6 @@ async function getOceanCityEvents() {
       if (!rawText) return;
       if (!rawText.includes("Learn More")) return;
 
-      // На главной странице карточки обычно выглядят примерно так:
-      // May 22 Unlocking of the Ocean ... May 22, 2026 12:00 PM – 1:00 PM Learn More
       const shortDateMatch = rawText.match(
         /^(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s+\d{1,2}/i
       );
@@ -183,9 +185,7 @@ async function getOceanCityEvents() {
         venue: "",
       });
 
-      if (score <= 0) return;
-
-      items.push({
+      parsedEvents.push({
         title,
         dateText,
         link,
@@ -193,22 +193,52 @@ async function getOceanCityEvents() {
       });
     });
 
-    const events = items
-      .sort((a, b) => b.score - a.score)
-      .slice(0, 2)
-      .map((event) => {
-        const title = truncateText(event.title, 55);
+    if (!parsedEvents.length) {
+      console.log(
+        "[ocnj-events] событий не найдено или структура сайта изменилась"
+      );
 
-        const eventTitle = event.link
-          ? `[${md(title)}](${tgUrl(event.link)})`
-          : md(title);
-
-        return `• ${md(event.dateText)} — ${eventTitle}`;
-      });
-
-    if (!events.length) {
-      return { text: "" };
+      return {
+        text: SHOW_EMPTY_OCNJ_EVENTS
+          ? md("🎉 Ocean City, NJ: событий на сайте не найдено")
+          : "",
+        status: "no_events_found",
+        totalFound: 0,
+        totalMatched: 0,
+      };
     }
+
+    const matchedEvents = parsedEvents
+      .filter((event) => event.score > 0)
+      .sort((a, b) => b.score - a.score)
+      .slice(0, 2);
+
+    if (!matchedEvents.length) {
+      console.log(
+        `[ocnj-events] найдено событий: ${parsedEvents.length}, но подходящих по критериям нет`
+      );
+
+      return {
+        text: SHOW_EMPTY_OCNJ_EVENTS
+          ? md(
+              "🎉 Ocean City, NJ: интересных событий по нашим критериям сегодня не найдено"
+            )
+          : "",
+        status: "no_matching_events",
+        totalFound: parsedEvents.length,
+        totalMatched: 0,
+      };
+    }
+
+    const events = matchedEvents.map((event) => {
+      const title = truncateText(event.title, 55);
+
+      const eventTitle = event.link
+        ? `[${md(title)}](${tgUrl(event.link)})`
+        : md(title);
+
+      return `• ${md(event.dateText)} — ${eventTitle}`;
+    });
 
     return {
       text:
@@ -217,10 +247,22 @@ async function getOceanCityEvents() {
         events.join("\n") +
         "\n" +
         `[${md("Все события OCNJ")}](${tgUrl(OCNJ_EVENTS_URL)})`,
+      status: "ok",
+      totalFound: parsedEvents.length,
+      totalMatched: matchedEvents.length,
     };
   } catch (e) {
     console.warn("[ocnj-events]", e.response?.status ?? e.message);
-    return { text: "" };
+
+    return {
+      text: SHOW_EMPTY_OCNJ_EVENTS
+        ? md("🎉 Ocean City, NJ: не удалось загрузить события")
+        : "",
+      status: "fetch_error",
+      error: e.response?.status ?? e.message,
+      totalFound: 0,
+      totalMatched: 0,
+    };
   }
 }
 
@@ -316,18 +358,19 @@ async function getWaterTemp() {
       );
 
       if (data?.data?.length) {
-        const tempC = Math.round(+data.data[0].v); // ← tempC
-        const good = tempC >= 21; // ≥ 21 °C ≈ 70 °F
+        const tempC = Math.round(+data.data[0].v);
         const tempF = toF(tempC);
-        let text = md(
+
+        const text = md(
           `🌊 Температура воды (Ocean City): ${tempC}°C (${tempF}°F)`
         );
 
         return {
-  text,
-  tempC,
-};
+          text,
+          tempC,
+        };
       }
+
       console.log(`[water] ${s.name} – нет свежих данных`);
     } catch (err) {
       console.log(`[water] ${s.name} – ${err.response?.status ?? err.code}`);
@@ -338,12 +381,10 @@ async function getWaterTemp() {
 }
 
 /* ─── 3. Ветер ───────────────────────────────────────────────────────── */
-/*  getWind()  – берём последние 6-минутные данные ветра с той же станции.
-    stationId — ID, который мы уже используем для температуры воды             */
 async function getWind() {
   const stations = [
-    { id: "8534720", name: "Atlantic City" }, // основная
-    { id: "8536110", name: "Cape May" }, // резерв
+    { id: "8534720", name: "Atlantic City" },
+    { id: "8536110", name: "Cape May" },
   ];
 
   const url = "https://api.tidesandcurrents.noaa.gov/api/prod/datagetter";
@@ -364,8 +405,8 @@ async function getWind() {
 
       if (data?.data?.length) {
         const w = data.data[0];
-        const spd = +w.s; // скорость, м/с
-        const gust = +w.g || spd; // порыв
+        const spd = +w.s;
+        const gust = +w.g || spd;
         const fmt = (v) => (Math.round(v * 10) / 10).toFixed(1);
 
         let remark = "лёгкий бриз";
@@ -375,34 +416,33 @@ async function getWind() {
         const line =
           `💨 Ветер (Ocean City): ${fmt(spd)} м/с` +
           (gust > spd + 2 ? ` (порывы до ${fmt(gust)} м/с)` : "") +
-          ` — ${md(remark)}`;
+          ` — ${remark}`;
 
         return {
-  text: md(line),
-  speed: spd,
-  gust,
-};
+          text: md(line),
+          speed: spd,
+          gust,
+        };
       }
+
       console.warn(`[wind] ${s.name} – пустой ответ`);
     } catch (e) {
       console.warn(`[wind] ${s.name} – ${e.response?.status ?? e.code}`);
     }
   }
 
-  // если до сюда дошли — нет ни одной свежей записи
   return {
-  text: md("💨 Данных о ветре нет"),
-  speed: null,
-  gust: null,
-};
+    text: md("💨 Данных о ветре нет"),
+    speed: null,
+    gust: null,
+  };
 }
 
 /* ─── 4. Волны ───────────────────────────────────────────────────────── */
 async function getWave() {
-  // основной буй + запасной
   const buoys = [
-    { id: "44091", name: "AC" }, // Atlantic City
-    { id: "44009", name: "DB" }, // Delaware Bay
+    { id: "44091", name: "AC" },
+    { id: "44009", name: "DB" },
   ];
 
   for (const b of buoys) {
@@ -425,22 +465,19 @@ async function getWave() {
 
       const byKey = (key) => values[header.indexOf(key)];
 
-      let wvht = byKey("WVHT"); // высота, м
-      const dpd = byKey("DPD"); // период, c
+      let wvht = byKey("WVHT");
+      const dpd = byKey("DPD");
 
-      // резерв: иногда высота только в футах (WWH или SwH)
       if ((!wvht || wvht === "MM") && (byKey("WWH") || byKey("SwH"))) {
         const seaFt = byKey("WWH") !== "MM" ? byKey("WWH") : byKey("SwH");
         if (seaFt && seaFt !== "MM") wvht = (+seaFt * 0.3048).toFixed(2);
       }
 
-      // если высота невалидна — пробуем следующий буй
       if (!wvht || wvht === "MM" || +wvht <= 0) throw "нет высоты";
 
       const H = (+wvht).toFixed(1);
       const T = dpd !== "MM" ? (+dpd).toFixed(0) : "–";
 
-      // короткая классификация
       const comment =
         H < 0.5
           ? "почти штиль"
@@ -450,25 +487,23 @@ async function getWave() {
           ? "для сёрфа"
           : "крупная";
 
-      // готовая лаконичная строка
       return {
-  text: md(
-    `🏄 Волна (Ocean City): ${H} м • ${T} с между гребнями → ${comment}`
-  ),
-  height: +H,
-  period: T !== "–" ? Number(T) : null,
-};
+        text: md(
+          `🏄 Волна (Ocean City): ${H} м • ${T} с между гребнями → ${comment}`
+        ),
+        height: +H,
+        period: T !== "–" ? Number(T) : null,
+      };
     } catch (e) {
       console.warn(`[wave] ${b.name} – ${e}`);
     }
   }
 
-  // если оба буя молчат — не падаем, а возвращаем заглушку
   return {
-  text: md("🏄 Данных о волне нет"),
-  height: null,
-  period: null,
-};
+    text: md("🏄 Данных о волне нет"),
+    height: null,
+    period: null,
+  };
 }
 
 function clamp(value, min = 0, max = 10) {
@@ -506,7 +541,6 @@ function getScores({ water, wind, wave, weather }) {
 
   const notes = [];
 
-  // Water temperature
   if (typeof water.tempC === "number") {
     if (water.tempC < 14) {
       beachScore -= 4;
@@ -523,7 +557,6 @@ function getScores({ water, wind, wave, weather }) {
     }
   }
 
-  // Wind
   if (typeof wind.speed === "number") {
     if (wind.speed <= 5) {
       beachScore += 1;
@@ -539,7 +572,6 @@ function getScores({ water, wind, wave, weather }) {
     }
   }
 
-  // Waves
   if (typeof wave.height === "number") {
     if (wave.height < 0.5) {
       beachScore += 1;
@@ -558,7 +590,6 @@ function getScores({ water, wind, wave, weather }) {
     }
   }
 
-  // Wave period
   if (typeof wave.period === "number") {
     if (wave.period >= 6 && wave.period <= 12) {
       surfScore += 1;
@@ -567,8 +598,8 @@ function getScores({ water, wind, wave, weather }) {
     }
   }
 
-  // Rain / storm forecast for Ocean City
   const next12h = weather.oceanCityForecast?.slice(0, 4) || [];
+
   const willRain = next12h.some((p) => {
     const main = p.weather?.[0]?.main || "";
     return ["Rain", "Thunderstorm", "Drizzle", "Snow"].includes(main) || p.pop >= 0.35;
@@ -592,21 +623,28 @@ function getScores({ water, wind, wave, weather }) {
   beachScore = clamp(Math.round(beachScore));
   surfScore = clamp(Math.round(surfScore));
 
-const mainNotes = notes
-  .slice(0, 2)
-  .join(", ")
-  .replace("волна хорошая для сёрфа, вода очень холодная", "хорошая волна, но вода очень холодная")
-  .replace("вода очень холодная, волна хорошая для сёрфа", "хорошая волна, но вода очень холодная");
-const surfNote = mainNotes ? ` — ${mainNotes}` : "";
+  const mainNotes = notes
+    .slice(0, 2)
+    .join(", ")
+    .replace(
+      "волна хорошая для сёрфа, вода очень холодная",
+      "хорошая волна, но вода очень холодная"
+    )
+    .replace(
+      "вода очень холодная, волна хорошая для сёрфа",
+      "хорошая волна, но вода очень холодная"
+    );
 
-return {
-  beachScore,
-  surfScore,
-  text: md(
-    `🏖️ Beach score: ${beachScore}/10 — ${getBeachLabel(beachScore)}\n` +
-      `🏄 Surf score: ${surfScore}/10 — ${getSurfLabel(surfScore)}${surfNote}`
-  ),
-};
+  const surfNote = mainNotes ? ` — ${mainNotes}` : "";
+
+  return {
+    beachScore,
+    surfScore,
+    text: md(
+      `🏖️ Beach score: ${beachScore}/10 — ${getBeachLabel(beachScore)}\n` +
+        `🏄 Surf score: ${surfScore}/10 — ${getSurfLabel(surfScore)}${surfNote}`
+    ),
+  };
 }
 
 function getNYDateKey(date) {
@@ -665,10 +703,10 @@ function getBestTimeWindow(forecast = [], { water, scores } = {}) {
       return sameDay && slot.hour >= 7 && slot.hour <= 19;
     });
 
-  // Если скрипт запустится поздно и на сегодня слотов уже нет — берем ближайшие доступные
   if (!slots.length) {
     slots = forecast.slice(0, 8).map((p) => {
       const date = new Date(p.dt * 1000);
+
       return {
         date,
         hour: getNYHour(date),
@@ -682,11 +720,9 @@ function getBestTimeWindow(forecast = [], { water, scores } = {}) {
 
   const scoredSlots = slots.map((slot) => {
     let score = 0;
-    const reasons = [];
 
     if (slot.temp >= 24 && slot.temp <= 32) {
       score += 3;
-      reasons.push("теплее");
     } else if (slot.temp >= 20 && slot.temp < 24) {
       score += 2;
     } else if (slot.temp < 18) {
@@ -695,7 +731,6 @@ function getBestTimeWindow(forecast = [], { water, scores } = {}) {
 
     if (slot.wind < 5) {
       score += 3;
-      reasons.push("слабый ветер");
     } else if (slot.wind < 8) {
       score += 1;
     } else {
@@ -706,14 +741,12 @@ function getBestTimeWindow(forecast = [], { water, scores } = {}) {
       score += 2;
     } else if (slot.pop >= 0.4) {
       score -= 2;
-      reasons.push("есть шанс дождя");
     }
 
     if (["Rain", "Thunderstorm", "Drizzle", "Snow"].includes(slot.weatherMain)) {
       score -= 5;
     }
 
-    // Небольшой минус для самого активного солнца
     if (slot.hour >= 12 && slot.hour <= 15) {
       score -= 1;
     }
@@ -721,7 +754,6 @@ function getBestTimeWindow(forecast = [], { water, scores } = {}) {
     return {
       ...slot,
       score,
-      reasons,
     };
   });
 
@@ -734,35 +766,38 @@ function getBestTimeWindow(forecast = [], { water, scores } = {}) {
   const start = formatNYTime(best.date);
   const end = formatNYTime(new Date(best.date.getTime() + 3 * 60 * 60 * 1000));
 
- const details = [];
+  const details = [];
 
-if (typeof best.temp === "number") {
-  const tempC = Math.round(best.temp);
-  const tempF = toF(tempC);
-  details.push(`воздух около ${tempC}°C (${tempF}°F)`);
-}
+  if (typeof best.temp === "number") {
+    const tempC = Math.round(best.temp);
+    const tempF = toF(tempC);
+    details.push(`воздух около ${tempC}°C (${tempF}°F)`);
+  }
 
-if (typeof best.wind === "number") {
-  details.push(`ветер ${best.wind.toFixed(1)} м/с`);
-}
+  if (typeof best.wind === "number") {
+    details.push(`ветер ${best.wind.toFixed(1)} м/с`);
+  }
 
-if (typeof best.pop === "number" && best.pop >= 0.3) {
-  details.push(`шанс дождя ${Math.round(best.pop * 100)}%`);
-}
+  if (typeof best.pop === "number" && best.pop >= 0.3) {
+    details.push(`шанс дождя ${Math.round(best.pop * 100)}%`);
+  }
 
-const detailsText = details.length ? ` — ${details.join(", ")}` : "";
+  const detailsText = details.length ? ` — ${details.join(", ")}` : "";
 
-const waterIsComfortable = typeof water?.tempC === "number" && water.tempC >= 18;
-const beachIsReasonable = typeof scores?.beachScore === "number" && scores.beachScore >= 6;
+  const waterIsComfortable =
+    typeof water?.tempC === "number" && water.tempC >= 18;
 
-const windowType =
-  waterIsComfortable && beachIsReasonable
-    ? "для пляжа"
-    : "для прогулки у океана";
+  const beachIsReasonable =
+    typeof scores?.beachScore === "number" && scores.beachScore >= 6;
 
-return {
-  text: md(`🕒 Лучшее окно ${windowType}: ${start}–${end}${detailsText}`),
-};
+  const windowType =
+    waterIsComfortable && beachIsReasonable
+      ? "для пляжа"
+      : "для прогулки у океана";
+
+  return {
+    text: md(`🕒 Лучшее окно ${windowType}: ${start}–${end}${detailsText}`),
+  };
 }
 
 /* ─── вспомогательная обёртка для диагностики ─────────────────────────── */
@@ -775,11 +810,11 @@ async function wrap(name, fn) {
         e.response?.data?.message ?? e.message
       }`
     );
-    throw e; // пробрасываем выше, чтобы дайджест не ушёл «пустым»
+    throw e;
   }
 }
 
-/* ─── 4. Сборка и отправка дайджеста ──────────────────────────────────── */
+/* ─── Сборка и отправка дайджеста ────────────────────────────────────── */
 (async () => {
   try {
     const [weather, water, wind, wave, events] = await Promise.all([
@@ -790,15 +825,36 @@ async function wrap(name, fn) {
 
       getOceanCityEvents().catch((e) => {
         console.warn("[ocnj-events] optional block failed:", e.message);
-        return { text: "" };
+
+        return {
+          text: "",
+          status: "optional_block_failed",
+          error: e.message,
+          totalFound: 0,
+          totalMatched: 0,
+        };
       }),
     ]);
 
-    const scores = getScores({ weather, water, wind, wave });
-const bestWindow = getBestTimeWindow(weather.oceanCityForecast, {
-  water,
-  scores,
-});
+    if (!events?.text) {
+      console.log(
+        `[ocnj-events] block skipped: ${events?.status || "unknown"} | found: ${
+          events?.totalFound ?? 0
+        } | matched: ${events?.totalMatched ?? 0}`
+      );
+    }
+
+    const scores = getScores({
+      weather,
+      water,
+      wind,
+      wave,
+    });
+
+    const bestWindow = getBestTimeWindow(weather.oceanCityForecast, {
+      water,
+      scores,
+    });
 
     const msg =
       "🌅 Доброе утро\n\n" +
@@ -811,11 +867,13 @@ const bestWindow = getBestTimeWindow(weather.oceanCityForecast, {
       water.text +
       "\n\n" +
       scores.text +
-(bestWindow.text ? "\n\n" + bestWindow.text : "") +
-(events?.text ? "\n\n" + events.text : "");
+      (bestWindow.text ? "\n\n" + bestWindow.text : "") +
+      (events?.text ? "\n\n" + events.text : "");
 
     console.log(">>> telegram payload <<<\n", msg);
+
     await sendTelegramMessage(msg);
+
     console.log("Digest sent ✅");
   } catch (err) {
     console.error("Digest error:", err.message);
