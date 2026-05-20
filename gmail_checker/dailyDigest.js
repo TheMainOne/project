@@ -27,12 +27,6 @@ const safeUrl = (u = "") =>
     .replace(/\./g, "\\.") //
     .replace(/-/g, "\\-"); //
 
-
-    const tgUrl = (u = "") =>
-  encodeURI(u)
-    .replace(/\\/g, "\\\\")
-    .replace(/\)/g, "\\)");
-
 const interestingEventKeywords = [
   "festival",
   "concert",
@@ -317,6 +311,7 @@ async function getOceanCityEvents() {
     return { text: "" };
   }
 }
+
 /* ─── 1. Погода ───────────────────────────────────────────────────────── */
 async function getWeather() {
   const {
