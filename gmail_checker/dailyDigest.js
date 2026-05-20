@@ -28,6 +28,25 @@ const safeUrl = (u = "") =>
 const OCNJ_HOME_URL = "https://oceancityvacation.com/";
 const OCNJ_EVENTS_URL = "https://oceancityvacation.com/events/list/";
 
+const NWS_BASE_URL = "https://api.weather.gov";
+const NWS_USER_AGENT =
+  process.env.NWS_USER_AGENT || "ocnj-weather-digest/1.0";
+
+const NWS_HEADERS = {
+  "User-Agent": NWS_USER_AGENT,
+  Accept: "application/geo+json,application/json",
+};
+
+/*
+  Для Ocean City, NJ чаще всего используется офис PHI.
+  Если понадобится, можно переопределить через .env:
+  NWS_SURF_PRODUCT_TYPE=SRF
+  NWS_SURF_PRODUCT_LOCATION=PHI
+*/
+const NWS_SURF_PRODUCT_TYPE = process.env.NWS_SURF_PRODUCT_TYPE || "SRF";
+const NWS_SURF_PRODUCT_LOCATION =
+  process.env.NWS_SURF_PRODUCT_LOCATION || "PHI";
+
 /*
   false — если нет подходящих событий, блок просто не добавляется в Telegram.
   true — если хочешь видеть в Telegram сообщение, что событий не найдено.
@@ -73,6 +92,62 @@ function formatEventDate(date) {
     month: "short",
     day: "numeric",
   });
+}
+
+function formatNYDateTime(dateLike) {
+  if (!dateLike) return "";
+
+  const date = new Date(dateLike);
+  if (Number.isNaN(date.getTime())) return "";
+
+  return date.toLocaleString("en-US", {
+    timeZone: "America/New_York",
+    month: "short",
+    day: "numeric",
+    hour: "numeric",
+    hour12: true,
+  });
+}
+
+function formatOpenMeteoLocalTime(localIso = "") {
+  const hour = Number(localIso.slice(11, 13));
+  if (!Number.isFinite(hour)) return "";
+
+  const displayHour = hour % 12 || 12;
+  const suffix = hour >= 12 ? "PM" : "AM";
+
+  return `${displayHour} ${suffix}`;
+}
+
+function directionToCompass(deg) {
+  if (typeof deg !== "number" || Number.isNaN(deg)) return "";
+
+  const directions = [
+    "N",
+    "NNE",
+    "NE",
+    "ENE",
+    "E",
+    "ESE",
+    "SE",
+    "SSE",
+    "S",
+    "SSW",
+    "SW",
+    "WSW",
+    "W",
+    "WNW",
+    "NW",
+    "NNW",
+  ];
+
+  const index = Math.round(deg / 22.5) % 16;
+  return directions[index];
+}
+
+function getNumberOrNull(value) {
+  const n = Number(value);
+  return Number.isFinite(n) ? n : null;
 }
 
 function scoreOceanCityEvent(item) {
@@ -438,7 +513,7 @@ async function getWind() {
   };
 }
 
-/* ─── 4. Волны ───────────────────────────────────────────────────────── */
+/* ─── 4. Волны: текущие данные NDBC ──────────────────────────────────── */
 async function getWave() {
   const buoys = [
     { id: "44091", name: "AC" },
@@ -487,10 +562,11 @@ async function getWave() {
           ? "для сёрфа"
           : "крупная";
 
+      const rawLine = `🏄 Волна (Ocean City): ${H} м • ${T} с между гребнями → ${comment}`;
+
       return {
-        text: md(
-          `🏄 Волна (Ocean City): ${H} м • ${T} с между гребнями → ${comment}`
-        ),
+        text: md(rawLine),
+        rawLine,
         height: +H,
         period: T !== "–" ? Number(T) : null,
       };
@@ -499,13 +575,521 @@ async function getWave() {
     }
   }
 
+  const rawLine = "🏄 Данных о текущей волне нет";
+
   return {
-    text: md("🏄 Данных о волне нет"),
+    text: md(rawLine),
+    rawLine,
     height: null,
     period: null,
   };
 }
 
+/* ─── 4b. Прогноз волн Open-Meteo Marine ─────────────────────────────── */
+async function getMarineWaveForecast() {
+  const lat = Number(process.env.OCEANCITY_MARINE_LAT || process.env.OCEANCITY_LAT);
+  const lon = Number(process.env.OCEANCITY_MARINE_LON || process.env.OCEANCITY_LON);
+
+  if (!Number.isFinite(lat) || !Number.isFinite(lon)) {
+    return {
+      status: "missing_coordinates",
+      hasData: false,
+      points: [],
+      peakHeight: null,
+      peakPeriod: null,
+      peakDirection: null,
+      peakTime: "",
+      currentHeight: null,
+    };
+  }
+
+  try {
+    const { data } = await axios.get(
+      "https://marine-api.open-meteo.com/v1/marine",
+      {
+        params: {
+          latitude: lat,
+          longitude: lon,
+          hourly: "wave_height,wave_period,wave_direction",
+          forecast_days: 1,
+          timezone: "America/New_York",
+        },
+        timeout: 10000,
+      }
+    );
+
+    const hourly = data?.hourly || {};
+    const times = hourly.time || [];
+    const heights = hourly.wave_height || [];
+    const periods = hourly.wave_period || [];
+    const directions = hourly.wave_direction || [];
+
+    if (!times.length || !heights.length) {
+      return {
+        status: "no_marine_data",
+        hasData: false,
+        points: [],
+        peakHeight: null,
+        peakPeriod: null,
+        peakDirection: null,
+        peakTime: "",
+        currentHeight: null,
+      };
+    }
+
+    const todayNY = getNYDateKey(new Date());
+    const currentHourNY = getNYHour(new Date());
+
+    let startIndex = times.findIndex((t) => {
+      const dateKey = t.slice(0, 10);
+      const hour = Number(t.slice(11, 13));
+
+      return dateKey === todayNY && hour >= currentHourNY;
+    });
+
+    if (startIndex < 0) startIndex = 0;
+
+    const points = times
+      .slice(startIndex, startIndex + 12)
+      .map((time, i) => {
+        const originalIndex = startIndex + i;
+
+        return {
+          time,
+          height: getNumberOrNull(heights[originalIndex]),
+          period: getNumberOrNull(periods[originalIndex]),
+          direction: getNumberOrNull(directions[originalIndex]),
+        };
+      })
+      .filter((p) => typeof p.height === "number");
+
+    if (!points.length) {
+      return {
+        status: "no_valid_marine_points",
+        hasData: false,
+        points: [],
+        peakHeight: null,
+        peakPeriod: null,
+        peakDirection: null,
+        peakTime: "",
+        currentHeight: null,
+      };
+    }
+
+    const peak = points.reduce((best, p) =>
+      p.height > best.height ? p : best
+    );
+
+    return {
+      status: "ok",
+      hasData: true,
+      points,
+      currentHeight: points[0]?.height ?? null,
+      peakHeight: peak.height,
+      peakPeriod: peak.period,
+      peakDirection: peak.direction,
+      peakTime: peak.time,
+    };
+  } catch (e) {
+    console.warn("[marine-wave]", e.response?.status ?? e.message);
+
+    return {
+      status: "fetch_error",
+      hasData: false,
+      error: e.response?.status ?? e.message,
+      points: [],
+      peakHeight: null,
+      peakPeriod: null,
+      peakDirection: null,
+      peakTime: "",
+      currentHeight: null,
+    };
+  }
+}
+
+function buildWaveText(wave, marineWave) {
+  const baseLine = wave?.rawLine || "🏄 Данных о текущей волне нет";
+
+  if (!marineWave?.hasData || typeof marineWave.peakHeight !== "number") {
+    return wave?.text || md(baseLine);
+  }
+
+  const peakHeight = marineWave.peakHeight.toFixed(1);
+  const peakTime = formatOpenMeteoLocalTime(marineWave.peakTime);
+  const periodPart =
+    typeof marineWave.peakPeriod === "number"
+      ? ` • ${Math.round(marineWave.peakPeriod)} с`
+      : "";
+
+  const direction = directionToCompass(marineWave.peakDirection);
+  const directionPart = direction ? ` • ${direction}` : "";
+
+  const forecastPart =
+    `прогноз 12ч: до ${peakHeight} м` +
+    (peakTime ? ` около ${peakTime}` : "") +
+    periodPart +
+    directionPart;
+
+  return md(`${baseLine} • ${forecastPart}`);
+}
+
+/* ─── NWS: Опасные течения у берега / Rip Current Risk ───────────────── */
+function parseShoreCurrentRiskFromText(text = "") {
+  const patterns = [
+    /Rip Current Risk(?:\*|\.{2,}|:|\s+)*\s*(Low|Moderate|High)/i,
+    /\b(Low|Moderate|High)\s+Rip Current Risk/i,
+    /\b(Low|Moderate|High)\s+Risk\s+of\s+Rip\s+Currents/i,
+    /Risk\s+of\s+Rip\s+Currents(?:\*|\.{2,}|:|\s+)*\s*(Low|Moderate|High)/i,
+  ];
+
+  for (const pattern of patterns) {
+    const match = text.match(pattern);
+    if (match?.[1]) {
+      return match[1].toLowerCase();
+    }
+  }
+
+  return null;
+}
+
+function findRelevantSurfZoneSection(productText = "") {
+  const normalized = productText.replace(/\r/g, "");
+  const sections = normalized.split(/\n\$\$\n|\n&&\n/g);
+
+  const targetWords = [
+    "ocean city",
+    "cape may",
+    "coastal cape may",
+    "atlantic coastal cape may",
+    "coastal atlantic",
+    "atlantic county",
+  ];
+
+  const found = sections.find((section) => {
+    const lower = section.toLowerCase();
+    return targetWords.some((word) => lower.includes(word));
+  });
+
+  return found || normalized;
+}
+
+function getShoreCurrentRiskLabel(level) {
+  if (level === "high") return "высокий";
+  if (level === "moderate") return "умеренный";
+  if (level === "low") return "низкий";
+  return "";
+}
+
+function getShoreCurrentRiskAdvice(level) {
+  if (level === "high") {
+    return "лучше не заходить глубоко и купаться только рядом со спасателями";
+  }
+
+  if (level === "moderate") {
+    return "купаться осторожно, лучше рядом со спасателями";
+  }
+
+  if (level === "low") {
+    return "обычная осторожность у воды";
+  }
+
+  return "";
+}
+
+function formatShoreCurrentRiskText(risk) {
+  if (!risk?.level) return "";
+
+  const label = getShoreCurrentRiskLabel(risk.level);
+  const advice = getShoreCurrentRiskAdvice(risk.level);
+
+  return md(`🛟 Опасные течения у берега: ${label} риск — ${advice}`);
+}
+
+async function getShoreCurrentRisk() {
+  try {
+    const listUrl = `${NWS_BASE_URL}/products/types/${NWS_SURF_PRODUCT_TYPE}/locations/${NWS_SURF_PRODUCT_LOCATION}`;
+
+    const { data: listData } = await axios.get(listUrl, {
+      headers: NWS_HEADERS,
+      timeout: 10000,
+    });
+
+    const products = listData?.["@graph"] || listData?.features || [];
+
+    if (!products.length) {
+      return {
+        level: null,
+        text: "",
+        status: "no_products",
+        source: "nws_surf_zone_forecast",
+      };
+    }
+
+    const latest = products[0];
+    const productUrl =
+      latest?.["@id"] ||
+      latest?.id ||
+      (latest?.properties?.["@id"] ? latest.properties["@id"] : null);
+
+    if (!productUrl) {
+      return {
+        level: null,
+        text: "",
+        status: "missing_product_url",
+        source: "nws_surf_zone_forecast",
+      };
+    }
+
+    const { data: productData } = await axios.get(productUrl, {
+      headers: NWS_HEADERS,
+      timeout: 10000,
+    });
+
+    const productText =
+      productData?.productText || productData?.properties?.productText || "";
+
+    if (!productText) {
+      return {
+        level: null,
+        text: "",
+        status: "missing_product_text",
+        source: "nws_surf_zone_forecast",
+      };
+    }
+
+    const relevantSection = findRelevantSurfZoneSection(productText);
+    const level =
+      parseShoreCurrentRiskFromText(relevantSection) ||
+      parseShoreCurrentRiskFromText(productText);
+
+    if (!level) {
+      return {
+        level: null,
+        text: "",
+        status: "risk_not_found_in_product",
+        source: "nws_surf_zone_forecast",
+      };
+    }
+
+    const risk = {
+      level,
+      status: "ok",
+      source: "nws_surf_zone_forecast",
+    };
+
+    return {
+      ...risk,
+      text: formatShoreCurrentRiskText(risk),
+    };
+  } catch (e) {
+    console.warn("[shore-current-risk]", e.response?.status ?? e.message);
+
+    return {
+      level: null,
+      text: "",
+      status: "fetch_error",
+      error: e.response?.status ?? e.message,
+      source: "nws_surf_zone_forecast",
+    };
+  }
+}
+
+/* ─── NWS: Active Alerts ─────────────────────────────────────────────── */
+function getNWSAlertImpact(alert = {}) {
+  const event = String(alert.event || "").toLowerCase();
+  const severity = String(alert.severity || "").toLowerCase();
+
+  const highImpactEvents = [
+    "tornado warning",
+    "severe thunderstorm warning",
+    "flash flood warning",
+    "flood warning",
+    "coastal flood warning",
+    "storm surge warning",
+    "hurricane warning",
+    "tropical storm warning",
+    "high wind warning",
+    "excessive heat warning",
+    "special marine warning",
+  ];
+
+  const mediumImpactEvents = [
+    "beach hazards statement",
+    "rip current statement",
+    "high surf advisory",
+    "coastal flood advisory",
+    "heat advisory",
+    "wind advisory",
+    "gale warning",
+  ];
+
+  if (severity === "extreme" || severity === "severe") return 3;
+
+  if (highImpactEvents.some((name) => event.includes(name))) return 3;
+
+  if (event.includes("warning")) return 3;
+
+  if (mediumImpactEvents.some((name) => event.includes(name))) return 2;
+
+  if (event.includes("watch")) return 2;
+
+  return 0;
+}
+
+async function getNWSActiveAlerts() {
+  const lat = Number(process.env.OCEANCITY_LAT);
+  const lon = Number(process.env.OCEANCITY_LON);
+
+  if (!Number.isFinite(lat) || !Number.isFinite(lon)) {
+    return {
+      text: "",
+      alerts: [],
+      totalActive: 0,
+      seriousCount: 0,
+      maxImpact: 0,
+      status: "missing_coordinates",
+    };
+  }
+
+  try {
+    const { data } = await axios.get(`${NWS_BASE_URL}/alerts/active`, {
+      headers: NWS_HEADERS,
+      timeout: 10000,
+      params: {
+        point: `${lat},${lon}`,
+      },
+    });
+
+    const features = data?.features || [];
+
+    const allAlerts = features.map((feature) => {
+      const p = feature.properties || {};
+
+      return {
+        id: feature.id || p.id || "",
+        event: p.event || "",
+        headline: p.headline || "",
+        description: p.description || "",
+        severity: p.severity || "",
+        urgency: p.urgency || "",
+        certainty: p.certainty || "",
+        effective: p.effective || "",
+        ends: p.ends || p.expires || "",
+      };
+    });
+
+    const seriousAlerts = allAlerts
+      .map((alert) => ({
+        ...alert,
+        impact: getNWSAlertImpact(alert),
+      }))
+      .filter((alert) => alert.impact >= 2)
+      .sort((a, b) => b.impact - a.impact);
+
+    const maxImpact = seriousAlerts.reduce(
+      (max, alert) => Math.max(max, alert.impact),
+      0
+    );
+
+    return {
+      text: "",
+      alerts: seriousAlerts,
+      totalActive: allAlerts.length,
+      seriousCount: seriousAlerts.length,
+      maxImpact,
+      status: "ok",
+    };
+  } catch (e) {
+    console.warn("[nws-alerts]", e.response?.status ?? e.message);
+
+    return {
+      text: "",
+      alerts: [],
+      totalActive: 0,
+      seriousCount: 0,
+      maxImpact: 0,
+      status: "fetch_error",
+      error: e.response?.status ?? e.message,
+    };
+  }
+}
+
+function applyShoreCurrentRiskAlertFallback(shoreCurrentRisk, nwsAlerts) {
+  if (shoreCurrentRisk?.level) {
+    return shoreCurrentRisk;
+  }
+
+  const alerts = nwsAlerts?.alerts || [];
+
+  const beachHazardAlert = alerts.find((alert) => {
+    const event = String(alert.event || "").toLowerCase();
+    return (
+      event.includes("rip current") ||
+      event.includes("beach hazards") ||
+      event.includes("high surf")
+    );
+  });
+
+  if (!beachHazardAlert) {
+    return shoreCurrentRisk;
+  }
+
+  const combinedText = `${beachHazardAlert.event} ${beachHazardAlert.headline} ${beachHazardAlert.description}`;
+  const parsedLevel = parseShoreCurrentRiskFromText(combinedText);
+
+  const fallbackLevel =
+    parsedLevel ||
+    (String(beachHazardAlert.event || "")
+      .toLowerCase()
+      .includes("high surf")
+      ? "moderate"
+      : "high");
+
+  const risk = {
+    level: fallbackLevel,
+    status: "derived_from_active_alert",
+    source: "nws_active_alert",
+  };
+
+  return {
+    ...risk,
+    text: formatShoreCurrentRiskText(risk),
+  };
+}
+
+function buildNWSAlertsText(nwsAlerts, shoreCurrentRisk) {
+  const alerts = nwsAlerts?.alerts || [];
+
+  if (!alerts.length) return "";
+
+  const filteredAlerts = alerts.filter((alert) => {
+    const event = String(alert.event || "").toLowerCase();
+
+    /*
+      Если у нас уже есть отдельный блок "Опасные течения у берега",
+      не дублируем Rip Current / Beach Hazards в alerts.
+    */
+    if (
+      shoreCurrentRisk?.level &&
+      (event.includes("rip current") || event.includes("beach hazards"))
+    ) {
+      return false;
+    }
+
+    return true;
+  });
+
+  if (!filteredAlerts.length) return "";
+
+  const lines = filteredAlerts.slice(0, 2).map((alert) => {
+    const until = alert.ends ? ` до ${formatNYDateTime(alert.ends)}` : "";
+    return `• ${alert.event}${until}`;
+  });
+
+  return md("⚠️ Серьёзные погодные предупреждения:") + "\n" + lines.map(md).join("\n");
+}
+
+/* ─── Scores ─────────────────────────────────────────────────────────── */
 function clamp(value, min = 0, max = 10) {
   return Math.max(min, Math.min(max, value));
 }
@@ -535,12 +1119,43 @@ function getWetsuitAdvice(tempC) {
   return "обычно не нужен";
 }
 
-function getScores({ water, wind, wave, weather }) {
+function getScores({
+  water,
+  wind,
+  wave,
+  weather,
+  shoreCurrentRisk,
+  nwsAlerts,
+  marineWave,
+}) {
   let beachScore = 10;
   let surfScore = 5;
 
   const notes = [];
 
+  // Serious NWS alerts
+  if (nwsAlerts?.maxImpact >= 3) {
+    beachScore -= 5;
+    surfScore -= 3;
+    notes.push("есть серьёзное погодное предупреждение");
+  } else if (nwsAlerts?.maxImpact >= 2) {
+    beachScore -= 3;
+    surfScore -= 1;
+    notes.push("есть погодное предупреждение");
+  }
+
+  // Dangerous shore currents / rip currents
+  if (shoreCurrentRisk?.level === "high") {
+    beachScore -= 4;
+    surfScore -= 2;
+    notes.push("опасные течения у берега");
+  } else if (shoreCurrentRisk?.level === "moderate") {
+    beachScore -= 2;
+    surfScore -= 1;
+    notes.push("возможны сильные течения у берега");
+  }
+
+  // Water temperature
   if (typeof water.tempC === "number") {
     if (water.tempC < 14) {
       beachScore -= 4;
@@ -557,6 +1172,7 @@ function getScores({ water, wind, wave, weather }) {
     }
   }
 
+  // Wind
   if (typeof wind.speed === "number") {
     if (wind.speed <= 5) {
       beachScore += 1;
@@ -572,37 +1188,73 @@ function getScores({ water, wind, wave, weather }) {
     }
   }
 
-  if (typeof wave.height === "number") {
-    if (wave.height < 0.5) {
+  const waveHeightForScore =
+    typeof wave.height === "number"
+      ? wave.height
+      : typeof marineWave?.currentHeight === "number"
+      ? marineWave.currentHeight
+      : null;
+
+  const wavePeriodForScore =
+    typeof wave.period === "number"
+      ? wave.period
+      : typeof marineWave?.peakPeriod === "number"
+      ? marineWave.peakPeriod
+      : null;
+
+  // Current wave or fallback from marine forecast
+  if (typeof waveHeightForScore === "number") {
+    if (waveHeightForScore < 0.5) {
       beachScore += 1;
       surfScore -= 2;
-    } else if (wave.height >= 0.8 && wave.height <= 1.8) {
+    } else if (waveHeightForScore >= 0.8 && waveHeightForScore <= 1.8) {
       surfScore += 3;
       notes.push("волна хорошая для сёрфа");
-    } else if (wave.height > 1.8 && wave.height <= 2.4) {
+    } else if (waveHeightForScore > 1.8 && waveHeightForScore <= 2.4) {
       beachScore -= 1;
       surfScore += 1;
       notes.push("волна крупновата");
-    } else if (wave.height > 2.4) {
+    } else if (waveHeightForScore > 2.4) {
       beachScore -= 3;
       surfScore -= 1;
       notes.push("волна слишком крупная");
     }
   }
 
-  if (typeof wave.period === "number") {
-    if (wave.period >= 6 && wave.period <= 12) {
+  // Wave forecast peak
+  if (
+    typeof marineWave?.peakHeight === "number" &&
+    typeof waveHeightForScore === "number"
+  ) {
+    if (marineWave.peakHeight > waveHeightForScore + 0.4) {
+      notes.push("волна может усилиться");
+    }
+
+    if (marineWave.peakHeight > 2.4) {
+      beachScore -= 2;
+      surfScore -= 1;
+      notes.push("по прогнозу волна станет слишком крупной");
+    }
+  }
+
+  // Wave period
+  if (typeof wavePeriodForScore === "number") {
+    if (wavePeriodForScore >= 6 && wavePeriodForScore <= 12) {
       surfScore += 1;
-    } else if (wave.period < 5) {
+    } else if (wavePeriodForScore < 5) {
       surfScore -= 1;
     }
   }
 
+  // Rain / storm forecast for Ocean City
   const next12h = weather.oceanCityForecast?.slice(0, 4) || [];
 
   const willRain = next12h.some((p) => {
     const main = p.weather?.[0]?.main || "";
-    return ["Rain", "Thunderstorm", "Drizzle", "Snow"].includes(main) || p.pop >= 0.35;
+    return (
+      ["Rain", "Thunderstorm", "Drizzle", "Snow"].includes(main) ||
+      p.pop >= 0.35
+    );
   });
 
   const willStorm = next12h.some((p) => {
@@ -647,6 +1299,7 @@ function getScores({ water, wind, wave, weather }) {
   };
 }
 
+/* ─── Best time window ───────────────────────────────────────────────── */
 function getNYDateKey(date) {
   const parts = new Intl.DateTimeFormat("en-US", {
     timeZone: "America/New_York",
@@ -677,10 +1330,21 @@ function formatNYTime(date) {
   });
 }
 
-function getBestTimeWindow(forecast = [], { water, scores } = {}) {
+function getBestTimeWindow(
+  forecast = [],
+  { water, scores, shoreCurrentRisk, nwsAlerts } = {}
+) {
   if (!forecast.length) {
     return { text: "" };
   }
+
+  /*
+    Если есть серьёзный weather alert или высокий риск течений,
+    лучше не говорить "лучшее окно для пляжа".
+    Можно оставить только прогулку у океана.
+  */
+  const forceWalkOnly =
+    nwsAlerts?.maxImpact >= 3 || shoreCurrentRisk?.level === "high";
 
   const todayNY = getNYDateKey(new Date());
 
@@ -791,7 +1455,7 @@ function getBestTimeWindow(forecast = [], { water, scores } = {}) {
     typeof scores?.beachScore === "number" && scores.beachScore >= 6;
 
   const windowType =
-    waterIsComfortable && beachIsReasonable
+    !forceWalkOnly && waterIsComfortable && beachIsReasonable
       ? "для пляжа"
       : "для прогулки у океана";
 
@@ -800,7 +1464,7 @@ function getBestTimeWindow(forecast = [], { water, scores } = {}) {
   };
 }
 
-/* ─── вспомогательная обёртка для диагностики ─────────────────────────── */
+/* ─── wrappers ───────────────────────────────────────────────────────── */
 async function wrap(name, fn) {
   try {
     return await fn();
@@ -814,14 +1478,63 @@ async function wrap(name, fn) {
   }
 }
 
+async function optionalWrap(name, fn, fallback) {
+  try {
+    return await fn();
+  } catch (e) {
+    console.warn(
+      `[${name}] optional block failed:`,
+      e.response?.status ?? e.message
+    );
+
+    return typeof fallback === "function" ? fallback(e) : fallback;
+  }
+}
+
 /* ─── Сборка и отправка дайджеста ────────────────────────────────────── */
 (async () => {
   try {
-    const [weather, water, wind, wave, events] = await Promise.all([
+    const [
+      weather,
+      water,
+      wind,
+      wave,
+      marineWave,
+      shoreCurrentRiskRaw,
+      nwsAlerts,
+      events,
+    ] = await Promise.all([
       wrap("weather", getWeather),
       wrap("water", getWaterTemp),
       wrap("wind", getWind),
       wrap("wave", getWave),
+
+      optionalWrap("marine-wave", getMarineWaveForecast, {
+        status: "optional_failed",
+        hasData: false,
+        points: [],
+        peakHeight: null,
+        peakPeriod: null,
+        peakDirection: null,
+        peakTime: "",
+        currentHeight: null,
+      }),
+
+      optionalWrap("shore-current-risk", getShoreCurrentRisk, {
+        level: null,
+        text: "",
+        status: "optional_failed",
+        source: "nws_surf_zone_forecast",
+      }),
+
+      optionalWrap("nws-alerts", getNWSActiveAlerts, {
+        text: "",
+        alerts: [],
+        totalActive: 0,
+        seriousCount: 0,
+        maxImpact: 0,
+        status: "optional_failed",
+      }),
 
       getOceanCityEvents().catch((e) => {
         console.warn("[ocnj-events] optional block failed:", e.message);
@@ -844,25 +1557,54 @@ async function wrap(name, fn) {
       );
     }
 
+    if (!marineWave?.hasData) {
+      console.log(`[marine-wave] forecast skipped: ${marineWave?.status}`);
+    }
+
+    if (!shoreCurrentRiskRaw?.level) {
+      console.log(
+        `[shore-current-risk] block skipped: ${shoreCurrentRiskRaw?.status}`
+      );
+    }
+
+    if (!nwsAlerts?.seriousCount) {
+      console.log(`[nws-alerts] no serious alerts | status: ${nwsAlerts?.status}`);
+    }
+
+    const shoreCurrentRisk = applyShoreCurrentRiskAlertFallback(
+      shoreCurrentRiskRaw,
+      nwsAlerts
+    );
+
+    const nwsAlertsText = buildNWSAlertsText(nwsAlerts, shoreCurrentRisk);
+    const waveText = buildWaveText(wave, marineWave);
+
     const scores = getScores({
       weather,
       water,
       wind,
       wave,
+      marineWave,
+      shoreCurrentRisk,
+      nwsAlerts,
     });
 
     const bestWindow = getBestTimeWindow(weather.oceanCityForecast, {
       water,
       scores,
+      shoreCurrentRisk,
+      nwsAlerts,
     });
 
     const msg =
       "🌅 Доброе утро\n\n" +
       weather.text +
+      (nwsAlertsText ? "\n\n" + nwsAlertsText : "") +
+      (shoreCurrentRisk?.text ? "\n" + shoreCurrentRisk.text : "") +
       "\n\n" +
       wind.text +
       "\n" +
-      wave.text +
+      waveText +
       "\n" +
       water.text +
       "\n\n" +
