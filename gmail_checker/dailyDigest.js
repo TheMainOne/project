@@ -10,7 +10,7 @@ dotenv.config({ path: path.join(__dirname, "../.env") });
 
 /* экранирование Markdown-V2 */
 const md = (s = "") =>
-  s
+  String(s)
     .replace(/([\-_*[\]()~`>#+=|{}.!\\])/g, "\\$1")
     .replace(/[<>]/g, "");
 
@@ -59,12 +59,19 @@ const tgUrl = (u = "") =>
     .replace(/\)/g, "\\)");
 
 function cleanText(text = "") {
-  return text.replace(/\s+/g, " ").trim();
+  return String(text).replace(/\s+/g, " ").trim();
 }
 
 function truncateText(text = "", max = 60) {
   const clean = cleanText(text);
   return clean.length > max ? clean.slice(0, max - 1).trim() + "…" : clean;
+}
+
+function withoutLeadingEmoji(text = "") {
+  return String(text)
+    .replace(/^\\?[^\wА-Яа-я0-9]+/u, "")
+    .replace(/^[^\wА-Яа-я0-9]+/u, "")
+    .trim();
 }
 
 function getTodayInNewYork() {
@@ -436,12 +443,11 @@ async function getWaterTemp() {
         const tempC = Math.round(+data.data[0].v);
         const tempF = toF(tempC);
 
-        const text = md(
-          `🌊 Температура воды (Ocean City): ${tempC}°C (${tempF}°F)`
-        );
+        const rawLine = `🌊 Температура воды (Ocean City): ${tempC}°C (${tempF}°F)`;
 
         return {
-          text,
+          text: md(rawLine),
+          rawLine,
           tempC,
         };
       }
@@ -488,13 +494,14 @@ async function getWind() {
         if (spd > 7 && spd <= 14) remark = "сильный ветер";
         else if (spd > 14) remark = "штормовой ветер";
 
-        const line =
+        const rawLine =
           `💨 Ветер (Ocean City): ${fmt(spd)} м/с` +
           (gust > spd + 2 ? ` (порывы до ${fmt(gust)} м/с)` : "") +
           ` — ${remark}`;
 
         return {
-          text: md(line),
+          text: md(rawLine),
+          rawLine,
           speed: spd,
           gust,
         };
@@ -506,8 +513,11 @@ async function getWind() {
     }
   }
 
+  const rawLine = "💨 Данных о ветре нет";
+
   return {
-    text: md("💨 Данных о ветре нет"),
+    text: md(rawLine),
+    rawLine,
     speed: null,
     gust: null,
   };
@@ -587,8 +597,12 @@ async function getWave() {
 
 /* ─── 4b. Прогноз волн Open-Meteo Marine ─────────────────────────────── */
 async function getMarineWaveForecast() {
-  const lat = Number(process.env.OCEANCITY_MARINE_LAT || process.env.OCEANCITY_LAT);
-  const lon = Number(process.env.OCEANCITY_MARINE_LON || process.env.OCEANCITY_LON);
+  const lat = Number(
+    process.env.OCEANCITY_MARINE_LAT || process.env.OCEANCITY_LAT
+  );
+  const lon = Number(
+    process.env.OCEANCITY_MARINE_LON || process.env.OCEANCITY_LON
+  );
 
   if (!Number.isFinite(lat) || !Number.isFinite(lon)) {
     return {
@@ -729,53 +743,49 @@ function getReadableWaveComment(height) {
   if (typeof height !== "number") return "";
 
   if (height < 0.5) return "почти штиль";
-  if (height < 1) return "невысокая волна";
+  if (height < 1) return "невысокая";
   if (height < 2) return "подходит для сёрфа";
-  return "крупная волна";
+  return "крупная";
 }
 
 function buildWaveText(wave, marineWave) {
   const currentHeight = wave?.height;
   const currentPeriod = wave?.period;
 
-  // Если нет текущих данных, но есть marine forecast
-  if (
-    typeof currentHeight !== "number" &&
-    marineWave?.hasData &&
-    typeof marineWave.peakHeight === "number"
-  ) {
-    const peakHeight = marineWave.peakHeight.toFixed(1);
-    const peakTime = formatOpenMeteoLocalTime(marineWave.peakTime);
-
-    const periodPart =
-      typeof marineWave.peakPeriod === "number"
-        ? ` • период ${Math.round(marineWave.peakPeriod)} с`
-        : "";
-
-    const timePart = peakTime ? ` к ${peakTime}` : "";
-
-    return md(
-      `🏄 Волна сейчас: данных нет\n` +
-        `📈 Прогноз волн: ${timePart} ожидается ~${peakHeight} м${periodPart}`
-    );
-  }
-
-  // Если нет ни текущей волны, ни прогноза
   if (typeof currentHeight !== "number") {
-    return wave?.text || md("🏄 Данных о волне нет");
+    if (
+      marineWave?.hasData &&
+      typeof marineWave.peakHeight === "number"
+    ) {
+      const peakHeight = marineWave.peakHeight.toFixed(1);
+      const peakTime = formatOpenMeteoLocalTime(marineWave.peakTime);
+
+      const periodPart =
+        typeof marineWave.peakPeriod === "number"
+          ? `, период ${Math.round(marineWave.peakPeriod)} с`
+          : "";
+
+      const timePart = peakTime ? ` к ${peakTime}` : "";
+
+      return md(
+        `• Волна: сейчас нет данных\n` +
+          `• Прогноз: около ${peakHeight} м${timePart}${periodPart}`
+      );
+    }
+
+    return md("• Волна: нет данных");
   }
 
   const currentHeightText = currentHeight.toFixed(1);
   const currentComment = getReadableWaveComment(currentHeight);
 
   const currentPeriodPart =
-    typeof currentPeriod === "number" ? ` • период ${currentPeriod} с` : "";
+    typeof currentPeriod === "number" ? `, период ${currentPeriod} с` : "";
 
   let text =
-    `🏄 Волна сейчас: ${currentHeightText} м${currentPeriodPart}` +
+    `• Волна: сейчас ${currentHeightText} м${currentPeriodPart}` +
     (currentComment ? ` — ${currentComment}` : "");
 
-  // Если прогноза нет — возвращаем только текущую волну
   if (!marineWave?.hasData || typeof marineWave.peakHeight !== "number") {
     return md(text);
   }
@@ -787,13 +797,13 @@ function buildWaveText(wave, marineWave) {
 
   const forecastPeriodPart =
     typeof marineWave.peakPeriod === "number"
-      ? ` • период ${Math.round(marineWave.peakPeriod)} с`
+      ? `, период ${Math.round(marineWave.peakPeriod)} с`
       : "";
 
   const timePart = peakTime ? ` к ${peakTime}` : "";
 
   text +=
-    `\n📈 Прогноз волн: ${timePart} ${trend} до ~${forecastHeightText} м` +
+    `\n• Прогноз: ${trend}${timePart} до ~${forecastHeightText} м` +
     forecastPeriodPart;
 
   return md(text);
@@ -868,7 +878,7 @@ function formatShoreCurrentRiskText(risk) {
   const label = getShoreCurrentRiskLabel(risk.level);
   const advice = getShoreCurrentRiskAdvice(risk.level);
 
-  return md(`🛟 Опасные течения у берега: ${label} риск — ${advice}`);
+  return md(`• Течения у берега: ${label} риск — ${advice}`);
 }
 
 async function getShoreCurrentRisk() {
@@ -1193,126 +1203,65 @@ function getFriendlyAlertName(event = "") {
   return event || "Погодное предупреждение";
 }
 
-function getAlertMeaning(alert = {}) {
+function getShortAlertMeaning(alert = {}) {
   const event = String(alert.event || "").toLowerCase();
-  const headline = cleanText(alert.headline || "");
-  const description = cleanText(alert.description || "");
 
   if (event.includes("severe thunderstorm warning")) {
-    return "сильная гроза уже наблюдается или ожидается очень скоро: возможны сильный ветер, град и ливень";
+    return "сильная гроза уже рядом: возможны сильный ветер, град и ливень";
   }
 
   if (event.includes("severe thunderstorm watch")) {
-    return "условия благоприятны для сильных гроз: возможны сильный ветер, град и ливень";
+    return "возможны сильный ветер, град и ливень";
   }
 
   if (event.includes("tornado warning")) {
-    return "торнадо уже наблюдается или возможно очень скоро; это серьёзный alert";
+    return "торнадо уже наблюдается или возможно очень скоро";
   }
 
   if (event.includes("tornado watch")) {
-    return "условия благоприятны для формирования торнадо";
+    return "условия благоприятны для торнадо";
   }
 
   if (event.includes("flash flood warning")) {
-    return "возможен быстрый паводок или затопление низких участков";
-  }
-
-  if (event.includes("flood warning")) {
-    return "есть риск затопления дорог или низких участков";
+    return "возможен быстрый паводок или затопление";
   }
 
   if (event.includes("coastal flood warning")) {
-    return "возможно значительное затопление у побережья";
+    return "возможно серьёзное прибрежное затопление";
   }
 
   if (event.includes("coastal flood advisory")) {
-    return "возможны minor flooding / подтопления около берега";
+    return "возможны подтопления около берега";
   }
 
   if (event.includes("beach hazards statement")) {
-    return "на пляже могут быть опасные условия, включая сильные течения или высокий прибой";
+    return "возможны опасные условия на пляже";
   }
 
   if (event.includes("rip current statement")) {
-    return "у берега возможны опасные обратные течения, которые могут утянуть от берега";
+    return "возможны опасные обратные течения";
   }
 
   if (event.includes("high surf advisory")) {
-    return "ожидается высокий прибой и более опасные условия у воды";
-  }
-
-  if (event.includes("high wind warning")) {
-    return "ожидается опасно сильный ветер";
+    return "ожидается высокий прибой";
   }
 
   if (event.includes("wind advisory")) {
-    return "ветер может быть достаточно сильным, чтобы мешать прогулке или пляжу";
+    return "ожидается сильный ветер";
   }
 
   if (event.includes("heat advisory")) {
     return "жара может быть опасной при долгом нахождении на солнце";
   }
 
-  if (event.includes("excessive heat warning")) {
-    return "очень высокая жара; лучше избегать долгого пребывания на солнце";
-  }
-
   if (event.includes("special marine warning")) {
-    return "опасные условия на воде: сильный ветер, гроза или резкое ухудшение погоды";
+    return "опасные условия на воде";
   }
 
-  /*
-    Fallback: если alert неизвестный, берём headline или начало description.
-    Главное — не тащить весь длинный текст из NWS.
-  */
-  if (headline) {
-    return truncateText(headline, 120);
-  }
-
-  if (description) {
-    return truncateText(description, 120);
-  }
+  const headline = cleanText(alert.headline || "");
+  if (headline) return truncateText(headline, 90);
 
   return "подробности доступны в предупреждении NWS";
-}
-
-function getAlertAction(alert = {}) {
-  const event = String(alert.event || "").toLowerCase();
-
-  if (
-    event.includes("severe thunderstorm warning") ||
-    event.includes("tornado warning") ||
-    event.includes("flash flood warning") ||
-    event.includes("special marine warning")
-  ) {
-    return "лучше отложить поездку и следить за обновлениями";
-  }
-
-  if (
-    event.includes("severe thunderstorm watch") ||
-    event.includes("tornado watch")
-  ) {
-    return "погода может быстро ухудшиться, проверь прогноз перед выездом";
-  }
-
-  if (
-    event.includes("beach hazards") ||
-    event.includes("rip current") ||
-    event.includes("high surf")
-  ) {
-    return "купаться только рядом со спасателями";
-  }
-
-  if (event.includes("coastal flood")) {
-    return "проверь дороги и парковку рядом с берегом";
-  }
-
-  if (event.includes("heat")) {
-    return "вода, SPF, тень и меньше времени на прямом солнце";
-  }
-
-  return "";
 }
 
 function buildNWSAlertsText(nwsAlerts, shoreCurrentRisk) {
@@ -1324,7 +1273,7 @@ function buildNWSAlertsText(nwsAlerts, shoreCurrentRisk) {
     const event = String(alert.event || "").toLowerCase();
 
     /*
-      Если у нас уже есть отдельный блок "Опасные течения у берега",
+      Если у нас уже есть отдельный блок "Течения у берега",
       не дублируем Rip Current / Beach Hazards в alerts.
     */
     if (
@@ -1341,23 +1290,13 @@ function buildNWSAlertsText(nwsAlerts, shoreCurrentRisk) {
 
   const lines = filteredAlerts.slice(0, 2).map((alert) => {
     const friendlyName = getFriendlyAlertName(alert.event);
-    const meaning = getAlertMeaning(alert);
-    const action = getAlertAction(alert);
+    const meaning = getShortAlertMeaning(alert);
     const until = alert.ends ? ` до ${formatNYDateTime(alert.ends)}` : "";
 
-    const actionText = action ? ` Рекомендация: ${action}.` : "";
-
-    return (
-      `• ${friendlyName} (${alert.event})${until} — ${meaning}.` +
-      actionText
-    );
+    return `• ${friendlyName}${until} — ${meaning}`;
   });
 
-  return (
-    md("⚠️ Серьёзные погодные предупреждения:") +
-    "\n" +
-    lines.map(md).join("\n")
-  );
+  return lines.map(md).join("\n");
 }
 
 /* ─── Scores ─────────────────────────────────────────────────────────── */
@@ -1377,17 +1316,6 @@ function getSurfLabel(score) {
   if (score >= 6) return "нормально для сёрфа";
   if (score >= 4) return "средние условия для сёрфа";
   return "не лучшие условия для сёрфа";
-}
-
-function getWetsuitAdvice(tempC) {
-  if (typeof tempC !== "number") return "";
-
-  if (tempC < 10) return "5/4 мм или толще";
-  if (tempC < 14) return "4/3 мм рекомендуется";
-  if (tempC < 18) return "3/2 мм рекомендуется";
-  if (tempC < 21) return "shorty или 3/2 мм по комфорту";
-
-  return "обычно не нужен";
 }
 
 function getScores({
@@ -1546,26 +1474,33 @@ function getScores({
   beachScore = clamp(Math.round(beachScore));
   surfScore = clamp(Math.round(surfScore));
 
-  const mainNotes = notes
-    .slice(0, 2)
-    .join(", ")
-    .replace(
-      "волна хорошая для сёрфа, вода очень холодная",
-      "хорошая волна, но вода очень холодная"
-    )
-    .replace(
-      "вода очень холодная, волна хорошая для сёрфа",
-      "хорошая волна, но вода очень холодная"
-    );
+  const readableNotes = notes.map((note) =>
+    note
+      .replace("есть серьёзное погодное предупреждение", "грозовой alert")
+      .replace("есть погодное предупреждение", "weather alert")
+      .replace(
+        "возможны сильные течения у берега",
+        "умеренные течения у берега"
+      )
+      .replace("опасные течения у берега", "опасные течения у берега")
+      .replace("вода очень холодная", "очень холодная вода")
+      .replace("вода холодная", "холодная вода")
+      .replace("вода прохладная", "прохладная вода")
+      .replace("волна хорошая для сёрфа", "хорошая волна")
+  );
 
-  const surfNote = mainNotes ? ` — ${mainNotes}` : "";
+  const uniqueNotes = [...new Set(readableNotes)].slice(0, 3);
+
+  const whyText = uniqueNotes.length
+    ? `\n• Почему: ${uniqueNotes.join(", ")}`
+    : "";
 
   return {
     beachScore,
     surfScore,
     text: md(
-      `🏖️ Beach score: ${beachScore}/10 — ${getBeachLabel(beachScore)}\n` +
-        `🏄 Surf score: ${surfScore}/10 — ${getSurfLabel(surfScore)}${surfNote}`
+      `• Пляж: ${beachScore}/10 — ${getBeachLabel(beachScore)}\n` +
+        `• Сёрф: ${surfScore}/10 — ${getSurfLabel(surfScore)}${whyText}`
     ),
   };
 }
@@ -1606,7 +1541,7 @@ function getBestTimeWindow(
   { water, scores, shoreCurrentRisk, nwsAlerts } = {}
 ) {
   if (!forecast.length) {
-    return { text: "" };
+    return { text: "", rawLine: "" };
   }
 
   /*
@@ -1695,7 +1630,7 @@ function getBestTimeWindow(
   const best = scoredSlots.sort((a, b) => b.score - a.score)[0];
 
   if (!best) {
-    return { text: "" };
+    return { text: "", rawLine: "" };
   }
 
   const start = formatNYTime(best.date);
@@ -1727,11 +1662,14 @@ function getBestTimeWindow(
 
   const windowType =
     !forceWalkOnly && waterIsComfortable && beachIsReasonable
-      ? "для пляжа"
-      : "для прогулки у океана";
+      ? "Пляж"
+      : "Прогулка у океана";
+
+  const rawLine = `${windowType}: ${start}–${end}${detailsText}`;
 
   return {
-    text: md(`🕒 Лучшее окно ${windowType}: ${start}–${end}${detailsText}`),
+    text: md(`🕒 Лучшее окно: ${rawLine}`),
+    rawLine,
   };
 }
 
@@ -1867,20 +1805,46 @@ async function optionalWrap(name, fn, fallback) {
       nwsAlerts,
     });
 
+    const importantLines = [
+      nwsAlertsText,
+      shoreCurrentRisk?.text || "",
+    ].filter(Boolean);
+
+    const cleanWindText = (wind.rawLine || withoutLeadingEmoji(wind.text))
+      .replace(/^💨\s*/u, "")
+      .replace(/^Ветер \(Ocean City\):\s*/i, "Ветер: ");
+
+    const cleanWaterText = (water.rawLine || withoutLeadingEmoji(water.text))
+      .replace(/^🌊\s*/u, "")
+      .replace(/^Температура воды \(Ocean City\):\s*/i, "Вода: ");
+
     const msg =
-      "🌅 Доброе утро\n\n" +
-      weather.text +
-      (nwsAlertsText ? "\n\n" + nwsAlertsText : "") +
-      (shoreCurrentRisk?.text ? "\n" + shoreCurrentRisk.text : "") +
+      md("🌅 Доброе утро") +
       "\n\n" +
-      wind.text +
+      md("🌤️ Погода") +
+      "\n" +
+      weather.text
+        .split("\n")
+        .map((line) => `• ${line}`)
+        .join("\n") +
+      (importantLines.length
+        ? "\n\n" + md("⚠️ Важно сегодня") + "\n" + importantLines.join("\n")
+        : "") +
+      "\n\n" +
+      md("🌊 Океан") +
+      "\n" +
+      md(`• ${cleanWindText}`) +
       "\n" +
       waveText +
       "\n" +
-      water.text +
+      md(`• ${cleanWaterText}`) +
       "\n\n" +
+      md("📊 Оценка") +
+      "\n" +
       scores.text +
-      (bestWindow.text ? "\n\n" + bestWindow.text : "") +
+      (bestWindow?.rawLine
+        ? "\n\n" + md("🕒 Лучшее окно") + "\n" + md(`• ${bestWindow.rawLine}`)
+        : "") +
       (events?.text ? "\n\n" + events.text : "");
 
     console.log(">>> telegram payload <<<\n", msg);
