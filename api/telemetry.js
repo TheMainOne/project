@@ -15,4 +15,5 @@ telemetryRouter.post(
 telemetryRouter.get("/events", telemetryEvents);
 telemetryRouter.get("/summary", telemetrySummary);
 
+// console.log(telemetryRouter);
 export default telemetryRouter;
