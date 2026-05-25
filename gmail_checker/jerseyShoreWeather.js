@@ -1169,8 +1169,40 @@ function getBestTimeWindow(forecast = [], { water, scores } = {}) {
       ? "для пляжа"
       : "для прогулки у океана";
 
+  const beachScoreValue =
+    typeof scores?.beachScore === "number" ? scores.beachScore : null;
+
+  const bestLooksWet =
+    ["Rain", "Thunderstorm", "Drizzle", "Snow"].includes(best.weatherMain) ||
+    best.pop >= 0.8;
+
+  const bestLooksWindy = typeof best.wind === "number" && best.wind >= 11;
+  const bestIsVeryWeak = best.score <= -4;
+
+  const hideBestWindow =
+    bestIsVeryWeak ||
+    (beachScoreValue !== null &&
+      beachScoreValue <= 2 &&
+      (bestLooksWet || bestLooksWindy));
+
+  if (hideBestWindow) {
+    return { text: "" };
+  }
+
+  const shouldWarnPoorOverall =
+    (beachScoreValue !== null && beachScoreValue <= 5) ||
+    bestLooksWet ||
+    bestLooksWindy ||
+    best.score <= 0;
+
+  const qualityNote = shouldWarnPoorOverall
+    ? " (погода в целом плохая)"
+    : "";
+
   return {
-    text: md(`🕒 Лучшее окно ${windowType}: ${start}–${end}${detailsText}`),
+    text: md(
+      `🕒 Лучшее окно ${windowType}${qualityNote}: ${start}–${end}${detailsText}`
+    ),
   };
 }
 
