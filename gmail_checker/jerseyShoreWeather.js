@@ -386,6 +386,15 @@ dotenv.config({ path: path.join(__dirname, "../.env") });
 
 const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_TOKEN_FOR_WEATHER_CHANNEL;
 const CHAT_ID = process.env.CHANNEL_ID_FOR_WEATHER_CHANNEL;
+const WEATHER_DIGEST_DRY_RUN = /^(1|true|yes)$/i.test(
+  String(process.env.WEATHER_DIGEST_DRY_RUN || "")
+);
+const OPENWEATHER_TIMEOUT_MS = Number(
+  process.env.OPENWEATHER_TIMEOUT_MS || 10000
+);
+const OPENWEATHER_MAX_ATTEMPTS = Number(
+  process.env.OPENWEATHER_MAX_ATTEMPTS || 3
+);
 
 /* экранирование Markdown-V2 */
 const md = (s = "") =>
@@ -416,6 +425,98 @@ const NWS_HEADERS = {
 const NWS_SURF_PRODUCT_TYPE = process.env.NWS_SURF_PRODUCT_TYPE || "SRF";
 const NWS_SURF_PRODUCT_LOCATION =
   process.env.NWS_SURF_PRODUCT_LOCATION || "PHI";
+
+function isFiniteNumber(value) {
+  return Number.isFinite(Number(value));
+}
+
+function validateConfig() {
+  const requiredEnvVars = [
+    "TELEGRAM_TOKEN_FOR_WEATHER_CHANNEL",
+    "CHANNEL_ID_FOR_WEATHER_CHANNEL",
+    "OPENWEATHER_KEY",
+    "VINELAND_LAT",
+    "VINELAND_LON",
+    "OCEANCITY_LAT",
+    "OCEANCITY_LON",
+  ];
+
+  const missing = requiredEnvVars.filter((key) => !process.env[key]);
+  if (missing.length) {
+    throw new Error(`Missing required env vars: ${missing.join(", ")}`);
+  }
+
+  const numericEnvVars = [
+    "VINELAND_LAT",
+    "VINELAND_LON",
+    "OCEANCITY_LAT",
+    "OCEANCITY_LON",
+  ];
+
+  const invalidNumeric = numericEnvVars.filter(
+    (key) => !isFiniteNumber(process.env[key])
+  );
+
+  if (invalidNumeric.length) {
+    throw new Error(
+      `Invalid numeric env vars: ${invalidNumeric.join(", ")}`
+    );
+  }
+
+  if (!Number.isFinite(OPENWEATHER_TIMEOUT_MS) || OPENWEATHER_TIMEOUT_MS <= 0) {
+    throw new Error("OPENWEATHER_TIMEOUT_MS must be a positive number");
+  }
+
+  if (
+    !Number.isInteger(OPENWEATHER_MAX_ATTEMPTS) ||
+    OPENWEATHER_MAX_ATTEMPTS < 1
+  ) {
+    throw new Error("OPENWEATHER_MAX_ATTEMPTS must be an integer >= 1");
+  }
+}
+
+function isRetryableRequestError(error) {
+  const status = error?.response?.status;
+  return !status || status === 429 || status >= 500;
+}
+
+async function fetchOpenWeather(url, params, label) {
+  let lastError = null;
+
+  for (let attempt = 1; attempt <= OPENWEATHER_MAX_ATTEMPTS; attempt++) {
+    try {
+      return await axios.get(url, {
+        params,
+        timeout: OPENWEATHER_TIMEOUT_MS,
+      });
+    } catch (error) {
+      lastError = error;
+
+      const status = error?.response?.status;
+      const code = error?.code;
+      const message = error?.response?.data?.message ?? error?.message;
+
+      console.warn(
+        `[openweather:${label}] attempt ${attempt}/${OPENWEATHER_MAX_ATTEMPTS} failed: ${
+          status ?? code ?? message
+        }`
+      );
+
+      const canRetry =
+        attempt < OPENWEATHER_MAX_ATTEMPTS && isRetryableRequestError(error);
+
+      if (!canRetry) {
+        break;
+      }
+
+      await new Promise((resolve) => setTimeout(resolve, 700 * attempt));
+    }
+  }
+
+  throw lastError || new Error(`openweather:${label} request failed`);
+}
+
+validateConfig();
 
 function cleanText(text = "") {
   return text.replace(/\s+/g, " ").trim();
@@ -597,31 +698,29 @@ async function getWeather() {
   let dryFlag = false;
 
   for (const c of cities) {
-    const cur = await axios.get(
+    const cur = await fetchOpenWeather(
       "https://api.openweathermap.org/data/2.5/weather",
       {
-        params: {
-          lat: c.lat,
-          lon: c.lon,
-          units: "metric",
-          lang: "ru",
-          appid: OPENWEATHER_KEY,
-        },
-      }
+        lat: c.lat,
+        lon: c.lon,
+        units: "metric",
+        lang: "ru",
+        appid: OPENWEATHER_KEY,
+      },
+      `${c.name}:current`
     );
 
-    const fc = await axios.get(
+    const fc = await fetchOpenWeather(
       "https://api.openweathermap.org/data/2.5/forecast",
       {
-        params: {
-          lat: c.lat,
-          lon: c.lon,
-          units: "metric",
-          cnt: 8,
-          lang: "ru",
-          appid: OPENWEATHER_KEY,
-        },
-      }
+        lat: c.lat,
+        lon: c.lon,
+        units: "metric",
+        cnt: 8,
+        lang: "ru",
+        appid: OPENWEATHER_KEY,
+      },
+      `${c.name}:forecast`
     );
 
     const next12h = fc.data.list.slice(0, 4);
@@ -1000,6 +1099,174 @@ async function getShoreCurrentRisk() {
 }
 
 /* ─── 5. UV index ────────────────────────────────────────────────────── */
+/* NWS: Active Alerts */
+function getNWSAlertImpact(alert = {}) {
+  const event = String(alert.event || "").toLowerCase();
+  const severity = String(alert.severity || "").toLowerCase();
+
+  const highImpactEvents = [
+    "tornado warning",
+    "severe thunderstorm warning",
+    "flash flood warning",
+    "flood warning",
+    "coastal flood warning",
+    "storm surge warning",
+    "hurricane warning",
+    "tropical storm warning",
+    "high wind warning",
+    "excessive heat warning",
+    "special marine warning",
+  ];
+
+  const mediumImpactEvents = [
+    "beach hazards statement",
+    "rip current statement",
+    "high surf advisory",
+    "coastal flood advisory",
+    "heat advisory",
+    "wind advisory",
+    "gale warning",
+  ];
+
+  if (severity === "extreme" || severity === "severe") return 3;
+  if (highImpactEvents.some((name) => event.includes(name))) return 3;
+  if (event.includes("warning")) return 3;
+  if (mediumImpactEvents.some((name) => event.includes(name))) return 2;
+  if (event.includes("watch")) return 2;
+
+  return 0;
+}
+
+async function getNWSActiveAlerts() {
+  const lat = Number(process.env.OCEANCITY_LAT);
+  const lon = Number(process.env.OCEANCITY_LON);
+
+  if (!Number.isFinite(lat) || !Number.isFinite(lon)) {
+    return {
+      alerts: [],
+      totalActive: 0,
+      seriousCount: 0,
+      maxImpact: 0,
+      status: "missing_coordinates",
+    };
+  }
+
+  try {
+    const { data } = await axios.get(`${NWS_BASE_URL}/alerts/active`, {
+      headers: NWS_HEADERS,
+      timeout: 10000,
+      params: {
+        point: `${lat},${lon}`,
+      },
+    });
+
+    const features = data?.features || [];
+
+    const allAlerts = features.map((feature) => {
+      const p = feature.properties || {};
+
+      return {
+        id: feature.id || p.id || "",
+        event: p.event || "",
+        headline: p.headline || "",
+        description: p.description || "",
+        severity: p.severity || "",
+        urgency: p.urgency || "",
+        certainty: p.certainty || "",
+        effective: p.effective || "",
+        ends: p.ends || p.expires || "",
+      };
+    });
+
+    const seriousAlerts = allAlerts
+      .map((alert) => ({
+        ...alert,
+        impact: getNWSAlertImpact(alert),
+      }))
+      .filter((alert) => alert.impact >= 2)
+      .sort((a, b) => b.impact - a.impact);
+
+    const maxImpact = seriousAlerts.reduce(
+      (max, alert) => Math.max(max, alert.impact),
+      0
+    );
+
+    return {
+      alerts: seriousAlerts,
+      totalActive: allAlerts.length,
+      seriousCount: seriousAlerts.length,
+      maxImpact,
+      status: "ok",
+    };
+  } catch (e) {
+    console.warn("[nws-alerts]", e.response?.status ?? e.message);
+
+    return {
+      alerts: [],
+      totalActive: 0,
+      seriousCount: 0,
+      maxImpact: 0,
+      status: "fetch_error",
+      error: e.response?.status ?? e.message,
+    };
+  }
+}
+
+function formatNYDateTime(dateLike) {
+  if (!dateLike) return "";
+
+  const date = new Date(dateLike);
+  if (Number.isNaN(date.getTime())) return "";
+
+  return date.toLocaleString("en-US", {
+    timeZone: "America/New_York",
+    month: "short",
+    day: "numeric",
+    hour: "numeric",
+    hour12: true,
+  });
+}
+
+function getShortAlertMeaning(alert = {}) {
+  const headline = cleanText(alert.headline || "");
+  if (headline) return truncateText(headline, 110);
+
+  const description = cleanText(alert.description || "");
+  if (description) return truncateText(description, 110);
+
+  return "details are in the full NWS alert";
+}
+
+function buildNWSAlertsText(nwsAlerts, shoreCurrentRisk) {
+  const alerts = nwsAlerts?.alerts || [];
+  if (!alerts.length) return "";
+
+  const filteredAlerts = alerts.filter((alert) => {
+    const event = String(alert.event || "").toLowerCase();
+
+    if (
+      shoreCurrentRisk?.level &&
+      (event.includes("rip current") || event.includes("beach hazards"))
+    ) {
+      return false;
+    }
+
+    return true;
+  });
+
+  if (!filteredAlerts.length) return "";
+
+  const lines = filteredAlerts.slice(0, 2).map((alert) => {
+    const event = cleanText(alert.event || "Weather alert");
+    const meaning = getShortAlertMeaning(alert);
+    const until = alert.ends ? ` until ${formatNYDateTime(alert.ends)}` : "";
+
+    return `• ${event}${until} — ${meaning}`;
+  });
+
+  return lines.map((line) => md(line)).join("\n");
+}
+
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 async function getUV() {
@@ -1083,11 +1350,22 @@ function getSurfLabel(score) {
   return "не лучшие условия для сёрфа";
 }
 
-function getScores({ water, wind, wave, weather, shoreCurrentRisk }) {
+function getScores({ water, wind, wave, weather, shoreCurrentRisk, nwsAlerts }) {
   let beachScore = 10;
   let surfScore = 5;
 
   const notes = [];
+
+  // Serious NWS alerts
+  if (nwsAlerts?.maxImpact >= 3) {
+    beachScore -= 5;
+    surfScore -= 3;
+    notes.push("strong weather alert");
+  } else if (nwsAlerts?.maxImpact >= 2) {
+    beachScore -= 3;
+    surfScore -= 1;
+    notes.push("weather alert");
+  }
 
     // Rip current risk
   if (shoreCurrentRisk?.level === "high") {
@@ -1420,7 +1698,7 @@ async function wrap(name, fn) {
 /* ─── Сборка и отправка дайджеста ───────────────────────────────────── */
 (async () => {
   try {
-const [weather, water, wind, wave, uv, shoreCurrentRisk, events] =
+const [weather, water, wind, wave, uv, shoreCurrentRisk, nwsAlerts, events] =
   await Promise.all([
     wrap("weather", getWeather),
     wrap("water", getWaterTemp),
@@ -1439,6 +1717,19 @@ const [weather, water, wind, wave, uv, shoreCurrentRisk, events] =
       };
     }),
 
+    getNWSActiveAlerts().catch((e) => {
+      console.warn("[nws-alerts] optional block failed:", e.message);
+
+      return {
+        alerts: [],
+        totalActive: 0,
+        seriousCount: 0,
+        maxImpact: 0,
+        status: "optional_block_failed",
+        error: e.message,
+      };
+    }),
+
     getOceanCityEvents().catch((e) => {
       console.warn("[ocnj-events] optional block failed:", e.message);
       return { text: "" };
@@ -1451,6 +1742,7 @@ const scores = getScores({
   wind,
   wave,
   shoreCurrentRisk,
+  nwsAlerts,
 });
 
 const bestWindow = getBestTimeWindow(weather.oceanCityForecast, {
@@ -1459,9 +1751,21 @@ const bestWindow = getBestTimeWindow(weather.oceanCityForecast, {
   shoreCurrentRisk,
 });
 
+const nwsAlertsText = buildNWSAlertsText(nwsAlerts, shoreCurrentRisk);
+
+const importantLines = [nwsAlertsText, shoreCurrentRisk?.text || ""].filter(
+  Boolean
+);
+
     const msg =
       "🌅 Доброе утро\n\n" +
       weather.text +
+      (importantLines.length
+        ? "\n\n" +
+          md("\u26A0\uFE0F \u0412\u0430\u0436\u043D\u043E \u0441\u0435\u0433\u043E\u0434\u043D\u044F") +
+          "\n" +
+          importantLines.join("\n")
+        : "") +
       "\n\n" +
       wind.text +
       "\n" +
@@ -1472,11 +1776,15 @@ const bestWindow = getBestTimeWindow(weather.oceanCityForecast, {
       uv.text +
       "\n\n" +
       scores.text +
-(shoreCurrentRisk?.text ? "\n\n" + shoreCurrentRisk.text : "") +
 (bestWindow.text ? "\n\n" + bestWindow.text : "") +
 (events?.text ? "\n\n" + events.text : "");
 
     console.log(">>> telegram payload <<<\n", msg);
+
+    if (WEATHER_DIGEST_DRY_RUN) {
+      console.log("WEATHER_DIGEST_DRY_RUN is enabled: Telegram send skipped.");
+      return;
+    }
 
     await sendTelegramMessage(msg, TELEGRAM_BOT_TOKEN, CHAT_ID);
 

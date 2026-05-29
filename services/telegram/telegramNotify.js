@@ -15,9 +15,10 @@ async function sendTelegramMessage(message, botToken, chatId) {
     console.error(
       "Telegram error:",
       err.response?.data ?? err.message,
-      "\n—offset →",
+      "\noffset ->",
       err.response?.data?.parameters?.offset ?? "n/a"
     );
+    throw err;
   }
 }
 
