@@ -27,6 +27,8 @@ const safeUrl = (u = "") =>
 
 const OCNJ_HOME_URL = "https://oceancityvacation.com/";
 const OCNJ_EVENTS_URL = "https://oceancityvacation.com/events/list/";
+const CURRENTS_URL =
+  "https://earth.nullschool.net/ru/#current/wind/surface/level/orthographic=-73.71,31.47,954";
 
 const NWS_BASE_URL = "https://api.weather.gov";
 const NWS_USER_AGENT =
@@ -2079,7 +2081,11 @@ async function optionalWrap(name, fn, fallback) {
         ? "\n\n" + md("🕒 Лучшее окно") + "\n" + md(`• ${bestWindow.rawLine}`)
         : "") +
       (events?.text ? "\n\n" + events.text : "") +
-(aiNews?.text ? "\n\n" + aiNews.text : "");
+      (aiNews?.text ? "\n\n" + aiNews.text : "") +
+      "\n\n" +
+      md("🌊 Течения") +
+      "\n" +
+      `[${md("Открыть карту течений")}](${tgUrl(CURRENTS_URL)})`;
 
     console.log(">>> telegram payload <<<\n", msg);
 
