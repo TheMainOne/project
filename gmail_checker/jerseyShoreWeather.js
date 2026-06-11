@@ -1779,11 +1779,11 @@ const importantLines = [nwsAlertsText, shoreCurrentRisk?.text || ""].filter(
       "\n\n" +
       scores.text +
 (bestWindow.text ? "\n\n" + bestWindow.text : "") +
-(events?.text ? "\n\n" + events.text : "") +
       "\n\n" +
       md("🌊 Течения") +
       "\n" +
-      `[${md("Открыть карту течений")}](${tgUrl(CURRENTS_URL)})`;
+      `[${md("Открыть карту течений")}](${tgUrl(CURRENTS_URL)})` +
+(events?.text ? "\n\n" + events.text : "");
 
     console.log(">>> telegram payload <<<\n", msg);
 
