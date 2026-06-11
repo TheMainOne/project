@@ -28,7 +28,7 @@ const safeUrl = (u = "") =>
 const OCNJ_HOME_URL = "https://oceancityvacation.com/";
 const OCNJ_EVENTS_URL = "https://oceancityvacation.com/events/list/";
 const CURRENTS_URL =
-  "https://earth.nullschool.net/ru/#current/wind/surface/level/orthographic=-73.71,31.47,954";
+  "https://earth.nullschool.net/ru/#current/wind/surface/currents/overlay=wind/orthographic=-77.45,38.16,1616/loc=-75.067,38.459";
 
 const NWS_BASE_URL = "https://api.weather.gov";
 const NWS_USER_AGENT =
