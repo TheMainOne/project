@@ -16,6 +16,7 @@ const md = (s = "") =>
 
 const toF = (c) => Math.round((c * 9) / 5 + 32);
 
+// test
 /* безопасный URL для Markdown-V2 */
 const safeUrl = (u = "") =>
   encodeURI(u)
