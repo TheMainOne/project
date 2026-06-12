@@ -234,9 +234,11 @@ function getNumberOrNull(value) {
 }
 
 function scoreOceanCityEvent(item) {
-  const text = `${item.title || ""} ${item.description || ""} ${
-    item.venue || ""
+  const contentText = `${item.title || ""} ${
+    item.description || ""
   }`.toLowerCase();
+  const venueText = String(item.venue || "").toLowerCase();
+  const text = `${contentText} ${venueText}`;
 
   const boringWords = [
     "membership",
@@ -253,6 +255,12 @@ function scoreOceanCityEvent(item) {
     return 0;
   }
 
+  const lowInterest = ["farmers market"];
+
+  if (lowInterest.some((word) => text.includes(word))) {
+    return 0;
+  }
+
   let score = 0;
 
   const highInterest = [
@@ -261,6 +269,8 @@ function scoreOceanCityEvent(item) {
     "festival",
     "concert",
     "music",
+    "pops",
+    "auto show",
     "block party",
     "night in venice",
     "unlocking of the ocean",
@@ -269,25 +279,121 @@ function scoreOceanCityEvent(item) {
   const mediumInterest = [
     "beach",
     "boardwalk",
-    "farmers market",
     "surf",
     "race",
+    "5k",
+    "expo",
+    "wellness",
     "challenge",
     "memorial",
     "family",
     "car show",
     "art show",
+    "skate",
+    "competition",
   ];
 
-  if (highInterest.some((word) => text.includes(word))) score += 3;
+  if (highInterest.some((word) => contentText.includes(word))) score += 3;
   if (mediumInterest.some((word) => text.includes(word))) score += 2;
 
   return score;
 }
 
+function parseOCNJEventDate(dateIso = "", fallbackText = "") {
+  const isoDate = String(dateIso).match(/^\d{4}-\d{2}-\d{2}/)?.[0];
+  const date = isoDate ? new Date(`${isoDate}T12:00:00`) : null;
+
+  if (date && !Number.isNaN(date.getTime())) {
+    return {
+      dateText: formatEventDate(date),
+      dateSort: date.getTime(),
+    };
+  }
+
+  const fallbackDate = cleanText(fallbackText).match(
+    /^(January|February|March|April|May|June|July|August|September|October|November|December|Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s+\d{1,2}/i
+  )?.[0];
+
+  return {
+    dateText: fallbackDate || cleanText(fallbackText),
+    dateSort: Number.MAX_SAFE_INTEGER,
+  };
+}
+
+function normalizeOCNJEventTitle(title = "") {
+  return cleanText(title)
+    .toLowerCase()
+    .replace(/[’']/g, "")
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim();
+}
+
+function parseOceanCityEventCards($) {
+  const parsedEvents = [];
+
+  $(".tribe-events-calendar-list__event").each((_, el) => {
+    const eventEl = $(el);
+    const titleLink = eventEl
+      .find(".tribe-events-calendar-list__event-title-link")
+      .first();
+    const title = cleanText(titleLink.text() || eventEl.find("h3").text());
+
+    if (!title) return;
+
+    const dateEl = eventEl
+      .find("time.tribe-events-calendar-list__event-datetime")
+      .first();
+    const { dateText, dateSort } = parseOCNJEventDate(
+      dateEl.attr("datetime"),
+      dateEl.text()
+    );
+    const href = titleLink.attr("href") || "";
+    const link = href ? new URL(href, OCNJ_HOME_URL).toString() : "";
+    const venue = cleanText(
+      eventEl.find(".tribe-events-calendar-list__event-venue-title").text()
+    );
+    const description = cleanText(
+      eventEl.find(".tribe-events-calendar-list__event-description").text()
+    );
+
+    parsedEvents.push({
+      title,
+      dateText,
+      dateSort,
+      link,
+      score: scoreOceanCityEvent({
+        title,
+        description,
+        venue,
+      }),
+    });
+  });
+
+  return parsedEvents;
+}
+
+function selectOceanCityEvents(parsedEvents, limit = 2) {
+  const seenTitles = new Set();
+
+  return parsedEvents
+    .filter((event) => event.score > 0)
+    .sort((a, b) => b.score - a.score || a.dateSort - b.dateSort)
+    .filter((event) => {
+      const key = normalizeOCNJEventTitle(event.title);
+
+      if (!key || seenTitles.has(key)) {
+        return false;
+      }
+
+      seenTitles.add(key);
+      return true;
+    })
+    .slice(0, limit);
+}
+
 async function getOceanCityEvents() {
   try {
-    const { data: html } = await axios.get(OCNJ_HOME_URL, {
+    const { data: html } = await axios.get(OCNJ_EVENTS_URL, {
       timeout: 10000,
       headers: {
         "User-Agent":
@@ -299,57 +405,60 @@ async function getOceanCityEvents() {
     });
 
     const $ = cheerio.load(html);
-    const parsedEvents = [];
+    const parsedEvents = parseOceanCityEventCards($);
 
-    $("a").each((_, el) => {
-      const href = $(el).attr("href") || "";
-      const rawText = cleanText($(el).text());
+    if (!parsedEvents.length) {
+      $("a").each((_, el) => {
+        const href = $(el).attr("href") || "";
+        const rawText = cleanText($(el).text());
 
-      if (!rawText) return;
-      if (!rawText.includes("Learn More")) return;
+        if (!rawText) return;
+        if (!rawText.includes("Learn More")) return;
 
-      const shortDateMatch = rawText.match(
-        /^(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s+\d{1,2}/i
-      );
+        const shortDateMatch = rawText.match(
+          /^(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s+\d{1,2}/i
+        );
 
-      const fullDateMatch = rawText.match(
-        /(January|February|March|April|May|June|July|August|September|October|November|December|Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s+\d{1,2},\s+\d{4}/i
-      );
+        const fullDateMatch = rawText.match(
+          /(January|February|March|April|May|June|July|August|September|October|November|December|Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s+\d{1,2},\s+\d{4}/i
+        );
 
-      if (!shortDateMatch || !fullDateMatch) return;
+        if (!shortDateMatch || !fullDateMatch) return;
 
-      const dateText = shortDateMatch[0];
+        const dateText = shortDateMatch[0];
 
-      let title = rawText
-        .slice(shortDateMatch[0].length, fullDateMatch.index)
-        .replace(/\s+/g, " ")
-        .trim();
+        let title = rawText
+          .slice(shortDateMatch[0].length, fullDateMatch.index)
+          .replace(/\s+/g, " ")
+          .trim();
 
-      title = title
-        .replace(/\bOcean City NJ Boardwalk\b/gi, "")
-        .replace(/\bOcean City Tabernacle\b/gi, "")
-        .replace(/\bVeteran’s Memorial Park\b/gi, "")
-        .replace(/\b9th Street Beach\b/gi, "")
-        .replace(/\bMusic Pier\b/gi, "")
-        .trim();
+        title = title
+          .replace(/\bOcean City NJ Boardwalk\b/gi, "")
+          .replace(/\bOcean City Tabernacle\b/gi, "")
+          .replace(/\bVeteran’s Memorial Park\b/gi, "")
+          .replace(/\b9th Street Beach\b/gi, "")
+          .replace(/\bMusic Pier\b/gi, "")
+          .trim();
 
-      if (!title) return;
+        if (!title) return;
 
-      const link = href ? new URL(href, OCNJ_HOME_URL).toString() : "";
+        const link = href ? new URL(href, OCNJ_HOME_URL).toString() : "";
 
-      const score = scoreOceanCityEvent({
-        title,
-        description: rawText,
-        venue: "",
+        const score = scoreOceanCityEvent({
+          title,
+          description: rawText,
+          venue: "",
+        });
+
+        parsedEvents.push({
+          title,
+          dateText,
+          link,
+          dateSort: Number.MAX_SAFE_INTEGER,
+          score,
+        });
       });
-
-      parsedEvents.push({
-        title,
-        dateText,
-        link,
-        score,
-      });
-    });
+    }
 
     if (!parsedEvents.length) {
       console.log(
@@ -366,10 +475,7 @@ async function getOceanCityEvents() {
       };
     }
 
-    const matchedEvents = parsedEvents
-      .filter((event) => event.score > 0)
-      .sort((a, b) => b.score - a.score)
-      .slice(0, 2);
+    const matchedEvents = selectOceanCityEvents(parsedEvents, 2);
 
     if (!matchedEvents.length) {
       console.log(
