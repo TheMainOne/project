@@ -1334,23 +1334,182 @@ function formatNYDateTime(dateLike) {
   const date = new Date(dateLike);
   if (Number.isNaN(date.getTime())) return "";
 
-  return date.toLocaleString("en-US", {
+  return date.toLocaleString("ru-RU", {
     timeZone: "America/New_York",
-    month: "short",
     day: "numeric",
-    hour: "numeric",
-    hour12: true,
+    month: "short",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
   });
 }
 
+function getFriendlyAlertName(event = "") {
+  const e = event.toLowerCase();
+
+  if (e.includes("severe thunderstorm warning")) {
+    return "Сильная гроза рядом";
+  }
+
+  if (e.includes("severe thunderstorm watch")) {
+    return "Сильные грозы возможны";
+  }
+
+  if (e.includes("tornado warning")) {
+    return "Торнадо рядом";
+  }
+
+  if (e.includes("tornado watch")) {
+    return "Возможны торнадо";
+  }
+
+  if (e.includes("coastal flood warning")) {
+    return "Серьёзное прибрежное затопление";
+  }
+
+  if (e.includes("coastal flood advisory")) {
+    return "Возможное прибрежное затопление";
+  }
+
+  if (e.includes("flash flood warning")) {
+    return "Возможен внезапный паводок";
+  }
+
+  if (e.includes("flood warning")) {
+    return "Предупреждение о затоплении";
+  }
+
+  if (e.includes("storm surge warning")) {
+    return "Опасный штормовой нагон";
+  }
+
+  if (e.includes("hurricane warning")) {
+    return "Ураганное предупреждение";
+  }
+
+  if (e.includes("tropical storm warning")) {
+    return "Тропический шторм";
+  }
+
+  if (e.includes("beach hazards statement")) {
+    return "Опасные условия на пляже";
+  }
+
+  if (e.includes("rip current statement")) {
+    return "Опасные течения у берега";
+  }
+
+  if (e.includes("high surf advisory")) {
+    return "Высокий прибой";
+  }
+
+  if (e.includes("high wind warning")) {
+    return "Опасно сильный ветер";
+  }
+
+  if (e.includes("gale warning")) {
+    return "Штормовой ветер на воде";
+  }
+
+  if (e.includes("wind advisory")) {
+    return "Сильный ветер";
+  }
+
+  if (e.includes("heat advisory")) {
+    return "Опасная жара";
+  }
+
+  if (e.includes("excessive heat warning")) {
+    return "Очень опасная жара";
+  }
+
+  if (e.includes("special marine warning")) {
+    return "Опасные условия на воде";
+  }
+
+  return "Погодное предупреждение";
+}
+
 function getShortAlertMeaning(alert = {}) {
-  const headline = cleanText(alert.headline || "");
-  if (headline) return truncateText(headline, 110);
+  const event = String(alert.event || "").toLowerCase();
 
-  const description = cleanText(alert.description || "");
-  if (description) return truncateText(description, 110);
+  if (event.includes("severe thunderstorm warning")) {
+    return "сильная гроза уже рядом: возможны сильный ветер, град и ливень";
+  }
 
-  return "details are in the full NWS alert";
+  if (event.includes("severe thunderstorm watch")) {
+    return "возможны сильный ветер, град и ливень";
+  }
+
+  if (event.includes("tornado warning")) {
+    return "торнадо уже наблюдается или возможно очень скоро";
+  }
+
+  if (event.includes("tornado watch")) {
+    return "условия благоприятны для торнадо";
+  }
+
+  if (event.includes("flash flood warning")) {
+    return "возможен быстрый паводок или затопление";
+  }
+
+  if (event.includes("coastal flood warning")) {
+    return "возможно серьёзное прибрежное затопление";
+  }
+
+  if (event.includes("coastal flood advisory")) {
+    return "возможны подтопления около берега";
+  }
+
+  if (event.includes("flood warning")) {
+    return "возможно затопление низких участков";
+  }
+
+  if (event.includes("storm surge warning")) {
+    return "возможен опасный подъём воды у берега";
+  }
+
+  if (event.includes("hurricane warning")) {
+    return "ожидаются опасные ураганные условия";
+  }
+
+  if (event.includes("tropical storm warning")) {
+    return "ожидаются условия тропического шторма";
+  }
+
+  if (event.includes("beach hazards statement")) {
+    return "возможны опасные условия на пляже";
+  }
+
+  if (event.includes("rip current statement")) {
+    return "возможны опасные обратные течения";
+  }
+
+  if (event.includes("high surf advisory")) {
+    return "ожидается высокий прибой";
+  }
+
+  if (event.includes("high wind warning")) {
+    return "ожидается опасно сильный ветер";
+  }
+
+  if (event.includes("gale warning")) {
+    return "на воде ожидается штормовой ветер";
+  }
+
+  if (event.includes("wind advisory")) {
+    return "ожидается сильный ветер";
+  }
+
+  if (event.includes("heat advisory")) {
+    return "жара может быть опасной при долгом нахождении на солнце";
+  }
+
+  if (event.includes("special marine warning")) {
+    return "опасные условия на воде";
+  }
+
+  return "подробности доступны в предупреждении NWS";
 }
 
 function buildNWSAlertsText(nwsAlerts, shoreCurrentRisk) {
@@ -1373,11 +1532,11 @@ function buildNWSAlertsText(nwsAlerts, shoreCurrentRisk) {
   if (!filteredAlerts.length) return "";
 
   const lines = filteredAlerts.slice(0, 2).map((alert) => {
-    const event = cleanText(alert.event || "Weather alert");
+    const friendlyName = getFriendlyAlertName(alert.event);
     const meaning = getShortAlertMeaning(alert);
-    const until = alert.ends ? ` until ${formatNYDateTime(alert.ends)}` : "";
+    const until = alert.ends ? ` до ${formatNYDateTime(alert.ends)}` : "";
 
-    return `• ${event}${until} — ${meaning}`;
+    return `• ${friendlyName}${until} — ${meaning}`;
   });
 
   return lines.map((line) => md(line)).join("\n");
