@@ -8,7 +8,8 @@
     "dev": "nodemon ./app.js",
     "seed:sf-compliance": "node ./extensions/sf-compliance/scripts/seedComplianceReferenceData.js",
     "seed:regulations": "node script/seedRegulations.js",
-    "seed:compliance": "node script/seedComplianceData.js"
+    "seed:compliance": "node script/seedComplianceData.js",
+    "audit:nj-detailing": "node script/njDetailingAudit.js"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.777.0",
