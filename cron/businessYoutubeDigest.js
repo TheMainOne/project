@@ -1,6 +1,5 @@
 import cron from "node-cron";
 import { parseBoolean } from "../services/businessYoutube/config.js";
-import { runBusinessYoutubeDigest } from "../services/businessYoutube/digest.js";
 
 const DEFAULT_CRON = "0 8 * * *";
 const DEFAULT_TIMEZONE = "America/New_York";
@@ -23,6 +22,7 @@ export function startBusinessYoutubeDigestJob({ logger = console } = {}) {
 
   const runJob = async () => {
     try {
+      const { runBusinessYoutubeDigest } = await import("../services/businessYoutube/digest.js");
       await runBusinessYoutubeDigest({ logger });
     } catch (error) {
       logger.error("[business-youtube] digest failed:", error?.message || error);

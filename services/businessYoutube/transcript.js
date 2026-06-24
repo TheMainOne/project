@@ -1,5 +1,4 @@
 import axios from "axios";
-import * as cheerio from "cheerio";
 
 function cleanTranscriptText(value) {
   return String(value || "")
@@ -107,14 +106,25 @@ function parseJson3Transcript(data) {
 }
 
 function parseXmlTranscript(xml) {
-  const $ = cheerio.load(String(xml || ""), { xmlMode: true });
-  const chunks = [];
-  $("text").each((_, el) => {
-    const text = cleanTranscriptText($(el).text());
-    if (text) chunks.push(text);
-  });
+  const chunks = [...String(xml || "").matchAll(/<text(?:\s[^>]*)?>([\s\S]*?)<\/text>/gi)]
+    .map((match) => decodeXmlEntities(match[1]));
+
   return cleanTranscriptText(chunks.join(" "));
 }
+
+function decodeXmlEntities(value) {
+  return String(value || "")
+    .replace(/<!\[CDATA\[([\s\S]*?)\]\]>/g, "$1")
+    .replace(/&amp;/g, "&")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&quot;/g, "\"")
+    .replace(/&#39;/g, "'")
+    .replace(/&#x27;/g, "'")
+    .replace(/&#(\d+);/g, (_, code) => String.fromCharCode(Number(code)))
+    .replace(/&#x([0-9a-f]+);/gi, (_, code) => String.fromCharCode(Number.parseInt(code, 16)));
+}
+
 
 async function fetchCaptionText(track, { timeoutMs }) {
   const captionUrl = buildCaptionUrl(track.baseUrl);

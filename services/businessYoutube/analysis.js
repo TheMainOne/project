@@ -1,5 +1,3 @@
-import OpenAI from "openai";
-
 const DEFAULT_MODEL = process.env.BUSINESS_YOUTUBE_OPENAI_MODEL || process.env.OPENAI_MODEL || "gpt-4o-mini";
 const DESCRIPTION_MAX_CHARS = 2500;
 
@@ -70,8 +68,10 @@ export function normalizeAnalysisPayload(payload, { fallbackVideo, fallbackReaso
   };
 }
 
-function getOpenAIClient() {
-  return process.env.OPENAI_API_KEY ? new OpenAI({ apiKey: process.env.OPENAI_API_KEY }) : null;
+async function getOpenAIClient() {
+  if (!process.env.OPENAI_API_KEY) return null;
+  const { default: OpenAI } = await import("openai");
+  return new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 }
 
 function buildAnalysisSchema() {
@@ -119,9 +119,11 @@ export async function analyzeBusinessVideo({
   transcript,
   transcriptText,
   model = DEFAULT_MODEL,
-  openaiClient = getOpenAIClient(),
+  openaiClient,
 } = {}) {
-  if (!openaiClient) {
+  const client = openaiClient || await getOpenAIClient();
+
+  if (!client) {
     return buildFallbackAnalysisFromMetadata(video, "OPENAI_API_KEY is not configured.");
   }
 
@@ -148,7 +150,7 @@ export async function analyzeBusinessVideo({
 `.trim();
 
   try {
-    const response = await openaiClient.responses.create({
+    const response = await client.responses.create({
       model,
       store: false,
       input: [
