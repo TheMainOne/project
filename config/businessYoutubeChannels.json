@@ -1,0 +1,23 @@
+[
+  {
+    "name": "David Heacock",
+    "channelId": "UCggok417jDHJiLueQON89QQ",
+    "url": "https://www.youtube.com/@davidfilterbuy/videos",
+    "enabled": true,
+    "languageHints": ["en", "ru"]
+  },
+  {
+    "name": "Codie Sanchez",
+    "channelId": "UC5fI3kxC-ewZ6ZXEYgznM7g",
+    "url": "https://www.youtube.com/@CodieSanchezCT/videos",
+    "enabled": true,
+    "languageHints": ["en", "ru"]
+  },
+  {
+    "name": "Simon Squibb",
+    "channelId": "UCGznz4NfW5iymkvn1l40qyA",
+    "url": "https://www.youtube.com/@SimonSquibb/videos",
+    "enabled": true,
+    "languageHints": ["en", "ru"]
+  }
+]

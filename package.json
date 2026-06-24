@@ -6,6 +6,8 @@
   "scripts": {
     "start": "node ./app.js",
     "dev": "nodemon ./app.js",
+    "test": "node --test",
+    "business:youtube-digest": "node ./script/runBusinessYoutubeDigest.js",
     "seed:sf-compliance": "node ./extensions/sf-compliance/scripts/seedComplianceReferenceData.js",
     "seed:regulations": "node script/seedRegulations.js",
     "seed:compliance": "node script/seedComplianceData.js",

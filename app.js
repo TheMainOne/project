@@ -28,6 +28,7 @@ import telegramRouter from "./services/telegram/telegram.js";
 import Notification from "./models/Notification.js";
 import NotificationDestination from "./models/NotificationDestination.js";
 import { startTelemetryRetentionJob } from "./cron/telemetryRetention.js";
+import { startBusinessYoutubeDigestJob } from "./cron/businessYoutubeDigest.js";
 import createBot from "./src/bot.js";
 import path from "path";
 import { randomUUID } from "crypto";
@@ -147,6 +148,7 @@ mongoose
     await Notification.createCollection().catch(() => {});
     await Notification.syncIndexes();
     startTelemetryRetentionJob();
+    startBusinessYoutubeDigestJob();
     // создаём бота только ПОСЛЕ подключения к Mongo
     const bot = createBot(BOT_TOKEN);
 
