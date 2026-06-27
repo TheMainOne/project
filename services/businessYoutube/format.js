@@ -29,17 +29,20 @@ function formatList(title, items, maxItems = 5) {
   return `${title}\n${values.slice(0, maxItems).map((item) => `- ${item}`).join("\n")}`;
 }
 
-function transcriptLabel(transcript = {}, analysis = {}) {
+function transcriptLabel(transcript = {}) {
   if (transcript.status === "available") {
     const lang = transcript.languageCode ? `, ${transcript.languageCode}` : "";
     const source = transcript.source === "public_auto_caption" ? "авто-субтитры" : "субтитры";
     return `доступен (${source}${lang}, ${transcript.charCount || 0} символов)`;
   }
 
-  if (transcript.status === "empty") return "найден, но пустой";
-  if (transcript.status === "error") return `ошибка получения (${truncateText(transcript.error, 120)})`;
-  if (analysis?.transcriptStatusNote) return truncateText(analysis.transcriptStatusNote, 180);
-  return "недоступен, использованы title/description";
+  if (transcript.status === "empty") {
+    return "субтитры найдены, но YouTube вернул пустой текст; анализ по названию и описанию";
+  }
+  if (transcript.status === "error") {
+    return `ошибка получения субтитров (${truncateText(transcript.error, 120)}); анализ по названию и описанию`;
+  }
+  return "недоступен; анализ по названию и описанию";
 }
 
 function usefulnessLabel(value) {
@@ -57,7 +60,7 @@ export function formatVideoAnalysisBlock(item, index) {
     `Канал: ${truncateText(video.channelName || video.channelId, 120)}`,
     `Дата: ${formatDate(video.publishedAt)}`,
     `Ссылка: ${video.url}`,
-    `Транскрипт: ${transcriptLabel(transcript, analysis)}`,
+    `Транскрипт: ${transcriptLabel(transcript)}`,
     `Полезность: ${usefulnessLabel(analysis.usefulnessRating)}`,
     "",
     `О чем: ${truncateText(analysis.summary, 700)}`,

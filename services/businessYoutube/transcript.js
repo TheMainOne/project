@@ -1,5 +1,12 @@
 import axios from "axios";
 
+const WEB_USER_AGENT =
+  "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 " +
+  "(KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36";
+const ANDROID_CLIENT_VERSION = "20.10.38";
+const ANDROID_USER_AGENT =
+  `com.google.android.youtube/${ANDROID_CLIENT_VERSION} (Linux; U; Android 14) gzip`;
+
 function cleanTranscriptText(value) {
   return String(value || "")
     .replace(/\u200b/g, "")
@@ -57,6 +64,13 @@ export function extractYtInitialPlayerResponse(html) {
   }
 
   return null;
+}
+
+export function extractInnertubeApiKey(html) {
+  const match = String(html || "").match(
+    /"INNERTUBE_API_KEY":"([^"]+)"|INNERTUBE_API_KEY\\":\\"([^\\"]+)\\"/
+  );
+  return match?.[1] || match?.[2] || "";
 }
 
 function scoreCaptionTrack(track, languageHints, index) {
@@ -133,7 +147,7 @@ async function fetchCaptionText(track, { timeoutMs }) {
     responseType: "text",
     transformResponse: [(data) => data],
     headers: {
-      "User-Agent": process.env.USER_AGENT || "business-youtube-digest/1.0",
+      "User-Agent": process.env.USER_AGENT || WEB_USER_AGENT,
       Accept: "application/json,text/xml,application/xml,*/*",
     },
   });
@@ -146,12 +160,68 @@ async function fetchCaptionText(track, { timeoutMs }) {
   }
 }
 
+async function fetchAndroidCaptionTracks({ html, videoId, timeoutMs }) {
+  const apiKey = extractInnertubeApiKey(html);
+  if (!apiKey || !videoId) return [];
+
+  const response = await axios.post(
+    `https://www.youtube.com/youtubei/v1/player?key=${encodeURIComponent(apiKey)}`,
+    {
+      context: {
+        client: {
+          clientName: "ANDROID",
+          clientVersion: ANDROID_CLIENT_VERSION,
+          hl: "en",
+          gl: "US",
+        },
+      },
+      videoId,
+      contentCheckOk: true,
+      racyCheckOk: true,
+    },
+    {
+      timeout: timeoutMs,
+      headers: {
+        "Content-Type": "application/json",
+        "User-Agent": ANDROID_USER_AGENT,
+        Accept: "application/json",
+      },
+    }
+  );
+
+  return response.data?.captions?.playerCaptionsTracklistRenderer?.captionTracks || [];
+}
+
+function availableTranscript(track, text) {
+  return {
+    status: "available",
+    source: track.kind === "asr" ? "public_auto_caption" : "public_caption",
+    languageCode: track.languageCode || "",
+    languageName: track.name?.simpleText || track.name?.runs?.map((run) => run.text).join("") || "",
+    text,
+    charCount: text.length,
+    error: "",
+  };
+}
+
+function emptyTranscript(track) {
+  return {
+    status: "empty",
+    source: track.kind === "asr" ? "public_auto_caption" : "public_caption",
+    languageCode: track.languageCode || "",
+    languageName: track.name?.simpleText || track.name?.runs?.map((run) => run.text).join("") || "",
+    text: "",
+    charCount: 0,
+    error: "",
+  };
+}
+
 export async function fetchPublicTranscript(video, { languageHints = ["ru", "en"], timeoutMs = 15000 } = {}) {
   try {
     const response = await axios.get(video.url || `https://www.youtube.com/watch?v=${video.videoId}`, {
       timeout: timeoutMs,
       headers: {
-        "User-Agent": process.env.USER_AGENT || "Mozilla/5.0 business-youtube-digest/1.0",
+        "User-Agent": process.env.USER_AGENT || WEB_USER_AGENT,
         Accept: "text/html,application/xhtml+xml,*/*",
         "Accept-Language": "en-US,en;q=0.9,ru;q=0.8",
       },
@@ -160,30 +230,58 @@ export async function fetchPublicTranscript(video, { languageHints = ["ru", "en"
     const playerResponse = extractYtInitialPlayerResponse(response.data);
     const captionTracks =
       playerResponse?.captions?.playerCaptionsTracklistRenderer?.captionTracks || [];
-    const track = selectCaptionTrack(captionTracks, languageHints);
+    const webTrack = selectCaptionTrack(captionTracks, languageHints);
+    let lastTrack = webTrack;
+    let lastError = "";
 
-    if (!track) {
+    if (webTrack) {
+      try {
+        const text = await fetchCaptionText(webTrack, { timeoutMs });
+        if (text) return availableTranscript(webTrack, text);
+      } catch (error) {
+        lastError = truncateError(error);
+      }
+    }
+
+    // YouTube can return an empty timedtext response for WEB tracks while the
+    // same public captions remain available through its Android player client.
+    try {
+      const androidTracks = await fetchAndroidCaptionTracks({
+        html: response.data,
+        videoId: video.videoId,
+        timeoutMs,
+      });
+      const androidTrack = selectCaptionTrack(androidTracks, languageHints);
+      if (androidTrack) {
+        lastTrack = androidTrack;
+        const text = await fetchCaptionText(androidTrack, { timeoutMs });
+        if (text) return availableTranscript(androidTrack, text);
+      }
+    } catch (error) {
+      lastError = truncateError(error);
+    }
+
+    if (lastTrack) return emptyTranscript(lastTrack);
+
+    if (lastError) {
       return {
-        status: "unavailable",
+        status: "error",
         source: "metadata_only",
         languageCode: "",
         languageName: "",
         text: "",
         charCount: 0,
-        error: "",
+        error: lastError,
       };
     }
 
-    const text = await fetchCaptionText(track, { timeoutMs });
-    const status = text ? "available" : "empty";
-
     return {
-      status,
-      source: track.kind === "asr" ? "public_auto_caption" : "public_caption",
-      languageCode: track.languageCode || "",
-      languageName: track.name?.simpleText || track.name?.runs?.map((run) => run.text).join("") || "",
-      text,
-      charCount: text.length,
+      status: "unavailable",
+      source: "metadata_only",
+      languageCode: "",
+      languageName: "",
+      text: "",
+      charCount: 0,
       error: "",
     };
   } catch (error) {

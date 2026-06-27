@@ -1,8 +1,14 @@
-import test from "node:test";
+import test, { mock } from "node:test";
 import assert from "node:assert/strict";
+import axios from "axios";
 import { parseBusinessYoutubeChannelConfig, getEnabledBusinessYoutubeChannels } from "../services/businessYoutube/config.js";
 import { parseYoutubeRssFeed } from "../services/businessYoutube/youtubeRss.js";
-import { selectCaptionTrack, extractYtInitialPlayerResponse } from "../services/businessYoutube/transcript.js";
+import {
+  extractInnertubeApiKey,
+  extractYtInitialPlayerResponse,
+  fetchPublicTranscript,
+  selectCaptionTrack,
+} from "../services/businessYoutube/transcript.js";
 import { splitTelegramMessage } from "../services/businessYoutube/format.js";
 import { normalizeAnalysisPayload } from "../services/businessYoutube/analysis.js";
 
@@ -59,6 +65,13 @@ test("extracts ytInitialPlayerResponse JSON", () => {
   assert.deepEqual(parsed, { a: { b: 1 } });
 });
 
+test("extracts the Innertube API key", () => {
+  assert.equal(
+    extractInnertubeApiKey('<script>ytcfg.set({"INNERTUBE_API_KEY":"test-key"});</script>'),
+    "test-key"
+  );
+});
+
 test("selects preferred caption track by language hints", () => {
   const track = selectCaptionTrack([
     { baseUrl: "https://example.com/en", languageCode: "en", kind: "asr" },
@@ -66,6 +79,51 @@ test("selects preferred caption track by language hints", () => {
   ], ["ru", "en"]);
 
   assert.equal(track.languageCode, "ru");
+});
+
+test("falls back to Android player captions when web timedtext is empty", async () => {
+  const webTrack = {
+    baseUrl: "https://www.youtube.com/api/timedtext?track=web",
+    languageCode: "en",
+    kind: "asr",
+  };
+  const androidTrack = {
+    baseUrl: "https://www.youtube.com/api/timedtext?track=android",
+    languageCode: "en",
+    kind: "asr",
+    name: { simpleText: "English (auto-generated)" },
+  };
+  const html = `<script>ytcfg.set({"INNERTUBE_API_KEY":"test-key"});</script>
+    <script>var ytInitialPlayerResponse = ${JSON.stringify({
+      captions: { playerCaptionsTracklistRenderer: { captionTracks: [webTrack] } },
+    })};</script>`;
+
+  mock.method(axios, "get", async (url) => {
+    const value = String(url);
+    if (value.includes("track=web")) return { data: "" };
+    if (value.includes("track=android")) {
+      return { data: JSON.stringify({ events: [{ segs: [{ utf8: "Real transcript text" }] }] }) };
+    }
+    return { data: html };
+  });
+  mock.method(axios, "post", async () => ({
+    data: {
+      captions: { playerCaptionsTracklistRenderer: { captionTracks: [androidTrack] } },
+    },
+  }));
+
+  try {
+    const result = await fetchPublicTranscript({
+      videoId: "video-id",
+      url: "https://www.youtube.com/shorts/video-id",
+    });
+
+    assert.equal(result.status, "available");
+    assert.equal(result.source, "public_auto_caption");
+    assert.equal(result.text, "Real transcript text");
+  } finally {
+    mock.restoreAll();
+  }
 });
 
 test("splits long Telegram messages under the safe limit", () => {
