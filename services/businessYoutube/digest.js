@@ -79,7 +79,10 @@ async function fetchAllFeeds(channels, logger) {
   return { videos: uniqueByVideoId(videos), errors };
 }
 
-async function selectCandidateVideos(videos, { now, maxVideos, lookbackHours }) {
+async function selectCandidateVideos(
+  videos,
+  { now, maxVideos, lookbackHours, retryMissingTranscript = false }
+) {
   const cutoff = new Date(now.getTime() - lookbackHours * HOUR_MS);
   const recentVideos = videos
     .filter((video) => video.publishedAt && new Date(video.publishedAt) >= cutoff)
@@ -89,17 +92,24 @@ async function selectCandidateVideos(videos, { now, maxVideos, lookbackHours }) 
   if (!ids.length) return { candidates: [], recentCount: 0 };
 
   const existing = await BusinessYoutubeVideo.find({ videoId: { $in: ids } })
-    .select({ videoId: 1, send: 1 })
+    .select({ videoId: 1, send: 1, transcript: 1 })
     .lean();
-  const sentIds = new Set(
+  const completedIds = new Set(
     existing
-      .filter((doc) => doc?.send?.status === "sent")
+      .filter((doc) => {
+        if (doc?.send?.status !== "sent") return false;
+        if (!retryMissingTranscript) return true;
+        return doc?.transcript?.status === "available";
+      })
       .map((doc) => doc.videoId)
   );
+  const candidateLimit = retryMissingTranscript ? maxVideos * 3 : maxVideos;
 
   return {
     recentCount: recentVideos.length,
-    candidates: recentVideos.filter((video) => !sentIds.has(video.videoId)).slice(0, maxVideos),
+    candidates: recentVideos
+      .filter((video) => !completedIds.has(video.videoId))
+      .slice(0, candidateLimit),
   };
 }
 
@@ -171,6 +181,44 @@ async function persistVideoAnalysis(video, transcript, analysis, { dryRun }) {
   );
 }
 
+async function markVideoDeferredForTranscript(video, transcript, { dryRun, reason }) {
+  if (dryRun) return;
+
+  await BusinessYoutubeVideo.updateOne(
+    { videoId: video.videoId },
+    {
+      $set: {
+        ...toVideoPersistence(video),
+        transcript: {
+          status: transcript.status || "metadata_only",
+          source: transcript.source || "",
+          languageCode: transcript.languageCode || "",
+          languageName: transcript.languageName || "",
+          charCount: transcript.charCount || 0,
+          error: transcript.error || "",
+        },
+        analysis: {
+          status: "pending",
+          model: "",
+          generatedAt: null,
+          summary: "",
+          mainIdeas: [],
+          insights: [],
+          unconventionalApplications: [],
+          actionsToday: [],
+          usefulnessRating: "medium",
+          transcriptStatusNote: reason,
+          error: "",
+        },
+        "send.status": "skipped",
+        "send.lastError": reason,
+        lastError: reason,
+      },
+    },
+    { upsert: true }
+  );
+}
+
 async function markVideosSent(videoIds, chunkCount) {
   if (!videoIds.length) return;
 
@@ -204,25 +252,53 @@ async function markVideosFailed(videoIds, error) {
   );
 }
 
-async function processVideo(video, { dryRun, transcriptMaxChars, logger }) {
+function toPublicTranscript(transcript = {}) {
+  return {
+    status: transcript.status,
+    source: transcript.source,
+    languageCode: transcript.languageCode,
+    languageName: transcript.languageName,
+    charCount: transcript.charCount,
+    error: transcript.error,
+  };
+}
+
+function buildTranscriptDeferredReason(transcript = {}) {
+  if (transcript.status === "empty") {
+    return "Caption track found, but transcript text is still empty; retry on the next digest run.";
+  }
+  if (transcript.status === "error") {
+    return `Transcript fetch failed; retry on the next digest run: ${truncateText(transcript.error, 300)}`;
+  }
+  return "Public transcript is not available yet; retry on the next digest run.";
+}
+
+async function processVideo(video, { dryRun, transcriptMaxChars, logger, requireTranscript }) {
   try {
     await markVideoProcessing(video, { dryRun });
 
     const transcript = await fetchPublicTranscript(video, {
       languageHints: video.languageHints || ["ru", "en"],
     });
+    const publicTranscript = toPublicTranscript(transcript);
+
+    if (requireTranscript && transcript.status !== "available") {
+      const reason = buildTranscriptDeferredReason(transcript);
+      await markVideoDeferredForTranscript(video, publicTranscript, { dryRun, reason });
+      logger.log?.(`[business-youtube] deferred until transcript is available: ${video.videoId} (${transcript.status})`);
+      return {
+        ok: false,
+        deferred: true,
+        video,
+        transcript: publicTranscript,
+        reason,
+      };
+    }
+
     const transcriptText = transcript.status === "available"
       ? truncateText(transcript.text, transcriptMaxChars)
       : "";
     const analysis = await analyzeBusinessVideo({ video, transcript, transcriptText });
-    const publicTranscript = {
-      status: transcript.status,
-      source: transcript.source,
-      languageCode: transcript.languageCode,
-      languageName: transcript.languageName,
-      charCount: transcript.charCount,
-      error: transcript.error,
-    };
 
     await persistVideoAnalysis(video, publicTranscript, analysis, { dryRun });
 
@@ -283,6 +359,7 @@ export async function runBusinessYoutubeDigest({ dryRun = false, now = new Date(
     videosRecent: 0,
     videosCandidates: 0,
     videosAnalyzed: 0,
+    videosDeferredForTranscript: 0,
     feedErrors: 0,
     processingErrors: 0,
     messagesSent: 0,
@@ -307,6 +384,7 @@ export async function runBusinessYoutubeDigest({ dryRun = false, now = new Date(
     { min: 1000, max: 100000 }
   );
   const sendEmptyStatus = parseBoolean(process.env.BUSINESS_YOUTUBE_SEND_EMPTY_STATUS, true);
+  const requireTranscript = parseBoolean(process.env.BUSINESS_YOUTUBE_REQUIRE_TRANSCRIPT, true);
 
   const allChannels = await loadBusinessYoutubeChannels();
   const channels = getEnabledBusinessYoutubeChannels(allChannels);
@@ -336,16 +414,26 @@ export async function runBusinessYoutubeDigest({ dryRun = false, now = new Date(
     now,
     maxVideos,
     lookbackHours,
+    retryMissingTranscript: requireTranscript,
   });
   stats.videosRecent = recentCount;
   stats.videosCandidates = candidates.length;
 
   const items = [];
   for (const video of candidates) {
-    const result = await processVideo(video, { dryRun, transcriptMaxChars, logger });
+    if (items.length >= maxVideos) break;
+
+    const result = await processVideo(video, {
+      dryRun,
+      transcriptMaxChars,
+      logger,
+      requireTranscript,
+    });
     if (result.ok) {
       items.push(result);
       stats.videosAnalyzed += 1;
+    } else if (result.deferred) {
+      stats.videosDeferredForTranscript += 1;
     } else {
       stats.processingErrors += 1;
     }
@@ -355,7 +443,10 @@ export async function runBusinessYoutubeDigest({ dryRun = false, now = new Date(
   if (items.length) {
     message = formatBusinessYoutubeDigest({ items, stats, now });
   } else if (sendEmptyStatus) {
-    message = formatEmptyBusinessYoutubeStatus({ stats, now });
+    const reason = stats.videosDeferredForTranscript
+      ? "Новые видео найдены, но публичные транскрипты пока недоступны. Они будут проверены в следующем запуске."
+      : undefined;
+    message = formatEmptyBusinessYoutubeStatus({ stats, now, reason });
   }
 
   if (message) {

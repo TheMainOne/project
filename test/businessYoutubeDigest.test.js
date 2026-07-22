@@ -126,6 +126,81 @@ test("falls back to Android player captions when web timedtext is empty", async 
   }
 });
 
+test("falls back to srv3 timedtext when json3 captions are empty", async () => {
+  const webTrack = {
+    baseUrl: "https://www.youtube.com/api/timedtext?track=web",
+    languageCode: "en",
+    kind: "asr",
+  };
+  const html = `<script>ytcfg.set({"INNERTUBE_API_KEY":"test-key"});</script>
+    <script>var ytInitialPlayerResponse = ${JSON.stringify({
+      captions: { playerCaptionsTracklistRenderer: { captionTracks: [webTrack] } },
+    })};</script>`;
+
+  mock.method(axios, "get", async (url) => {
+    const value = String(url);
+    if (value.includes("track=web") && value.includes("fmt=json3")) {
+      return { data: JSON.stringify({ events: [] }) };
+    }
+    if (value.includes("track=web") && value.includes("fmt=srv3")) {
+      return { data: "<timedtext><body><p><s>Real</s><s>transcript</s><s>text</s></p></body></timedtext>" };
+    }
+    return { data: html };
+  });
+  mock.method(axios, "post", async () => ({ data: {} }));
+
+  try {
+    const result = await fetchPublicTranscript({
+      videoId: "video-id",
+      url: "https://www.youtube.com/watch?v=video-id",
+    });
+
+    assert.equal(result.status, "available");
+    assert.equal(result.text, "Real transcript text");
+  } finally {
+    mock.restoreAll();
+  }
+});
+
+test("tries another caption track when the preferred track is empty", async () => {
+  const emptyTrack = {
+    baseUrl: "https://www.youtube.com/api/timedtext?track=empty",
+    languageCode: "en",
+    kind: "asr",
+  };
+  const realTrack = {
+    baseUrl: "https://www.youtube.com/api/timedtext?track=real",
+    languageCode: "en",
+    kind: "asr",
+  };
+  const html = `<script>ytcfg.set({"INNERTUBE_API_KEY":"test-key"});</script>
+    <script>var ytInitialPlayerResponse = ${JSON.stringify({
+      captions: { playerCaptionsTracklistRenderer: { captionTracks: [emptyTrack, realTrack] } },
+    })};</script>`;
+
+  mock.method(axios, "get", async (url) => {
+    const value = String(url);
+    if (value.includes("track=empty")) return { data: "" };
+    if (value.includes("track=real")) {
+      return { data: JSON.stringify({ events: [{ segs: [{ utf8: "Second track text" }] }] }) };
+    }
+    return { data: html };
+  });
+  mock.method(axios, "post", async () => ({ data: {} }));
+
+  try {
+    const result = await fetchPublicTranscript({
+      videoId: "video-id",
+      url: "https://www.youtube.com/watch?v=video-id",
+    });
+
+    assert.equal(result.status, "available");
+    assert.equal(result.text, "Second track text");
+  } finally {
+    mock.restoreAll();
+  }
+});
+
 test("splits long Telegram messages under the safe limit", () => {
   const chunks = splitTelegramMessage(`${"a".repeat(2000)}\n\n${"b".repeat(2000)}\n\n${"c".repeat(2000)}`, 2500);
   assert.equal(chunks.length, 3);

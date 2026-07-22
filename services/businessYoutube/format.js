@@ -86,6 +86,9 @@ export function formatBusinessYoutubeDigest({ items = [], stats = {}, now = new 
 
   if (stats.feedErrors) header.push(`Ошибки каналов: ${stats.feedErrors}`);
   if (stats.processingErrors) header.push(`Ошибки анализа: ${stats.processingErrors}`);
+  if (stats.videosDeferredForTranscript) {
+    header.push(`Ожидают транскрипт: ${stats.videosDeferredForTranscript}`);
+  }
 
   const body = items.map((item, index) => formatVideoAnalysisBlock(item, index + 1)).join("\n\n---\n\n");
   return `${header.join("\n")}\n\n${body}`.trim();
@@ -104,6 +107,9 @@ export function formatEmptyBusinessYoutubeStatus({ stats = {}, now = new Date(),
 
   if (stats.feedErrors) lines.push(`Ошибки каналов: ${stats.feedErrors}`);
   if (stats.processingErrors) lines.push(`Ошибки анализа: ${stats.processingErrors}`);
+  if (stats.videosDeferredForTranscript) {
+    lines.push(`Ожидают транскрипт: ${stats.videosDeferredForTranscript}`);
+  }
 
   return lines.join("\n");
 }

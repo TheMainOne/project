@@ -87,21 +87,24 @@ function scoreCaptionTrack(track, languageHints, index) {
   return score - index / 100;
 }
 
-export function selectCaptionTrack(captionTracks = [], languageHints = ["ru", "en"]) {
-  const candidates = captionTracks.filter((track) => track?.baseUrl);
-  if (!candidates.length) return null;
-
-  return candidates
+function orderCaptionTracks(captionTracks = [], languageHints = ["ru", "en"]) {
+  return captionTracks
+    .filter((track) => track?.baseUrl)
     .map((track, index) => ({
       track,
       score: scoreCaptionTrack(track, languageHints, index),
     }))
-    .sort((a, b) => b.score - a.score)[0]?.track || null;
+    .sort((a, b) => b.score - a.score)
+    .map((item) => item.track);
 }
 
-function buildCaptionUrl(baseUrl) {
+export function selectCaptionTrack(captionTracks = [], languageHints = ["ru", "en"]) {
+  return orderCaptionTracks(captionTracks, languageHints)[0] || null;
+}
+
+function buildCaptionUrl(baseUrl, format = "json3") {
   const url = new URL(baseUrl);
-  url.searchParams.set("fmt", "json3");
+  if (format) url.searchParams.set("fmt", format);
   return url.toString();
 }
 
@@ -120,10 +123,44 @@ function parseJson3Transcript(data) {
 }
 
 function parseXmlTranscript(xml) {
-  const chunks = [...String(xml || "").matchAll(/<text(?:\s[^>]*)?>([\s\S]*?)<\/text>/gi)]
-    .map((match) => decodeXmlEntities(match[1]));
+  const source = String(xml || "");
+  const textChunks = [...source.matchAll(/<text(?:\s[^>]*)?>([\s\S]*?)<\/text>/gi)]
+    .map((match) => match[1]);
 
-  return cleanTranscriptText(chunks.join(" "));
+  const chunks = textChunks.length
+    ? textChunks
+    : [...source.matchAll(/<p(?:\s[^>]*)?>([\s\S]*?)<\/p>/gi)]
+      .map((match) => match[1]);
+
+  return cleanTranscriptText(
+    chunks
+      .map((chunk) => decodeXmlEntities(String(chunk || "").replace(/<[^>]+>/g, " ")))
+      .join(" ")
+  );
+}
+
+function parseVttTranscript(vtt) {
+  const source = String(vtt || "").replace(/^\uFEFF/, "");
+  if (!/^WEBVTT(\s|$)/i.test(source.trimStart())) return "";
+
+  const blocks = source
+    .split(/\n{2,}/)
+    .map((block) => block.trim())
+    .filter(Boolean);
+  const chunks = [];
+
+  for (const block of blocks) {
+    if (/^(WEBVTT|NOTE|STYLE|REGION)(\s|$)/i.test(block)) continue;
+    const lines = block
+      .split(/\r?\n/)
+      .map((line) => line.trim())
+      .filter((line) => line && !/^\d+$/.test(line) && !/-->/i.test(line));
+    if (lines.length) chunks.push(lines.join(" "));
+  }
+
+  return cleanTranscriptText(
+    decodeXmlEntities(chunks.join(" ").replace(/<[^>]+>/g, " "))
+  );
 }
 
 function decodeXmlEntities(value) {
@@ -140,24 +177,50 @@ function decodeXmlEntities(value) {
 }
 
 
-async function fetchCaptionText(track, { timeoutMs }) {
-  const captionUrl = buildCaptionUrl(track.baseUrl);
-  const response = await axios.get(captionUrl, {
-    timeout: timeoutMs,
-    responseType: "text",
-    transformResponse: [(data) => data],
-    headers: {
-      "User-Agent": process.env.USER_AGENT || WEB_USER_AGENT,
-      Accept: "application/json,text/xml,application/xml,*/*",
-    },
-  });
-
-  const raw = response.data;
+function parseCaptionPayload(raw) {
   try {
-    return parseJson3Transcript(JSON.parse(raw));
+    const text = parseJson3Transcript(JSON.parse(raw));
+    if (text) return text;
   } catch {
-    return parseXmlTranscript(raw);
   }
+
+  return parseXmlTranscript(raw) || parseVttTranscript(raw);
+}
+
+async function fetchCaptionText(track, { timeoutMs, userAgent = process.env.USER_AGENT || WEB_USER_AGENT } = {}) {
+  const urls = [
+    buildCaptionUrl(track.baseUrl, "json3"),
+    buildCaptionUrl(track.baseUrl, "srv3"),
+    buildCaptionUrl(track.baseUrl, "vtt"),
+    buildCaptionUrl(track.baseUrl, ""),
+  ];
+  const seen = new Set();
+  let lastError = null;
+
+  for (const captionUrl of urls) {
+    if (seen.has(captionUrl)) continue;
+    seen.add(captionUrl);
+
+    try {
+      const response = await axios.get(captionUrl, {
+        timeout: timeoutMs,
+        responseType: "text",
+        transformResponse: [(data) => data],
+        headers: {
+          "User-Agent": userAgent,
+          Accept: "application/json,text/vtt,text/xml,application/xml,*/*",
+        },
+      });
+
+      const text = parseCaptionPayload(response.data);
+      if (text) return text;
+    } catch (error) {
+      lastError = error;
+    }
+  }
+
+  if (lastError) throw lastError;
+  return "";
 }
 
 async function fetchAndroidCaptionTracks({ html, videoId, timeoutMs }) {
@@ -230,15 +293,18 @@ export async function fetchPublicTranscript(video, { languageHints = ["ru", "en"
     const playerResponse = extractYtInitialPlayerResponse(response.data);
     const captionTracks =
       playerResponse?.captions?.playerCaptionsTracklistRenderer?.captionTracks || [];
-    const webTrack = selectCaptionTrack(captionTracks, languageHints);
-    let lastTrack = webTrack;
+    const webTracks = orderCaptionTracks(captionTracks, languageHints);
+    let lastTrack = webTracks[0] || null;
     let lastError = "";
+    let sawEmptyTrack = false;
 
-    if (webTrack) {
+    for (const webTrack of webTracks) {
       try {
         const text = await fetchCaptionText(webTrack, { timeoutMs });
         if (text) return availableTranscript(webTrack, text);
+        sawEmptyTrack = true;
       } catch (error) {
+        lastTrack = webTrack;
         lastError = truncateError(error);
       }
     }
@@ -251,17 +317,25 @@ export async function fetchPublicTranscript(video, { languageHints = ["ru", "en"
         videoId: video.videoId,
         timeoutMs,
       });
-      const androidTrack = selectCaptionTrack(androidTracks, languageHints);
-      if (androidTrack) {
+      const orderedAndroidTracks = orderCaptionTracks(androidTracks, languageHints);
+      for (const androidTrack of orderedAndroidTracks) {
         lastTrack = androidTrack;
-        const text = await fetchCaptionText(androidTrack, { timeoutMs });
-        if (text) return availableTranscript(androidTrack, text);
+        try {
+          const text = await fetchCaptionText(androidTrack, {
+            timeoutMs,
+            userAgent: ANDROID_USER_AGENT,
+          });
+          if (text) return availableTranscript(androidTrack, text);
+          sawEmptyTrack = true;
+        } catch (error) {
+          lastError = truncateError(error);
+        }
       }
     } catch (error) {
       lastError = truncateError(error);
     }
 
-    if (lastTrack) return emptyTranscript(lastTrack);
+    if (lastTrack && sawEmptyTrack) return emptyTranscript(lastTrack);
 
     if (lastError) {
       return {
