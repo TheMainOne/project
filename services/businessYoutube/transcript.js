@@ -304,9 +304,11 @@ async function fetchInnertubeCaptionTracks(videoId, clientName, timeoutMs) {
     }));
 }
 
-function ensureBrowserGlobals(JSDOM, VirtualConsole) {
-  if (globalThis.window && globalThis.document && globalThis.location) return;
-
+function installBrowserGlobals(JSDOM, VirtualConsole) {
+  const globalKeys = ["window", "document", "location", "origin", "navigator"];
+  const originalDescriptors = new Map(
+    globalKeys.map((key) => [key, Object.getOwnPropertyDescriptor(globalThis, key)])
+  );
   const virtualConsole = new VirtualConsole();
   const dom = new JSDOM(
     "<!DOCTYPE html><html lang=\"en\"><head><title></title></head><body></body></html>",
@@ -317,14 +319,30 @@ function ensureBrowserGlobals(JSDOM, VirtualConsole) {
     }
   );
 
-  globalThis.window = dom.window;
-  globalThis.document = dom.window.document;
-  globalThis.location = dom.window.location;
-  globalThis.origin = dom.window.origin;
+  Object.assign(globalThis, {
+    window: dom.window,
+    document: dom.window.document,
+    location: dom.window.location,
+    origin: dom.window.origin,
+  });
 
   if (!Reflect.has(globalThis, "navigator")) {
-    Object.defineProperty(globalThis, "navigator", { value: dom.window.navigator });
+    Object.defineProperty(globalThis, "navigator", {
+      configurable: true,
+      value: dom.window.navigator,
+    });
   }
+
+  return () => {
+    for (const [key, descriptor] of originalDescriptors) {
+      if (descriptor) {
+        Object.defineProperty(globalThis, key, descriptor);
+      } else {
+        Reflect.deleteProperty(globalThis, key);
+      }
+    }
+    dom.window.close();
+  };
 }
 
 async function createWebPoMinter(timeoutMs) {
@@ -341,63 +359,73 @@ async function createWebPoMinter(timeoutMs) {
     import("jsdom"),
     getInnertube(timeoutMs),
   ]);
+  const restoreGlobals = installBrowserGlobals(JSDOM, VirtualConsole);
 
-  ensureBrowserGlobals(JSDOM, VirtualConsole);
+  try {
+    const challengeResponse = await innertube.getAttestationChallenge("ENGAGEMENT_TYPE_UNBOUND");
+    const challenge = challengeResponse?.bg_challenge;
+    if (!challenge) throw new Error("YouTube did not return a BotGuard challenge");
 
-  const challengeResponse = await innertube.getAttestationChallenge("ENGAGEMENT_TYPE_UNBOUND");
-  const challenge = challengeResponse?.bg_challenge;
-  if (!challenge) throw new Error("YouTube did not return a BotGuard challenge");
+    const interpreterUrl =
+      challenge.interpreter_url?.private_do_not_access_or_else_trusted_resource_url_wrapped_value;
+    if (!interpreterUrl) throw new Error("BotGuard interpreter URL is missing");
 
-  const interpreterUrl =
-    challenge.interpreter_url?.private_do_not_access_or_else_trusted_resource_url_wrapped_value;
-  if (!interpreterUrl) throw new Error("BotGuard interpreter URL is missing");
+    const fetchWithTimeout = timeoutFetch(timeoutMs);
+    const interpreterResponse = await fetchWithTimeout(`https:${interpreterUrl}`);
+    if (!interpreterResponse.ok) {
+      throw new Error(`BotGuard interpreter HTTP ${interpreterResponse.status}`);
+    }
 
-  const fetchWithTimeout = timeoutFetch(timeoutMs);
-  const interpreterResponse = await fetchWithTimeout(`https:${interpreterUrl}`);
-  if (!interpreterResponse.ok) {
-    throw new Error(`BotGuard interpreter HTTP ${interpreterResponse.status}`);
-  }
+    const interpreterJavascript = await interpreterResponse.text();
+    if (!interpreterJavascript) throw new Error("BotGuard interpreter is empty");
+    new Function(interpreterJavascript)();
 
-  const interpreterJavascript = await interpreterResponse.text();
-  if (!interpreterJavascript) throw new Error("BotGuard interpreter is empty");
-  new Function(interpreterJavascript)();
+    const botGuardClient = await BotGuardClient.create({
+      program: challenge.program,
+      globalName: challenge.global_name,
+      globalObject: globalThis,
+    });
+    const webPoSignalOutput = [];
+    const botguardResponse = await botGuardClient.snapshot({ webPoSignalOutput });
+    const integrityResponse = await fetchWithTimeout(buildURL("GenerateIT", false), {
+      method: "POST",
+      headers: getHeaders(),
+      body: JSON.stringify([WEB_PO_REQUEST_KEY, botguardResponse]),
+    });
+    if (!integrityResponse.ok) {
+      throw new Error(`BotGuard integrity HTTP ${integrityResponse.status}`);
+    }
 
-  const botGuardClient = await BotGuardClient.create({
-    program: challenge.program,
-    globalName: challenge.global_name,
-    globalObject: globalThis,
-  });
-  const webPoSignalOutput = [];
-  const botguardResponse = await botGuardClient.snapshot({ webPoSignalOutput });
-  const integrityResponse = await fetchWithTimeout(buildURL("GenerateIT", false), {
-    method: "POST",
-    headers: getHeaders(),
-    body: JSON.stringify([WEB_PO_REQUEST_KEY, botguardResponse]),
-  });
-  if (!integrityResponse.ok) {
-    throw new Error(`BotGuard integrity HTTP ${integrityResponse.status}`);
-  }
-
-  const [
-    integrityToken,
-    estimatedTtlSecs,
-    mintRefreshThreshold,
-    websafeFallbackToken,
-  ] = await integrityResponse.json();
-  if (!integrityToken) throw new Error("BotGuard integrity token is empty");
-
-  const minter = await WebPoMinter.create(
-    {
+    const [
       integrityToken,
       estimatedTtlSecs,
       mintRefreshThreshold,
       websafeFallbackToken,
-    },
-    webPoSignalOutput
-  );
-  const ttlMs = Math.max(60, Number(estimatedTtlSecs) || 300) * 1000;
-  webPoMinterExpiresAt = Date.now() + ttlMs;
-  return minter;
+    ] = await integrityResponse.json();
+    if (!integrityToken) throw new Error("BotGuard integrity token is empty");
+
+    const minter = await WebPoMinter.create(
+      {
+        integrityToken,
+        estimatedTtlSecs,
+        mintRefreshThreshold,
+        websafeFallbackToken,
+      },
+      webPoSignalOutput
+    );
+    const ttlMs = Math.max(60, Number(estimatedTtlSecs) || 300) * 1000;
+    webPoMinterExpiresAt = Date.now() + ttlMs;
+    return async (contentBinding) => {
+      const restoreMintGlobals = installBrowserGlobals(JSDOM, VirtualConsole);
+      try {
+        return await minter.mintAsWebsafeString(contentBinding);
+      } finally {
+        restoreMintGlobals();
+      }
+    };
+  } finally {
+    restoreGlobals();
+  }
 }
 
 async function getWebPoMinter(timeoutMs) {
@@ -417,8 +445,8 @@ async function getWebPoMinter(timeoutMs) {
 }
 
 async function fetchWebPoToken(videoId, timeoutMs) {
-  const minter = await getWebPoMinter(timeoutMs);
-  const poToken = await minter.mintAsWebsafeString(videoId);
+  const mintPoToken = await getWebPoMinter(timeoutMs);
+  const poToken = await mintPoToken(videoId);
   if (!poToken) throw new Error("YouTube PO token is empty");
   return poToken;
 }
