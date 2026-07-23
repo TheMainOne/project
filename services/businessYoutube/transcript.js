@@ -3,9 +3,9 @@ import axios from "axios";
 const WEB_USER_AGENT =
   "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 " +
   "(KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36";
-const ANDROID_CLIENT_VERSION = "20.10.38";
-const ANDROID_USER_AGENT =
-  `com.google.android.youtube/${ANDROID_CLIENT_VERSION} (Linux; U; Android 14) gzip`;
+const INNERTUBE_CAPTION_CLIENTS = ["ANDROID_VR", "IOS", "ANDROID"];
+
+let innertubePromise = null;
 
 function cleanTranscriptText(value) {
   return String(value || "")
@@ -223,36 +223,70 @@ async function fetchCaptionText(track, { timeoutMs, userAgent = process.env.USER
   return "";
 }
 
-async function fetchAndroidCaptionTracks({ html, videoId, timeoutMs }) {
-  const apiKey = extractInnertubeApiKey(html);
-  if (!apiKey || !videoId) return [];
+function timeoutFetch(timeoutMs) {
+  return async (input, init = {}) => {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(new Error("YouTube request timed out")), timeoutMs);
+    const sourceSignal = init.signal;
+    const abortFromSource = () => controller.abort(sourceSignal?.reason);
 
-  const response = await axios.post(
-    `https://www.youtube.com/youtubei/v1/player?key=${encodeURIComponent(apiKey)}`,
-    {
-      context: {
-        client: {
-          clientName: "ANDROID",
-          clientVersion: ANDROID_CLIENT_VERSION,
-          hl: "en",
-          gl: "US",
-        },
-      },
-      videoId,
-      contentCheckOk: true,
-      racyCheckOk: true,
-    },
-    {
-      timeout: timeoutMs,
-      headers: {
-        "Content-Type": "application/json",
-        "User-Agent": ANDROID_USER_AGENT,
-        Accept: "application/json",
-      },
+    if (sourceSignal?.aborted) {
+      abortFromSource();
+    } else {
+      sourceSignal?.addEventListener("abort", abortFromSource, { once: true });
     }
-  );
 
-  return response.data?.captions?.playerCaptionsTracklistRenderer?.captionTracks || [];
+    try {
+      return await globalThis.fetch(input, { ...init, signal: controller.signal });
+    } finally {
+      clearTimeout(timer);
+      sourceSignal?.removeEventListener("abort", abortFromSource);
+    }
+  };
+}
+
+async function getInnertube(timeoutMs) {
+  if (!innertubePromise) {
+    innertubePromise = import("youtubei.js")
+      .then(({ Innertube }) => Innertube.create({
+        lang: "en",
+        location: "US",
+        retrieve_player: false,
+        fetch: timeoutFetch(timeoutMs),
+      }))
+      .catch((error) => {
+        innertubePromise = null;
+        throw error;
+      });
+  }
+
+  return innertubePromise;
+}
+
+async function fetchInnertubeCaptionTracks(videoId, clientName, timeoutMs) {
+  const [{ Constants }, innertube] = await Promise.all([
+    import("youtubei.js"),
+    getInnertube(timeoutMs),
+  ]);
+  const client = Constants.CLIENTS[clientName];
+  if (!client) return [];
+
+  const info = await innertube.getBasicInfo(videoId, { client: clientName });
+  const tracks = info?.captions?.caption_tracks || [];
+
+  return tracks
+    .filter((track) => track?.base_url)
+    .map((track) => ({
+      track: {
+        baseUrl: track.base_url,
+        languageCode: track.language_code || "",
+        kind: track.kind || "",
+        isTranslatable: Boolean(track.is_translatable),
+        name: { simpleText: track.name?.text || "" },
+      },
+      clientName,
+      userAgent: client.USER_AGENT || WEB_USER_AGENT,
+    }));
 }
 
 function availableTranscript(track, text) {
@@ -267,7 +301,7 @@ function availableTranscript(track, text) {
   };
 }
 
-function emptyTranscript(track) {
+function emptyTranscript(track, error = "") {
   return {
     status: "empty",
     source: track.kind === "asr" ? "public_auto_caption" : "public_caption",
@@ -275,11 +309,22 @@ function emptyTranscript(track) {
     languageName: track.name?.simpleText || track.name?.runs?.map((run) => run.text).join("") || "",
     text: "",
     charCount: 0,
-    error: "",
+    error: String(error || "").slice(0, 500),
   };
 }
 
-export async function fetchPublicTranscript(video, { languageHints = ["ru", "en"], timeoutMs = 15000 } = {}) {
+export async function fetchPublicTranscript(
+  video,
+  {
+    languageHints = ["ru", "en"],
+    timeoutMs = 15000,
+    innertubeTrackFetcher = fetchInnertubeCaptionTracks,
+  } = {}
+) {
+  let lastTrack = null;
+  let sawEmptyTrack = false;
+  const diagnostics = [];
+
   try {
     const response = await axios.get(video.url || `https://www.youtube.com/watch?v=${video.videoId}`, {
       timeout: timeoutMs,
@@ -294,61 +339,60 @@ export async function fetchPublicTranscript(video, { languageHints = ["ru", "en"
     const captionTracks =
       playerResponse?.captions?.playerCaptionsTracklistRenderer?.captionTracks || [];
     const webTracks = orderCaptionTracks(captionTracks, languageHints);
-    let lastTrack = webTracks[0] || null;
-    let lastError = "";
-    let sawEmptyTrack = false;
+    lastTrack = webTracks[0] || null;
 
     for (const webTrack of webTracks) {
+      lastTrack = webTrack;
       try {
         const text = await fetchCaptionText(webTrack, { timeoutMs });
         if (text) return availableTranscript(webTrack, text);
         sawEmptyTrack = true;
+        diagnostics.push("WEB: empty caption response");
       } catch (error) {
-        lastTrack = webTrack;
-        lastError = truncateError(error);
+        diagnostics.push(`WEB: ${truncateError(error)}`);
       }
     }
+  } catch (error) {
+    diagnostics.push(`WEB page: ${truncateError(error)}`);
+  }
 
-    // YouTube can return an empty timedtext response for WEB tracks while the
-    // same public captions remain available through its Android player client.
+  // WEB subtitle URLs can require Proof-of-Origin on cloud IPs. These clients
+  // expose public caption URLs that do not require a subtitle PO token.
+  for (const clientName of INNERTUBE_CAPTION_CLIENTS) {
     try {
-      const androidTracks = await fetchAndroidCaptionTracks({
-        html: response.data,
-        videoId: video.videoId,
-        timeoutMs,
-      });
-      const orderedAndroidTracks = orderCaptionTracks(androidTracks, languageHints);
-      for (const androidTrack of orderedAndroidTracks) {
-        lastTrack = androidTrack;
+      const candidates = await innertubeTrackFetcher(video.videoId, clientName, timeoutMs);
+      const orderedTracks = orderCaptionTracks(
+        candidates.map((candidate) => candidate.track),
+        languageHints
+      );
+      const candidateByUrl = new Map(
+        candidates.map((candidate) => [candidate.track.baseUrl, candidate])
+      );
+
+      for (const track of orderedTracks) {
+        lastTrack = track;
+        const candidate = candidateByUrl.get(track.baseUrl);
         try {
-          const text = await fetchCaptionText(androidTrack, {
+          const text = await fetchCaptionText(track, {
             timeoutMs,
-            userAgent: ANDROID_USER_AGENT,
+            userAgent: candidate?.userAgent || WEB_USER_AGENT,
           });
-          if (text) return availableTranscript(androidTrack, text);
+          if (text) return availableTranscript(track, text);
           sawEmptyTrack = true;
+          diagnostics.push(`${clientName}: empty caption response`);
         } catch (error) {
-          lastError = truncateError(error);
+          diagnostics.push(`${clientName}: ${truncateError(error)}`);
         }
       }
     } catch (error) {
-      lastError = truncateError(error);
+      diagnostics.push(`${clientName}: ${truncateError(error)}`);
     }
+  }
 
-    if (lastTrack && sawEmptyTrack) return emptyTranscript(lastTrack);
+  const diagnostic = diagnostics.join("; ").slice(0, 500);
+  if (lastTrack && sawEmptyTrack) return emptyTranscript(lastTrack, diagnostic);
 
-    if (lastError) {
-      return {
-        status: "error",
-        source: "metadata_only",
-        languageCode: "",
-        languageName: "",
-        text: "",
-        charCount: 0,
-        error: lastError,
-      };
-    }
-
+  if (!diagnostics.length) {
     return {
       status: "unavailable",
       source: "metadata_only",
@@ -358,15 +402,15 @@ export async function fetchPublicTranscript(video, { languageHints = ["ru", "en"
       charCount: 0,
       error: "",
     };
-  } catch (error) {
-    return {
-      status: "error",
-      source: "metadata_only",
-      languageCode: "",
-      languageName: "",
-      text: "",
-      charCount: 0,
-      error: truncateError(error),
-    };
   }
+
+  return {
+    status: "error",
+    source: "metadata_only",
+    languageCode: "",
+    languageName: "",
+    text: "",
+    charCount: 0,
+    error: diagnostic,
+  };
 }

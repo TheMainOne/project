@@ -265,7 +265,8 @@ function toPublicTranscript(transcript = {}) {
 
 function buildTranscriptDeferredReason(transcript = {}) {
   if (transcript.status === "empty") {
-    return "Caption track found, but transcript text is still empty; retry on the next digest run.";
+    const detail = transcript.error ? ` Details: ${truncateText(transcript.error, 300)}` : "";
+    return `Caption track found, but transcript text is still empty; retry on the next digest run.${detail}`;
   }
   if (transcript.status === "error") {
     return `Transcript fetch failed; retry on the next digest run: ${truncateText(transcript.error, 300)}`;

@@ -81,7 +81,7 @@ test("selects preferred caption track by language hints", () => {
   assert.equal(track.languageCode, "ru");
 });
 
-test("falls back to Android player captions when web timedtext is empty", async () => {
+test("falls back to an Innertube client when web timedtext is empty", async () => {
   const webTrack = {
     baseUrl: "https://www.youtube.com/api/timedtext?track=web",
     languageCode: "en",
@@ -106,21 +106,55 @@ test("falls back to Android player captions when web timedtext is empty", async 
     }
     return { data: html };
   });
-  mock.method(axios, "post", async () => ({
-    data: {
-      captions: { playerCaptionsTracklistRenderer: { captionTracks: [androidTrack] } },
-    },
-  }));
-
   try {
     const result = await fetchPublicTranscript({
       videoId: "video-id",
       url: "https://www.youtube.com/shorts/video-id",
+    }, {
+      innertubeTrackFetcher: async (_videoId, clientName) => (
+        clientName === "ANDROID_VR"
+          ? [{ track: androidTrack, clientName, userAgent: "test-agent" }]
+          : []
+      ),
     });
 
     assert.equal(result.status, "available");
     assert.equal(result.source, "public_auto_caption");
     assert.equal(result.text, "Real transcript text");
+  } finally {
+    mock.restoreAll();
+  }
+});
+
+test("falls back to Innertube when the YouTube watch page request fails", async () => {
+  const fallbackTrack = {
+    baseUrl: "https://www.youtube.com/api/timedtext?track=fallback",
+    languageCode: "en",
+    kind: "asr",
+    name: { simpleText: "English (auto-generated)" },
+  };
+
+  mock.method(axios, "get", async (url) => {
+    if (String(url).includes("track=fallback")) {
+      return { data: JSON.stringify({ events: [{ segs: [{ utf8: "Fallback transcript" }] }] }) };
+    }
+    throw new Error("watch page blocked");
+  });
+
+  try {
+    const result = await fetchPublicTranscript({
+      videoId: "video-id",
+      url: "https://www.youtube.com/watch?v=video-id",
+    }, {
+      innertubeTrackFetcher: async (_videoId, clientName) => (
+        clientName === "ANDROID_VR"
+          ? [{ track: fallbackTrack, clientName, userAgent: "test-agent" }]
+          : []
+      ),
+    });
+
+    assert.equal(result.status, "available");
+    assert.equal(result.text, "Fallback transcript");
   } finally {
     mock.restoreAll();
   }
