@@ -4,8 +4,11 @@ const WEB_USER_AGENT =
   "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 " +
   "(KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36";
 const INNERTUBE_CAPTION_CLIENTS = ["ANDROID_VR", "IOS", "ANDROID"];
+const WEB_PO_REQUEST_KEY = "O43z0dpjhgX20SCx4KAo";
 
 let innertubePromise = null;
+let webPoMinterPromise = null;
+let webPoMinterExpiresAt = 0;
 
 function cleanTranscriptText(value) {
   return String(value || "")
@@ -102,9 +105,14 @@ export function selectCaptionTrack(captionTracks = [], languageHints = ["ru", "e
   return orderCaptionTracks(captionTracks, languageHints)[0] || null;
 }
 
-function buildCaptionUrl(baseUrl, format = "json3") {
+function buildCaptionUrl(baseUrl, format = "json3", searchParams = {}) {
   const url = new URL(baseUrl);
   if (format) url.searchParams.set("fmt", format);
+  for (const [key, value] of Object.entries(searchParams)) {
+    if (value !== undefined && value !== null && value !== "") {
+      url.searchParams.set(key, String(value));
+    }
+  }
   return url.toString();
 }
 
@@ -187,12 +195,19 @@ function parseCaptionPayload(raw) {
   return parseXmlTranscript(raw) || parseVttTranscript(raw);
 }
 
-async function fetchCaptionText(track, { timeoutMs, userAgent = process.env.USER_AGENT || WEB_USER_AGENT } = {}) {
+async function fetchCaptionText(
+  track,
+  {
+    timeoutMs,
+    userAgent = process.env.USER_AGENT || WEB_USER_AGENT,
+    searchParams = {},
+  } = {}
+) {
   const urls = [
-    buildCaptionUrl(track.baseUrl, "json3"),
-    buildCaptionUrl(track.baseUrl, "srv3"),
-    buildCaptionUrl(track.baseUrl, "vtt"),
-    buildCaptionUrl(track.baseUrl, ""),
+    buildCaptionUrl(track.baseUrl, "json3", searchParams),
+    buildCaptionUrl(track.baseUrl, "srv3", searchParams),
+    buildCaptionUrl(track.baseUrl, "vtt", searchParams),
+    buildCaptionUrl(track.baseUrl, "", searchParams),
   ];
   const seen = new Set();
   let lastError = null;
@@ -289,6 +304,125 @@ async function fetchInnertubeCaptionTracks(videoId, clientName, timeoutMs) {
     }));
 }
 
+function ensureBrowserGlobals(JSDOM, VirtualConsole) {
+  if (globalThis.window && globalThis.document && globalThis.location) return;
+
+  const virtualConsole = new VirtualConsole();
+  const dom = new JSDOM(
+    "<!DOCTYPE html><html lang=\"en\"><head><title></title></head><body></body></html>",
+    {
+      url: "https://www.youtube.com/",
+      referrer: "https://www.youtube.com/",
+      virtualConsole,
+    }
+  );
+
+  globalThis.window = dom.window;
+  globalThis.document = dom.window.document;
+  globalThis.location = dom.window.location;
+  globalThis.origin = dom.window.origin;
+
+  if (!Reflect.has(globalThis, "navigator")) {
+    Object.defineProperty(globalThis, "navigator", { value: dom.window.navigator });
+  }
+}
+
+async function createWebPoMinter(timeoutMs) {
+  const [
+    { BotGuardClient },
+    { WebPoMinter },
+    { buildURL, getHeaders },
+    { JSDOM, VirtualConsole },
+    innertube,
+  ] = await Promise.all([
+    import("bgutils-js/botguard"),
+    import("bgutils-js/webpo"),
+    import("bgutils-js/utils"),
+    import("jsdom"),
+    getInnertube(timeoutMs),
+  ]);
+
+  ensureBrowserGlobals(JSDOM, VirtualConsole);
+
+  const challengeResponse = await innertube.getAttestationChallenge("ENGAGEMENT_TYPE_UNBOUND");
+  const challenge = challengeResponse?.bg_challenge;
+  if (!challenge) throw new Error("YouTube did not return a BotGuard challenge");
+
+  const interpreterUrl =
+    challenge.interpreter_url?.private_do_not_access_or_else_trusted_resource_url_wrapped_value;
+  if (!interpreterUrl) throw new Error("BotGuard interpreter URL is missing");
+
+  const fetchWithTimeout = timeoutFetch(timeoutMs);
+  const interpreterResponse = await fetchWithTimeout(`https:${interpreterUrl}`);
+  if (!interpreterResponse.ok) {
+    throw new Error(`BotGuard interpreter HTTP ${interpreterResponse.status}`);
+  }
+
+  const interpreterJavascript = await interpreterResponse.text();
+  if (!interpreterJavascript) throw new Error("BotGuard interpreter is empty");
+  new Function(interpreterJavascript)();
+
+  const botGuardClient = await BotGuardClient.create({
+    program: challenge.program,
+    globalName: challenge.global_name,
+    globalObject: globalThis,
+  });
+  const webPoSignalOutput = [];
+  const botguardResponse = await botGuardClient.snapshot({ webPoSignalOutput });
+  const integrityResponse = await fetchWithTimeout(buildURL("GenerateIT", false), {
+    method: "POST",
+    headers: getHeaders(),
+    body: JSON.stringify([WEB_PO_REQUEST_KEY, botguardResponse]),
+  });
+  if (!integrityResponse.ok) {
+    throw new Error(`BotGuard integrity HTTP ${integrityResponse.status}`);
+  }
+
+  const [
+    integrityToken,
+    estimatedTtlSecs,
+    mintRefreshThreshold,
+    websafeFallbackToken,
+  ] = await integrityResponse.json();
+  if (!integrityToken) throw new Error("BotGuard integrity token is empty");
+
+  const minter = await WebPoMinter.create(
+    {
+      integrityToken,
+      estimatedTtlSecs,
+      mintRefreshThreshold,
+      websafeFallbackToken,
+    },
+    webPoSignalOutput
+  );
+  const ttlMs = Math.max(60, Number(estimatedTtlSecs) || 300) * 1000;
+  webPoMinterExpiresAt = Date.now() + ttlMs;
+  return minter;
+}
+
+async function getWebPoMinter(timeoutMs) {
+  if (
+    webPoMinterPromise &&
+    (!webPoMinterExpiresAt || Date.now() < webPoMinterExpiresAt - 60_000)
+  ) {
+    return webPoMinterPromise;
+  }
+
+  webPoMinterPromise = createWebPoMinter(timeoutMs).catch((error) => {
+    webPoMinterPromise = null;
+    webPoMinterExpiresAt = 0;
+    throw error;
+  });
+  return webPoMinterPromise;
+}
+
+async function fetchWebPoToken(videoId, timeoutMs) {
+  const minter = await getWebPoMinter(timeoutMs);
+  const poToken = await minter.mintAsWebsafeString(videoId);
+  if (!poToken) throw new Error("YouTube PO token is empty");
+  return poToken;
+}
+
 function availableTranscript(track, text) {
   return {
     status: "available",
@@ -319,10 +453,12 @@ export async function fetchPublicTranscript(
     languageHints = ["ru", "en"],
     timeoutMs = 15000,
     innertubeTrackFetcher = fetchInnertubeCaptionTracks,
+    poTokenFetcher = fetchWebPoToken,
   } = {}
 ) {
   let lastTrack = null;
   let sawEmptyTrack = false;
+  let webTracksForPoToken = [];
   const diagnostics = [];
 
   try {
@@ -339,6 +475,7 @@ export async function fetchPublicTranscript(
     const captionTracks =
       playerResponse?.captions?.playerCaptionsTracklistRenderer?.captionTracks || [];
     const webTracks = orderCaptionTracks(captionTracks, languageHints);
+    webTracksForPoToken = webTracks;
     lastTrack = webTracks[0] || null;
 
     for (const webTrack of webTracks) {
@@ -386,6 +523,32 @@ export async function fetchPublicTranscript(
       }
     } catch (error) {
       diagnostics.push(`${clientName}: ${truncateError(error)}`);
+    }
+  }
+
+  if (webTracksForPoToken.length && video.videoId) {
+    try {
+      const poToken = await poTokenFetcher(video.videoId, timeoutMs);
+      for (const webTrack of webTracksForPoToken) {
+        lastTrack = webTrack;
+        try {
+          const text = await fetchCaptionText(webTrack, {
+            timeoutMs,
+            searchParams: {
+              c: "WEB",
+              potc: 1,
+              pot: poToken,
+            },
+          });
+          if (text) return availableTranscript(webTrack, text);
+          sawEmptyTrack = true;
+          diagnostics.push("WEB+POT: empty caption response");
+        } catch (error) {
+          diagnostics.push(`WEB+POT: ${truncateError(error)}`);
+        }
+      }
+    } catch (error) {
+      diagnostics.push(`WEB+POT: ${truncateError(error)}`);
     }
   }
 

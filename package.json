@@ -20,6 +20,7 @@
     "@mozilla/readability": "^0.6.0",
     "axios": "^1.12.2",
     "bcryptjs": "^3.0.2",
+    "bgutils-js": "^4.0.0",
     "chardet": "^2.1.0",
     "cheerio": "^1.2.0",
     "cookie-parser": "^1.4.7",

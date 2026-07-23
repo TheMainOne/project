@@ -160,6 +160,47 @@ test("falls back to Innertube when the YouTube watch page request fails", async 
   }
 });
 
+test("uses a video-bound PO token when untokened captions are empty", async () => {
+  const webTrack = {
+    baseUrl: "https://www.youtube.com/api/timedtext?track=web",
+    languageCode: "en",
+    kind: "asr",
+    name: { simpleText: "English (auto-generated)" },
+  };
+  const html = `<script>var ytInitialPlayerResponse = ${JSON.stringify({
+    captions: { playerCaptionsTracklistRenderer: { captionTracks: [webTrack] } },
+  })};</script>`;
+
+  mock.method(axios, "get", async (url) => {
+    const value = String(url);
+    if (!value.includes("/api/timedtext")) return { data: html };
+
+    const params = new URL(value).searchParams;
+    if (params.get("pot") === "test-po-token" && params.get("c") === "WEB") {
+      return { data: JSON.stringify({ events: [{ segs: [{ utf8: "Token transcript" }] }] }) };
+    }
+    return { data: "" };
+  });
+
+  try {
+    const result = await fetchPublicTranscript({
+      videoId: "video-id",
+      url: "https://www.youtube.com/watch?v=video-id",
+    }, {
+      innertubeTrackFetcher: async () => [],
+      poTokenFetcher: async (videoId) => {
+        assert.equal(videoId, "video-id");
+        return "test-po-token";
+      },
+    });
+
+    assert.equal(result.status, "available");
+    assert.equal(result.text, "Token transcript");
+  } finally {
+    mock.restoreAll();
+  }
+});
+
 test("falls back to srv3 timedtext when json3 captions are empty", async () => {
   const webTrack = {
     baseUrl: "https://www.youtube.com/api/timedtext?track=web",
