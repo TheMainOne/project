@@ -1,0 +1,184 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>ECN Assistant</title>
+    <link rel="stylesheet" href="styles.css">
+  </head>
+  <body>
+    <header class="app-header">
+      <div class="brand-mark" aria-hidden="true">EC</div>
+      <div class="brand-copy">
+        <div class="eyebrow">MDC WORKSPACE</div>
+        <h1>ECN Assistant</h1>
+      </div>
+      <div class="language-switch" role="group" aria-label="Language">
+        <button id="langRu" type="button" data-lang="ru">RU</button>
+        <button id="langEn" type="button" data-lang="en">EN</button>
+      </div>
+    </header>
+
+    <div class="safety-strip">
+      <span class="safety-dot" aria-hidden="true"></span>
+      <span data-i18n="readOnly">Read-only pilot · no Smartsheet or SAP changes</span>
+    </div>
+
+    <main>
+      <section id="notice" class="notice hidden" role="status" aria-live="polite"></section>
+
+      <section id="authView" class="auth-card hidden">
+        <div class="section-kicker" data-i18n="signInKicker">SECURE ACCESS</div>
+        <h2 data-i18n="signIn">Sign in</h2>
+        <p class="muted" data-i18n="signInHelp">Use an account with the ecn_user role.</p>
+        <form id="loginForm">
+          <label>
+            <span>Email</span>
+            <input id="email" type="email" autocomplete="username" required>
+          </label>
+          <label>
+            <span data-i18n="password">Password</span>
+            <input id="password" type="password" autocomplete="current-password" minlength="6" required>
+          </label>
+          <button class="button primary wide" type="submit" data-i18n="signIn">Sign in</button>
+        </form>
+      </section>
+
+      <div id="workspace" class="hidden">
+        <section class="status-rail" aria-label="ECN lifecycle">
+          <ol id="lifecycle"></ol>
+        </section>
+
+        <section class="card capture-card">
+          <div class="card-heading">
+            <div>
+              <div class="section-kicker" data-i18n="selectedRowKicker">SHEET CONTEXT</div>
+              <h2 data-i18n="selectedRow">Selected row</h2>
+            </div>
+            <span id="captureState" class="state-pill neutral">—</span>
+          </div>
+
+          <div class="mode-tabs" role="tablist">
+            <button id="domMode" class="active" type="button" role="tab" aria-selected="true" data-mode="dom" data-i18n="domMode">Current row</button>
+            <button id="pasteMode" type="button" role="tab" aria-selected="false" data-mode="paste" data-i18n="pasteMode">Paste row</button>
+          </div>
+
+          <div id="domCapture" class="mode-panel">
+            <p class="muted compact" data-i18n="domHelp">Click a cell in Smartsheet, then capture. Scroll horizontally by hand to collect more columns.</p>
+            <button id="captureButton" class="button primary wide" type="button" data-i18n="capture">Capture selected row</button>
+          </div>
+
+          <div id="pasteCapture" class="mode-panel hidden">
+            <label for="pasteInput" class="sr-only" data-i18n="pasteLabel">TSV row</label>
+            <textarea id="pasteInput" rows="5" spellcheck="false" data-i18n-placeholder="pastePlaceholder" placeholder="Paste one tab-separated row"></textarea>
+            <p id="pasteCount" class="microcopy"></p>
+            <button id="validatePasteButton" class="button secondary wide" type="button" data-i18n="validatePaste">Validate pasted row</button>
+          </div>
+
+          <div id="snapshotSummary" class="snapshot-summary empty">
+            <p data-i18n="noCapture">No row captured yet.</p>
+          </div>
+          <details id="rowDetails" class="hidden">
+            <summary data-i18n="viewCapturedFields">View captured fields</summary>
+            <div id="capturedFields" class="field-list"></div>
+          </details>
+          <div id="captureGuard" class="guard hidden"></div>
+        </section>
+
+        <section class="card">
+          <div class="card-heading">
+            <div>
+              <div class="section-kicker" data-i18n="classificationKicker">ROUTING INPUT</div>
+              <h2 data-i18n="changeTypes">Change types</h2>
+            </div>
+            <span id="typeCount" class="count-badge">0</span>
+          </div>
+          <p id="typeHelp" class="muted compact" data-i18n="typeHelp">Optional before analysis. Select one or more when classification is uncertain.</p>
+          <div id="changeTypeList" class="type-list"></div>
+          <button id="analyzeButton" class="button accent wide" type="button" disabled>
+            <span data-i18n="analyze">Analyze ECN</span>
+            <span aria-hidden="true">→</span>
+          </button>
+        </section>
+
+        <section id="analysisView" class="hidden">
+          <section id="decisionGuard" class="decision-guard hidden"></section>
+
+          <section class="card">
+            <div class="card-heading">
+              <div>
+                <div class="section-kicker" data-i18n="assessmentKicker">DETERMINISTIC ASSESSMENT</div>
+                <h2 data-i18n="gates">Gates & findings</h2>
+              </div>
+              <div id="severityCounts" class="severity-counts"></div>
+            </div>
+            <div id="classificationSummary" class="classification-summary"></div>
+            <div id="gatesList" class="stack-list"></div>
+          </section>
+
+          <section class="card">
+            <div class="section-kicker" data-i18n="routingKicker">PEOPLE & HANDOFFS</div>
+            <h2 data-i18n="routing">Routing</h2>
+            <div id="routingGroups"></div>
+          </section>
+
+          <section class="card">
+            <div class="section-kicker" data-i18n="workKicker">IMPLEMENTATION</div>
+            <h2 data-i18n="tasks">SAP / document checklist</h2>
+            <div id="tasksList" class="stack-list"></div>
+          </section>
+
+          <section class="next-action-card">
+            <div class="section-kicker light" data-i18n="nextActionKicker">RECOMMENDED</div>
+            <h2 data-i18n="nextAction">Next step</h2>
+            <div id="nextAction"></div>
+          </section>
+
+          <section class="card">
+            <div class="section-kicker" data-i18n="draftsKicker">COPY-READY TEXT</div>
+            <h2 data-i18n="drafts">Drafts</h2>
+            <div id="draftsList" class="draft-list"></div>
+          </section>
+
+          <section class="card">
+            <div class="section-kicker" data-i18n="sourcesKicker">TRACEABILITY</div>
+            <h2 data-i18n="citations">Sources</h2>
+            <div id="citationsList" class="citation-list"></div>
+          </section>
+        </section>
+
+        <details class="card settings-card">
+          <summary data-i18n="profileAndDiagnostics">Sheet profile & diagnostics</summary>
+          <div class="settings-content">
+            <div id="profileSummary"></div>
+            <label>
+              <span data-i18n="headerRow">Header row (TSV)</span>
+              <textarea id="profileHeaders" rows="3" spellcheck="false" data-i18n-placeholder="headerPlaceholder" placeholder="Paste the exported header row"></textarea>
+            </label>
+            <button id="loadHeadersButton" class="button secondary wide" type="button" data-i18n="mapHeaders">Map headers</button>
+            <div id="bindingEditor" class="binding-editor"></div>
+            <label for="statusAliases">
+              <span data-i18n="statusAliases">Status lifecycle mapping</span>
+              <small class="label-help" data-i18n="statusAliasesHelp">One per line: live Status = lifecycle stage. Original Status values remain unchanged.</small>
+              <textarea id="statusAliases" rows="4" spellcheck="false" data-i18n-placeholder="statusAliasesPlaceholder" placeholder="Waiting for approval = Pre-Approval"></textarea>
+            </label>
+            <label id="confirmProfileLabel" class="check-row hidden">
+              <input id="confirmProfile" type="checkbox">
+              <span data-i18n="confirmProfile">I verified the order and canonical mappings.</span>
+            </label>
+            <button id="saveProfileButton" class="button primary wide hidden" type="button" disabled data-i18n="saveProfile">Confirm & save profile</button>
+            <button id="diagnosticsButton" class="button ghost wide" type="button" data-i18n="copyDiagnostics">Copy selector diagnostics (no values)</button>
+            <button id="logoutButton" class="button ghost danger wide" type="button" data-i18n="signOut">Sign out</button>
+          </div>
+        </details>
+      </div>
+    </main>
+
+    <div id="busy" class="busy hidden" role="status" aria-live="assertive">
+      <span class="spinner" aria-hidden="true"></span>
+      <span id="busyText" data-i18n="working">Working…</span>
+    </div>
+
+    <script type="module" src="app.js"></script>
+  </body>
+</html>

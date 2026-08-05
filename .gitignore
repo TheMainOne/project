@@ -131,3 +131,8 @@ dist
 .yarn/build-state.yml
 .yarn/install-state.gz
 .pnp.*
+
+# ECN Assistant importer output can contain short excerpts from restricted
+# controlled documents. Keep all generated drafts and conflict reports local.
+.ecn-private/
+extensions/ecn/rulesets/private/

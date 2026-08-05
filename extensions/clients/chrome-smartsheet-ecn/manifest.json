@@ -1,0 +1,49 @@
+{
+  "manifest_version": 3,
+  "name": "ECN Assistant for Smartsheet",
+  "version": "0.1.0",
+  "description": "Read-only ECN lifecycle guidance for the selected Smartsheet row.",
+  "minimum_chrome_version": "116",
+  "action": {
+    "default_title": "Open ECN Assistant"
+  },
+  "side_panel": {
+    "default_path": "sidepanel/index.html"
+  },
+  "permissions": [
+    "activeTab",
+    "sidePanel",
+    "storage"
+  ],
+  "host_permissions": [
+    "https://app.smartsheet.com/*",
+    "https://app.smartsheet.com.au/*",
+    "https://app.smartsheet.eu/*",
+    "https://app.smartsheetgov.com/*",
+    "https://cloudcompliance.duckdns.org/*",
+    "http://localhost/*",
+    "http://127.0.0.1/*"
+  ],
+  "background": {
+    "service_worker": "src/background.js",
+    "type": "module"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "https://app.smartsheet.com/*",
+        "https://app.smartsheet.com.au/*",
+        "https://app.smartsheet.eu/*",
+        "https://app.smartsheetgov.com/*"
+      ],
+      "js": [
+        "src/capture-core.js",
+        "src/content-script.js"
+      ],
+      "run_at": "document_idle"
+    }
+  ],
+  "content_security_policy": {
+    "extension_pages": "script-src 'self'; object-src 'self'; connect-src https://cloudcompliance.duckdns.org http://localhost:* http://127.0.0.1:*"
+  }
+}
