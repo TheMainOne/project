@@ -20,6 +20,7 @@ import notificationDestinationsRouter from "./api/notificationDestinations.js";
 import complianceSuppliersRouter from "./extensions/sf-compliance/api/complianceSuppliers.js";
 import complianceRouter from "./extensions/sf-compliance/api/compliance.js";
 import complianceExtRouter from "./extensions/api/complianceExt.js";
+import ecnExtRouter from "./extensions/api/ecnExt.js";
 import complianceDocumentsRouter from "./extensions/api/complianceDocuments.js";
 import complianceAssertionsRouter from "./extensions/api/complianceAssertions.js";
 import complianceCoverageRouter from "./extensions/api/complianceCoverage.js";
@@ -178,6 +179,7 @@ mongoose
     app.use("/api/compliance-documents", complianceDocumentsRouter);
     app.use("/api/compliance-assertions", complianceAssertionsRouter);
     app.use("/api/compliance/ext", complianceExtRouter);
+    app.use("/api/ecn/ext", ecnExtRouter);
     app.use("/api/compliance", complianceRouter);
     app.use("/api/compliance-suppliers", complianceSuppliersRouter);
     app.use("/api/compliance-coverage", complianceCoverageRouter);

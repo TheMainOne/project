@@ -44,7 +44,7 @@ export async function requireExtensionAuth(req, res, next) {
     const decoded = verifyExtensionAccess(token);
 
     const user = await User.findById(decoded.sub)
-      .select("_id email roles sites isActive timezone")
+      .select("_id email roles sites isActive timezone locale")
       .lean();
 
     if (!user) {
@@ -56,6 +56,8 @@ export async function requireExtensionAuth(req, res, next) {
       email: user.email,
       roles: user.roles || [],
       sites: user.sites || [],
+      locale: user.locale || "en",
+      isActive: user.isActive !== false,
       scopes: decoded.scope ? decoded.scope.split(" ") : [],
       tokenType: "extension",
     };

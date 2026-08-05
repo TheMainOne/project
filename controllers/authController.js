@@ -210,7 +210,22 @@ export const me = async (req, res) => {
 export const issueExtensionToken = async (req, res, next) => {
   try {
     const requestedScopes = Array.isArray(req.body?.scopes) ? req.body.scopes : [];
-    const allowedScopes = ["compliance:read", "compliance:analyze"];
+    const allowedScopes = [
+      "compliance:read",
+      "compliance:analyze",
+      "ecn:read",
+      "ecn:analyze",
+    ];
+    const roles = Array.isArray(req.user?.roles) ? req.user.roles.map(String) : [];
+    const requestedEcnScopes = requestedScopes
+      .map((scope) => String(scope).trim())
+      .filter((scope) => scope.startsWith("ecn:"));
+
+    if (requestedEcnScopes.length > 0 && !roles.includes("ecn_user")) {
+      return res.status(403).json({
+        error: "Forbidden: role ecn_user is required for ECN extension scopes",
+      });
+    }
 
     const scopes = requestedScopes
       .map((s) => String(s).trim())

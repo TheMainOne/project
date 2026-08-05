@@ -28,5 +28,16 @@ export function validate(schema) {
 
 
 export const extensionTokenSchema = Joi.object({
-  scopes: Joi.array().items(Joi.string().valid("compliance:read", "compliance:analyze")).min(1).required()
+  scopes: Joi.array()
+    .items(
+      Joi.string().valid(
+        "compliance:read",
+        "compliance:analyze",
+        "ecn:read",
+        "ecn:analyze"
+      )
+    )
+    .min(1)
+    .unique()
+    .required()
 });
