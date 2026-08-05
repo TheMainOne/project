@@ -10,46 +10,106 @@ const STORAGE_KEYS = Object.freeze({
   apiBaseUrl: "ecnApiBaseUrl",
 });
 const ECN_SCOPES = ["ecn:read", "ecn:analyze"];
+const SIDE_PANEL_PATH = "sidepanel/index.html";
+const SMARTSHEET_HOSTS = Object.freeze([
+  "app.smartsheet.com",
+  "app.smartsheet.com.au",
+  "app.smartsheet.eu",
+  "app.smartsheetgov.com",
+]);
+const SMARTSHEET_URL_PATTERNS = SMARTSHEET_HOSTS.map((host) => `https://${host}/*`);
 
 let tokenRefreshInFlight = null;
 
 function isSmartsheetUrl(value) {
   try {
     const parsed = new URL(value || "about:blank");
-    return parsed.protocol === "https:" && [
-      "app.smartsheet.com",
-      "app.smartsheet.com.au",
-      "app.smartsheet.eu",
-      "app.smartsheetgov.com",
-    ].includes(parsed.hostname);
+    return parsed.protocol === "https:" && SMARTSHEET_HOSTS.includes(parsed.hostname);
   } catch {
     return false;
   }
 }
 
-chrome.runtime.onInstalled.addListener(() => chrome.sidePanel.setOptions({ enabled: false }).catch(() => undefined));
-chrome.action.onClicked.addListener(async (tab) => {
+function reportSidePanelError(context, error) {
+  console.error(`[ECN Assistant] ${context}:`, error?.message || error);
+}
+
+async function configureSidePanelForTab(tab) {
+  const tabId = Number(tab?.id);
+  if (!Number.isInteger(tabId)) return;
+  const enabled = isSmartsheetUrl(tab?.url);
+  const results = await Promise.allSettled([
+    chrome.sidePanel.setOptions({
+      tabId,
+      path: SIDE_PANEL_PATH,
+      enabled,
+    }),
+    chrome.action.setTitle({
+      tabId,
+      title: enabled ? "Open ECN Assistant" : "Open a Smartsheet sheet first",
+    }),
+  ]);
+  for (const result of results) {
+    if (result.status === "rejected") reportSidePanelError("Could not configure tab", result.reason);
+  }
+}
+
+function enableToolbarSidePanel() {
+  return chrome.sidePanel
+    .setPanelBehavior({ openPanelOnActionClick: true })
+    .catch((error) => reportSidePanelError("Could not enable toolbar opening", error));
+}
+
+function configureExistingSmartsheetTabs() {
+  return chrome.tabs
+    .query({ url: SMARTSHEET_URL_PATTERNS })
+    .then((tabs) => Promise.allSettled(tabs.map((tab) => configureSidePanelForTab(tab))))
+    .catch((error) => reportSidePanelError("Could not initialize open tabs", error));
+}
+
+async function initializeSidePanel() {
+  const results = await Promise.allSettled([
+    chrome.sidePanel.setOptions({ path: SIDE_PANEL_PATH, enabled: false }),
+    enableToolbarSidePanel(),
+  ]);
+  for (const result of results) {
+    if (result.status === "rejected") reportSidePanelError("Could not initialize side panel", result.reason);
+  }
+  await configureExistingSmartsheetTabs();
+}
+
+void enableToolbarSidePanel();
+void configureExistingSmartsheetTabs();
+chrome.runtime.onInstalled.addListener(() => { void initializeSidePanel(); });
+chrome.runtime.onStartup.addListener(() => { void initializeSidePanel(); });
+
+chrome.action.onClicked.addListener((tab) => {
+  const tabId = Number(tab?.id);
   if (!tab?.id || !isSmartsheetUrl(tab.url)) {
-    if (tab?.id) await chrome.sidePanel.setOptions({ tabId: tab.id, enabled: false }).catch(() => undefined);
-    await chrome.action.setBadgeBackgroundColor({ color: "#b42318" });
-    await chrome.action.setBadgeText({ text: "!" });
-    await chrome.action.setTitle({ title: "Open a Smartsheet sheet first" });
-    setTimeout(() => chrome.action.setBadgeText({ text: "" }), 2500);
+    if (!Number.isInteger(tabId)) return;
+    void chrome.sidePanel.setOptions({ tabId, path: SIDE_PANEL_PATH, enabled: false })
+      .catch((error) => reportSidePanelError("Could not disable non-Smartsheet tab", error));
+    void chrome.action.setBadgeBackgroundColor({ tabId, color: "#b42318" });
+    void chrome.action.setBadgeText({ tabId, text: "!" });
+    void chrome.action.setTitle({ tabId, title: "Open a Smartsheet sheet first" });
+    setTimeout(() => {
+      void chrome.action.setBadgeText({ tabId, text: "" });
+    }, 2500);
     return;
   }
-  await chrome.action.setBadgeText({ text: "" });
-  await chrome.action.setTitle({ title: "Open ECN Assistant" });
-  await chrome.sidePanel.setOptions({
-    tabId: tab.id,
-    path: "sidepanel/index.html",
-    enabled: true,
-  });
-  await chrome.sidePanel.open({ tabId: tab.id });
+  void chrome.action.setBadgeText({ tabId, text: "" });
 });
 
 chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
-  if (!changeInfo.url || isSmartsheetUrl(changeInfo.url || tab.url)) return;
-  chrome.sidePanel.setOptions({ tabId, enabled: false }).catch(() => undefined);
+  if (!changeInfo.url && changeInfo.status !== "complete") return;
+  void configureSidePanelForTab({ id: tabId, url: changeInfo.url || tab?.url })
+    .catch((error) => reportSidePanelError("Could not update tab configuration", error));
+});
+
+chrome.tabs.onActivated.addListener(({ tabId }) => {
+  void chrome.tabs.get(tabId)
+    .then((tab) => configureSidePanelForTab(tab))
+    .catch((error) => reportSidePanelError("Could not activate tab configuration", error));
 });
 
 function assertAllowedUrl(url) {

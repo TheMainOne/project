@@ -142,6 +142,17 @@ try {
   const grid = await context.newPage();
   await grid.goto("https://app.smartsheet.com/sheets/ecn-e2e");
   await grid.bringToFront();
+  const toolbarSetup = await worker.evaluate(async () => {
+    const [tab] = await chrome.tabs.query({ url: "https://app.smartsheet.com/sheets/ecn-e2e" });
+    if (!tab?.id) return null;
+    return {
+      behavior: await chrome.sidePanel.getPanelBehavior(),
+      options: await chrome.sidePanel.getOptions({ tabId: tab.id }),
+    };
+  });
+  assert.equal(toolbarSetup?.behavior?.openPanelOnActionClick, true);
+  assert.equal(toolbarSetup?.options?.enabled, true);
+  assert.equal(toolbarSetup?.options?.path, "sidepanel/index.html");
   const profileBridge = await panel.evaluate((activeProfile) => chrome.runtime.sendMessage({
     type: "ECN_SET_ACTIVE_PROFILE",
     profile: activeProfile,
