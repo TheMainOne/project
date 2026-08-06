@@ -15,6 +15,10 @@ import {
   parseChecklistSheet,
 } from "../extensions/ecn/importer/xlsxSource.js";
 import { CHANGE_TYPE_ROUTES, DEPARTMENTS } from "../extensions/ecn/rules/defaultRuleset.js";
+import {
+  DWK_57172_HEADERS,
+  DWK_57172_STATUS_ALIASES,
+} from "../extensions/ecn/profiles/dwk57172.js";
 import { createHeaderFingerprint } from "../extensions/ecn/services/profileService.js";
 
 const departmentColumns = [
@@ -127,6 +131,42 @@ test("sheet profile fingerprint exactly matches backend punctuation semantics", 
   assert.equal(candidate.profile.headerFingerprint, createHeaderFingerprint(headers));
   assert.deepEqual(candidate.profile.headerOrder, headers);
   assert.equal(candidate.profile.bindings.ecnNumber, "ECN ##1");
+});
+
+test("DWKID-57172 export maps the verified action fields without workflow false positives", () => {
+  const statusValues = Object.keys(DWK_57172_STATUS_ALIASES);
+  const rows = [
+    [...DWK_57172_HEADERS],
+    ...statusValues.map((status, index) => {
+      const row = Array(DWK_57172_HEADERS.length).fill("");
+      row[0] = `ECN-${index + 1}`;
+      row[1] = status;
+      row[3] = "Change";
+      row[4] = "Standard";
+      row[5] = "requestor@example.test";
+      row[7] = "ITEM-1";
+      row[8] = "Synthetic item";
+      row[9] = "Immediately";
+      row[10] = "Synthetic change";
+      return row;
+    }),
+  ];
+  const candidate = buildSheetProfileCandidate(XLSX.utils.aoa_to_sheet(rows), "ENGINEERING CHANGE FORM");
+
+  assert.equal(candidate.profile.headerOrder.length, 67);
+  assert.equal(candidate.profile.headerFingerprint, "5865371850a79d92ad0daaa8cbe0488aad89a26b7439b72d913420b403ea6073");
+  assert.equal(candidate.profile.bindings.ecnNumber, "ECN Number#1");
+  assert.equal(candidate.profile.bindings.status, "Status#2");
+  assert.equal(candidate.profile.bindings.actionType, "ECN Type#4");
+  assert.equal(candidate.profile.bindings.effectTiming, "Effective When#10");
+  assert.equal(
+    candidate.profile.bindings.detailedDescription,
+    "Description of Change or New or Discontinued Item#11",
+  );
+  assert.equal(candidate.profile.bindings.changeTypes, undefined);
+  assert.equal(candidate.profile.bindings.pricing, undefined);
+  assert.deepEqual(candidate.profile.statusAliases, DWK_57172_STATUS_ALIASES);
+  assert.deepEqual(candidate.unknownStatusValues, []);
 });
 
 test("sheet profile rejects blank header gaps instead of compressing ordinals", () => {

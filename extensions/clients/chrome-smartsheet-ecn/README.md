@@ -21,11 +21,11 @@ Personal Chrome 116+ MV3 pilot for coordinating the ECN lifecycle from a selecte
 
 The production API base is set in `src/background.js`. For local backend work, temporarily switch it to `http://localhost:3000/api/ecn/ext`; localhost is explicitly allowlisted by the manifest and no other backend hosts are permitted.
 
-## First-time sheet mapping
+## Sheet profile
 
-The bundled backend profile is intentionally `needs_remap`. Until an anonymized export is checked and its column profile is confirmed, DOM and Paste captures cannot become `complete`.
+The bundled backend sheet profile is verified against `DWKID-57172 Rev K`: all 67 ordered headers and the canonical ECN field bindings are included. A default lifecycle mapping for the 13 observed live Status values is also included and remains editable. An untouched legacy `draft-unmapped-1` placeholder is upgraded when it is read. A user-confirmed custom profile is preserved.
 
-In **Sheet profile & diagnostics**:
+If the sheet structure changes and the fingerprint no longer matches, use **Sheet profile & diagnostics**:
 
 1. Paste exactly one exported TSV header row.
 2. Click **Map headers**.
@@ -37,7 +37,9 @@ Changing header order or adding an unknown column makes DOM capture `ambiguous` 
 
 ## DOM capture behavior
 
-The adapter uses `role`, `aria-rowindex`, `aria-colindex`, `aria-labelledby`, `headers`, and accessible labels. It does not depend on Smartsheet CSS class names. Focus or click selects a row. Visible cells are accumulated while the user manually scrolls horizontally. Selecting a different `aria-rowindex` clears the accumulator.
+The adapter supports ARIA grids, native Table view markup (`table`/`th`/`td`), and a small allowlist of semantic row/column data attributes. It does not depend on Smartsheet CSS class names. Focus, pointer-down, or click selects a row. Visible cells are accumulated while the user manually scrolls horizontally. Selecting a different row clears the accumulator. Unlabelled service columns such as row controls are ignored by matching visible headers to the verified profile ordinals.
+
+If Smartsheet exposes the grid only as a canvas, DOM capture reports a failure instead of a successful empty row. Use **Paste row** as the read-only fallback: select the whole row with `Shift+Space`, copy it with `Ctrl+C`, and paste the resulting TSV row into the panel.
 
 `SheetContextAdapter` is the replaceable boundary. The current implementations are:
 
@@ -57,6 +59,6 @@ node --check extensions/clients/chrome-smartsheet-ecn/sidepanel/app.js
 node extensions/clients/chrome-smartsheet-ecn/e2e/run.mjs
 ```
 
-The synthetic ARIA grid used by tests is in `fixtures/synthetic-grid.html`. It covers partial visibility, horizontal accumulation, row changes, hidden columns, and duplicate-safe ordinals without using the real confidential sheet. The Playwright runner loads the unpacked extension, serves this fixture at an allowlisted Smartsheet URL, uses a local mocked ECN API, verifies RU/EN, DOM and TSV analysis, draft copying, and asserts that capture did not mutate the grid. Playwright cannot reliably click Chrome's toolbar action, so the runner opens the panel document directly and separately verifies `openPanelOnActionClick` plus the tab-specific enabled path through the service worker.
+The synthetic fixtures cover ARIA grids, native Table view markup, leading service columns, selection overlays, partial visibility, horizontal accumulation, row changes, hidden columns, and duplicate-safe ordinals without using the real confidential sheet. The Playwright runner loads the unpacked extension, serves a fixture at an allowlisted Smartsheet URL, uses a local mocked ECN API, verifies RU/EN, DOM and TSV analysis, draft copying, and asserts that capture did not mutate the grid. Playwright cannot reliably click Chrome's toolbar action, so the runner opens the panel document directly and separately verifies `openPanelOnActionClick` plus the tab-specific enabled path through the service worker.
 
 For headless-compatible Chromium builds, set `ECN_E2E_HEADLESS=1`; the default headed run is the most reliable way to exercise MV3 extensions locally.

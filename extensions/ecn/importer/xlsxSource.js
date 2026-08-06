@@ -8,6 +8,10 @@ import {
   CHECKLIST_PROFILES,
   DEPARTMENTS,
 } from "../rules/defaultRuleset.js";
+import {
+  DWK_57172_STATUS_ALIASES,
+  matchesDwk57172Headers,
+} from "../profiles/dwk57172.js";
 import { basenameOnly, hashFile, sanitizeExcerpt } from "./privacy.js";
 
 function normalize(value) {
@@ -459,6 +463,8 @@ export function buildSheetProfileCandidate(sheet, sheetName = "Sheet1") {
       bindings[canonical] = `${match.value}#${match.index + 1}`;
     }
   }
+  const isDwk57172 = matchesDwk57172Headers(headerOrder);
+  if (isDwk57172) delete bindings.pricing;
 
   const statusBinding = bindings.status;
   const statusOrdinal = statusBinding ? Number(statusBinding.match(/#(\d+)$/)?.[1]) : null;
@@ -475,7 +481,8 @@ export function buildSheetProfileCandidate(sheet, sheetName = "Sheet1") {
   const statusAliases = {};
   const unknownStatusValues = [];
   for (const value of statusValues) {
-    const stage = KNOWN_STAGES.find((candidate) => normalize(candidate) === normalize(value));
+    const stage = KNOWN_STAGES.find((candidate) => normalize(candidate) === normalize(value)) ||
+      (isDwk57172 ? DWK_57172_STATUS_ALIASES[value] : null);
     if (stage) statusAliases[value] = stage;
     else unknownStatusValues.push(value);
   }

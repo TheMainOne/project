@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "ECN Assistant for Smartsheet",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "Read-only ECN lifecycle guidance for the selected Smartsheet row.",
   "minimum_chrome_version": "116",
   "action": {

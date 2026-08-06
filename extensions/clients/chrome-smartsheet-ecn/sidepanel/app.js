@@ -24,6 +24,7 @@ const I18N = {
     capture: "Capture selected row",
     pasteLabel: "TSV row",
     pastePlaceholder: "Paste one tab-separated row",
+    pasteHelp: "Fallback: select the whole Smartsheet row (Shift+Space), copy it (Ctrl+C), then paste it here.",
     validatePaste: "Validate pasted row",
     noCapture: "No row captured yet.",
     viewCapturedFields: "View captured fields",
@@ -64,6 +65,7 @@ const I18N = {
     profileNeedsRemap: "Needs remap",
     columnsCaptured: "{captured} of {expected} columns captured",
     missingColumns: "Missing columns: {value}",
+    additionalMissingColumns: "and {count} more",
     guardIncomplete: "Final readiness and closure are disabled until the row capture and sheet profile are complete.",
     noActiveRow: "Select a Smartsheet cell first.",
     captureFailed: "Could not capture the row.",
@@ -119,6 +121,7 @@ const I18N = {
     capture: "Захватить выбранную строку",
     pasteLabel: "TSV-строка",
     pastePlaceholder: "Вставьте одну строку с разделителями Tab",
+    pasteHelp: "Резервный способ: выделите всю строку Smartsheet (Shift+Space), скопируйте её (Ctrl+C) и вставьте сюда.",
     validatePaste: "Проверить вставленную строку",
     noCapture: "Строка ещё не захвачена.",
     viewCapturedFields: "Показать захваченные поля",
@@ -159,6 +162,7 @@ const I18N = {
     profileNeedsRemap: "Нужно сопоставление",
     columnsCaptured: "Захвачено колонок: {captured} из {expected}",
     missingColumns: "Не захвачены: {value}",
+    additionalMissingColumns: "и ещё {count}",
     guardIncomplete: "Окончательная готовность и закрытие недоступны, пока строка и профиль листа не полны.",
     noActiveRow: "Сначала выберите ячейку Smartsheet.",
     captureFailed: "Не удалось захватить строку.",
@@ -368,6 +372,22 @@ function renderSnapshot() {
   pill.textContent = stateLabel;
   pill.className = `state-pill ${snapshot.captureState}`;
 
+  const fields = Array.isArray(snapshot.fields) ? snapshot.fields : [];
+  if (!fields.length) {
+    const noActiveRow = snapshot.captureMeta?.reasons?.includes("no_active_row");
+    const summary = byId("snapshotSummary");
+    summary.className = "snapshot-summary empty";
+    summary.replaceChildren(element("p", "", t(noActiveRow ? "noActiveRow" : "captureFailed")));
+    byId("capturedFields").replaceChildren();
+    byId("rowDetails").classList.add("hidden");
+    const guard = byId("captureGuard");
+    guard.classList.remove("hidden");
+    guard.textContent = t("pasteHelp");
+    byId("analyzeButton").disabled = true;
+    renderLifecycle();
+    return;
+  }
+
   const title = snapshot.rowHint?.ecnNumber || snapshot.rowHint?.primaryValue || snapshot.sheetTitle || t("selectedRow");
   const summary = byId("snapshotSummary");
   summary.className = "snapshot-summary";
@@ -402,8 +422,13 @@ function renderSnapshot() {
   guard.classList.toggle("hidden", !incomplete);
   if (incomplete) {
     const missing = snapshot.captureMeta?.missingColumns || [];
+    const visibleMissing = missing.slice(0, 8);
+    const remaining = Math.max(0, missing.length - visibleMissing.length);
+    const missingText = visibleMissing.length
+      ? `${t("missingColumns", { value: visibleMissing.join(", ") })}${remaining ? `; ${t("additionalMissingColumns", { count: remaining })}` : ""}`
+      : "";
     guard.textContent = missing.length
-      ? `${t("guardIncomplete")} ${t("missingColumns", { value: missing.join(", ") })}`
+      ? `${t("guardIncomplete")} ${missingText}`
       : t("guardIncomplete");
   }
   // Partial rows may still run deterministic checks, but TSV mismatches never produce a snapshot.
@@ -718,7 +743,12 @@ async function captureDom() {
     state.analysis = null;
     byId("analysisView").classList.add("hidden");
     renderSnapshot();
-    showNotice(t("rowCaptured"), "success");
+    if (state.snapshot?.fields?.length) {
+      showNotice(t("rowCaptured"), "success");
+    } else {
+      const noActiveRow = state.snapshot?.captureMeta?.reasons?.includes("no_active_row");
+      showNotice(t(noActiveRow ? "noActiveRow" : "captureFailed"), "error");
+    }
   } finally {
     setBusy(false);
   }

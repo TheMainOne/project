@@ -7,6 +7,11 @@ export type DomRowSnapshot = {
   observedHeaders: string[];
   fields: Array<{ header: string; ordinal: number; value: unknown }>;
   capturedAt: string;
+  captureMeta: {
+    missingColumns: string[];
+    unexpectedColumns: string[];
+    reasons: string[];
+  };
 };
 
 export type EcnSheetProfile = {

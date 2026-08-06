@@ -1,9 +1,17 @@
 import { createHash } from "crypto";
 import mongoose from "mongoose";
 import EcnSheetProfile from "../models/EcnSheetProfile.js";
+import {
+  DWK_57172_BINDINGS,
+  DWK_57172_HEADERS,
+  DWK_57172_PROFILE_VERSION,
+  DWK_57172_STATUS_ALIASES,
+} from "../profiles/dwk57172.js";
 import { CANONICAL_FIELD_ALIASES } from "../rules/defaultRuleset.js";
 
-export const DEFAULT_ECN_HEADERS = Object.freeze([
+export const DEFAULT_ECN_HEADERS = DWK_57172_HEADERS;
+
+const LEGACY_PLACEHOLDER_HEADERS = Object.freeze([
   "ECN Number",
   "Status",
   "Requested By",
@@ -18,6 +26,22 @@ export const DEFAULT_ECN_HEADERS = Object.freeze([
   "Change Type",
   "Product Manager",
 ]);
+
+const LEGACY_PLACEHOLDER_BINDINGS = Object.freeze({
+  ecnNumber: "ECN Number#1",
+  status: "Status#2",
+  requestedBy: "Requested By#3",
+  actionType: "Action Type#4",
+  priority: "Priority#5",
+  effectTiming: "Effect Timing#6",
+  itemNumber: "Item Number#7",
+  itemDescription: "Description#8",
+  detailedDescription: "Detailed Description#9",
+  reason: "Reason#10",
+  affectedAreas: "Affected Areas#11",
+  changeTypes: "Change Type#12",
+  productManager: "Product Manager#13",
+});
 
 const memoryProfiles = new Map();
 
@@ -72,34 +96,71 @@ function defaultCanonicalAliases() {
   );
 }
 
+function legacyDefaultCanonicalAliases() {
+  const aliases = defaultCanonicalAliases();
+  aliases.actionType = aliases.actionType.filter((value) => value !== "ecn type");
+  aliases.effectTiming = aliases.effectTiming.filter((value) => value !== "effective when");
+  aliases.detailedDescription = aliases.detailedDescription.filter(
+    (value) => value !== "description of change or new or discontinued item"
+  );
+  aliases.changeTypes = [...aliases.changeTypes.slice(0, 2), "ecn type", ...aliases.changeTypes.slice(2)];
+  return aliases;
+}
+
+function sameStringArrayRecord(left, right) {
+  const leftEntries = Object.entries(left);
+  const rightEntries = Object.entries(right);
+  if (leftEntries.length !== rightEntries.length) return false;
+  return rightEntries.every(([key, values]) =>
+    Array.isArray(left[key]) &&
+    left[key].length === values.length &&
+    values.every((value, index) => left[key][index] === value)
+  );
+}
+
+function isLegacyPlaceholderProfile(value) {
+  if (!value) return false;
+  const raw = typeof value.toObject === "function" ? value.toObject() : value;
+  const headers = Array.isArray(raw.headerOrder) ? raw.headerOrder : [];
+  const expectedHeaders = Array.isArray(raw.expectedHeaders) ? raw.expectedHeaders : [];
+  const bindings = toPlainRecord(raw.bindings);
+  const aliases = toPlainRecord(raw.aliases);
+  const statusAliases = toPlainRecord(raw.statusAliases);
+  const primaryKeys = Array.isArray(raw.primaryKeys) ? raw.primaryKeys : [];
+  const aliasesAreUntouched = Object.keys(aliases).length === 0 ||
+    sameStringArrayRecord(aliases, legacyDefaultCanonicalAliases()) ||
+    sameStringArrayRecord(aliases, defaultCanonicalAliases());
+  return raw.version === "draft-unmapped-1" &&
+    raw.confirmed !== true &&
+    headers.length === LEGACY_PLACEHOLDER_HEADERS.length &&
+    headers.every(
+      (header, index) => normalizeHeader(header) === normalizeHeader(LEGACY_PLACEHOLDER_HEADERS[index])
+    ) &&
+    expectedHeaders.length === headers.length &&
+    expectedHeaders.every((header, index) => normalizeHeader(header) === normalizeHeader(headers[index])) &&
+    raw.headerFingerprint === createHeaderFingerprint(headers) &&
+    Object.keys(bindings).length === Object.keys(LEGACY_PLACEHOLDER_BINDINGS).length &&
+    Object.entries(LEGACY_PLACEHOLDER_BINDINGS).every(([key, binding]) => bindings[key] === binding) &&
+    aliasesAreUntouched &&
+    Object.keys(statusAliases).length === 0 &&
+    primaryKeys.length === 1 && primaryKeys[0] === "ecnNumber" &&
+    (raw.locale === undefined || raw.locale === "en");
+}
+
 export function createDefaultSheetProfile() {
   const headerOrder = [...DEFAULT_ECN_HEADERS];
   return {
-    version: "draft-unmapped-1",
+    version: DWK_57172_PROFILE_VERSION,
     headerFingerprint: createHeaderFingerprint(headerOrder),
     expectedHeaders: [...headerOrder],
     headerOrder,
-    bindings: {
-      ecnNumber: makeColumnBinding("ECN Number", 1),
-      status: makeColumnBinding("Status", 2),
-      requestedBy: makeColumnBinding("Requested By", 3),
-      actionType: makeColumnBinding("Action Type", 4),
-      priority: makeColumnBinding("Priority", 5),
-      effectTiming: makeColumnBinding("Effect Timing", 6),
-      itemNumber: makeColumnBinding("Item Number", 7),
-      itemDescription: makeColumnBinding("Description", 8),
-      detailedDescription: makeColumnBinding("Detailed Description", 9),
-      reason: makeColumnBinding("Reason", 10),
-      affectedAreas: makeColumnBinding("Affected Areas", 11),
-      changeTypes: makeColumnBinding("Change Type", 12),
-      productManager: makeColumnBinding("Product Manager", 13),
-    },
+    bindings: { ...DWK_57172_BINDINGS },
     aliases: defaultCanonicalAliases(),
     primaryKeys: ["ecnNumber"],
-    statusAliases: {},
+    statusAliases: { ...DWK_57172_STATUS_ALIASES },
     locale: "en",
-    confirmed: false,
-    mappingState: "needs_remap",
+    confirmed: true,
+    mappingState: "ready",
   };
 }
 
@@ -122,6 +183,10 @@ function normalizeStoredProfile(value) {
   return profile;
 }
 
+function normalizeProfileForRead(value) {
+  return isLegacyPlaceholderProfile(value) ? createDefaultSheetProfile() : normalizeStoredProfile(value);
+}
+
 export function getProfileMappingState(profile) {
   const matches = profile?.headerFingerprint === createHeaderFingerprint(profile?.headerOrder || []);
   return profile?.confirmed === true && matches ? "ready" : "needs_remap";
@@ -131,10 +196,10 @@ export async function getSheetProfileForUser(userId) {
   const key = String(userId);
   if (mongoose.connection.readyState === 1) {
     const stored = await EcnSheetProfile.findOne({ user: key }).lean();
-    if (stored) return normalizeStoredProfile(stored);
+    if (stored) return normalizeProfileForRead(stored);
   }
   return memoryProfiles.has(key)
-    ? clone(memoryProfiles.get(key))
+    ? clone(normalizeProfileForRead(memoryProfiles.get(key)))
     : createDefaultSheetProfile();
 }
 

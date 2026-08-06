@@ -15,8 +15,16 @@ import {
   assessSnapshotAgainstProfile,
   createDefaultSheetProfile,
   createHeaderFingerprint,
+  getSheetProfileForUser,
   makeColumnBinding,
+  resetEcnProfileMemoryForTests,
+  saveSheetProfileForUser,
 } from "../extensions/ecn/services/profileService.js";
+import {
+  DWK_57172_BINDINGS,
+  DWK_57172_HEADERS,
+  DWK_57172_STATUS_ALIASES,
+} from "../extensions/ecn/profiles/dwk57172.js";
 import {
   SMARTSHEET_DOM_HOSTS,
   validateAnalyzeRequest,
@@ -38,12 +46,79 @@ const readyProfile = {
   confirmed: true,
 };
 
-test("default sheet profile exposes the full canonical alias catalog but remains unmapped", () => {
+test("default sheet profile is the verified DWKID-57172 rev K schema", () => {
   const profile = createDefaultSheetProfile();
-  assert.equal(profile.mappingState, "needs_remap");
+  assert.equal(profile.mappingState, "ready");
+  assert.equal(profile.confirmed, true);
+  assert.equal(profile.version, "dwkid-57172-rev-k");
+  assert.equal(profile.headerOrder.length, 67);
+  assert.deepEqual(profile.headerOrder, DWK_57172_HEADERS);
+  assert.equal(profile.headerFingerprint, "5865371850a79d92ad0daaa8cbe0488aad89a26b7439b72d913420b403ea6073");
+  assert.deepEqual(profile.bindings, DWK_57172_BINDINGS);
+  assert.deepEqual(profile.statusAliases, DWK_57172_STATUS_ALIASES);
   assert.ok(profile.aliases.bom.includes("bill of material"));
   assert.ok(profile.aliases.qaAuthorization.includes("qa approval"));
   assert.ok(profile.aliases.customerNotificationRequired.includes("notify customer"));
+});
+
+test("untouched legacy placeholder upgrades on read without matching custom profiles", async () => {
+  resetEcnProfileMemoryForTests();
+  const headers = [
+    "ECN Number", "Status", "Requested By", "Action Type", "Priority", "Effect Timing",
+    "Item Number", "Description", "Detailed Description", "Reason", "Affected Areas",
+    "Change Type", "Product Manager",
+  ];
+  const legacy = {
+    version: "draft-unmapped-1",
+    headerFingerprint: createHeaderFingerprint(headers),
+    expectedHeaders: [...headers],
+    headerOrder: [...headers],
+    bindings: {
+      ecnNumber: "ECN Number#1",
+      status: "Status#2",
+      requestedBy: "Requested By#3",
+      actionType: "Action Type#4",
+      priority: "Priority#5",
+      effectTiming: "Effect Timing#6",
+      itemNumber: "Item Number#7",
+      itemDescription: "Description#8",
+      detailedDescription: "Detailed Description#9",
+      reason: "Reason#10",
+      affectedAreas: "Affected Areas#11",
+      changeTypes: "Change Type#12",
+      productManager: "Product Manager#13",
+    },
+    aliases: {},
+    primaryKeys: ["ecnNumber"],
+    statusAliases: {},
+    locale: "en",
+  };
+  await saveSheetProfileForUser("legacy-placeholder", legacy, { confirmed: false });
+  const upgraded = await getSheetProfileForUser("legacy-placeholder");
+  assert.equal(upgraded.version, "dwkid-57172-rev-k");
+  assert.equal(upgraded.confirmed, true);
+  assert.deepEqual(upgraded.headerOrder, DWK_57172_HEADERS);
+
+  await saveSheetProfileForUser("legacy-custom", {
+    ...legacy,
+    statusAliases: { "Waiting for approval": "Pre-Approval" },
+    locale: "ru",
+  }, { confirmed: false });
+  const custom = await getSheetProfileForUser("legacy-custom");
+  assert.equal(custom.version, "draft-unmapped-1");
+  assert.equal(custom.confirmed, false);
+  assert.deepEqual(custom.headerOrder, headers);
+  assert.deepEqual(custom.statusAliases, { "Waiting for approval": "Pre-Approval" });
+  assert.equal(custom.locale, "ru");
+
+  await saveSheetProfileForUser("legacy-custom-alias", {
+    ...legacy,
+    aliases: { ecnNumber: ["Custom ECN"] },
+  }, { confirmed: false });
+  const customAlias = await getSheetProfileForUser("legacy-custom-alias");
+  assert.equal(customAlias.version, "draft-unmapped-1");
+  assert.deepEqual(customAlias.aliases.ecnNumber, ["Custom ECN"]);
+  resetEcnProfileMemoryForTests();
 });
 
 function snapshot(overrides = {}) {
