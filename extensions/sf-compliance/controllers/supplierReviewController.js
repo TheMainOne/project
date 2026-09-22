@@ -1,4 +1,4 @@
-import reviewSupplierResponse from "../services/reviewSupplierResponse.js";
+import reviewSupplierResponseService from "../services/reviewSupplierResponse.js";
 
 export async function reviewSupplierResponse(req, res) {
   try {
@@ -57,7 +57,7 @@ export async function reviewSupplierResponse(req, res) {
       });
     }
 
-    const result = await reviewSupplierResponse({
+    const result = await reviewSupplierResponseService({
       schemaVersion: schema_version,
       subjectId: String(subject_id),
       supplier: String(supplier),
