@@ -1,0 +1,56 @@
+import { loadConfig } from "./config.js";
+import { openStore } from "./store.js";
+import { createSmartsheetReader } from "./smartsheet.js";
+import { createMonitor } from "./monitor.js";
+import { createPanelServer } from "./http.js";
+
+if (Number(process.versions.node.split(".")[0]) < 24) {
+  console.error("Для этого комплекта нужен Node.js 24 LTS или новее.");
+  process.exit(1);
+}
+
+let store;
+let server;
+let monitor;
+try {
+  const config = loadConfig();
+  store = openStore(config.databasePath, config.sheetId);
+  monitor = createMonitor({
+    reader: createSmartsheetReader({ sheetId: config.sheetId, token: config.token }),
+    store,
+    pollSeconds: config.pollSeconds,
+    tokenConfigured: Boolean(config.token),
+  });
+  server = createPanelServer({ config, store, monitor });
+  await new Promise((resolve, reject) => {
+    server.once("error", reject);
+    server.listen(config.port, "127.0.0.1", resolve);
+  });
+  monitor.start();
+  console.log("ECN Agent — http://127.0.0.1:" + config.port);
+  console.log("ECF " + config.sheetId + " · наблюдение · интервал " + config.pollSeconds + " с");
+  console.log("Состояние и журнал: " + config.databasePath);
+  if (!config.token) console.log("Заполни SMARTSHEET_API_TOKEN в agents/ecn-agent/.env и перезапусти приложение.");
+} catch (error) {
+  store?.close();
+  const message = error.code === "EADDRINUSE"
+    ? "Порт занят. Проверь, запущен ли уже ECN Agent, или измени ECN_PORT в .env."
+    : "Запуск не удался. " + (error.message || "Проверь Node.js, .env и доступ к папке data.");
+  console.error(message);
+  process.exitCode = 1;
+}
+
+if (server?.listening) {
+  let closing = false;
+  async function shutdown() {
+    if (closing) return;
+    closing = true;
+    console.log("Завершаю текущую проверку и закрываю журнал…");
+    server.close();
+    await monitor.stop();
+    server.closeAllConnections();
+    store.close();
+  }
+  process.on("SIGINT", shutdown);
+  process.on("SIGTERM", shutdown);
+}

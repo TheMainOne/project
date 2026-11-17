@@ -1,0 +1,73 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>ECN Agent · ECF</title>
+  <link rel="stylesheet" href="/styles.css">
+  <script src="/app.js" type="module"></script>
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand" href="/">ECN<span>Agent</span></a>
+    <span class="workspace">ENGINEERING CHANGE FORM</span>
+    <span class="mode">Наблюдение</span>
+  </header>
+  <main>
+    <section class="page-header">
+      <div>
+        <p class="eyebrow">Engineering Change Form</p>
+        <h1>Обзор ECN</h1>
+        <p id="last-sync" class="subtle">Подключение к локальному агенту…</p>
+      </div>
+      <div class="controls">
+        <span id="connection" class="connection"><span class="dot"></span><span>Подключение</span></span>
+        <button id="pause" class="secondary" disabled>Пауза</button>
+        <button id="sync" class="primary" disabled>Проверить сейчас</button>
+      </div>
+    </section>
+    <p id="alert" role="alert" class="alert" hidden></p>
+    <p id="notice" role="status" class="notice" hidden></p>
+    <section class="metrics" aria-label="Количество ECN">
+      <article><span>Активные ECN</span><strong id="count-active">—</strong></article>
+      <article><span>Без номера</span><strong id="count-withoutNumber">—</strong></article>
+      <article><span>Initial Review</span><strong id="count-initialReview">—</strong></article>
+      <article><span>Sent for Approvals</span><strong id="count-awaitingApprovals">—</strong></article>
+    </section>
+    <section class="panel">
+      <div class="table-tools">
+        <label class="search"><span class="visually-hidden">Поиск ECN</span><input id="search" type="search" placeholder="Номер ECN, материал, площадка…" autocomplete="off"></label>
+        <label class="filter"><span class="visually-hidden">Фильтр статуса</span><select id="filter">
+          <option value="active">Активные ECN</option>
+          <option value="Initial Review">Initial Review</option>
+          <option value="Sent for Approvals">Sent for Approvals</option>
+          <option value="without-number">Без номера</option>
+          <option value="all">Все строки</option>
+        </select></label>
+        <span id="result-count" class="subtle">Ожидание данных</span>
+      </div>
+      <div class="table-scroll">
+        <table>
+          <thead><tr><th>ECN</th><th>Статус</th><th>Площадка</th><th>Материал</th><th>Описание</th><th>Изменён в ECF</th></tr></thead>
+          <tbody id="rows"></tbody>
+        </table>
+      </div>
+      <div id="empty" class="empty">После подключения здесь появятся строки вашей ECF.</div>
+      <footer class="pagination">
+        <span id="page-info" class="subtle"></span>
+        <button id="previous" class="secondary" disabled>Назад</button>
+        <button id="next" class="secondary" disabled>Далее</button>
+      </footer>
+    </section>
+    <section class="panel journal">
+      <div class="journal-title"><h2>Журнал работы</h2><span class="subtle">Последние 100 событий</span></div>
+      <p id="journal-empty" class="empty">Здесь будут видны проверки, изменения ECN и ошибки подключения.</p>
+      <ol id="events"></ol>
+    </section>
+  </main>
+  <dialog id="detail">
+    <div class="detail-head"><div><p class="eyebrow">Сохранённый снимок ECF</p><h2 id="detail-title">ECN</h2></div><button id="close-detail" class="secondary" aria-label="Закрыть карточку">Закрыть</button></div>
+    <div id="detail-content"></div>
+  </dialog>
+</body>
+</html>
