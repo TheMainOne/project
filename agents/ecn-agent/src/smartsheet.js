@@ -108,16 +108,46 @@ export function normalizeSheet(sheet) {
   };
 }
 
+// List Discussions must include=comments; Get Sheet's discussions flag omits bodies.
+export function normalizeDiscussions(discussions) {
+  const commentIds = new Set();
+  return discussions.map(discussion => {
+    const id = idString(discussion.id);
+    const parentId = idString(discussion.parentId);
+    if (!["ROW", "SHEET"].includes(discussion.parentType) || !Array.isArray(discussion.comments)) {
+      throw new SmartsheetError("incomplete_comments", "Smartsheet вернул обсуждения без полного списка комментариев.");
+    }
+    if (discussion.commentCount !== undefined && discussion.commentCount !== discussion.comments.length) {
+      throw new SmartsheetError("incomplete_comments", "Получены не все комментарии обсуждения. Сохранён предыдущий снимок.");
+    }
+    const comments = discussion.comments.map(comment => {
+      const commentId = idString(comment.id);
+      if (commentIds.has(commentId) || (comment.discussionId !== undefined && idString(comment.discussionId) !== id)) {
+        throw new SmartsheetError("incomplete_comments", "Получены повторяющиеся или несогласованные комментарии.");
+      }
+      commentIds.add(commentId);
+      if (comment.text !== undefined && typeof comment.text !== "string") {
+        throw new SmartsheetError("invalid_response", "Неожиданный формат текста комментария.");
+      }
+      return {
+        id: commentId,
+        discussionId: id,
+        text: comment.text || "",
+        createdAt: comment.createdAt || null,
+        modifiedAt: comment.modifiedAt || comment.createdAt || null,
+        author: { name: String(comment.createdBy?.name || ""), email: String(comment.createdBy?.email || "") },
+      };
+    }).sort((a, b) => String(a.createdAt || "").localeCompare(String(b.createdAt || "")) || a.id.localeCompare(b.id));
+    return { id, parentId, parentType: discussion.parentType, title: String(discussion.title || ""), comments };
+  }).sort((a, b) => a.id.localeCompare(b.id));
+}
+
 export function createSmartsheetReader({ sheetId, token, fetchImpl = fetch, wait = delay }) {
   idString(sheetId);
   const pageSize = 500;
+  const sheetPath = "https://api.smartsheet.com/2.0/sheets/" + sheetId;
 
-  async function readPage(page, signal) {
-    const url = new URL("https://api.smartsheet.com/2.0/sheets/" + sheetId);
-    url.searchParams.set("pageSize", String(pageSize));
-    url.searchParams.set("page", String(page));
-    url.searchParams.set("level", "2");
-    url.searchParams.set("include", "objectValue");
+  async function readJson(url, signal) {
     for (let attempt = 0; attempt < 3; attempt += 1) {
       const response = await fetchImpl(url, {
         method: "GET",
@@ -131,13 +161,9 @@ export function createSmartsheetReader({ sheetId, token, fetchImpl = fetch, wait
       });
       if ((response.status === 429 || response.status >= 500) && attempt < 2) {
         const retryAfter = response.headers.get("retry-after");
-        const seconds = retryAfter && /^\d+(\.\d+)?$/.test(retryAfter)
-          ? Number(retryAfter)
-          : 2 ** attempt * 2;
+        const seconds = retryAfter && /^\d+(\.\d+)?$/.test(retryAfter) ? Number(retryAfter) : 2 ** attempt * 2;
         await response.body?.cancel();
-        if (seconds > 60) {
-          throw new SmartsheetError("rate_limited", "Smartsheet ограничил запросы. Повтор будет на следующем цикле.");
-        }
+        if (seconds > 60) throw new SmartsheetError("rate_limited", "Smartsheet ограничил запросы. Повтор будет на следующем цикле.");
         await wait(seconds * 1000, undefined, { signal });
         continue;
       }
@@ -145,39 +171,71 @@ export function createSmartsheetReader({ sheetId, token, fetchImpl = fetch, wait
         await response.body?.cancel();
         const messages = {
           401: "Smartsheet отклонил токен. Проверь SMARTSHEET_API_TOKEN в .env.",
-          403: "У аккаунта токена нет доступа к ECF.",
-          404: "Smartsheet не нашёл ECF для этого аккаунта.",
+          403: "У аккаунта токена нет доступа к ECF или её обсуждениям.",
+          404: "Smartsheet не нашёл ECF или её обсуждения для этого аккаунта.",
           429: "Smartsheet ограничил запросы. Повтор будет на следующем цикле.",
         };
-        throw new SmartsheetError(
-          "http_" + response.status,
-          messages[response.status] || "Smartsheet временно недоступен. HTTP " + response.status,
-        );
+        throw new SmartsheetError("http_" + response.status, messages[response.status] || "Smartsheet временно недоступен. HTTP " + response.status);
       }
-      const sheet = await response.json();
-      if (
-        idString(sheet.id) !== sheetId ||
-        !Number.isSafeInteger(sheet.totalRowCount) ||
-        sheet.totalRowCount < 0 ||
-        !Number.isSafeInteger(sheet.version) ||
-        !Array.isArray(sheet.rows) ||
-        !Array.isArray(sheet.columns)
-      ) {
-        throw new SmartsheetError("invalid_response", "Неожиданный формат ответа Smartsheet.");
-      }
-      return sheet;
+      return response.json();
     }
+  }
+
+  async function readPage(page, signal) {
+    const url = new URL(sheetPath);
+    for (const [key, value] of Object.entries({ pageSize, page, level: 2, include: "objectValue" })) url.searchParams.set(key, String(value));
+    const sheet = await readJson(url, signal);
+    if (idString(sheet.id) !== sheetId || !Number.isSafeInteger(sheet.totalRowCount) || sheet.totalRowCount < 0 ||
+        !Number.isSafeInteger(sheet.version) || !Array.isArray(sheet.rows) || !Array.isArray(sheet.columns)) {
+      throw new SmartsheetError("invalid_response", "Неожиданный формат ответа Smartsheet.");
+    }
+    return sheet;
+  }
+
+  async function discussionPage(page, signal) {
+    const url = new URL(sheetPath + "/discussions");
+    url.searchParams.set("include", "comments");
+    url.searchParams.set("pageSize", "100");
+    url.searchParams.set("page", String(page));
+    const data = await readJson(url, signal);
+    if (!Array.isArray(data.data) || data.pageNumber !== page || !Number.isSafeInteger(data.totalCount) || data.totalCount < 0 ||
+        !Number.isSafeInteger(data.totalPages) || data.totalPages < 0 || data.totalPages > 1000 ||
+        (data.totalCount > 0 && data.totalPages < 1)) {
+      throw new SmartsheetError("incomplete_comments", "Не удалось получить полный список обсуждений ECF.");
+    }
+    return data;
+  }
+
+  async function readDiscussions(signal) {
+    const first = await discussionPage(1, signal);
+    const data = [...first.data];
+    for (let page = 2; page <= first.totalPages; page += 1) {
+      const part = await discussionPage(page, signal);
+      if (part.totalCount !== first.totalCount || part.totalPages !== first.totalPages) {
+        throw new SmartsheetError("comments_changed", "Обсуждения изменились во время чтения. Проверка повторится на следующем цикле.");
+      }
+      data.push(...part.data);
+    }
+    const ids = new Set(data.map(item => idString(item.id)));
+    if (data.length !== first.totalCount || ids.size !== first.totalCount) {
+      throw new SmartsheetError("incomplete_comments", "Получен неполный список обсуждений. Сохранён предыдущий снимок.");
+    }
+    if (first.totalPages > 1) {
+      const verify = await discussionPage(1, signal);
+      if (verify.totalCount !== first.totalCount || verify.totalPages !== first.totalPages ||
+          JSON.stringify(normalizeDiscussions(verify.data)) !== JSON.stringify(normalizeDiscussions(first.data))) {
+        throw new SmartsheetError("comments_changed", "Обсуждения изменились во время чтения. Проверка повторится на следующем цикле.");
+      }
+    }
+    return normalizeDiscussions(data);
   }
 
   return {
     async read() {
-      if (!token) {
-        throw new SmartsheetError("missing_token", "Заполни SMARTSHEET_API_TOKEN в .env и перезапусти агента.");
-      }
+      if (!token) throw new SmartsheetError("missing_token", "Заполни SMARTSHEET_API_TOKEN в .env и перезапусти агента.");
       const signal = AbortSignal.timeout(90_000);
-      let first;
       try {
-        first = await readPage(1, signal);
+        const first = await readPage(1, signal);
         const rows = [...first.rows];
         const pages = Math.ceil(first.totalRowCount / pageSize);
         for (let page = 2; page <= pages; page += 1) {
@@ -187,20 +245,29 @@ export function createSmartsheetReader({ sheetId, token, fetchImpl = fetch, wait
           }
           rows.push(...part.rows);
         }
-        if (pages > 1) {
-          const verify = await readPage(1, signal);
-          if (verify.version !== first.version || verify.totalRowCount !== first.totalRowCount) {
-            throw new SmartsheetError("sheet_changed", "ECF изменилась во время чтения. Полный снимок будет повторён.");
-          }
-        }
         const uniqueIds = new Set(rows.map(row => idString(row.id)));
         if (uniqueIds.size !== first.totalRowCount || rows.length !== first.totalRowCount) {
           throw new SmartsheetError("incomplete_read", "Получена неполная ECF. Сохранён предыдущий снимок.");
         }
-        return normalizeSheet({ ...first, rows });
+        // Always poll conversations, even when row.modifiedAt and sheet.version did not change.
+        const discussions = await readDiscussions(signal);
+        const verify = await readPage(1, signal);
+        if (verify.version !== first.version || verify.totalRowCount !== first.totalRowCount) {
+          throw new SmartsheetError("sheet_changed", "ECF изменилась во время чтения строк и комментариев. Проверка повторится.");
+        }
+        const sheet = normalizeSheet({ ...first, rows });
+        const rowsById = new Map(sheet.rows.map(row => { row.discussions = []; return [row.id, row]; }));
+        let sheetDiscussionCount = 0;
+        for (const discussion of discussions) {
+          if (discussion.parentType === "SHEET") { sheetDiscussionCount += 1; continue; }
+          const row = rowsById.get(discussion.parentId);
+          if (!row) throw new SmartsheetError("sheet_changed", "Обсуждения не совпали со строками ECF. Проверка повторится на следующем цикле.");
+          row.discussions.push(discussion);
+        }
+        return { ...sheet, commentsLoaded: true, sheetDiscussionCount };
       } catch (error) {
         if (error instanceof SmartsheetError) throw error;
-        throw new SmartsheetError("connection_failed", "Не удалось прочитать ECF. Проверь интернет, VPN и доступ к Smartsheet.");
+        throw new SmartsheetError("connection_failed", "Не удалось прочитать ECF и комментарии. Проверь интернет, VPN и доступ к Smartsheet.");
       }
     },
   };

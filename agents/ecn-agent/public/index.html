@@ -3,71 +3,65 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>ECN Agent · ECF</title>
+  <title>ECF · ECN Agent</title>
   <link rel="stylesheet" href="/styles.css">
   <script src="/app.js" type="module"></script>
 </head>
 <body>
-  <header class="topbar">
-    <a class="brand" href="/">ECN<span>Agent</span></a>
-    <span class="workspace">ENGINEERING CHANGE FORM</span>
-    <span class="mode">Наблюдение</span>
-  </header>
-  <main>
-    <section class="page-header">
-      <div>
-        <p class="eyebrow">Engineering Change Form</p>
-        <h1>Обзор ECN</h1>
-        <p id="last-sync" class="subtle">Подключение к локальному агенту…</p>
-      </div>
-      <div class="controls">
-        <span id="connection" class="connection"><span class="dot"></span><span>Подключение</span></span>
-        <button id="pause" class="secondary" disabled>Пауза</button>
-        <button id="sync" class="primary" disabled>Проверить сейчас</button>
-      </div>
-    </section>
+  <aside class="rail" aria-label="Навигация">
+    <a class="brand" href="/" aria-label="ECN Agent">E<span>•</span></a>
+    <nav>
+      <button id="nav-sheet" class="rail-button selected" title="Таблица ECF" aria-label="Таблица ECF" aria-pressed="true"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 9h18M9 9v11M3 14h18"/></svg><span>Таблица</span></button>
+      <button id="nav-unread" class="rail-button" title="Новые комментарии" aria-label="Новые комментарии"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 15a3 3 0 0 1-3 3H9l-5 3V6a3 3 0 0 1 3-3h10a3 3 0 0 1 3 3zM8 8h8M8 12h5"/></svg><span>Обсуждения</span><b id="rail-unread" hidden>0</b></button>
+      <button id="nav-activity" class="rail-button" title="Журнал работы" aria-label="Журнал работы" aria-pressed="false"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h10"/><circle cx="19" cy="18" r="2"/></svg><span>Журнал</span></button>
+    </nav>
+    <span class="rail-footer">ECN<br>AGENT</span>
+  </aside>
+  <main class="workspace">
+    <header class="sheet-header">
+      <div class="sheet-heading"><p class="breadcrumb">Рабочее пространство <span>/</span> ECF</p><h1>Engineering Change Form</h1></div>
+      <div class="header-right"><span id="connection" class="connection"><i></i><span>Подключение</span></span><span class="mode">Наблюдение</span></div>
+    </header>
+    <div class="toolbar">
+      <div class="view-label"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 9h18M9 9v11"/></svg><strong id="view-name">Таблица</strong></div>
+      <span class="toolbar-divider"></span>
+      <label class="search"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="10" cy="10" r="6"/><path d="m15 15 5 5"/></svg><span class="visually-hidden">Поиск ECN</span><input id="search" type="search" placeholder="Поиск по ECN, материалу, площадке…" autocomplete="off"></label>
+      <label class="select-wrap"><span class="visually-hidden">Фильтр строк</span><select id="filter"><option value="active">Активные ECN</option><option value="all">Все строки</option><option value="Initial Review">Initial Review</option><option value="Sent for Approvals">Sent for Approvals</option><option value="without-number">Без номера</option><option value="with-comments">С комментариями</option><option value="unread">Новые комментарии</option></select></label>
+      <label class="select-wrap sort"><span class="visually-hidden">Сортировка</span><select id="sort"><option value="sheet">Порядок ECF</option><option value="modified">По изменению строки</option><option value="comments">По активности обсуждений</option></select></label>
+      <div class="toolbar-actions"><button id="pause" class="button" disabled>Пауза</button><button id="sync" class="button primary" disabled>Проверить сейчас</button></div>
+    </div>
     <p id="alert" role="alert" class="alert" hidden></p>
     <p id="notice" role="status" class="notice" hidden></p>
-    <section class="metrics" aria-label="Количество ECN">
-      <article><span>Активные ECN</span><strong id="count-active">—</strong></article>
-      <article><span>Без номера</span><strong id="count-withoutNumber">—</strong></article>
-      <article><span>Initial Review</span><strong id="count-initialReview">—</strong></article>
-      <article><span>Sent for Approvals</span><strong id="count-awaitingApprovals">—</strong></article>
-    </section>
-    <section class="panel">
-      <div class="table-tools">
-        <label class="search"><span class="visually-hidden">Поиск ECN</span><input id="search" type="search" placeholder="Номер ECN, материал, площадка…" autocomplete="off"></label>
-        <label class="filter"><span class="visually-hidden">Фильтр статуса</span><select id="filter">
-          <option value="active">Активные ECN</option>
-          <option value="Initial Review">Initial Review</option>
-          <option value="Sent for Approvals">Sent for Approvals</option>
-          <option value="without-number">Без номера</option>
-          <option value="all">Все строки</option>
-        </select></label>
-        <span id="result-count" class="subtle">Ожидание данных</span>
-      </div>
-      <div class="table-scroll">
-        <table>
-          <thead><tr><th>ECN</th><th>Статус</th><th>Площадка</th><th>Материал</th><th>Описание</th><th>Изменён в ECF</th></tr></thead>
-          <tbody id="rows"></tbody>
-        </table>
-      </div>
-      <div id="empty" class="empty">После подключения здесь появятся строки вашей ECF.</div>
-      <footer class="pagination">
-        <span id="page-info" class="subtle"></span>
-        <button id="previous" class="secondary" disabled>Назад</button>
-        <button id="next" class="secondary" disabled>Далее</button>
-      </footer>
-    </section>
-    <section class="panel journal">
-      <div class="journal-title"><h2>Журнал работы</h2><span class="subtle">Последние 100 событий</span></div>
-      <p id="journal-empty" class="empty">Здесь будут видны проверки, изменения ECN и ошибки подключения.</p>
-      <ol id="events"></ol>
-    </section>
+    <div class="summary-bar" aria-label="Сводка ECF">
+      <button data-filter="active">Активные <b id="count-active">—</b></button>
+      <button data-filter="without-number">Без номера <b id="count-withoutNumber">—</b></button>
+      <button data-filter="Initial Review">Initial Review <b id="count-initialReview">—</b></button>
+      <button data-filter="Sent for Approvals">На согласовании <b id="count-awaitingApprovals">—</b></button>
+      <button data-filter="unread" class="unread-summary">Новые комментарии <b id="count-unreadComments">—</b></button>
+      <span id="last-sync" class="last-sync">Ожидание данных…</span>
+    </div>
+    <div id="content-area" class="content-area">
+      <section id="sheet-view" class="sheet-view" aria-label="Строки ECF">
+        <div id="grid-scroll" class="grid-scroll" tabindex="0" aria-label="Таблица ECN, прокрутка по горизонтали">
+          <table><colgroup><col class="col-number"><col class="col-chat"><col class="col-ecn"><col class="col-status"><col class="col-site"><col class="col-item"><col class="col-description"><col class="col-date"></colgroup>
+            <thead><tr><th class="sticky-number" scope="col">#</th><th class="sticky-chat" scope="col" title="Комментарии"><span class="visually-hidden">Комментарии</span><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 15a3 3 0 0 1-3 3H9l-5 3V6a3 3 0 0 1 3-3h10a3 3 0 0 1 3 3z"/></svg></th><th class="sticky-ecn" scope="col">ECN Number</th><th scope="col">ECN Status</th><th scope="col">Site</th><th scope="col">Item Number</th><th scope="col">Item Description</th><th scope="col">Изменена строка</th></tr></thead>
+            <tbody id="rows"></tbody>
+          </table>
+          <div id="empty" class="empty"><strong>Ожидание ECF</strong><span>После подключения здесь появятся строки таблицы.</span></div>
+        </div>
+        <footer class="grid-footer"><span id="result-count">Ожидание данных</span><span class="footer-hint">Нажми на ECN или значок обсуждения</span><span id="page-info"></span><button id="previous" class="button small" disabled>Назад</button><button id="next" class="button small" disabled>Далее</button></footer>
+      </section>
+      <section id="activity-view" class="activity-view" hidden><div class="section-title"><div><h2>Журнал работы</h2><p>Проверки ECF, изменения строк и комментариев</p></div><span>Последние 100 событий</span></div><p id="journal-empty" class="empty">Событий пока нет.</p><ol id="events"></ol></section>
+      <aside id="drawer" class="drawer" aria-labelledby="detail-title" hidden>
+        <div class="drawer-heading"><div><p class="eyebrow">Строка <span id="detail-row-number">—</span></p><h2 id="detail-title">ECN</h2></div><button id="close-detail" class="icon-button" aria-label="Закрыть карточку" title="Закрыть"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18"/></svg></button></div>
+        <div class="drawer-tabs" role="tablist" aria-label="Данные ECN"><button id="tab-details" role="tab" aria-controls="detail-content" aria-selected="true">Данные ECN</button><button id="tab-comments" role="tab" aria-controls="comments-content" aria-selected="false">Комментарии <b id="detail-comment-count">0</b></button></div>
+        <div id="detail-content" class="drawer-body" role="tabpanel" aria-labelledby="tab-details"></div>
+        <div id="comments-content" class="drawer-body" role="tabpanel" aria-labelledby="tab-comments" hidden></div>
+        <footer class="drawer-footer"><span id="detail-source">Последний сохранённый снимок ECF</span></footer>
+      </aside>
+    </div>
+    <footer class="statusbar"><span><i></i> Локальная панель</span><span id="comment-total">Комментарии ещё не загружены</span><span id="poll-interval">Автопроверка</span></footer>
   </main>
-  <dialog id="detail">
-    <div class="detail-head"><div><p class="eyebrow">Сохранённый снимок ECF</p><h2 id="detail-title">ECN</h2></div><button id="close-detail" class="secondary" aria-label="Закрыть карточку">Закрыть</button></div>
-    <div id="detail-content"></div>
-  </dialog>
+  <template id="message-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 15a3 3 0 0 1-3 3H9l-5 3V6a3 3 0 0 1 3-3h10a3 3 0 0 1 3 3z"/></svg></template>
 </body>
 </html>

@@ -56,6 +56,28 @@ export function createPanelServer({ config, store, monitor }) {
         const row = store.row(url.pathname.split("/").at(-1));
         return sendJson(res, row ? 200 : 404, row || { error: "Строка отсутствует в последнем снимке ECF." });
       }
+      if (req.method === "POST" && /^\/api\/rows\/[1-9]\d*\/comments\/seen$/.test(url.pathname)) {
+        if (req.headers.origin !== origin || req.headers["x-ecn-ui"] !== "1") {
+          return sendJson(res, 403, { error: "Используй локальную панель." });
+        }
+        if (!String(req.headers["content-type"] || "").startsWith("application/json")) {
+          return sendJson(res, 415, { error: "Ожидается JSON." });
+        }
+        let body = "";
+        for await (const chunk of req) {
+          body += chunk.toString();
+          if (Buffer.byteLength(body) > 1024) return sendJson(res, 413, { error: "Слишком большой запрос." });
+        }
+        let revision;
+        try { revision = JSON.parse(body).revision; } catch { return sendJson(res, 400, { error: "Некорректный JSON." }); }
+        if (typeof revision !== "string" || !/^[a-f0-9]{64}$/.test(revision)) {
+          return sendJson(res, 400, { error: "Некорректная версия комментариев." });
+        }
+        const result = store.markCommentsSeen(url.pathname.split("/")[3], revision);
+        if (result === "missing") return sendJson(res, 404, { error: "Строка уже отсутствует в ECF." });
+        if (result === "stale") return sendJson(res, 409, { error: "Появились изменения. Обнови комментарии." });
+        return sendJson(res, 200, { ok: true });
+      }
       if (req.method === "POST" && ["/api/sync", "/api/pause", "/api/resume"].includes(url.pathname)) {
         if (req.headers.origin !== origin || req.headers["x-ecn-ui"] !== "1") {
           return sendJson(res, 403, { error: "Используй кнопки локальной панели." });
