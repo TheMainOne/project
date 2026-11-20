@@ -142,8 +142,42 @@ export function normalizeDiscussions(discussions) {
   }).sort((a, b) => a.id.localeCompare(b.id));
 }
 
+// Keep temporary download URLs out of snapshots, hashes, and event history.
+export function normalizeAttachment(attachment) {
+  if (!attachment || typeof attachment !== "object" ||
+      !["ROW", "COMMENT", "SHEET", "PROOF"].includes(attachment.parentType) ||
+      typeof attachment.attachmentType !== "string" || !attachment.attachmentType ||
+      (attachment.sizeInKb != null && (!Number.isFinite(attachment.sizeInKb) || attachment.sizeInKb < 0))) {
+    throw new SmartsheetError("incomplete_attachments", "Smartsheet вернул неполные сведения о вложении. Сохранён предыдущий снимок.");
+  }
+  return {
+    id: idString(attachment.id),
+    parentId: idString(attachment.parentId),
+    parentType: attachment.parentType,
+    attachmentType: attachment.attachmentType,
+    attachmentSubType: String(attachment.attachmentSubType || ""),
+    mimeType: String(attachment.mimeType || ""),
+    name: String(attachment.name || ""),
+    sizeInKb: attachment.sizeInKb ?? null,
+    createdAt: attachment.createdAt || null,
+    author: { name: String(attachment.createdBy?.name || ""), email: String(attachment.createdBy?.email || "") },
+  };
+}
+
+function attachmentUrl(value, attachmentType) {
+  try {
+    if (typeof value !== "string" || !value) throw new Error();
+    const url = new URL(value);
+    if (!["https:", "http:"].includes(url.protocol) || url.username || url.password ||
+        (attachmentType === "FILE" && url.protocol !== "https:")) throw new Error();
+    return url.href;
+  } catch {
+    throw new SmartsheetError("invalid_attachment_url", "Smartsheet не предоставил безопасную ссылку на вложение. Попробуй открыть его в Smartsheet.");
+  }
+}
+
 export function createSmartsheetReader({ sheetId, token, fetchImpl = fetch, wait = delay }) {
-  idString(sheetId);
+  sheetId = idString(sheetId);
   const pageSize = 500;
   const sheetPath = "https://api.smartsheet.com/2.0/sheets/" + sheetId;
 
@@ -171,8 +205,8 @@ export function createSmartsheetReader({ sheetId, token, fetchImpl = fetch, wait
         await response.body?.cancel();
         const messages = {
           401: "Smartsheet отклонил токен. Проверь SMARTSHEET_API_TOKEN в .env.",
-          403: "У аккаунта токена нет доступа к ECF или её обсуждениям.",
-          404: "Smartsheet не нашёл ECF или её обсуждения для этого аккаунта.",
+          403: "У аккаунта токена нет доступа к ECF, её обсуждениям или вложениям.",
+          404: "Smartsheet не нашёл ECF, обсуждение или вложение для этого аккаунта. Возможно, объект удалён.",
           429: "Smartsheet ограничил запросы. Повтор будет на следующем цикле.",
         };
         throw new SmartsheetError("http_" + response.status, messages[response.status] || "Smartsheet временно недоступен. HTTP " + response.status);
@@ -230,7 +264,60 @@ export function createSmartsheetReader({ sheetId, token, fetchImpl = fetch, wait
     return normalizeDiscussions(data);
   }
 
+  async function attachmentPage(page, signal) {
+    const url = new URL(sheetPath + "/attachments");
+    url.searchParams.set("pageSize", "100");
+    url.searchParams.set("page", String(page));
+    const data = await readJson(url, signal);
+    if (!data || !Array.isArray(data.data) || data.pageNumber !== page ||
+        !Number.isSafeInteger(data.totalCount) || data.totalCount < 0 ||
+        !Number.isSafeInteger(data.totalPages) || data.totalPages < 0 || data.totalPages > 1000 ||
+        (data.totalCount > 0 && (data.totalPages < 1 || !data.data.length)) ||
+        (data.totalCount === 0 && data.totalPages > 1)) {
+      throw new SmartsheetError("incomplete_attachments", "Не удалось получить полный список вложений ECF. Сохранён предыдущий снимок.");
+    }
+    return { ...data, data: data.data.map(normalizeAttachment).sort((a, b) => a.id.localeCompare(b.id)) };
+  }
+
+  async function readAttachments(signal) {
+    const first = await attachmentPage(1, signal);
+    const attachments = [...first.data];
+    for (let page = 2; page <= first.totalPages; page += 1) {
+      const part = await attachmentPage(page, signal);
+      if (part.totalCount !== first.totalCount || part.totalPages !== first.totalPages) {
+        throw new SmartsheetError("attachments_changed", "Вложения изменились во время чтения. Проверка повторится на следующем цикле.");
+      }
+      attachments.push(...part.data);
+    }
+    if (attachments.length !== first.totalCount || new Set(attachments.map(item => item.id)).size !== first.totalCount) {
+      throw new SmartsheetError("incomplete_attachments", "Получен неполный список вложений. Сохранён предыдущий снимок.");
+    }
+    if (first.totalPages > 1) {
+      const verify = await attachmentPage(1, signal);
+      if (verify.totalCount !== first.totalCount || verify.totalPages !== first.totalPages ||
+          JSON.stringify(verify.data) !== JSON.stringify(first.data)) {
+        throw new SmartsheetError("attachments_changed", "Вложения изменились во время чтения. Проверка повторится на следующем цикле.");
+      }
+    }
+    return attachments.sort((a, b) => a.id.localeCompare(b.id));
+  }
+
   return {
+    async getAttachment(attachmentId) {
+      const id = idString(attachmentId);
+      if (!token) throw new SmartsheetError("missing_token", "Заполни SMARTSHEET_API_TOKEN в .env и перезапусти агента.");
+      try {
+        const raw = await readJson(new URL(sheetPath + "/attachments/" + id), AbortSignal.timeout(90_000));
+        const attachment = normalizeAttachment(raw);
+        if (attachment.id !== id) {
+          throw new SmartsheetError("attachment_changed", "Smartsheet вернул другое вложение. Обнови список и попробуй снова.");
+        }
+        return { ...attachment, url: attachmentUrl(raw.url, attachment.attachmentType) };
+      } catch (error) {
+        if (error instanceof SmartsheetError) throw error;
+        throw new SmartsheetError("connection_failed", "Не удалось получить ссылку на вложение. Проверь интернет, VPN и доступ к Smartsheet.");
+      }
+    },
     async read() {
       if (!token) throw new SmartsheetError("missing_token", "Заполни SMARTSHEET_API_TOKEN в .env и перезапусти агента.");
       const signal = AbortSignal.timeout(90_000);
@@ -249,25 +336,48 @@ export function createSmartsheetReader({ sheetId, token, fetchImpl = fetch, wait
         if (uniqueIds.size !== first.totalRowCount || rows.length !== first.totalRowCount) {
           throw new SmartsheetError("incomplete_read", "Получена неполная ECF. Сохранён предыдущий снимок.");
         }
-        // Always poll conversations, even when row.modifiedAt and sheet.version did not change.
+        // Poll comments and attachments even when row timestamps and sheet version did not change.
         const discussions = await readDiscussions(signal);
+        const attachments = await readAttachments(signal);
         const verify = await readPage(1, signal);
         if (verify.version !== first.version || verify.totalRowCount !== first.totalRowCount) {
-          throw new SmartsheetError("sheet_changed", "ECF изменилась во время чтения строк и комментариев. Проверка повторится.");
+          throw new SmartsheetError("sheet_changed", "ECF изменилась во время чтения строк, комментариев и вложений. Проверка повторится.");
         }
         const sheet = normalizeSheet({ ...first, rows });
-        const rowsById = new Map(sheet.rows.map(row => { row.discussions = []; return [row.id, row]; }));
+        const rowsById = new Map(sheet.rows.map(row => { row.discussions = []; row.attachments = []; return [row.id, row]; }));
+        const commentRows = new Map();
         let sheetDiscussionCount = 0;
         for (const discussion of discussions) {
-          if (discussion.parentType === "SHEET") { sheetDiscussionCount += 1; continue; }
+          if (discussion.parentType === "SHEET") {
+            if (discussion.parentId !== sheet.id) throw new SmartsheetError("sheet_changed", "Обсуждение не совпало с ECF. Проверка повторится на следующем цикле.");
+            sheetDiscussionCount += 1;
+            for (const comment of discussion.comments) commentRows.set(comment.id, null);
+            continue;
+          }
           const row = rowsById.get(discussion.parentId);
           if (!row) throw new SmartsheetError("sheet_changed", "Обсуждения не совпали со строками ECF. Проверка повторится на следующем цикле.");
           row.discussions.push(discussion);
+          for (const comment of discussion.comments) commentRows.set(comment.id, row);
         }
-        return { ...sheet, commentsLoaded: true, sheetDiscussionCount };
+        let sheetAttachmentCount = 0;
+        let proofAttachmentCount = 0;
+        for (const attachment of attachments) {
+          // A proof parent is not a row ID; mapping it requires the separate proofs API.
+          if (attachment.parentType === "PROOF") { proofAttachmentCount += 1; continue; }
+          if (attachment.parentType === "SHEET") {
+            if (attachment.parentId !== sheet.id) throw new SmartsheetError("attachments_changed", "Вложение не совпало с ECF. Проверка повторится на следующем цикле.");
+            sheetAttachmentCount += 1;
+            continue;
+          }
+          const row = attachment.parentType === "ROW" ? rowsById.get(attachment.parentId) : commentRows.get(attachment.parentId);
+          if (row === null) { sheetAttachmentCount += 1; continue; }
+          if (!row) throw new SmartsheetError("attachments_changed", "Вложения не совпали со строками или комментариями ECF. Сохранён предыдущий снимок; проверка повторится.");
+          row.attachments.push(attachment);
+        }
+        return { ...sheet, commentsLoaded: true, attachmentsLoaded: true, sheetDiscussionCount, sheetAttachmentCount, proofAttachmentCount };
       } catch (error) {
         if (error instanceof SmartsheetError) throw error;
-        throw new SmartsheetError("connection_failed", "Не удалось прочитать ECF и комментарии. Проверь интернет, VPN и доступ к Smartsheet.");
+        throw new SmartsheetError("connection_failed", "Не удалось прочитать ECF, комментарии и вложения. Проверь интернет, VPN и доступ к Smartsheet.");
       }
     },
   };

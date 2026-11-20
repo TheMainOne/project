@@ -15,13 +15,14 @@ let monitor;
 try {
   const config = loadConfig();
   store = openStore(config.databasePath, config.sheetId);
+  const reader = createSmartsheetReader({ sheetId: config.sheetId, token: config.token });
   monitor = createMonitor({
-    reader: createSmartsheetReader({ sheetId: config.sheetId, token: config.token }),
+    reader,
     store,
     pollSeconds: config.pollSeconds,
     tokenConfigured: Boolean(config.token),
   });
-  server = createPanelServer({ config, store, monitor });
+  server = createPanelServer({ config, store, monitor, reader });
   await new Promise((resolve, reject) => {
     server.once("error", reject);
     server.listen(config.port, "127.0.0.1", resolve);

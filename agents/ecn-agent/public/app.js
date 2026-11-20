@@ -12,6 +12,8 @@ let lastEventsKey = "";
 let activeView = "sheet";
 let seenPending = new Set();
 const perPage = 100;
+const detailTabs = ["details", "comments", "attachments"];
+const detailPanels = ["detail-content", "comments-content", "attachments-content"];
 
 function element(tag, text, className) {
   const node = document.createElement(tag);
@@ -43,8 +45,9 @@ function visibleRows() {
     if (filter === "active" && !row.active) return false;
     if (filter === "without-number" && (row.ecnNumber || !row.active)) return false;
     if (filter === "with-comments" && !row.commentCount) return false;
+    if (filter === "with-attachments" && !row.attachmentCount) return false;
     if (filter === "unread" && !row.unreadCommentCount) return false;
-    if (!["active", "without-number", "all", "with-comments", "unread"].includes(filter) && row.status !== filter) return false;
+    if (!["active", "without-number", "all", "with-comments", "with-attachments", "unread"].includes(filter) && row.status !== filter) return false;
     return !search || [row.ecnNumber, row.site, row.itemNumber, row.itemDescription, row.status, row.requestedBy]
       .some(value => String(value || "").toLocaleLowerCase().includes(search));
   });
@@ -59,7 +62,7 @@ function renderRows() {
   const rows = visibleRows();
   page = Math.min(page, Math.max(0, Math.ceil(rows.length / perPage) - 1));
   const displayed = rows.slice(page * perPage, (page + 1) * perPage);
-  const key = JSON.stringify([displayed, selectedId, page]);
+  const key = JSON.stringify([displayed, selectedId, page, current?.attachmentsLoaded]);
   if (key !== lastRowsKey) {
     lastRowsKey = key;
     const focus = document.activeElement?.dataset;
@@ -77,6 +80,15 @@ function renderRows() {
       if (row.commentCount) chat.append(element("span", String(row.commentCount)));
       chat.addEventListener("click", () => openRow(row.id, "comments"));
       chatCell.append(chat); tr.append(chatCell);
+      const attachmentCell = element("td", undefined, "sticky-attachments");
+      const attachments = element("button", undefined, "attachment-button" + (row.attachmentCount ? " has-attachments" : ""));
+      attachments.dataset.rowId = row.id; attachments.dataset.target = "attachments";
+      attachments.title = current?.attachmentsLoaded ? "Вложений: " + (row.attachmentCount || 0) : "Вложения ещё не загружены";
+      attachments.setAttribute("aria-label", "Вложения ECN " + (row.ecnNumber || "без номера") + ": " + (current?.attachmentsLoaded ? row.attachmentCount || 0 : "ещё не загружены"));
+      attachments.append($("attachment-icon").content.cloneNode(true));
+      if (row.attachmentCount) attachments.append(element("span", String(row.attachmentCount)));
+      attachments.addEventListener("click", () => openRow(row.id, "attachments"));
+      attachmentCell.append(attachments); tr.append(attachmentCell);
       const first = element("td", undefined, "sticky-ecn");
       const link = element("button", row.ecnNumber || "Без номера", "row-link");
       link.dataset.rowId = row.id; link.dataset.target = "details";
@@ -108,11 +120,12 @@ function renderEvents() {
   const fragment = document.createDocumentFragment();
   for (const event of current.events) {
     const isComment = event.kind.startsWith("comment_");
-    const item = element("li", undefined, "event" + (event.kind === "error" ? " error" : isComment ? " comment-event" : ""));
+    const isAttachment = event.kind.startsWith("attachment_");
+    const item = element("li", undefined, "event" + (event.kind === "error" ? " error" : isComment ? " comment-event" : isAttachment ? " attachment-event" : ""));
     item.append(element("time", date(event.at)));
     if (event.rowId && current.rows.some(row => row.id === event.rowId)) {
       const button = element("button", event.message);
-      button.addEventListener("click", () => { showView("sheet"); void openRow(event.rowId, isComment ? "comments" : "details"); });
+      button.addEventListener("click", () => { showView("sheet"); void openRow(event.rowId, isComment ? "comments" : isAttachment ? "attachments" : "details"); });
       item.append(button);
     } else item.append(element("span", event.message));
     fragment.append(item);
@@ -132,15 +145,17 @@ function render() {
   report(current.monitor.error);
   const notices = [];
   if (!current.tokenConfigured) notices.push("Добавь SMARTSHEET_API_TOKEN в agents/ecn-agent/.env и перезапусти npm start.");
-  if (current.paused) notices.push("Автопроверка на паузе. Кнопка «Проверить сейчас» загрузит строки и комментарии один раз.");
+  if (current.paused) notices.push("Автопроверка на паузе. Кнопка «Проверить сейчас» загрузит строки, комментарии и вложения один раз.");
   if (current.sheet?.unavailableApprovals?.length) notices.push("Поля согласования требуют сверки: " + current.sheet.unavailableApprovals.join(", ") + ".");
   if (current.monitor.error && current.lastSyncAt) notices.push("Показан сохранённый снимок от " + date(current.lastSyncAt) + ".");
   if (current.lastSyncAt && !current.commentsLoaded) notices.push("Комментарии ещё не загружены. Дождись успешной проверки или нажми «Проверить сейчас».");
+  if (current.lastSyncAt && !current.attachmentsLoaded) notices.push("Вложения ещё не загружены. Дождись успешной проверки или нажми «Проверить сейчас».");
   $("notice").textContent = notices.join(" "); $("notice").hidden = !notices.length;
   for (const key of ["active", "withoutNumber", "initialReview", "awaitingApprovals", "unreadComments"]) $("count-" + key).textContent = current.lastSyncAt ? String(current.counts[key] || 0) : "—";
   $("rail-unread").textContent = current.counts.unreadComments > 99 ? "99+" : String(current.counts.unreadComments || 0);
   $("rail-unread").hidden = !current.counts.unreadComments;
   $("comment-total").textContent = current.commentsLoaded ? "Комментариев: " + current.counts.comments + " · Проверены " + date(current.commentsSyncAt) : "Комментарии ещё не загружены";
+  $("attachment-total").textContent = current.attachmentsLoaded ? "Вложений: " + (current.counts.attachments || 0) + " · Проверены " + date(current.attachmentsSyncAt) : "Вложения ещё не загружены";
   $("poll-interval").textContent = "Интервал · " + current.pollSeconds + " с";
   renderRows(); renderEvents();
 }
@@ -191,11 +206,55 @@ function renderComments(row) {
   }
   $("comments-content").replaceChildren(fragment);
 }
+function attachmentSize(value) {
+  if (value === null || value === undefined || !Number.isFinite(Number(value)) || Number(value) < 0) return "Размер не указан";
+  const size = Number(value);
+  const formatter = new Intl.NumberFormat("ru-RU", { maximumFractionDigits: 1 });
+  return size >= 1024 ? formatter.format(size / 1024) + " МБ" : formatter.format(size) + " КБ";
+}
+function renderAttachments(row) {
+  const fragment = document.createDocumentFragment();
+  fragment.append(element("p", "Файлы и ссылки, прикреплённые к строке ECN и её комментариям. Файл загружается только при открытии.", "conversation-note"));
+  if (!row.attachmentsLoaded) {
+    fragment.append(element("p", "Вложения ещё не загружены. Нажми «Проверить сейчас».", "empty"));
+  } else if (!row.attachments?.length) {
+    fragment.append(element("p", "У этой строки и её комментариев пока нет вложений.", "empty"));
+  } else {
+    const list = element("ul", undefined, "attachment-list");
+    const attachments = [...row.attachments].sort((a, b) => String(b.createdAt || "").localeCompare(String(a.createdAt || "")) || String(a.name || "").localeCompare(String(b.name || ""), "ru"));
+    for (const attachment of attachments) {
+      const isFile = attachment.attachmentType === "FILE";
+      const name = attachment.name || "Вложение без названия";
+      const item = element("li", undefined, "attachment-card");
+      const head = element("div", undefined, "attachment-head");
+      const icon = element("span", undefined, "attachment-symbol");
+      icon.append($("attachment-icon").content.cloneNode(true));
+      head.append(icon, element("p", name, "attachment-name"));
+      const labels = element("div", undefined, "attachment-labels");
+      labels.append(element("span", isFile ? "Файл · " + attachmentSize(attachment.sizeInKb) : "Внешняя ссылка", "attachment-type"));
+      labels.append(element("span", attachment.parentType === "COMMENT" ? "К комментарию" : "К строке ECN"));
+      const author = element("p", attachment.author?.name || attachment.author?.email || "Автор не указан", "attachment-author");
+      author.title = attachment.author?.email || "";
+      const created = element("time", "Добавлено · " + date(attachment.createdAt), "attachment-date");
+      if (attachment.createdAt && !Number.isNaN(new Date(attachment.createdAt).valueOf())) created.dateTime = new Date(attachment.createdAt).toISOString();
+      const link = element("a", isFile ? "Открыть файл ↗" : "Открыть ссылку ↗", "attachment-open");
+      link.href = "/api/rows/" + encodeURIComponent(row.id) + "/attachments/" + encodeURIComponent(attachment.id) + "/open";
+      link.target = "_blank"; link.rel = "noopener noreferrer";
+      link.dataset.attachmentId = attachment.id;
+      link.setAttribute("aria-label", (isFile ? "Открыть файл " : "Открыть ссылку ") + name + " в новой вкладке");
+      item.append(head, labels, author, created, link);
+      list.append(item);
+    }
+    fragment.append(list);
+  }
+  $("attachments-content").replaceChildren(fragment);
+}
 function setTab(tab, focus = false) {
   selectedTab = tab;
   $("detail-content").hidden = tab !== "details";
   $("comments-content").hidden = tab !== "comments";
-  for (const name of ["details", "comments"]) {
+  $("attachments-content").hidden = tab !== "attachments";
+  for (const name of detailTabs) {
     $("tab-" + name).setAttribute("aria-selected", String(name === tab));
     $("tab-" + name).tabIndex = name === tab ? 0 : -1;
   }
@@ -237,19 +296,24 @@ async function refreshDetail() {
     $("detail-title").textContent = row.ecnNumber || "ECN без номера";
     $("detail-row-number").textContent = row.rowNumber;
     $("detail-comment-count").textContent = row.commentCount;
+    $("detail-attachment-count").textContent = row.attachmentsLoaded ? row.attachments?.length || 0 : "—";
     $("detail-source").textContent = "Последний снимок · " + date(current?.lastSyncAt);
     if (changed) {
       const detailScroll = $("detail-content").scrollTop;
       const commentScroll = $("comments-content").scrollTop;
-      renderDetails(row); renderComments(row);
+      const attachmentScroll = $("attachments-content").scrollTop;
+      const focusedAttachment = document.activeElement?.dataset.attachmentId;
+      renderDetails(row); renderComments(row); renderAttachments(row);
       $("detail-content").scrollTop = detailScroll; $("comments-content").scrollTop = commentScroll;
+      $("attachments-content").scrollTop = attachmentScroll;
+      if (focusedAttachment) Array.from($("attachments-content").querySelectorAll("a")).find(link => link.dataset.attachmentId === focusedAttachment)?.focus({ preventScroll: true });
     }
     await markVisibleComments();
   } catch (error) {
     if (ticket !== detailTicket) return;
     selectedRow = null;
     const text = error.status === 404 ? "Строка больше не присутствует в ECF. Последние события доступны в журнале." : error.message;
-    for (const target of ["detail-content", "comments-content"]) $(target).replaceChildren(element("p", text, "empty"));
+    for (const target of detailPanels) $(target).replaceChildren(element("p", text, "empty"));
     $("detail-source").textContent = "Карточка недоступна";
   }
 }
@@ -261,7 +325,9 @@ async function openRow(id, tab) {
     $("detail-title").textContent = "Загрузка…";
     $("detail-row-number").textContent = "—";
     $("detail-comment-count").textContent = "—";
-    for (const target of ["detail-content", "comments-content"]) { $(target).replaceChildren(); $(target).scrollTop = 0; }
+    $("detail-attachment-count").textContent = "—";
+    $("detail-source").textContent = "Загрузка карточки…";
+    for (const target of detailPanels) { $(target).replaceChildren(element("p", "Загрузка…", "empty")); $(target).scrollTop = 0; }
   }
   $("drawer").hidden = false;
   setTab(tab);
@@ -292,8 +358,9 @@ async function update() {
   loading = true;
   try {
     const previousSync = current?.lastSyncAt;
+    const previousAttachmentsSync = current?.attachmentsSyncAt;
     current = await request("/api/state"); render();
-    if (selectedId && (previousSync !== current.lastSyncAt || !selectedRow)) await refreshDetail();
+    if (selectedId && (previousSync !== current.lastSyncAt || previousAttachmentsSync !== current.attachmentsSyncAt || !selectedRow)) await refreshDetail();
   } catch {
     report("Нет связи с локальным агентом. Проверь окно терминала и запусти npm start.");
     $("connection").dataset.state = "error";
@@ -318,10 +385,14 @@ $("nav-sheet").addEventListener("click", () => showView("sheet"));
 $("nav-activity").addEventListener("click", () => showView("activity"));
 $("nav-unread").addEventListener("click", () => changeFilter("unread"));
 document.querySelectorAll("[data-filter]").forEach(button => button.addEventListener("click", () => changeFilter(button.dataset.filter)));
-for (const name of ["details", "comments"]) {
+for (const name of detailTabs) {
   $("tab-" + name).addEventListener("click", () => setTab(name));
   $("tab-" + name).addEventListener("keydown", event => {
-    if (["ArrowLeft", "ArrowRight"].includes(event.key)) { event.preventDefault(); setTab(name === "details" ? "comments" : "details", true); }
+    if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;
+    event.preventDefault();
+    const index = detailTabs.indexOf(name);
+    const next = event.key === "Home" ? 0 : event.key === "End" ? detailTabs.length - 1 : (index + (event.key === "ArrowRight" ? 1 : -1) + detailTabs.length) % detailTabs.length;
+    setTab(detailTabs[next], true);
   });
 }
 $("close-detail").addEventListener("click", closeDetail);

@@ -27,6 +27,7 @@ function fixture(t) {
 const wrapped = handler => createSmartsheetReader({sheetId:SHEET_ID, token:'synthetic-secret', fetchImpl: async (url,options) => {
   assert.equal(options.method,'GET');
   assert.equal(options.redirect,'error');
+  if (url.pathname.endsWith('/attachments')) return Response.json(page());
   return url.pathname.endsWith('/discussions') ? handler(url) : Response.json(rawSheet());
 }});
 

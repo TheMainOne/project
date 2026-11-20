@@ -11,8 +11,12 @@ export function isActiveRow(row) {
 }
 
 function digest(row) {
-  const { rowNumber, modifiedAt, discussions, ...content } = row;
+  const { rowNumber, modifiedAt, discussions, attachments, ...content } = row;
   return createHash("sha256").update(JSON.stringify(content)).digest("hex");
+}
+
+function attachmentFingerprints(row) {
+  return new Map((row.attachments || []).map(attachment => [attachment.id, JSON.stringify(attachment)]));
 }
 
 export function openStore(filename, sheetId) {
@@ -97,10 +101,12 @@ export function openStore(filename, sheetId) {
       return transaction(() => {
         const baseline = getMeta("lastSyncAt") === null;
         const commentsBaseline = sheet.commentsLoaded === true && getMeta("commentsInitialized") !== true;
+        const attachmentsBaseline = sheet.attachmentsLoaded === true && getMeta("attachmentsInitialized") !== true;
         const previous = new Map(db.prepare("SELECT id, hash, snapshot FROM rows").all().map(row => [row.id, row]));
         let added = 0;
         let changed = 0;
         const commentChanges = { added: 0, edited: 0, removed: 0 };
+        const attachmentChanges = { added: 0, edited: 0, removed: 0 };
         for (const row of sheet.rows) {
           const hash = digest(row);
           const before = previous.get(row.id);
@@ -134,6 +140,22 @@ export function openStore(filename, sheetId) {
               }
             }
           }
+          if (sheet.attachmentsLoaded === true && !attachmentsBaseline) {
+            const oldAttachments = attachmentFingerprints(before ? JSON.parse(before.snapshot) : {});
+            const newAttachments = attachmentFingerprints(row);
+            const counts = {
+              added: [...newAttachments.keys()].filter(id => !oldAttachments.has(id)).length,
+              edited: [...newAttachments.keys()].filter(id => oldAttachments.has(id) && oldAttachments.get(id) !== newAttachments.get(id)).length,
+              removed: [...oldAttachments.keys()].filter(id => !newAttachments.has(id)).length,
+            };
+            for (const [kind, count] of Object.entries(counts)) {
+              attachmentChanges[kind] += count;
+              if (count) {
+                const label = { added: "Новых вложений", edited: "Изменённых вложений", removed: "Вложений больше нет в ECF" }[kind];
+                addEvent("attachment_" + kind, "ECN " + (row.ecnNumber || "без номера") + ". " + label + ": " + count + ".", row.id);
+              }
+            }
+          }
           db.prepare(
             "INSERT INTO rows (id, hash, snapshot) VALUES (?, ?, ?) " +
             "ON CONFLICT(id) DO UPDATE SET hash = excluded.hash, snapshot = excluded.snapshot",
@@ -154,14 +176,19 @@ export function openStore(filename, sheetId) {
           putMeta("commentsSyncAt", now);
           if (commentsBaseline) addEvent("comments_baseline", "Загружены существующие комментарии ECN: " + sheet.rows.reduce((sum, row) => sum + commentEntries(row).length, 0) + ". Отслеживание новых сообщений включено.");
         }
-        const summary = { total: sheet.rows.length, added: baseline ? 0 : added, changed, removed: previous.size, comments: commentChanges };
+        if (sheet.attachmentsLoaded === true) {
+          putMeta("attachmentsInitialized", true);
+          putMeta("attachmentsSyncAt", now);
+          if (attachmentsBaseline) addEvent("attachments_baseline", "Загружены существующие вложения ECN: " + sheet.rows.reduce((sum, row) => sum + (row.attachments || []).length, 0) + ". Отслеживание новых вложений включено.");
+        }
+        const summary = { total: sheet.rows.length, added: baseline ? 0 : added, changed, removed: previous.size, comments: commentChanges, attachments: attachmentChanges };
         db.prepare("UPDATE runs SET finished_at = ?, status = 'success', detail = ? WHERE id = ?")
           .run(now, JSON.stringify(summary), runId);
         addEvent(
           baseline ? "baseline" : "sync",
           baseline
             ? "Загружен первый снимок ECF. Строк: " + sheet.rows.length + "."
-            : "ECF и комментарии проверены. Новых строк: " + added + ", изменённых: " + changed + ", отсутствующих: " + previous.size + ". Новых комментариев: " + commentChanges.added + ".",
+            : "ECF, комментарии и вложения проверены. Новых строк: " + added + ", изменённых: " + changed + ", отсутствующих: " + previous.size + ". Новых комментариев: " + commentChanges.added + ", вложений: " + attachmentChanges.added + ".",
         );
         return summary;
       });
@@ -170,7 +197,8 @@ export function openStore(filename, sheetId) {
       const record = db.prepare("SELECT snapshot FROM rows WHERE id = ?").get(id);
       if (!record) return null;
       const row = JSON.parse(record.snapshot);
-      return { ...row, discussions: row.discussions || [], ...summarizeComments(row, seenComments(id)), commentsLoaded: getMeta("commentsInitialized") === true };
+      return { ...row, discussions: row.discussions || [], ...summarizeComments(row, seenComments(id)), commentsLoaded: getMeta("commentsInitialized") === true,
+        attachments: row.attachments || [], attachmentCount: (row.attachments || []).length, attachmentsLoaded: getMeta("attachmentsInitialized") === true };
     },
     markCommentsSeen(id, revision) {
       return transaction(() => {
@@ -185,9 +213,9 @@ export function openStore(filename, sheetId) {
     state() {
       const rows = db.prepare("SELECT snapshot FROM rows").all().map(record => JSON.parse(record.snapshot));
       const active = rows.filter(isActiveRow);
-      const summaries = rows.map(({ description, approvals, discussions, ...summary }) => {
+      const summaries = rows.map(({ description, approvals, discussions, attachments, ...summary }) => {
         const { unreadCommentIds, ...comments } = summarizeComments({ discussions }, seenComments(summary.id));
-        return { ...summary, ...comments, active: isActiveRow(summary) };
+        return { ...summary, ...comments, attachmentCount: (attachments || []).length, active: isActiveRow(summary) };
       });
       return {
         lastSyncAt: getMeta("lastSyncAt"),
@@ -195,6 +223,8 @@ export function openStore(filename, sheetId) {
         paused: getMeta("paused") === true,
         commentsLoaded: getMeta("commentsInitialized") === true,
         commentsSyncAt: getMeta("commentsSyncAt"),
+        attachmentsLoaded: getMeta("attachmentsInitialized") === true,
+        attachmentsSyncAt: getMeta("attachmentsSyncAt"),
         counts: {
           all: rows.length,
           active: active.length,
@@ -203,6 +233,7 @@ export function openStore(filename, sheetId) {
           awaitingApprovals: active.filter(row => row.status === "Sent for Approvals").length,
           comments: summaries.reduce((sum, row) => sum + row.commentCount, 0),
           unreadComments: summaries.reduce((sum, row) => sum + row.unreadCommentCount, 0),
+          attachments: summaries.reduce((sum, row) => sum + row.attachmentCount, 0),
         },
         rows: summaries.sort((a, b) => a.rowNumber - b.rowNumber),
         events: db.prepare("SELECT id, at, kind, row_id AS rowId, message FROM events ORDER BY id DESC LIMIT 100").all(),

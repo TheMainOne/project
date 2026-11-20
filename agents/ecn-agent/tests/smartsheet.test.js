@@ -10,7 +10,7 @@ test("reads every page with GET, checks version and normalizes by Column ID", as
     token: "fake-secret",
     fetchImpl: async (url, options) => {
       requests.push({ url: String(url), options });
-      if (url.pathname.endsWith("/discussions")) return Response.json({pageNumber:1,totalPages:0,totalCount:0,data:[]});
+      if (/\/(discussions|attachments)$/.test(url.pathname)) return Response.json({pageNumber:1,totalPages:0,totalCount:0,data:[]});
       const page = Number(url.searchParams.get("page"));
       const sheet = rawSheet({ count: 501, offset: page === 1 ? 0 : 500, length: page === 1 ? 500 : 1 });
       sheet.columns.reverse();
@@ -21,11 +21,11 @@ test("reads every page with GET, checks version and normalizes by Column ID", as
   assert.equal(result.rows.length, 501);
   assert.equal(result.rows[0].site, "0071 CleanPack");
   assert.equal(result.rows[500].id, "1500");
-  assert.equal(requests.length, 4);
+  assert.equal(requests.length, 5);
   assert.ok(requests.every(request => request.options.method === "GET"));
   assert.ok(requests.every(request => request.options.redirect === "error"));
   assert.ok(requests.every(request => request.url.startsWith("https://api.smartsheet.com/2.0/sheets/" + SHEET_ID)));
-  assert.ok(requests.every(request => request.url.includes("/discussions") ? request.url.includes("include=comments") : request.url.includes("include=objectValue")));
+  assert.ok(requests.filter(request => !request.url.includes("/attachments")).every(request => request.url.includes("/discussions") ? request.url.includes("include=comments") : request.url.includes("include=objectValue")));
 });
 
 test("rejects changed versions across pages", async () => {

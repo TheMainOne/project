@@ -26,7 +26,7 @@
       <div class="view-label"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 9h18M9 9v11"/></svg><strong id="view-name">Таблица</strong></div>
       <span class="toolbar-divider"></span>
       <label class="search"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="10" cy="10" r="6"/><path d="m15 15 5 5"/></svg><span class="visually-hidden">Поиск ECN</span><input id="search" type="search" placeholder="Поиск по ECN, материалу, площадке…" autocomplete="off"></label>
-      <label class="select-wrap"><span class="visually-hidden">Фильтр строк</span><select id="filter"><option value="active">Активные ECN</option><option value="all">Все строки</option><option value="Initial Review">Initial Review</option><option value="Sent for Approvals">Sent for Approvals</option><option value="without-number">Без номера</option><option value="with-comments">С комментариями</option><option value="unread">Новые комментарии</option></select></label>
+      <label class="select-wrap"><span class="visually-hidden">Фильтр строк</span><select id="filter"><option value="active">Активные ECN</option><option value="all">Все строки</option><option value="Initial Review">Initial Review</option><option value="Sent for Approvals">Sent for Approvals</option><option value="without-number">Без номера</option><option value="with-comments">С комментариями</option><option value="with-attachments">С вложениями</option><option value="unread">Новые комментарии</option></select></label>
       <label class="select-wrap sort"><span class="visually-hidden">Сортировка</span><select id="sort"><option value="sheet">Порядок ECF</option><option value="modified">По изменению строки</option><option value="comments">По активности обсуждений</option></select></label>
       <div class="toolbar-actions"><button id="pause" class="button" disabled>Пауза</button><button id="sync" class="button primary" disabled>Проверить сейчас</button></div>
     </div>
@@ -43,25 +43,27 @@
     <div id="content-area" class="content-area">
       <section id="sheet-view" class="sheet-view" aria-label="Строки ECF">
         <div id="grid-scroll" class="grid-scroll" tabindex="0" aria-label="Таблица ECN, прокрутка по горизонтали">
-          <table><colgroup><col class="col-number"><col class="col-chat"><col class="col-ecn"><col class="col-status"><col class="col-site"><col class="col-item"><col class="col-description"><col class="col-date"></colgroup>
-            <thead><tr><th class="sticky-number" scope="col">#</th><th class="sticky-chat" scope="col" title="Комментарии"><span class="visually-hidden">Комментарии</span><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 15a3 3 0 0 1-3 3H9l-5 3V6a3 3 0 0 1 3-3h10a3 3 0 0 1 3 3z"/></svg></th><th class="sticky-ecn" scope="col">ECN Number</th><th scope="col">ECN Status</th><th scope="col">Site</th><th scope="col">Item Number</th><th scope="col">Item Description</th><th scope="col">Изменена строка</th></tr></thead>
+          <table><colgroup><col class="col-number"><col class="col-chat"><col class="col-attachments"><col class="col-ecn"><col class="col-status"><col class="col-site"><col class="col-item"><col class="col-description"><col class="col-date"></colgroup>
+            <thead><tr><th class="sticky-number" scope="col">#</th><th class="sticky-chat" scope="col" title="Комментарии"><span class="visually-hidden">Комментарии</span><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 15a3 3 0 0 1-3 3H9l-5 3V6a3 3 0 0 1 3-3h10a3 3 0 0 1 3 3z"/></svg></th><th class="sticky-attachments" scope="col" title="Вложения"><span class="visually-hidden">Вложения</span><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m8 12 6.5-6.5a3.5 3.5 0 0 1 5 5L10 20a5 5 0 0 1-7-7l10-10M7 13l8-8"/></svg></th><th class="sticky-ecn" scope="col">ECN Number</th><th scope="col">ECN Status</th><th scope="col">Site</th><th scope="col">Item Number</th><th scope="col">Item Description</th><th scope="col">Изменена строка</th></tr></thead>
             <tbody id="rows"></tbody>
           </table>
           <div id="empty" class="empty"><strong>Ожидание ECF</strong><span>После подключения здесь появятся строки таблицы.</span></div>
         </div>
-        <footer class="grid-footer"><span id="result-count">Ожидание данных</span><span class="footer-hint">Нажми на ECN или значок обсуждения</span><span id="page-info"></span><button id="previous" class="button small" disabled>Назад</button><button id="next" class="button small" disabled>Далее</button></footer>
+        <footer class="grid-footer"><span id="result-count">Ожидание данных</span><span class="footer-hint">Нажми на ECN, обсуждения или скрепку</span><span id="page-info"></span><button id="previous" class="button small" disabled>Назад</button><button id="next" class="button small" disabled>Далее</button></footer>
       </section>
-      <section id="activity-view" class="activity-view" hidden><div class="section-title"><div><h2>Журнал работы</h2><p>Проверки ECF, изменения строк и комментариев</p></div><span>Последние 100 событий</span></div><p id="journal-empty" class="empty">Событий пока нет.</p><ol id="events"></ol></section>
+      <section id="activity-view" class="activity-view" hidden><div class="section-title"><div><h2>Журнал работы</h2><p>Проверки ECF, изменения строк, комментариев и вложений</p></div><span>Последние 100 событий</span></div><p id="journal-empty" class="empty">Событий пока нет.</p><ol id="events"></ol></section>
       <aside id="drawer" class="drawer" aria-labelledby="detail-title" hidden>
         <div class="drawer-heading"><div><p class="eyebrow">Строка <span id="detail-row-number">—</span></p><h2 id="detail-title">ECN</h2></div><button id="close-detail" class="icon-button" aria-label="Закрыть карточку" title="Закрыть"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18"/></svg></button></div>
-        <div class="drawer-tabs" role="tablist" aria-label="Данные ECN"><button id="tab-details" role="tab" aria-controls="detail-content" aria-selected="true">Данные ECN</button><button id="tab-comments" role="tab" aria-controls="comments-content" aria-selected="false">Комментарии <b id="detail-comment-count">0</b></button></div>
+        <div class="drawer-tabs" role="tablist" aria-label="Данные ECN"><button id="tab-details" role="tab" aria-controls="detail-content" aria-selected="true">Данные ECN</button><button id="tab-comments" role="tab" aria-controls="comments-content" aria-selected="false" tabindex="-1">Комментарии <b id="detail-comment-count">0</b></button><button id="tab-attachments" role="tab" aria-controls="attachments-content" aria-selected="false" tabindex="-1">Вложения <b id="detail-attachment-count">0</b></button></div>
         <div id="detail-content" class="drawer-body" role="tabpanel" aria-labelledby="tab-details"></div>
         <div id="comments-content" class="drawer-body" role="tabpanel" aria-labelledby="tab-comments" hidden></div>
+        <div id="attachments-content" class="drawer-body" role="tabpanel" aria-labelledby="tab-attachments" hidden></div>
         <footer class="drawer-footer"><span id="detail-source">Последний сохранённый снимок ECF</span></footer>
       </aside>
     </div>
-    <footer class="statusbar"><span><i></i> Локальная панель</span><span id="comment-total">Комментарии ещё не загружены</span><span id="poll-interval">Автопроверка</span></footer>
+    <footer class="statusbar"><span><i></i> Локальная панель</span><span id="comment-total">Комментарии ещё не загружены</span><span id="attachment-total">Вложения ещё не загружены</span><span id="poll-interval">Автопроверка</span></footer>
   </main>
   <template id="message-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 15a3 3 0 0 1-3 3H9l-5 3V6a3 3 0 0 1 3-3h10a3 3 0 0 1 3 3z"/></svg></template>
+  <template id="attachment-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m8 12 6.5-6.5a3.5 3.5 0 0 1 5 5L10 20a5 5 0 0 1-7-7l10-10M7 13l8-8"/></svg></template>
 </body>
 </html>

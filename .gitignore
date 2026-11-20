@@ -135,4 +135,5 @@ dist
 # ECN Assistant importer output can contain short excerpts from restricted
 # controlled documents. Keep all generated drafts and conflict reports local.
 .ecn-private/
+files/
 extensions/ecn/rulesets/private/
