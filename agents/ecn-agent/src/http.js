@@ -50,13 +50,15 @@ export function createPanelServer({ config, store, monitor, reader }) {
         return;
       }
       if (req.method === "GET" && url.pathname === "/api/state") {
+        const status = monitor.status();
         return sendJson(res, 200, {
           sheetId: config.sheetId,
           tokenConfigured: Boolean(config.token),
           pollSeconds: config.pollSeconds,
-          mode: "observe",
+          mode: status.numbering?.enabled ? "auto_number" : "observe",
+          numbering: status.numbering || { enabled: false },
           ...store.state(),
-          monitor: monitor.status(),
+          monitor: status,
         });
       }
       if (req.method === "GET" && /^\/api\/rows\/[1-9]\d*$/.test(url.pathname)) {

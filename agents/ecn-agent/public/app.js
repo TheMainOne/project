@@ -121,7 +121,8 @@ function renderEvents() {
   for (const event of current.events) {
     const isComment = event.kind.startsWith("comment_");
     const isAttachment = event.kind.startsWith("attachment_");
-    const item = element("li", undefined, "event" + (event.kind === "error" ? " error" : isComment ? " comment-event" : isAttachment ? " attachment-event" : ""));
+    const isError = ["error", "numbering_error", "numbering_conflict"].includes(event.kind);
+    const item = element("li", undefined, "event" + (isError ? " error" : isComment ? " comment-event" : isAttachment ? " attachment-event" : ""));
     item.append(element("time", date(event.at)));
     if (event.rowId && current.rows.some(row => row.id === event.rowId)) {
       const button = element("button", event.message);
@@ -134,18 +135,26 @@ function renderEvents() {
   $("journal-empty").hidden = current.events.length > 0;
 }
 function render() {
-  const labels = { needs_token: "Нужен токен", error: "Ошибка проверки", syncing: "Загрузка ECF", paused: "На паузе", watching: "Наблюдение активно" };
+  const numberingEnabled = current.numbering?.enabled ?? current.mode === "auto_number";
+  const labels = { needs_token: "Нужен токен", error: "Ошибка проверки", syncing: "Загрузка ECF", paused: "На паузе", watching: numberingEnabled ? "Агент активен" : "Наблюдение активно" };
   $("connection").lastElementChild.textContent = labels[current.monitor.state] || "Подключение";
   $("connection").dataset.state = current.monitor.state;
+  $("agent-mode").textContent = numberingEnabled ? "Автонумерация" : "Наблюдение";
+  $("numbering-status").hidden = !numberingEnabled;
+  $("numbering-status").textContent = numberingEnabled ? "Номера: Initial Review + пустой ECN Number · дата создания" : "";
   $("last-sync").textContent = current.lastSyncAt ? "Проверено " + date(current.lastSyncAt) + " · " + current.counts.all + " строк" : "Первый снимок ещё не получен";
   $("pause").textContent = current.paused ? "Продолжить" : "Пауза";
   $("pause").disabled = !current.tokenConfigured || controlBusy;
   $("sync").disabled = !current.tokenConfigured || current.monitor.running || controlBusy;
   $("sync").textContent = current.monitor.running ? "Загрузка…" : "Проверить сейчас";
-  report(current.monitor.error);
+  const numberingError = current.numbering?.error;
+  const errors = [];
+  if (current.monitor.error && current.monitor.error !== numberingError) errors.push(current.monitor.error);
+  if (numberingError) errors.push("Автонумерация: " + numberingError);
+  report(errors.join(" "));
   const notices = [];
   if (!current.tokenConfigured) notices.push("Добавь SMARTSHEET_API_TOKEN в agents/ecn-agent/.env и перезапусти npm start.");
-  if (current.paused) notices.push("Автопроверка на паузе. Кнопка «Проверить сейчас» загрузит строки, комментарии и вложения один раз.");
+  if (current.paused) notices.push(numberingEnabled ? "Автопроверка на паузе. «Проверить сейчас» обновит данные и заполнит пустой ECN Number у строк Initial Review." : "Автопроверка на паузе. Кнопка «Проверить сейчас» загрузит строки, комментарии и вложения один раз.");
   if (current.sheet?.unavailableApprovals?.length) notices.push("Поля согласования требуют сверки: " + current.sheet.unavailableApprovals.join(", ") + ".");
   if (current.monitor.error && current.lastSyncAt) notices.push("Показан сохранённый снимок от " + date(current.lastSyncAt) + ".");
   if (current.lastSyncAt && !current.commentsLoaded) notices.push("Комментарии ещё не загружены. Дождись успешной проверки или нажми «Проверить сейчас».");

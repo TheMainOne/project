@@ -1,6 +1,6 @@
 import { SmartsheetError } from "./smartsheet.js";
 
-export function createMonitor({ reader, store, pollSeconds, tokenConfigured }) {
+export function createMonitor({ reader, store, pollSeconds, tokenConfigured, numberer }) {
   let timer = null;
   let running = null;
   let stopped = false;
@@ -21,12 +21,17 @@ export function createMonitor({ reader, store, pollSeconds, tokenConfigured }) {
     clearTimeout(timer);
     nextCheckAt = null;
     running = (async () => {
-      const runId = store.beginRun();
+      let runId = store.beginRun();
       try {
         const sheet = await reader.read();
-        const summary = store.saveSheet(sheet, runId);
-        error = null;
-        return { ok: true, summary };
+        let summary = store.saveSheet(sheet, runId);
+        const numbering = numberer ? await numberer.run() : null;
+        if (numbering?.writes || numbering?.assigned) {
+          runId = store.beginRun();
+          summary = store.saveSheet(await reader.read(), runId);
+        }
+        error = numbering?.error || null;
+        return { ok: !error, summary, ...(numbering ? { numbering } : {}) };
       } catch (failure) {
         error = failure instanceof SmartsheetError
           ? failure.message
@@ -65,11 +70,13 @@ export function createMonitor({ reader, store, pollSeconds, tokenConfigured }) {
         running: running !== null,
         nextCheckAt,
         error,
+        numbering: numberer?.status() || { enabled: false },
         state: !tokenConfigured ? "needs_token" : error ? "error" : running ? "syncing" : store.getMeta("paused") ? "paused" : "watching",
       };
     },
     async stop() {
       stopped = true;
+      numberer?.stop();
       clearTimeout(timer);
       nextCheckAt = null;
       await running;

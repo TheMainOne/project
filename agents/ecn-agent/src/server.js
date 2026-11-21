@@ -3,6 +3,9 @@ import { openStore } from "./store.js";
 import { createSmartsheetReader } from "./smartsheet.js";
 import { createMonitor } from "./monitor.js";
 import { createPanelServer } from "./http.js";
+import { createNumberingApi } from "./numbering-api.js";
+import { openNumberingStore } from "./numbering-store.js";
+import { createNumberer } from "./numbering.js";
 
 if (Number(process.versions.node.split(".")[0]) < 24) {
   console.error("Для этого комплекта нужен Node.js 24 LTS или новее.");
@@ -12,15 +15,26 @@ if (Number(process.versions.node.split(".")[0]) < 24) {
 let store;
 let server;
 let monitor;
+let numberingStore;
 try {
   const config = loadConfig();
   store = openStore(config.databasePath, config.sheetId);
   const reader = createSmartsheetReader({ sheetId: config.sheetId, token: config.token });
+  let numberer;
+  if (config.autoNumber && config.token) {
+    numberingStore = openNumberingStore(config.numberingDatabasePath);
+    numberer = createNumberer({
+      api: createNumberingApi({ sheetId: config.sheetId, token: config.token }), ledger: numberingStore,
+      addEvent: store.addEvent, enabled: true, timeZone: config.numberingTimeZone,
+      archiveSheetId: config.archiveSheetId, archiveColumnId: config.archiveNumberColumnId,
+    });
+  }
   monitor = createMonitor({
     reader,
     store,
     pollSeconds: config.pollSeconds,
     tokenConfigured: Boolean(config.token),
+    numberer,
   });
   server = createPanelServer({ config, store, monitor, reader });
   await new Promise((resolve, reject) => {
@@ -29,10 +43,11 @@ try {
   });
   monitor.start();
   console.log("ECN Agent — http://127.0.0.1:" + config.port);
-  console.log("ECF " + config.sheetId + " · наблюдение · интервал " + config.pollSeconds + " с");
+  console.log("ECF " + config.sheetId + " · " + (numberer ? "автонумерация Initial Review по дате создания" : "наблюдение") + " · интервал " + config.pollSeconds + " с");
   console.log("Состояние и журнал: " + config.databasePath);
   if (!config.token) console.log("Заполни SMARTSHEET_API_TOKEN в agents/ecn-agent/.env и перезапусти приложение.");
 } catch (error) {
+  numberingStore?.close();
   store?.close();
   const message = error.code === "EADDRINUSE"
     ? "Порт занят. Проверь, запущен ли уже ECN Agent, или измени ECN_PORT в .env."
@@ -51,6 +66,7 @@ if (server?.listening) {
     await monitor.stop();
     server.closeAllConnections();
     store.close();
+    numberingStore?.close();
   }
   process.on("SIGINT", shutdown);
   process.on("SIGTERM", shutdown);
