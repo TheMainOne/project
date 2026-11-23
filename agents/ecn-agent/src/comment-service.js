@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { DatabaseSync } from "node:sqlite";
-import { SmartsheetError } from "./smartsheet.js";
-import { MAX_ATTACHMENT_BYTES } from "./smartsheet-write.js";
+import { idString, SmartsheetError } from "./smartsheet.js";
+import { commentVerification, MAX_ATTACHMENT_BYTES } from "./smartsheet-write.js";
 
 export const OPERATION_ID = /^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/i;
 
@@ -44,21 +44,72 @@ export function createCommentService({ filename, sheetId, store, writer, refresh
   db.exec("PRAGMA busy_timeout = 5000; PRAGMA synchronous = FULL; CREATE TABLE IF NOT EXISTS comment_operations (" +
     "sheet_id TEXT NOT NULL, id TEXT NOT NULL, row_id TEXT NOT NULL, fingerprint TEXT NOT NULL, result TEXT NOT NULL, PRIMARY KEY(sheet_id,id));");
   const inFlight = new Map();
+  const checks = new Map();
   let stopped = false;
   const find = id => db.prepare("SELECT row_id AS rowId, fingerprint, result FROM comment_operations WHERE sheet_id = ? AND id = ?").get(sheetId, id);
   function save(operation) {
-    db.prepare("UPDATE comment_operations SET result = ? WHERE sheet_id = ? AND id = ?").run(JSON.stringify(operation), sheetId, operation.id);
-    return operation;
+    const saved = db.prepare("UPDATE comment_operations SET result = ? WHERE sheet_id = ? AND id = ? AND json_extract(result, '$.status') <> 'sent'")
+      .run(JSON.stringify(operation), sheetId, operation.id);
+    return saved.changes ? operation : JSON.parse(find(operation.id).result);
   }
-  function get(rowId, id) {
-    const record = find(String(id).toLowerCase());
-    if (!record || record.rowId !== rowId) return null;
+  function operationFrom(record) {
     const operation = JSON.parse(record.result);
     // A process may have exited after Smartsheet accepted the POST. Never replay it.
     if (operation.status === "pending" && !inFlight.has(operation.id)) {
       return { ...operation, status: "uncertain", error: "Отправка была прервана. Проверь обсуждение в Smartsheet перед повторной отправкой." };
     }
     return operation;
+  }
+  function forPanel({ expected, ...operation }) { return operation; }
+  function get(rowId, id) {
+    const record = find(String(id).toLowerCase());
+    return record?.rowId === rowId ? forPanel(operationFrom(record)) : null;
+  }
+  function receiptIds(receipt) {
+    const ids = {};
+    for (const key of ["discussionId", "commentId"]) {
+      if (receipt?.[key] !== undefined) ids[key] = idString(receipt[key]);
+    }
+    return ids;
+  }
+  function recordEvent(kind, message, rowId) {
+    try { store.addEvent(kind, message, rowId); } catch { /* The durable operation remains authoritative. */ }
+  }
+  function refreshSnapshot() {
+    try { Promise.resolve(refresh()).catch(() => {}); } catch { /* Normal polling can retry the read. */ }
+  }
+  async function verify(rowId, id) {
+    const record = find(String(id).toLowerCase());
+    if (record?.rowId !== rowId) return null;
+    const operation = operationFrom(record);
+    if (operation.status !== "uncertain") return forPanel(operation);
+    if (!operation.expected || !operation.discussionId || (!operation.commentId && !operation.expected.newDiscussion)) {
+      return forPanel({ ...operation, error: "Для этой отправки недостаточно сохранённых данных. Проверь обсуждение вручную в Smartsheet." });
+    }
+    if (stopped) throw new CommentRequestError(503, "Агент завершает работу. Повтори проверку после перезапуска.");
+    if (checks.has(operation.id)) return checks.get(operation.id);
+    const work = (async () => {
+      let next;
+      try {
+        const receipt = await writer.verifyComment(operation);
+        next = { ...operation, ...receipt, status: "sent" };
+        delete next.error;
+      } catch (error) {
+        next = { ...operation, ...receiptIds(error.receipt), status: "uncertain",
+          error: error.code === "write_uncertain" ? error.message : "Не удалось сверить обсуждение с этой строкой ECF. Проверь его в Smartsheet." };
+      }
+      // A second process may have confirmed or checkpointed the operation during the GET.
+      const updated = db.prepare("UPDATE comment_operations SET result = ? WHERE sheet_id = ? AND id = ? AND result = ?")
+        .run(JSON.stringify(next), sheetId, operation.id, record.result);
+      if (!updated.changes) return get(rowId, operation.id);
+      if (next.status === "sent") {
+        recordEvent("comment_verified", "Отправка комментария подтверждена сверкой со Smartsheet.", rowId);
+        refreshSnapshot();
+      }
+      return forPanel(next);
+    })();
+    checks.set(operation.id, work);
+    try { return await work; } finally { checks.delete(operation.id); }
   }
   function checkRow(input) {
     const row = store.row(input.rowId);
@@ -69,6 +120,7 @@ export function createCommentService({ filename, sheetId, store, writer, refresh
   }
   return {
     get,
+    verify,
     async submit(value) {
       const input = validateComment(value);
       const fingerprint = createHash("sha256").update(JSON.stringify({
@@ -82,7 +134,8 @@ export function createCommentService({ filename, sheetId, store, writer, refresh
       }
       if (stopped) throw new CommentRequestError(503, "Агент завершает работу. Дождись перезапуска.");
       checkRow(input);
-      const pending = { id: input.operationId, rowId: input.rowId, status: "pending", createdAt: new Date().toISOString() };
+      const pending = { id: input.operationId, rowId: input.rowId, status: "pending", createdAt: new Date().toISOString(),
+        expected: commentVerification(input) };
       // Commit intent before the remote call. File bytes and comment text are not stored here.
       const inserted = db.prepare("INSERT OR IGNORE INTO comment_operations (sheet_id,id,row_id,fingerprint,result) VALUES (?,?,?,?,?)")
         .run(sheetId, input.operationId, input.rowId, fingerprint, JSON.stringify(pending));
@@ -91,26 +144,27 @@ export function createCommentService({ filename, sheetId, store, writer, refresh
         let operation;
         try {
           checkRow(input);
-          const result = await writer.postComment(input);
+          const result = await writer.postComment(input, receipt => {
+            Object.assign(pending, receiptIds(receipt));
+            save(pending);
+          });
           operation = save({ ...pending, ...result, status: "sent" });
         } catch (error) {
           const known = error instanceof SmartsheetError || error instanceof CommentRequestError;
-          operation = save({ ...pending, status: known && error.code !== "write_uncertain" ? "rejected" : "uncertain",
+          operation = save({ ...pending, ...receiptIds(error.receipt), status: known && error.code !== "write_uncertain" ? "rejected" : "uncertain",
             error: known ? error.message : "Не удалось подтвердить отправку. Проверь обсуждение в Smartsheet перед повторной отправкой." });
         }
-        try { store.addEvent(operation.status === "sent" ? "comment_sent" : "comment_send_error",
-          operation.status === "sent" ? "Комментарий" + (input.file ? " с файлом" : "") + " отправлен в Smartsheet." : operation.error, input.rowId); } catch { /* The durable operation remains authoritative. */ }
-        if (operation.status !== "rejected") {
-          try { Promise.resolve(refresh()).catch(() => {}); } catch { /* Normal polling can retry the read. */ }
-        }
-        return operation;
+        recordEvent(operation.status === "sent" ? "comment_sent" : "comment_send_error",
+          operation.status === "sent" ? "Комментарий" + (input.file ? " с файлом" : "") + " отправлен в Smartsheet." : operation.error, input.rowId);
+        if (operation.status !== "rejected") refreshSnapshot();
+        return forPanel(operation);
       });
       inFlight.set(input.operationId, work);
       try { return await work; } finally { inFlight.delete(input.operationId); }
     },
     async close() {
       stopped = true;
-      await Promise.allSettled([...inFlight.values()]);
+      await Promise.allSettled([...inFlight.values(), ...checks.values()]);
       db.close();
     },
   };

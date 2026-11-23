@@ -8,13 +8,13 @@ import { DatabaseSync } from "node:sqlite";
 import { createCommentService, createWriteQueue } from "../src/comment-service.js";
 import { SmartsheetError } from "../src/smartsheet.js";
 
-function setup(t, postComment = async () => ({ discussionId: "20", commentId: "30", attachmentIds: [] })) {
+function setup(t, postComment = async () => ({ discussionId: "20", commentId: "30", attachmentIds: [] }), verifyComment) {
   const dir = mkdtempSync(join(tmpdir(), "ecn-comments-"));
   const filename = join(dir, "test.sqlite");
   let calls = 0, refreshes = 0;
   const rows = new Map([["1000", { id: "1000", discussions: [{ id: "20" }] }]]);
   const options = { filename, sheetId: "5000", store: { row: id => rows.get(id), addEvent() {} },
-    writer: { postComment: async input => { calls++; return postComment(input); } }, refresh: () => { refreshes++; } };
+    writer: { verifyComment, postComment: async (...args) => { calls++; return postComment(...args); } }, refresh: () => { refreshes++; } };
   let service = createCommentService(options);
   t.after(async () => { await service.close(); rmSync(dir, { recursive: true, force: true }); });
   return { rows, get service() { return service; }, get calls() { return calls; }, get refreshes() { return refreshes; },
@@ -97,4 +97,86 @@ test("write queue serializes numbering and comments and continues after rejectio
   assert.deepEqual(seen, ["number-start"]);
   release(); await assert.rejects(first); await second;
   assert.deepEqual(seen, ["number-start", "number-end", "comment"]);
+});
+
+test("receipt IDs survive restart; simultaneous checks GET once and a confirmed operation stays sent", async t => {
+  const gate = Promise.withResolvers();
+  let checks = 0;
+  const f = setup(t, async (draft, checkpoint) => {
+    const receipt = { discussionId: "20", commentId: "30" };
+    checkpoint(receipt);
+    throw Object.assign(new SmartsheetError("write_uncertain", "Verification delayed."), { receipt });
+  }, async operation => {
+    checks++;
+    assert.equal(operation.discussionId, "20");
+    assert.equal(operation.commentId, "30");
+    assert.match(operation.expected.textHash, /^[a-f0-9]{64}$/);
+    await gate.promise;
+    return { discussionId: "20", commentId: "30", attachmentIds: ["40"] };
+  });
+  const draft = input({ file: { name: "drawing.pdf", mimeType: "application/pdf", bytes: Buffer.from("private-file-bytes") } });
+  const uncertain = await f.service.submit(draft);
+  assert.equal(uncertain.status, "uncertain");
+  assert.equal(uncertain.expected, undefined);
+  assert.equal(uncertain.commentId, "30");
+  assert.equal(uncertain.discussionId, "20");
+  await f.restart();
+  const sql = new DatabaseSync(f.filename);
+  const record = sql.prepare("SELECT result FROM comment_operations WHERE id = ?").get(draft.operationId);
+  sql.close();
+  for (const sensitive of [draft.text, draft.file.name, "private-file-bytes"]) assert.equal(record.result.includes(sensitive), false);
+  assert.equal(await f.service.verify("9999", draft.operationId), null);
+  const first = f.service.verify("1000", draft.operationId);
+  const second = f.service.verify("1000", draft.operationId);
+  gate.resolve();
+  assert.equal((await first).status, "sent");
+  assert.deepEqual((await second).attachmentIds, ["40"]);
+  await f.restart();
+  assert.equal((await f.service.verify("1000", draft.operationId)).status, "sent");
+  assert.equal((await f.service.submit(draft)).status, "sent");
+  assert.equal(checks, 1);
+  assert.equal(f.calls, 1);
+  assert.equal(f.refreshes, 2);
+});
+
+test("interrupted pending checkpoints are recoverable; legacy intents and unknown reply IDs stay uncertain", async t => {
+  let checks = 0;
+  const f = setup(t, async (draft, checkpoint) => {
+    checkpoint({ discussionId: "20", commentId: "30" });
+    throw new SmartsheetError("write_uncertain", "Connection interrupted.");
+  }, async () => { checks++; return { discussionId: "20", commentId: "30", attachmentIds: [] }; });
+  const draft = input({ discussionId: "20" });
+  await f.service.submit(draft);
+  await f.restart();
+  const db = new DatabaseSync(f.filename);
+  const update = db.prepare("UPDATE comment_operations SET result = ? WHERE id = ?");
+  const tracked = JSON.parse(db.prepare("SELECT result FROM comment_operations WHERE id = ?").get(draft.operationId).result);
+  const pending = { ...tracked, status: "pending" };
+  for (const old of [{ ...pending, expected: undefined }, { ...pending, commentId: undefined }, { ...pending, discussionId: undefined }]) {
+    update.run(JSON.stringify(old), pending.id);
+    assert.equal((await f.service.verify("1000", pending.id)).status, "uncertain");
+  }
+  assert.equal(checks, 0);
+  update.run(JSON.stringify(pending), pending.id);
+  db.close();
+  assert.equal((await f.service.verify("1000", pending.id)).status, "sent");
+  assert.equal(f.calls, 1);
+  assert.equal(checks, 1);
+});
+
+test("failed receipt checks stay uncertain and cannot turn into a second POST", async t => {
+  let tries = 0;
+  const f = setup(t, async () => {
+    throw Object.assign(new SmartsheetError("write_uncertain", "Not confirmed."), { receipt: { discussionId: "20", commentId: "30" } });
+  }, async () => { tries++; throw new SmartsheetError("http_404", "Moved."); });
+  const draft = input();
+  await f.service.submit(draft);
+  for (let i = 0; i < 2; i++) {
+    const checked = await f.service.verify("1000", draft.operationId);
+    assert.equal(checked.status, "uncertain");
+    assert.equal(checked.commentId, "30");
+    assert.equal((await f.service.submit(draft)).status, "uncertain");
+  }
+  assert.equal(f.calls, 1);
+  assert.equal(tries, 2);
 });

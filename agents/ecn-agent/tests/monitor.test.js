@@ -83,3 +83,54 @@ test("post-write refresh reads again after an in-flight snapshot and preserves p
     store.close();
   }
 });
+
+test("overlapping manual checks after a comment refresh execute one full check, also on pause", async t => {
+  const store = openStore(":memory:", SHEET_ID);
+  store.setPaused(true);
+  const gate = Promise.withResolvers();
+  let reads = 0, numberingCalls = 0;
+  const reader = { async read() {
+    if (++reads === 1) await gate.promise;
+    return normalizedSheet();
+  } };
+  const monitor = createMonitor({ reader, store, pollSeconds: 120, tokenConfigured: true, numberer: {
+    run() { numberingCalls++; return { assigned: 0, writes: 0 }; }, status() { return { enabled: true }; }, stop() {},
+  } });
+  t.after(async () => { gate.resolve(); await monitor.stop(); store.close(); });
+  const refresh = monitor.refreshAfterWrite();
+  const manual = monitor.sync();
+  const secondManual = monitor.sync();
+  assert.equal(numberingCalls, 0);
+  gate.resolve();
+  assert.equal((await refresh).numbering, undefined);
+  await Promise.all([manual, secondManual]);
+  assert.equal(reads, 2);
+  assert.equal(numberingCalls, 1);
+  assert.equal(monitor.status().state, "paused");
+});
+
+test("the polling clock survives a read-only refresh and observes pause before a queued poll", async t => {
+  t.mock.timers.enable({ apis: ["setTimeout"] });
+  for (const pauseDuringRead of [false, true]) {
+    const store = openStore(":memory:", SHEET_ID);
+    const gate = Promise.withResolvers();
+    let reads = 0, runs = 0;
+    const monitor = createMonitor({ store, pollSeconds: 5, tokenConfigured: true,
+      reader: { async read() { if (++reads === 2) await gate.promise; return normalizedSheet(); } },
+      numberer: { run() { runs++; return {}; }, status: () => ({ enabled: true }), stop() {} } });
+    try {
+      await monitor.sync();
+      const due = monitor.status().nextCheckAt;
+      const refresh = monitor.refreshAfterWrite();
+      assert.equal(monitor.status().nextCheckAt, due);
+      t.mock.timers.tick(5000);
+      assert.equal(runs, 1);
+      if (pauseDuringRead) monitor.setPaused(true);
+      gate.resolve();
+      await refresh;
+      await new Promise(resolve => setImmediate(resolve));
+      assert.equal(runs, pauseDuringRead ? 1 : 2);
+      assert.equal(reads, pauseDuringRead ? 2 : 3);
+    } finally { gate.resolve(); await monitor.stop(); store.close(); }
+  }
+});

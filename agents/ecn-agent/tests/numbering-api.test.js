@@ -92,3 +92,14 @@ test("bad IDs, numbers and missing token cannot send a mutation", async () => {
   await assert.rejects(noToken.readSheet());
   assert.equal(calls, 0);
 });
+
+test("an explicit row lock is local only when column schema and sheet permissions permit writing", async () => {
+  const openColumns = columns.map(column => ({ ...column, locked: false }));
+  const value = { ...rawRow(), sheetId: Number(sheetId), version: 42, accessLevel: "EDITOR", columns: openColumns, locked: true };
+  const read = data => apiWith(async () => Response.json(data)).readRow("1000");
+  assert.equal((await read(value)).numberBlockScope, "row");
+  for (const other of [
+    { accessLevel: "VIEWER" }, { accessLevel: undefined }, { columns },
+    { columns: [{ ...openColumns[0], type: "CHECKBOX" }, openColumns[1]] },
+  ]) assert.equal((await read({ ...value, ...other })).numberBlockScope, "sheet");
+});

@@ -25,13 +25,20 @@ function normalizeRow(row, sheet) {
   const protectedCell = Boolean(cell?.formula || cell?.linkInFromCell || cell?.image || cell?.objectValue);
   const numberOccupied = protectedCell || filled(cell?.value) || filled(cell?.displayValue);
   let reason = null;
+  let blockScope = "sheet";
   if (column.type !== "TEXT_NUMBER" || column.systemColumnType || column.formula) reason = "Колонка ECN Number имеет неподдерживаемый тип или формулу. Запись остановлена.";
-  else if (!EDITORS.has(access) || row.lockedForUser || column.lockedForUser || ((row.locked || column.locked) && !ADMIN.has(access))) reason = "Нет прав на запись в ECN Number. Для заблокированной колонки нужен Admin или Owner.";
-  else if (protectedCell) reason = "В ECN Number обнаружена формула, ссылка или другой защищённый тип данных. Запись остановлена.";
+  else if (!EDITORS.has(access) || column.lockedForUser || (column.locked && !ADMIN.has(access))) reason = "Нет прав на запись в ECN Number. Для заблокированной колонки нужен Admin или Owner.";
+  else if (row.lockedForUser || (row.locked && !ADMIN.has(access))) {
+    reason = "Строка заблокирована для аккаунта агента.";
+    blockScope = "row";
+  } else if (protectedCell) {
+    reason = "В ECN Number обнаружена формула, ссылка или другой защищённый тип данных.";
+    blockScope = "row";
+  }
   return {
     id: idString(row.id), rowNumber: row.rowNumber, createdAt: row.createdAt || null,
     ecnNumber: cellText(cell), status: cellText(cells.get(FIELDS.status)),
-    numberOccupied, numberWritable: reason === null, numberBlockedReason: reason,
+    numberOccupied, numberWritable: reason === null, numberBlockedReason: reason, numberBlockScope: reason ? blockScope : null,
     sheetVersion: sheet.version,
   };
 }

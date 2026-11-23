@@ -8,11 +8,16 @@ import { CommentRequestError } from "../src/comment-service.js";
 
 async function setup(t) {
   const calls = [];
+  const checks = [];
   const operations = new Map();
   const server = createPanelServer({ config: { token: "PRIVATE", sheetId: "5000", publicDirectory: fileURLToPath(new URL("../public/", import.meta.url)) },
     monitor: { status: () => ({ state: "watching" }) }, store: { state: () => ({}), row: () => ({ id: "1000" }) },
     comments: {
       get: (rowId, id) => operations.get(id)?.rowId === rowId ? operations.get(id) : null,
+      verify: async (rowId, id) => {
+        checks.push([rowId, id]);
+        return operations.get(id)?.rowId === rowId ? operations.get(id) : null;
+      },
       submit: async value => { calls.push(value); if (value.text === "bad") throw new CommentRequestError(400, "Bad text");
         const operation = { id: value.operationId, rowId: value.rowId, status: value.text === "unknown" ? "uncertain" : "sent", commentId: "30", discussionId: "20", attachmentIds: value.file ? ["40"] : [] };
         operations.set(operation.id, operation); return operation; },
@@ -21,7 +26,7 @@ async function setup(t) {
   t.after(async () => { server.closeAllConnections(); server.close(); await once(server, "close"); });
   const base = "http://127.0.0.1:" + server.address().port;
   const send = (body, headers = {}) => fetch(base + "/api/rows/1000/comments", { method: "POST", headers: { Origin: base, "X-ECN-UI": "1", ...headers }, body });
-  return { calls, base, send };
+  return { calls, checks, base, send };
 }
 function form(text = "Hello", file = null) {
   const body = new FormData(); body.set("text", text); body.set("operationId", randomUUID());
@@ -59,4 +64,22 @@ test("comment routes reject foreign origins, malformed forms and duplicate or un
   assert.equal((await f.send(form("bad"))).status, 400);
   const uncertain = await f.send(form("unknown"));
   assert.equal(uncertain.status, 409); assert.equal((await uncertain.json()).operation.status, "uncertain");
+});
+
+test("explicit receipt verification is row-scoped and cannot submit a new comment", async t => {
+  const f = await setup(t);
+  const body = form("unknown");
+  await f.send(body);
+  const id = body.get("operationId");
+  const path = f.base + "/api/rows/1000/comment-operations/" + id + "/verify";
+  const headers = { Origin: f.base, "X-ECN-UI": "1" };
+  assert.equal((await fetch(path)).status, 404);
+  assert.equal((await fetch(path, { method: "POST" })).status, 403);
+  assert.equal(f.checks.length, 0);
+  const response = await fetch(path, { method: "POST", headers });
+  assert.equal(response.status, 200);
+  assert.equal((await response.json()).operation.status, "uncertain");
+  assert.equal((await fetch(path.replace("/1000/", "/9999/"), { method: "POST", headers })).status, 404);
+  assert.deepEqual(f.checks, [["1000", id], ["9999", id]]);
+  assert.equal(f.calls.length, 1);
 });

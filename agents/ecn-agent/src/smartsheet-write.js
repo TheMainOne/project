@@ -1,4 +1,4 @@
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { idString, SmartsheetError } from "./smartsheet.js";
 
 // Smartsheet permits one file per multipart comment request, up to 30 MB.
@@ -44,8 +44,22 @@ function multipart(partName, json, file) {
   return { body, type: "multipart/form-data; boundary=" + boundary };
 }
 
-function uncertain(receipt = {}) {
-  const error = new SmartsheetError("write_uncertain", "Не удалось подтвердить результат отправки. Обнови ECN и проверь комментарии в Smartsheet перед повторной отправкой.");
+const digest = text => createHash("sha256").update(text).digest("hex");
+
+export function commentVerification({ text, file, discussionId }) {
+  return { textHash: digest(text), fileNameHash: file ? digest(file.name) : null, newDiscussion: discussionId == null };
+}
+
+function checkedAttachmentIds(attachments, commentId) {
+  return attachments.map(attachment => {
+    if (attachment.parentType !== undefined && attachment.parentType !== "COMMENT") throw uncertain();
+    if (attachment.parentId !== undefined && idString(attachment.parentId) !== commentId) throw uncertain();
+    return idString(attachment.id);
+  });
+}
+
+function uncertain(receipt = {}, message = "Не удалось подтвердить результат отправки. Проверь обсуждение в Smartsheet перед повторной отправкой.") {
+  const error = new SmartsheetError("write_uncertain", message);
   error.uncertain = true;
   error.receipt = receipt;
   return error;
@@ -106,15 +120,12 @@ export function createSmartsheetWriter({ sheetId, token, fetchImpl = fetch }) {
     if (idString(discussion.id) !== discussionId || discussion.parentType !== "ROW" || idString(discussion.parentId) !== rowId) {
       throw new SmartsheetError("discussion_changed", "Обсуждение больше не относится к этому ECN. Обнови панель.");
     }
-    if (discussion.readOnly || discussion.accessLevel === "VIEWER") {
-      throw new SmartsheetError("http_403", "У этого обсуждения нет доступа для добавления комментариев.");
-    }
   }
 
   return {
     // Exactly one POST: the comment and optional file are submitted together.
     // Callers must persist their own operation key before invoking this method.
-    async postComment(input) {
+    async postComment(input, onReceipt) {
       const { rowId, discussionId, text, file } = validateCommentInput(input);
       const signal = input.signal;
       if (!token) throw new SmartsheetError("http_401", "Для отправки нужен токен Smartsheet. Проверь настройки агента.");
@@ -122,6 +133,9 @@ export function createSmartsheetWriter({ sheetId, token, fetchImpl = fetch }) {
       if (discussionId) {
         const existing = await request(`/discussions/${discussionId}?include=comments`, { signal });
         checkParent(existing, rowId, discussionId);
+        if (existing.readOnly || existing.accessLevel === "VIEWER") {
+          throw new SmartsheetError("http_403", "У этого обсуждения нет доступа для добавления комментариев.");
+        }
       }
       const payload = discussionId ? { text } : { comment: { text } };
       const encoded = file ? multipart(discussionId ? "comment" : "discussion", payload, file) : {
@@ -134,11 +148,12 @@ export function createSmartsheetWriter({ sheetId, token, fetchImpl = fetch }) {
         if (result.resultCode !== 0 || result.message !== "SUCCESS" || !result.result) throw uncertain();
         const created = result.result;
         const newDiscussionId = discussionId || idString(created.id);
-        receipt = { discussionId: newDiscussionId };
         if (!discussionId && (
           (created.parentType !== undefined && created.parentType !== "ROW") ||
           (created.parentId !== undefined && idString(created.parentId) !== rowId)
-        )) throw uncertain(receipt);
+        )) throw uncertain();
+        receipt = { discussionId: newDiscussionId };
+        onReceipt?.(receipt);
         const returnedMatches = created.comments?.filter(item => item.text === text) || [];
         let comment = discussionId ? created : returnedMatches.length === 1 ? returnedMatches[0] : null;
         let discussion = discussionId ? null : created;
@@ -150,7 +165,8 @@ export function createSmartsheetWriter({ sheetId, token, fetchImpl = fetch }) {
           [comment] = matches;
         }
         const commentId = idString(comment?.id);
-        receipt.commentId = commentId;
+        receipt = { ...receipt, commentId };
+        onReceipt?.(receipt);
         if (comment.text !== text) throw uncertain(receipt);
         if (comment.discussionId !== undefined && idString(comment.discussionId) !== newDiscussionId) throw uncertain(receipt);
         let attachments = comment.attachments || discussion?.commentAttachments?.filter(item => String(item.parentId) === commentId) || [];
@@ -160,15 +176,49 @@ export function createSmartsheetWriter({ sheetId, token, fetchImpl = fetch }) {
           attachments = comment.attachments || [];
         }
         if (file && attachments.length !== 1) throw uncertain(receipt);
-        const attachmentIds = attachments.map(attachment => {
-          if (attachment.parentType !== undefined && attachment.parentType !== "COMMENT") throw uncertain(receipt);
-          if (attachment.parentId !== undefined && idString(attachment.parentId) !== commentId) throw uncertain(receipt);
-          return idString(attachment.id);
-        });
+        const attachmentIds = checkedAttachmentIds(attachments, commentId);
         return { discussionId: newDiscussionId, commentId, attachmentIds };
       } catch {
         // The POST has completed; a failed readback must never invite a blind retry.
         throw uncertain(receipt);
+      }
+    },
+    async verifyComment({ rowId, discussionId, commentId, expected }) {
+      if (!token) throw new SmartsheetError("missing_token", "Для сверки комментария нужен токен Smartsheet.");
+      discussionId = idString(discussionId);
+      const receipt = { discussionId };
+      if (commentId) receipt.commentId = idString(commentId);
+      // Only a thread created by this POST can identify a comment when its ID is missing.
+      if (!receipt.commentId && !expected.newDiscussion) throw uncertain(receipt);
+      const signal = AbortSignal.timeout(45_000);
+      const thread = await request(`/discussions/${discussionId}?include=comments,attachments`, { signal });
+      checkParent(thread, idString(rowId), discussionId);
+      if (!receipt.commentId) {
+        const replies = thread.comments;
+        if (!Array.isArray(replies) || replies.length !== 1 || (thread.commentCount != null && thread.commentCount !== 1) ||
+            !thread.createdAt || replies[0]?.createdAt !== thread.createdAt || typeof replies[0].text !== "string" ||
+            digest(replies[0].text) !== expected.textHash) {
+          throw uncertain(receipt, "Не удалось однозначно определить комментарий в созданном обсуждении. Проверь его в Smartsheet.");
+        }
+        receipt.commentId = idString(replies[0].id);
+      }
+      try {
+        const comment = await request(`/comments/${receipt.commentId}`, { signal });
+        if (idString(comment.id) !== receipt.commentId || idString(comment.discussionId) !== discussionId ||
+            typeof comment.text !== "string" || digest(comment.text) !== expected.textHash) throw uncertain(receipt);
+        let attachmentIds = [];
+        if (expected.fileNameHash !== null) {
+          const owned = thread.commentAttachments?.filter(item => String(item.parentId) === receipt.commentId);
+          const attachments = comment.attachments?.length ? comment.attachments : owned;
+          if (attachments?.length !== 1 || typeof attachments[0].name !== "string" ||
+              digest(attachments[0].name) !== expected.fileNameHash) {
+            throw uncertain(receipt, "Комментарий найден, но исходное вложение пока не подтверждено. Можно повторить проверку результата.");
+          }
+          attachmentIds = checkedAttachmentIds(attachments, receipt.commentId);
+        }
+        return { ...receipt, attachmentIds };
+      } catch (error) {
+        throw uncertain(receipt, error.code === "write_uncertain" ? error.message : "Не удалось подтвердить комментарий по его ID. Можно повторить проверку результата.");
       }
     },
   };

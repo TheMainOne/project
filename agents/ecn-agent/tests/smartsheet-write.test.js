@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { createSmartsheetWriter, validateCommentInput, MAX_ATTACHMENT_BYTES, MAX_COMMENT_LENGTH } from "../src/smartsheet-write.js";
+import { commentVerification, createSmartsheetWriter, validateCommentInput, MAX_ATTACHMENT_BYTES, MAX_COMMENT_LENGTH } from "../src/smartsheet-write.js";
 
 const rowId = "1000";
 const discussionId = "5001";
@@ -217,4 +217,57 @@ test("rejects a reply result whose text does not match the submitted comment", a
     return true;
   });
   assert.equal(posts, 1);
+});
+
+const fileProof = commentVerification({ text: "Please review", file: { name: "drawing.pdf" }, discussionId });
+const namedAttachment = { ...attachment, name: "drawing.pdf" };
+
+test("receipt verification uses only the saved discussion and comment IDs, even in a now read-only discussion", async () => {
+  const calls = [];
+  const api = writer(async (url, options) => {
+    calls.push([options.method, url.pathname]);
+    if (url.pathname.endsWith("/5001")) return Response.json(discussion({ readOnly: true }));
+    return Response.json(comment({ attachments: [namedAttachment] }));
+  });
+  assert.deepEqual(await api.verifyComment({ rowId, discussionId, commentId, expected: fileProof }),
+    { discussionId, commentId, attachmentIds: ["7001"] });
+  assert.deepEqual(calls, [
+    ["GET", "/2.0/sheets/12345678/discussions/5001"],
+    ["GET", "/2.0/sheets/12345678/comments/9001"],
+  ]);
+});
+
+test("rechecking a receipt rejects a different row, comment, text, or attachment", async () => {
+  for (const [threadChange, commentChange] of [
+    [{ parentId: 1002 }, {}], [{ parentType: "SHEET" }, {}], [{ id: 5002 }, {}],
+    [{}, { id: 9002 }], [{}, { discussionId: 5002 }], [{}, { text: "Changed" }],
+    [{}, { attachments: [] }], [{}, { attachments: [{ ...namedAttachment, name: "other.pdf" }] }],
+    [{}, { attachments: [{ ...namedAttachment, parentId: 9002 }] }],
+    [{}, { attachments: [namedAttachment, { ...namedAttachment, id: 7002 }] }],
+  ]) {
+    const api = writer(async (url, options) => {
+      assert.equal(options.method, "GET");
+      return Response.json(url.pathname.endsWith("/5001") ? discussion(threadChange) : comment({ attachments: [namedAttachment], ...commentChange }));
+    });
+    await assert.rejects(api.verifyComment({ rowId, discussionId, commentId, expected: fileProof }));
+  }
+});
+
+test("thread-only receipts identify only the single original comment of a newly created thread", async () => {
+  const createdAt = "2026-11-23T15:00:00Z";
+  let thread = discussion({ createdAt, commentCount: 1, comments: [comment({ createdAt })] });
+  const expected = commentVerification({ text: "Please review", file: null, discussionId: null });
+  const api = writer(async (url, options) => {
+    assert.equal(options.method, "GET");
+    return Response.json(url.pathname.endsWith("/5001") ? thread : comment());
+  });
+  assert.equal((await api.verifyComment({ rowId, discussionId, expected })).commentId, commentId);
+  await assert.rejects(api.verifyComment({ rowId, discussionId, expected: { ...expected, newDiscussion: false } }));
+  for (const changed of [
+    { comments: [comment({ createdAt }), comment({ id: 9002, createdAt })] },
+    { commentCount: 2 }, { createdAt: null }, { comments: [comment({ createdAt: "later" })] },
+  ]) {
+    thread = discussion({ createdAt, comments: [comment({ createdAt })], ...changed });
+    await assert.rejects(api.verifyComment({ rowId, discussionId, expected }));
+  }
 });

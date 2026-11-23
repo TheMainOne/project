@@ -418,7 +418,7 @@ function refreshComposerState() {
   $("retry-uncertain-comment").hidden = draft.operationStatus !== "uncertain";
   $("retry-uncertain-comment").disabled = draft.busy;
   const send = $("send-comment");
-  send.textContent = draft.busy ? "Отправка…" : draft.operationStatus === "not_found" ? "Повторить запрос" : draft.operationId ? "Проверить результат" : "Отправить";
+  send.textContent = draft.busy ? "Выполняется…" : draft.operationStatus === "not_found" ? "Повторить запрос" : draft.operationId ? "Проверить результат" : "Отправить";
   send.disabled = draft.busy || !current?.tokenConfigured || !selectedRow || (!draft.operationId && (!draft.text.trim() || Boolean(draft.fileMeta && !draft.file)));
   if (!current?.tokenConfigured && !draft.message) { status.textContent = "Для отправки нужен токен Smartsheet в настройках агента."; status.hidden = false; }
 }
@@ -441,7 +441,9 @@ async function operationResponse(id, data, responseStatus = 200) {
     setTimeout(() => { if (!draft.busy && draft.operationStatus === "pending") void checkOperation(id); }, 2500);
   } else if (operation?.status === "uncertain") {
     draft.operationStatus = "uncertain";
-    draft.message = "Результат не подтверждён. Проверь обсуждение в Smartsheet перед повторной отправкой.";
+    draft.message = operation.error || "Результат не подтверждён. Нажми «Проверить результат».";
+    if (operation.discussionId) draft.message += " ID обсуждения " + operation.discussionId + ".";
+    if (operation.commentId) draft.message += " ID комментария " + operation.commentId + ".";
   } else if (operation?.status === "rejected" || (responseStatus >= 400 && responseStatus < 500)) {
     draft.operationId = null; draft.operationStatus = "rejected";
     draft.message = data.error || operation?.error || "Комментарий не отправлен. Проверь данные и попробуй снова.";
@@ -451,19 +453,25 @@ async function operationResponse(id, data, responseStatus = 200) {
   }
   saveDrafts();
 }
-async function checkOperation(id) {
+async function checkOperation(id, verify = false) {
   const draft = draftFor(id);
   if (!draft.operationId || draft.busy) return;
   draft.busy = true;
   if (selectedId === id) refreshComposerState();
   try {
-    const response = await fetch("/api/rows/" + encodeURIComponent(id) + "/comment-operations/" + encodeURIComponent(draft.operationId), { headers: { "X-ECN-UI": "1" }, cache: "no-store", signal: AbortSignal.timeout(15000) });
+    const path = "/api/rows/" + encodeURIComponent(id) + "/comment-operations/" + encodeURIComponent(draft.operationId);
+    const response = await fetch(verify ? path + "/verify" : path, { method: verify ? "POST" : "GET",
+      headers: { "X-ECN-UI": "1" }, cache: "no-store", signal: AbortSignal.timeout(verify ? 60000 : 15000) });
     const data = await response.json();
     if (response.status === 404) {
       draft.operationStatus = "not_found";
       draft.message = "Агент ещё не зарегистрировал отправку. Можно повторить запрос с тем же идентификатором.";
       // Keep the same operation ID: a delayed original request must not create another comment.
-    } else await operationResponse(id, data, response.status);
+    } else if (response.ok && data.operation) {
+      await operationResponse(id, data, response.status);
+    } else {
+      draft.message = data.error || "Проверка не завершена. Повтори проверку результата.";
+    }
   } catch {
     draft.message = "Нет ответа от агента. Черновик сохранён. Нажми «Проверить результат» после восстановления связи.";
   } finally {
@@ -477,7 +485,7 @@ async function sendComment(event) {
   const id = selectedId;
   const draft = draftFor(id);
   if (draft.busy) return;
-  if (draft.operationId && draft.operationStatus !== "not_found") { await checkOperation(id); return; }
+  if (draft.operationId && draft.operationStatus !== "not_found") { await checkOperation(id, true); return; }
   if (!draft.text.trim() || !selectedRow || !current?.tokenConfigured) return;
   if (draft.fileMeta && !draft.file) { draft.message = "Выбери файл повторно перед отправкой."; refreshComposerState(); return; }
   draft.operationId ||= crypto.randomUUID();

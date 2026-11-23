@@ -68,11 +68,14 @@ export function createPanelServer({ config, store, monitor, reader, comments }) 
         const row = store.row(url.pathname.split("/").at(-1));
         return sendJson(res, row ? 200 : 404, row || { error: "Строка отсутствует в последнем снимке ECF." });
       }
-      const operationMatch = /^\/api\/rows\/([1-9]\d*)\/comment-operations\/([^/]+)$/.exec(url.pathname);
-      if (req.method === "GET" && operationMatch) {
-        const [, rowId, operationId] = operationMatch;
+      const operationMatch = /^\/api\/rows\/([1-9]\d*)\/comment-operations\/([^/]+)(\/verify)?$/.exec(url.pathname);
+      if (operationMatch && req.method === (operationMatch[3] ? "POST" : "GET")) {
+        const [, rowId, operationId, verify] = operationMatch;
         if (!OPERATION_ID.test(operationId)) return sendJson(res, 400, { error: "Некорректный идентификатор отправки." });
-        const operation = comments?.get(rowId, operationId);
+        if (verify && (req.headers.origin !== origin || req.headers["x-ecn-ui"] !== "1")) {
+          return sendJson(res, 403, { error: "Используй локальную панель." });
+        }
+        const operation = verify ? await comments?.verify(rowId, operationId) : comments?.get(rowId, operationId);
         return sendJson(res, operation ? 200 : 404, operation ? { ok: operation.status === "sent", operation } : { error: "Отправка не найдена." });
       }
       const commentMatch = /^\/api\/rows\/([1-9]\d*)\/comments$/.exec(url.pathname);

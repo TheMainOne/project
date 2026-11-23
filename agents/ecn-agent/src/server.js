@@ -71,8 +71,7 @@ if (server?.listening) {
     closing = true;
     console.log("Завершаю текущую проверку и закрываю журнал…");
     server.close();
-    await comments.close();
-    await monitor.stop();
+    await Promise.all([monitor.stop(), comments.close()]);
     server.closeAllConnections();
     store.close();
     numberingStore?.close();
