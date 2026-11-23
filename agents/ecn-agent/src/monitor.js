@@ -56,6 +56,11 @@ export function createMonitor({ reader, store, pollSeconds, tokenConfigured, num
       if (!store.getMeta("paused")) void sync();
     },
     sync,
+    async refreshAfterWrite() {
+      // A read already in flight may predate the submitted comment. Schedule a fresh read after it.
+      if (running) await running;
+      return sync();
+    },
     setPaused(paused) {
       store.setPaused(paused);
       if (paused) {

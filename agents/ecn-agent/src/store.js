@@ -10,9 +10,23 @@ export function isActiveRow(row) {
   return !TERMINAL.has(row.status);
 }
 
-function digest(row) {
-  const { rowNumber, modifiedAt, discussions, attachments, ...content } = row;
+function digest(row, fieldIds = null) {
+  const { rowNumber, modifiedAt, discussions, attachments, fields, ecnType, priority, implementation, ...content } = row;
+  if (Array.isArray(fields) && fieldIds !== false) {
+    // Labels, display order and picklist options are schema, not ECN edits.
+    content.fieldValues = fields.filter(field => !fieldIds || fieldIds.has(field.columnId))
+      .map(({ columnId, value }) => [columnId, value]).sort(([a], [b]) => a.localeCompare(b));
+  }
   return createHash("sha256").update(JSON.stringify(content)).digest("hex");
+}
+
+function rowChanged(before, row) {
+  // Upgrading an existing snapshot must not report every ECN as changed merely
+  // because all sheet columns have become available. New columns get a baseline.
+  const fieldIds = Array.isArray(before.fields) && Array.isArray(row.fields)
+    ? new Set(before.fields.map(field => field.columnId).filter(id => row.fields.some(field => field.columnId === id)))
+    : false;
+  return digest(before, fieldIds) !== digest(row, fieldIds);
 }
 
 function attachmentFingerprints(row) {
@@ -113,7 +127,7 @@ export function openStore(filename, sheetId) {
           if (!before) {
             added += 1;
             if (!baseline) addEvent("row_added", "Обнаружена строка " + (row.ecnNumber || "без номера ECN") + ".", row.id);
-          } else if (before.hash !== hash) {
+          } else if (rowChanged(JSON.parse(before.snapshot), row)) {
             changed += 1;
             const oldStatus = JSON.parse(before.snapshot).status;
             let message = "Изменён ECN " + (row.ecnNumber || "без номера") + ".";
@@ -170,7 +184,7 @@ export function openStore(filename, sheetId) {
         }
         const now = new Date().toISOString();
         putMeta("lastSyncAt", now);
-        putMeta("sheet", { name: sheet.name, version: sheet.version, columnCount: sheet.columnCount, unavailableApprovals: sheet.unavailableApprovals, sheetDiscussionCount: sheet.sheetDiscussionCount || 0 });
+        putMeta("sheet", { name: sheet.name, version: sheet.version, columnCount: sheet.columnCount, columns: sheet.columns || [], unavailableApprovals: sheet.unavailableApprovals, sheetDiscussionCount: sheet.sheetDiscussionCount || 0 });
         if (sheet.commentsLoaded === true) {
           putMeta("commentsInitialized", true);
           putMeta("commentsSyncAt", now);
@@ -213,7 +227,7 @@ export function openStore(filename, sheetId) {
     state() {
       const rows = db.prepare("SELECT snapshot FROM rows").all().map(record => JSON.parse(record.snapshot));
       const active = rows.filter(isActiveRow);
-      const summaries = rows.map(({ description, approvals, discussions, attachments, ...summary }) => {
+      const summaries = rows.map(({ fields, approvals, discussions, attachments, ...summary }) => {
         const { unreadCommentIds, ...comments } = summarizeComments({ discussions }, seenComments(summary.id));
         return { ...summary, ...comments, attachmentCount: (attachments || []).length, active: isActiveRow(summary) };
       });

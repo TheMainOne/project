@@ -10,10 +10,21 @@ let detailTicket = 0;
 let lastRowsKey = "";
 let lastEventsKey = "";
 let activeView = "sheet";
+let sheetView = "table";
+try { if (localStorage.getItem("ecn-sheet-view") === "cards") sheetView = "cards"; } catch {}
+let lastBoardKey = "";
+let returnFocus = null;
+const drafts = new Map();
 let seenPending = new Set();
 const perPage = 100;
-const detailTabs = ["details", "comments", "attachments"];
+const detailTabs = ["comments", "attachments"];
 const detailPanels = ["detail-content", "comments-content", "attachments-content"];
+try {
+  const saved = JSON.parse(sessionStorage.getItem("ecn-comment-drafts") || "[]");
+  if (Array.isArray(saved)) for (const [id, draft] of saved) {
+    if (/^[1-9]\d*$/.test(id) && draft && typeof draft.text === "string") drafts.set(id, { ...draft, busy: false, file: null });
+  }
+} catch {}
 
 function element(tag, text, className) {
   const node = document.createElement(tag);
@@ -60,6 +71,12 @@ function visibleRows() {
 }
 function renderRows() {
   const rows = visibleRows();
+  $("grid-scroll").hidden = sheetView === "cards";
+  $("card-board").hidden = sheetView !== "cards";
+  $("previous").hidden = sheetView === "cards";
+  $("next").hidden = sheetView === "cards";
+  $("page-info").hidden = sheetView === "cards";
+  if (sheetView === "cards") renderBoard(rows);
   page = Math.min(page, Math.max(0, Math.ceil(rows.length / perPage) - 1));
   const displayed = rows.slice(page * perPage, (page + 1) * perPage);
   const key = JSON.stringify([displayed, selectedId, page, current?.attachmentsLoaded]);
@@ -112,6 +129,72 @@ function renderRows() {
   $("previous").disabled = page === 0;
   $("next").disabled = (page + 1) * perPage >= rows.length;
   document.querySelectorAll("[data-filter]").forEach(button => button.classList.toggle("active", button.dataset.filter === $("filter").value));
+}
+function rowAction(row, kind) {
+  const isComments = kind === "comments";
+  const count = isComments ? row.commentCount : row.attachmentCount;
+  const button = element("button", undefined, (isComments ? "comment-button" : "attachment-button") + (count ? " has-" + kind : "") + (isComments && row.unreadCommentCount ? " unread" : ""));
+  button.type = "button";
+  button.dataset.rowId = row.id; button.dataset.target = kind;
+  const name = isComments ? "Комментарии" : "Вложения";
+  button.title = name + ": " + (count || 0);
+  button.setAttribute("aria-label", name + " ECN " + (row.ecnNumber || "без номера") + ": " + (count || 0));
+  button.append($(isComments ? "message-icon" : "attachment-icon").content.cloneNode(true), element("span", String(count || 0)));
+  button.addEventListener("click", () => openRow(row.id, kind));
+  return button;
+}
+function initials(value) {
+  return String(value || "?").split(/[\s.@_-]+/).filter(Boolean).slice(0, 2).map(word => word[0]).join("").toUpperCase();
+}
+function renderBoard(rows) {
+  const options = current?.sheet?.columns?.find(column => column.title.toLocaleLowerCase() === "status")?.options || ["In Preparation", "Initial Review", "Sent for Approvals", "Approved", "Approved - Awaiting Further Action", "Customer Notification", "Complete and Closed"];
+  const statuses = [...new Set([...(rows.some(row => !row.status) ? [""] : []), ...options, ...rows.map(row => row.status || "")])];
+  const key = JSON.stringify([rows, statuses, selectedId]);
+  if (key === lastBoardKey) return;
+  lastBoardKey = key;
+  const focused = document.activeElement?.closest("#card-board button");
+  const focus = focused ? { id: focused.dataset.rowId, target: focused.dataset.target } : null;
+  const scrolls = new Map([...$("card-board").querySelectorAll(".card-lane-rows")].map(node => [node.dataset.status, node.scrollTop]));
+  const fragment = document.createDocumentFragment();
+  if (!rows.length) {
+    const empty = element("div", undefined, "board-empty");
+    empty.append(element("strong", current?.lastSyncAt ? "Карточек не найдено" : "Ожидание ECF"), element("p", current?.lastSyncAt ? "Попробуй другой фильтр или поисковый запрос." : "После подключения здесь появятся ECN по статусам."));
+    fragment.append(empty);
+  } else for (const status of statuses) {
+    const group = rows.filter(row => (row.status || "") === status);
+    const lane = element("section", undefined, "card-lane");
+    const heading = element("h2"); heading.title = status || "Без статуса";
+    heading.append(element("span", status || "Без статуса"), element("b", String(group.length)));
+    lane.append(heading);
+    const list = element("div", undefined, "card-lane-rows"); list.dataset.status = status;
+    if (!group.length) list.append(element("p", "Нет ECN", "empty-lane"));
+    for (const row of group) {
+      const card = element("article", undefined, "ecn-card" + (row.id === selectedId ? " selected" : "") + (/urgent/i.test(row.priority || "") ? " urgent" : ""));
+      const main = element("button", undefined, "card-main"); main.type = "button";
+      main.dataset.rowId = row.id; main.dataset.target = "details";
+      main.setAttribute("aria-label", "Открыть ECN " + (row.ecnNumber || "без номера") + ", строка " + row.rowNumber);
+      main.append(element("strong", row.ecnNumber || "Без номера", "card-number"));
+      if (row.ecnType) main.append(element("span", row.ecnType, "card-line"));
+      if (row.requestedBy) {
+        const requester = element("span", undefined, "card-requester");
+        requester.append(element("span", initials(row.requestedBy), "avatar"), element("span", row.requestedBy));
+        requester.title = row.requestedBy; main.append(requester);
+      }
+      for (const [value, label] of [[row.itemNumber, "Item Number"], [row.itemDescription, "Item Description"], [row.description, "Описание изменения"], [row.implementation, "Effective When"]]) {
+        if (!value) continue;
+        const line = element("span", value, "card-line"); line.title = label + ": " + value; main.append(line);
+      }
+      if (/urgent/i.test(row.priority || "")) main.append(element("span", row.priority, "card-priority"));
+      main.addEventListener("click", () => openRow(row.id, "details"));
+      const footer = element("div", undefined, "card-actions");
+      footer.append(rowAction(row, "attachments"), rowAction(row, "comments"), element("span", "Строка " + row.rowNumber, "card-row-number"));
+      card.append(main, footer); list.append(card);
+    }
+    lane.append(list); fragment.append(lane);
+  }
+  $("card-board").replaceChildren(fragment);
+  for (const list of $("card-board").querySelectorAll(".card-lane-rows")) list.scrollTop = scrolls.get(list.dataset.status) || 0;
+  if (focus) [...$("card-board").querySelectorAll("button")].find(button => button.dataset.rowId === focus.id && button.dataset.target === focus.target)?.focus({ preventScroll: true });
 }
 function renderEvents() {
   const key = JSON.stringify(current.events);
@@ -166,7 +249,7 @@ function render() {
   $("comment-total").textContent = current.commentsLoaded ? "Комментариев: " + current.counts.comments + " · Проверены " + date(current.commentsSyncAt) : "Комментарии ещё не загружены";
   $("attachment-total").textContent = current.attachmentsLoaded ? "Вложений: " + (current.counts.attachments || 0) + " · Проверены " + date(current.attachmentsSyncAt) : "Вложения ещё не загружены";
   $("poll-interval").textContent = "Интервал · " + current.pollSeconds + " с";
-  renderRows(); renderEvents();
+  renderRows(); renderEvents(); refreshComposerState();
 }
 function rowFact(label, value) {
   const part = element("div", undefined, "fact");
@@ -175,9 +258,18 @@ function rowFact(label, value) {
 }
 function renderDetails(row) {
   const facts = element("dl", undefined, "facts");
+  if (row.fields?.length) {
+    for (const field of row.fields) {
+      const fact = rowFact(field.title, field.value);
+      if (field.locked) { const lock = element("span", " ▣", "field-lock"); lock.title = "Заблокированное поле в Smartsheet"; fact.firstElementChild.append(lock); }
+      facts.append(fact);
+    }
+    $("detail-content").replaceChildren(facts);
+    return;
+  }
   facts.append(rowFact("ECN Status", row.status), rowFact("Site", row.site), rowFact("Item Number", row.itemNumber), rowFact("Item Description", row.itemDescription), rowFact("Requested By", row.requestedBy), rowFact("Создана строка", date(row.createdAt)), rowFact("Изменена строка", date(row.modifiedAt)));
   const approvals = element("div", undefined, "approvals");
-  for (const approval of row.approvals) {
+  for (const approval of row.approvals || []) {
     const block = element("div", undefined, "approval");
     const contacts = approval.contacts.map(contact => [contact.name, contact.email].filter(Boolean).join(" · ")).join("\n");
     block.append(element("strong", approval.department), element("span", contacts || "Контакт не указан", "approval-person"), element("span", approval.available ? approval.status || "Поле ответа пусто" : "Колонка недоступна", "approval-status"));
@@ -187,7 +279,7 @@ function renderDetails(row) {
 }
 function renderComments(row) {
   const fragment = document.createDocumentFragment();
-  fragment.append(element("p", "Обсуждения строки из Smartsheet. Новые сообщения и правки появятся после следующей проверки.", "conversation-note"));
+  fragment.append(element("p", "Обсуждения этого ECN в Smartsheet", "conversation-note"));
   if (!row.commentsLoaded) {
     fragment.append(element("p", "Комментарии ещё не загружены. Нажми «Проверить сейчас».", "empty"));
   } else if (!row.commentCount) {
@@ -208,8 +300,29 @@ function renderComments(row) {
         head.append(element("span", initials, "avatar"), author);
         if (unread.has(comment.id)) head.append(element("span", "Новое / изменено", "new-label"));
         item.append(head, element("p", comment.text || "Комментарий без текста.", "comment-text"));
+        const attached = (row.attachments || []).filter(attachment => attachment.parentType === "COMMENT" && attachment.parentId === comment.id);
+        if (attached.length) {
+          const links = element("div", undefined, "comment-attachments");
+          for (const attachment of attached) {
+            const link = element("a", undefined, "comment-file-link");
+            link.append($("attachment-icon").content.cloneNode(true), element("span", attachment.name || "Вложение"));
+            link.href = "/api/rows/" + encodeURIComponent(row.id) + "/attachments/" + encodeURIComponent(attachment.id) + "/open";
+            link.target = "_blank"; link.rel = "noopener noreferrer"; links.append(link);
+          }
+          item.append(links);
+        }
         section.append(item);
       });
+      const reply = element("button", "↳ Ответить", "reply-button");
+      reply.type = "button";
+      reply.addEventListener("click", () => {
+        const draft = draftFor(row.id);
+        if (draft.busy || draft.operationId) return;
+        draft.discussionId = thread.id;
+        draft.replyName = thread.comments[0]?.author?.name || thread.comments[0]?.author?.email || "обсуждение";
+        saveDrafts(); restoreComposer(); $("comment-text").focus();
+      });
+      section.append(reply);
       fragment.append(section);
     }
   }
@@ -259,16 +372,133 @@ function renderAttachments(row) {
   $("attachments-content").replaceChildren(fragment);
 }
 function setTab(tab, focus = false) {
-  selectedTab = tab;
-  $("detail-content").hidden = tab !== "details";
-  $("comments-content").hidden = tab !== "comments";
-  $("attachments-content").hidden = tab !== "attachments";
+  selectedTab = tab === "attachments" ? "attachments" : "comments";
+  $("comments-content").hidden = selectedTab !== "comments";
+  $("attachments-content").hidden = selectedTab !== "attachments";
+  $("comment-form").hidden = selectedTab !== "comments";
   for (const name of detailTabs) {
-    $("tab-" + name).setAttribute("aria-selected", String(name === tab));
-    $("tab-" + name).tabIndex = name === tab ? 0 : -1;
+    $("tab-" + name).setAttribute("aria-selected", String(name === selectedTab));
+    $("tab-" + name).tabIndex = name === selectedTab ? 0 : -1;
   }
-  if (focus) $("tab-" + tab).focus();
-  if (tab === "comments") void markVisibleComments();
+  if (focus) $("tab-" + selectedTab).focus();
+  if (selectedTab === "comments") void markVisibleComments();
+}
+function draftFor(id) {
+  if (!drafts.has(id)) drafts.set(id, { text: "", file: null, fileMeta: null, operationId: null, operationStatus: null, busy: false, message: "", discussionId: null, replyName: "" });
+  return drafts.get(id);
+}
+function saveDrafts() {
+  try {
+    sessionStorage.setItem("ecn-comment-drafts", JSON.stringify([...drafts].map(([id, draft]) => [id, { text: draft.text, fileMeta: draft.fileMeta, operationId: draft.operationId, operationStatus: draft.operationStatus, message: draft.message, discussionId: draft.discussionId, replyName: draft.replyName }])));
+  } catch {}
+}
+function restoreComposer() {
+  if (!selectedId) return;
+  const draft = draftFor(selectedId);
+  $("comment-text").value = draft.text;
+  $("comment-file").value = "";
+  refreshComposerState();
+}
+function refreshComposerState() {
+  if (!selectedId) return;
+  const draft = draftFor(selectedId);
+  const locked = draft.busy || Boolean(draft.operationId);
+  $("comment-text").disabled = locked;
+  $("comment-file").disabled = locked && !(draft.operationStatus === "not_found" && draft.fileMeta && !draft.file);
+  $("remove-comment-file").disabled = locked;
+  $("cancel-reply").disabled = locked;
+  $("comment-file-summary").hidden = !draft.fileMeta;
+  $("comment-file-name").textContent = draft.fileMeta ? draft.fileMeta.name + (draft.file ? "" : " · выбери файл повторно") : "";
+  $("comment-reply-target").hidden = !draft.discussionId;
+  $("comment-reply-target").firstElementChild.textContent = draft.discussionId ? "Ответ: " + draft.replyName : "";
+  const status = $("comment-send-status");
+  status.textContent = draft.message || "";
+  status.hidden = !draft.message;
+  status.dataset.kind = draft.operationStatus || "";
+  $("retry-uncertain-comment").hidden = draft.operationStatus !== "uncertain";
+  $("retry-uncertain-comment").disabled = draft.busy;
+  const send = $("send-comment");
+  send.textContent = draft.busy ? "Отправка…" : draft.operationStatus === "not_found" ? "Повторить запрос" : draft.operationId ? "Проверить результат" : "Отправить";
+  send.disabled = draft.busy || !current?.tokenConfigured || !selectedRow || (!draft.operationId && (!draft.text.trim() || Boolean(draft.fileMeta && !draft.file)));
+  if (!current?.tokenConfigured && !draft.message) { status.textContent = "Для отправки нужен токен Smartsheet в настройках агента."; status.hidden = false; }
+}
+async function operationResponse(id, data, responseStatus = 200) {
+  const draft = draftFor(id);
+  const operation = data.operation;
+  if (operation?.status === "sent") {
+    draft.text = ""; draft.file = null; draft.fileMeta = null;
+    draft.operationId = null; draft.operationStatus = "sent"; draft.discussionId = null; draft.replyName = "";
+    draft.sentCommentId = operation.commentId;
+    draft.message = "Комментарий" + (operation.attachmentIds?.length ? " и файл" : "") + " отправлен в Smartsheet. Обновляем обсуждение…";
+    saveDrafts();
+    if (selectedId === id) { $("comment-text").value = ""; $("comment-file").value = ""; }
+    void update();
+    return;
+  }
+  if (operation?.status === "pending") {
+    draft.operationStatus = "pending";
+    draft.message = "Smartsheet обрабатывает комментарий. Проверяем результат…";
+    setTimeout(() => { if (!draft.busy && draft.operationStatus === "pending") void checkOperation(id); }, 2500);
+  } else if (operation?.status === "uncertain") {
+    draft.operationStatus = "uncertain";
+    draft.message = "Результат не подтверждён. Проверь обсуждение в Smartsheet перед повторной отправкой.";
+  } else if (operation?.status === "rejected" || (responseStatus >= 400 && responseStatus < 500)) {
+    draft.operationId = null; draft.operationStatus = "rejected";
+    draft.message = data.error || operation?.error || "Комментарий не отправлен. Проверь данные и попробуй снова.";
+  } else {
+    draft.operationStatus = "uncertain";
+    draft.message = "Не удалось подтвердить отправку. Нажми «Проверить результат».";
+  }
+  saveDrafts();
+}
+async function checkOperation(id) {
+  const draft = draftFor(id);
+  if (!draft.operationId || draft.busy) return;
+  draft.busy = true;
+  if (selectedId === id) refreshComposerState();
+  try {
+    const response = await fetch("/api/rows/" + encodeURIComponent(id) + "/comment-operations/" + encodeURIComponent(draft.operationId), { headers: { "X-ECN-UI": "1" }, cache: "no-store", signal: AbortSignal.timeout(15000) });
+    const data = await response.json();
+    if (response.status === 404) {
+      draft.operationStatus = "not_found";
+      draft.message = "Агент ещё не зарегистрировал отправку. Можно повторить запрос с тем же идентификатором.";
+      // Keep the same operation ID: a delayed original request must not create another comment.
+    } else await operationResponse(id, data, response.status);
+  } catch {
+    draft.message = "Нет ответа от агента. Черновик сохранён. Нажми «Проверить результат» после восстановления связи.";
+  } finally {
+    draft.busy = false; saveDrafts();
+    if (selectedId === id) refreshComposerState();
+  }
+}
+async function sendComment(event) {
+  event.preventDefault();
+  if (!selectedId) return;
+  const id = selectedId;
+  const draft = draftFor(id);
+  if (draft.busy) return;
+  if (draft.operationId && draft.operationStatus !== "not_found") { await checkOperation(id); return; }
+  if (!draft.text.trim() || !selectedRow || !current?.tokenConfigured) return;
+  if (draft.fileMeta && !draft.file) { draft.message = "Выбери файл повторно перед отправкой."; refreshComposerState(); return; }
+  draft.operationId ||= crypto.randomUUID();
+  draft.operationStatus = "pending"; draft.busy = true; draft.message = "Отправляем в Smartsheet…";
+  saveDrafts(); refreshComposerState();
+  const body = new FormData();
+  body.append("operationId", draft.operationId); body.append("text", draft.text);
+  if (draft.discussionId) body.append("discussionId", draft.discussionId);
+  if (draft.file) body.append("file", draft.file);
+  try {
+    const response = await fetch("/api/rows/" + encodeURIComponent(id) + "/comments", { method: "POST", headers: { "X-ECN-UI": "1" }, body, signal: AbortSignal.timeout(120000) });
+    const data = await response.json();
+    await operationResponse(id, data, response.status);
+  } catch {
+    draft.message = "Связь прервалась. Проверяем, был ли комментарий отправлен…";
+    draft.operationStatus = "pending";
+    setTimeout(() => void checkOperation(id), 500);
+  } finally {
+    draft.busy = false; saveDrafts();
+    if (selectedId === id) refreshComposerState();
+  }
 }
 async function markVisibleComments() {
   const row = selectedRow;
@@ -302,6 +532,11 @@ async function refreshDetail() {
     if (ticket !== detailTicket || selectedId !== id) return;
     const changed = !selectedRow || JSON.stringify(row) !== JSON.stringify(selectedRow);
     selectedRow = row;
+    const draft = draftFor(id);
+    if (draft.operationStatus === "sent" && row.discussions?.some(thread => thread.comments.some(comment => comment.id === draft.sentCommentId))) {
+      draft.message = "Отправлено в Smartsheet. Обсуждение обновлено.";
+    }
+    refreshComposerState();
     $("detail-title").textContent = row.ecnNumber || "ECN без номера";
     $("detail-row-number").textContent = row.rowNumber;
     $("detail-comment-count").textContent = row.commentCount;
@@ -321,12 +556,14 @@ async function refreshDetail() {
   } catch (error) {
     if (ticket !== detailTicket) return;
     selectedRow = null;
+    refreshComposerState();
     const text = error.status === 404 ? "Строка больше не присутствует в ECF. Последние события доступны в журнале." : error.message;
     for (const target of detailPanels) $(target).replaceChildren(element("p", text, "empty"));
     $("detail-source").textContent = "Карточка недоступна";
   }
 }
 async function openRow(id, tab) {
+  if ($("drawer").hidden) returnFocus = document.activeElement;
   const isNew = selectedId !== id;
   selectedId = id;
   if (isNew) {
@@ -339,27 +576,45 @@ async function openRow(id, tab) {
     for (const target of detailPanels) { $(target).replaceChildren(element("p", "Загрузка…", "empty")); $(target).scrollTop = 0; }
   }
   $("drawer").hidden = false;
+  $("detail-backdrop").hidden = false;
+  document.querySelectorAll(".rail, .sheet-header, .toolbar, .summary-bar, .statusbar, #sheet-view, #activity-view").forEach(node => { node.inert = true; });
   setTab(tab);
+  restoreComposer();
+  $("close-detail").focus({ preventScroll: true });
   renderRows();
   await refreshDetail();
+  const draft = draftFor(id);
+  if (draft.operationId && !draft.busy && !["sent", "rejected"].includes(draft.operationStatus)) void checkOperation(id);
 }
 function closeDetail() {
   const previousId = selectedId;
   $("drawer").hidden = true;
+  $("detail-backdrop").hidden = true;
+  document.querySelectorAll("[inert]").forEach(node => { node.inert = false; });
   selectedId = null; selectedRow = null; detailTicket += 1;
   renderRows();
-  Array.from($("rows").querySelectorAll("button")).find(button => button.dataset.rowId === previousId && button.dataset.target === "details")?.focus({ preventScroll: true });
+  const rowFocus = Array.from($(sheetView === "cards" ? "card-board" : "rows").querySelectorAll("button")).find(button => button.dataset.rowId === previousId && button.dataset.target === "details");
+  (returnFocus?.isConnected ? returnFocus : rowFocus)?.focus({ preventScroll: true });
+  returnFocus = null;
 }
 function showView(view) {
   activeView = view;
   $("sheet-view").hidden = view !== "sheet";
   $("activity-view").hidden = view !== "activity";
-  $("view-name").textContent = view === "sheet" ? "Таблица" : "Журнал";
+  $("view-name").hidden = view === "sheet";
+  $("view-switch").hidden = view !== "sheet";
   for (const name of ["sheet", "activity"]) {
     $("nav-" + name).classList.toggle("selected", name === view);
     $("nav-" + name).setAttribute("aria-pressed", String(name === view));
   }
   if (view === "activity") closeDetail();
+}
+function changeSheetView(view) {
+  sheetView = view;
+  try { localStorage.setItem("ecn-sheet-view", view); } catch {}
+  $("view-table").setAttribute("aria-pressed", String(view === "table"));
+  $("view-cards").setAttribute("aria-pressed", String(view === "cards"));
+  showView("sheet"); renderRows();
 }
 function changeFilter(value) { showView("sheet"); $("filter").value = value; page = 0; renderRows(); }
 async function update() {
@@ -386,6 +641,55 @@ async function control(path) {
   finally { controlBusy = false; if (current) { $("pause").disabled = !current.tokenConfigured; $("sync").disabled = !current.tokenConfigured || current.monitor.running; } }
 }
 $("sync").addEventListener("click", () => control("/api/sync"));
+$("view-table").addEventListener("click", () => changeSheetView("table"));
+$("view-cards").addEventListener("click", () => changeSheetView("cards"));
+$("comment-form").addEventListener("submit", sendComment);
+$("comment-text").addEventListener("input", () => {
+  if (!selectedId) return;
+  const draft = draftFor(selectedId);
+  draft.text = $("comment-text").value;
+  if (!draft.operationId) { draft.message = ""; draft.operationStatus = null; }
+  saveDrafts(); refreshComposerState();
+});
+$("comment-file").addEventListener("change", () => {
+  if (!selectedId) return;
+  const file = $("comment-file").files[0];
+  if (!file) return;
+  const draft = draftFor(selectedId);
+  if (file.size > 30_000_000) {
+    draft.message = "Размер файла не должен превышать 30 МБ.";
+    $("comment-file").value = "";
+  } else if (draft.operationId && draft.fileMeta && (file.name !== draft.fileMeta.name || file.size !== draft.fileMeta.size || file.type !== draft.fileMeta.type)) {
+    draft.message = "Для повтора запроса выбери исходный файл: " + draft.fileMeta.name;
+    $("comment-file").value = "";
+  } else {
+    draft.file = file; draft.fileMeta = { name: file.name, size: file.size, type: file.type }; draft.message = "";
+  }
+  saveDrafts(); refreshComposerState();
+});
+$("remove-comment-file").addEventListener("click", () => {
+  if (!selectedId) return;
+  const draft = draftFor(selectedId);
+  if (draft.busy || draft.operationId) return;
+  draft.file = null; draft.fileMeta = null; $("comment-file").value = "";
+  saveDrafts(); refreshComposerState();
+});
+$("cancel-reply").addEventListener("click", () => {
+  if (!selectedId) return;
+  const draft = draftFor(selectedId);
+  if (draft.busy || draft.operationId) return;
+  draft.discussionId = null; draft.replyName = "";
+  saveDrafts(); refreshComposerState();
+});
+$("retry-uncertain-comment").addEventListener("click", () => {
+  if (!selectedId) return;
+  const draft = draftFor(selectedId);
+  if (draft.busy || draft.operationStatus !== "uncertain") return;
+  if (!window.confirm("Повторить можно, только если комментария нет в Smartsheet. Иначе появится дубликат. Ты проверил обсуждение?")) return;
+  draft.operationId = null; draft.operationStatus = null;
+  draft.message = "Черновик готов к повторной отправке.";
+  saveDrafts(); refreshComposerState();
+});
 $("pause").addEventListener("click", () => control(current?.paused ? "/api/resume" : "/api/pause"));
 for (const id of ["search", "filter", "sort"]) $(id).addEventListener("input", () => { page = 0; if (activeView !== "sheet") showView("sheet"); renderRows(); });
 $("previous").addEventListener("click", () => { page -= 1; renderRows(); });
@@ -405,7 +709,18 @@ for (const name of detailTabs) {
   });
 }
 $("close-detail").addEventListener("click", closeDetail);
-document.addEventListener("keydown", event => { if (event.key === "Escape" && selectedId) closeDetail(); });
+$("detail-backdrop").addEventListener("click", closeDetail);
+document.addEventListener("keydown", event => {
+  if (!selectedId) return;
+  if (event.key === "Escape") closeDetail();
+  if (event.key === "Tab") {
+    const focusable = [...$("drawer").querySelectorAll('button:not(:disabled), input:not(:disabled), textarea:not(:disabled), a[href], [tabindex="0"]')].filter(node => node.getClientRects().length);
+    const first = focusable[0], last = focusable.at(-1);
+    if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last?.focus(); }
+    else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first?.focus(); }
+  }
+});
 document.addEventListener("visibilitychange", () => { if (!document.hidden) { void update(); void markVisibleComments(); } });
 setInterval(() => { if (!document.hidden) void update(); }, 4000);
+changeSheetView(sheetView);
 void update();

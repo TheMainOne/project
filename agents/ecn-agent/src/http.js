@@ -2,8 +2,10 @@ import { createServer } from "node:http";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { SmartsheetError } from "./smartsheet.js";
+import { CommentRequestError, OPERATION_ID } from "./comment-service.js";
+import { MAX_ATTACHMENT_BYTES } from "./smartsheet-write.js";
 
-export function createPanelServer({ config, store, monitor, reader }) {
+export function createPanelServer({ config, store, monitor, reader, comments }) {
   const files = new Map([
     ["/", ["index.html", "text/html; charset=utf-8"]],
     ["/app.js", ["app.js", "text/javascript; charset=utf-8"]],
@@ -57,6 +59,7 @@ export function createPanelServer({ config, store, monitor, reader }) {
           pollSeconds: config.pollSeconds,
           mode: status.numbering?.enabled ? "auto_number" : "observe",
           numbering: status.numbering || { enabled: false },
+          commentsWritable: Boolean(config.token && comments),
           ...store.state(),
           monitor: status,
         });
@@ -64,6 +67,48 @@ export function createPanelServer({ config, store, monitor, reader }) {
       if (req.method === "GET" && /^\/api\/rows\/[1-9]\d*$/.test(url.pathname)) {
         const row = store.row(url.pathname.split("/").at(-1));
         return sendJson(res, row ? 200 : 404, row || { error: "Строка отсутствует в последнем снимке ECF." });
+      }
+      const operationMatch = /^\/api\/rows\/([1-9]\d*)\/comment-operations\/([^/]+)$/.exec(url.pathname);
+      if (req.method === "GET" && operationMatch) {
+        const [, rowId, operationId] = operationMatch;
+        if (!OPERATION_ID.test(operationId)) return sendJson(res, 400, { error: "Некорректный идентификатор отправки." });
+        const operation = comments?.get(rowId, operationId);
+        return sendJson(res, operation ? 200 : 404, operation ? { ok: operation.status === "sent", operation } : { error: "Отправка не найдена." });
+      }
+      const commentMatch = /^\/api\/rows\/([1-9]\d*)\/comments$/.exec(url.pathname);
+      if (req.method === "POST" && commentMatch && comments) {
+        if (req.headers.origin !== origin || req.headers["x-ecn-ui"] !== "1") return sendJson(res, 403, { error: "Используй локальную панель." });
+        if (!config.token) return sendJson(res, 409, { error: "Для отправки нужен SMARTSHEET_API_TOKEN. Перезапусти агент после настройки." });
+        const contentType = String(req.headers["content-type"] || "");
+        if (!/^multipart\/form-data;/i.test(contentType)) return sendJson(res, 415, { error: "Ожидается комментарий с файлом в формате FormData." });
+        const limit = MAX_ATTACHMENT_BYTES + 65536;
+        if (Number(req.headers["content-length"]) > limit) return sendJson(res, 413, { error: "Максимальный размер файла — 30 МБ." });
+        const chunks = [];
+        let length = 0;
+        for await (const chunk of req) {
+          length += chunk.length;
+          if (length > limit) return sendJson(res, 413, { error: "Максимальный размер файла — 30 МБ." });
+          chunks.push(chunk);
+        }
+        let form;
+        try {
+          form = await new Request(origin, { method: "POST", headers: { "Content-Type": contentType }, body: Buffer.concat(chunks) }).formData();
+        } catch { return sendJson(res, 400, { error: "Не удалось прочитать комментарий или файл." }); }
+        const allowed = new Set(["text", "file", "operationId", "discussionId"]);
+        for (const key of form.keys()) {
+          if (!allowed.has(key) || form.getAll(key).length !== 1) return sendJson(res, 400, { error: "Некорректные поля отправки. Разрешён один файл на комментарий." });
+        }
+        const upload = form.get("file");
+        if (upload !== null && typeof upload === "string") return sendJson(res, 400, { error: "Не удалось прочитать файл." });
+        const text = form.get("text");
+        const operationId = form.get("operationId");
+        const discussionId = form.get("discussionId");
+        if (typeof text !== "string" || typeof operationId !== "string" || (discussionId !== null && typeof discussionId !== "string")) return sendJson(res, 400, { error: "Некорректные поля комментария." });
+        const operation = await comments.submit({ rowId: commentMatch[1], operationId, text, discussionId,
+          file: upload ? { name: upload.name, mimeType: upload.type || "application/octet-stream", bytes: Buffer.from(await upload.arrayBuffer()) } : null });
+        return sendJson(res, operation.status === "sent" ? 200 : operation.status === "pending" ? 202 : 409, {
+          ok: operation.status === "sent", operation, ...(operation.error ? { error: operation.error } : {}), refreshPending: operation.status === "sent",
+        });
       }
       const attachmentMatch = /^\/api\/rows\/([1-9]\d*)\/attachments\/([1-9]\d*)\/open$/.exec(url.pathname);
       if (req.method === "GET" && attachmentMatch) {
@@ -124,7 +169,8 @@ export function createPanelServer({ config, store, monitor, reader }) {
         return sendJson(res, 202, { ok: true });
       }
       return sendJson(res, 404, { error: "Маршрут не найден." });
-    } catch {
+    } catch (error) {
+      if (error instanceof CommentRequestError) return sendJson(res, error.status, { error: error.message });
       return sendJson(res, 500, { error: "Ошибка локальной панели. Проверь доступ к папке data." });
     }
   });

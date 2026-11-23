@@ -23,7 +23,7 @@
       <div class="header-right"><span id="connection" class="connection"><i></i><span>Подключение</span></span><span id="agent-mode" class="mode">Наблюдение</span></div>
     </header>
     <div class="toolbar">
-      <div class="view-label"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 9h18M9 9v11"/></svg><strong id="view-name">Таблица</strong></div>
+      <div id="view-switch" class="view-switch" role="group" aria-label="Вид ECN"><button id="view-table" aria-pressed="true"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 9h18M9 9v11"/></svg>Таблица</button><button id="view-cards" aria-pressed="false"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="7" height="7" rx="1"/><rect x="14" y="4" width="7" height="11" rx="1"/><rect x="3" y="15" width="7" height="5" rx="1"/></svg>Карточки</button></div><strong id="view-name" class="view-label" hidden>Журнал</strong>
       <span class="toolbar-divider"></span>
       <label class="search"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="10" cy="10" r="6"/><path d="m15 15 5 5"/></svg><span class="visually-hidden">Поиск ECN</span><input id="search" type="search" placeholder="Поиск по ECN, материалу, площадке…" autocomplete="off"></label>
       <label class="select-wrap"><span class="visually-hidden">Фильтр строк</span><select id="filter"><option value="active">Активные ECN</option><option value="all">Все строки</option><option value="Initial Review">Initial Review</option><option value="Sent for Approvals">Sent for Approvals</option><option value="without-number">Без номера</option><option value="with-comments">С комментариями</option><option value="with-attachments">С вложениями</option><option value="unread">Новые комментарии</option></select></label>
@@ -49,17 +49,33 @@
           </table>
           <div id="empty" class="empty"><strong>Ожидание ECF</strong><span>После подключения здесь появятся строки таблицы.</span></div>
         </div>
+        <div id="card-board" class="card-board" aria-label="Карточки ECN по статусам" tabindex="0" hidden></div>
         <footer class="grid-footer"><span id="result-count">Ожидание данных</span><span class="footer-hint">Нажми на ECN, обсуждения или скрепку</span><span id="page-info"></span><button id="previous" class="button small" disabled>Назад</button><button id="next" class="button small" disabled>Далее</button></footer>
       </section>
       <section id="activity-view" class="activity-view" hidden><div class="section-title"><div><h2>Журнал работы</h2><p>Проверки ECF, изменения строк, комментариев и вложений</p></div><span>Последние 100 событий</span></div><p id="journal-empty" class="empty">Событий пока нет.</p><ol id="events"></ol></section>
-      <aside id="drawer" class="drawer" aria-labelledby="detail-title" hidden>
+      <div id="detail-backdrop" class="detail-backdrop" hidden></div>
+      <section id="drawer" class="drawer" role="dialog" aria-modal="true" aria-labelledby="detail-title" tabindex="-1" hidden>
         <div class="drawer-heading"><div><p class="eyebrow">Строка <span id="detail-row-number">—</span></p><h2 id="detail-title">ECN</h2></div><button id="close-detail" class="icon-button" aria-label="Закрыть карточку" title="Закрыть"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18"/></svg></button></div>
-        <div class="drawer-tabs" role="tablist" aria-label="Данные ECN"><button id="tab-details" role="tab" aria-controls="detail-content" aria-selected="true">Данные ECN</button><button id="tab-comments" role="tab" aria-controls="comments-content" aria-selected="false" tabindex="-1">Комментарии <b id="detail-comment-count">0</b></button><button id="tab-attachments" role="tab" aria-controls="attachments-content" aria-selected="false" tabindex="-1">Вложения <b id="detail-attachment-count">0</b></button></div>
-        <div id="detail-content" class="drawer-body" role="tabpanel" aria-labelledby="tab-details"></div>
-        <div id="comments-content" class="drawer-body" role="tabpanel" aria-labelledby="tab-comments" hidden></div>
-        <div id="attachments-content" class="drawer-body" role="tabpanel" aria-labelledby="tab-attachments" hidden></div>
+        <div class="detail-layout">
+          <section class="detail-fields"><div class="detail-section-heading"><h3>Данные ECN</h3><span>Из исходного Smartsheet</span></div><div id="detail-content" class="drawer-body" tabindex="0"></div></section>
+          <section class="detail-conversation" aria-label="Обсуждения и вложения">
+            <div class="drawer-tabs" role="tablist" aria-label="Обсуждения и вложения"><button id="tab-comments" role="tab" aria-controls="comments-content" aria-selected="true">Комментарии <b id="detail-comment-count">0</b></button><button id="tab-attachments" role="tab" aria-controls="attachments-content" aria-selected="false" tabindex="-1">Вложения <b id="detail-attachment-count">0</b></button></div>
+            <div id="comments-content" class="drawer-body" role="tabpanel" aria-labelledby="tab-comments" tabindex="0"></div>
+            <div id="attachments-content" class="drawer-body" role="tabpanel" aria-labelledby="tab-attachments" tabindex="0" hidden></div>
+            <form id="comment-form" class="comment-form">
+              <label for="comment-text">Новый комментарий</label>
+              <div id="comment-reply-target" class="comment-reply-target" hidden><span></span><button id="cancel-reply" type="button" aria-label="Отменить ответ">×</button></div>
+              <textarea id="comment-text" rows="3" maxlength="10000" placeholder="Написать комментарий в Smartsheet…"></textarea>
+              <div id="comment-file-summary" class="comment-file-summary" hidden><span id="comment-file-name"></span><button id="remove-comment-file" type="button" aria-label="Убрать выбранный файл">×</button></div>
+              <p id="comment-send-status" class="comment-send-status" role="status" hidden></p>
+              <button id="retry-uncertain-comment" class="uncertain-retry" type="button" hidden>Я проверил: комментария нет — разрешить повтор</button>
+              <div class="comment-form-actions"><label class="attach-file-button" for="comment-file" title="Прикрепить файл к комментарию"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m8 12 6.5-6.5a3.5 3.5 0 0 1 5 5L10 20a5 5 0 0 1-7-7l10-10M7 13l8-8"/></svg><span>Прикрепить файл</span><input id="comment-file" type="file"></label><button id="send-comment" class="button primary" type="submit" disabled>Отправить</button></div>
+              <p class="composer-note">Комментарий и файл будут добавлены в этот ECN в Smartsheet.</p>
+            </form>
+          </section>
+        </div>
         <footer class="drawer-footer"><span id="detail-source">Последний сохранённый снимок ECF</span></footer>
-      </aside>
+      </section>
     </div>
     <footer class="statusbar"><span><i></i> Локальная панель</span><span id="numbering-status" role="status" aria-label="Автонумерация: только строки со статусом Initial Review и пустым ECN Number. Дата номера — дата создания строки по времени Нью-Йорка." title="Дата создания строки по времени Нью-Йорка" hidden></span><span id="comment-total">Комментарии ещё не загружены</span><span id="attachment-total">Вложения ещё не загружены</span><span id="poll-interval">Автопроверка</span></footer>
   </main>

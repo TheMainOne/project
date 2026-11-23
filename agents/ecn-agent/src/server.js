@@ -6,6 +6,8 @@ import { createPanelServer } from "./http.js";
 import { createNumberingApi } from "./numbering-api.js";
 import { openNumberingStore } from "./numbering-store.js";
 import { createNumberer } from "./numbering.js";
+import { createSmartsheetWriter } from "./smartsheet-write.js";
+import { createCommentService, createWriteQueue } from "./comment-service.js";
 
 if (Number(process.versions.node.split(".")[0]) < 24) {
   console.error("Для этого комплекта нужен Node.js 24 LTS или новее.");
@@ -16,10 +18,12 @@ let store;
 let server;
 let monitor;
 let numberingStore;
+let comments;
 try {
   const config = loadConfig();
   store = openStore(config.databasePath, config.sheetId);
   const reader = createSmartsheetReader({ sheetId: config.sheetId, token: config.token });
+  const runExclusive = createWriteQueue();
   let numberer;
   if (config.autoNumber && config.token) {
     numberingStore = openNumberingStore(config.numberingDatabasePath);
@@ -34,9 +38,12 @@ try {
     store,
     pollSeconds: config.pollSeconds,
     tokenConfigured: Boolean(config.token),
-    numberer,
+    numberer: numberer ? { run: () => runExclusive(() => numberer.run()), stop: () => numberer.stop(), status: () => numberer.status() } : undefined,
   });
-  server = createPanelServer({ config, store, monitor, reader });
+  comments = createCommentService({ filename: config.databasePath, sheetId: config.sheetId, store,
+    writer: createSmartsheetWriter({ sheetId: config.sheetId, token: config.token }),
+    refresh: () => monitor.refreshAfterWrite(), runExclusive });
+  server = createPanelServer({ config, store, monitor, reader, comments });
   await new Promise((resolve, reject) => {
     server.once("error", reject);
     server.listen(config.port, "127.0.0.1", resolve);
@@ -47,6 +54,7 @@ try {
   console.log("Состояние и журнал: " + config.databasePath);
   if (!config.token) console.log("Заполни SMARTSHEET_API_TOKEN в agents/ecn-agent/.env и перезапусти приложение.");
 } catch (error) {
+  await comments?.close();
   numberingStore?.close();
   store?.close();
   const message = error.code === "EADDRINUSE"
@@ -63,6 +71,7 @@ if (server?.listening) {
     closing = true;
     console.log("Завершаю текущую проверку и закрываю журнал…");
     server.close();
+    await comments.close();
     await monitor.stop();
     server.closeAllConnections();
     store.close();

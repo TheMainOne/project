@@ -42,13 +42,15 @@ export function idString(value) {
 
 function cellText(cell) {
   if (!cell) return "";
-  if (cell.displayValue !== undefined) return String(cell.displayValue);
-  if (cell.value !== undefined) return String(cell.value);
+  if (cell.displayValue != null) return String(cell.displayValue);
+  if (cell.value != null) return String(cell.value);
   const object = cell.objectValue;
+  if (["string", "number", "boolean"].includes(typeof object)) return String(object);
   if (Array.isArray(object?.values)) return object.values.map(String).join(", ");
   if (Array.isArray(object?.contacts)) {
     return object.contacts.map(contact => contact.name || contact.email || "").join(", ");
   }
+  if (object?.name || object?.email) return String(object.name || object.email);
   return "";
 }
 
@@ -68,7 +70,16 @@ function contactsFrom(cell) {
 }
 
 export function normalizeSheet(sheet) {
-  const columnIds = new Set(sheet.columns.map(column => idString(column.id)));
+  const columns = sheet.columns.map((column, position) => ({ column, position }))
+    .sort((a, b) => (a.column.index ?? a.position) - (b.column.index ?? b.position))
+    .map(({ column }) => ({
+      columnId: idString(column.id),
+      title: String(column.title || ""),
+      type: String(column.type || "TEXT_NUMBER"),
+      locked: column.locked === true,
+      ...(Array.isArray(column.options) ? { options: column.options.map(String) } : {}),
+    }));
+  const columnIds = new Set(columns.map(column => column.columnId));
   const missing = Object.entries(FIELDS).filter(([, id]) => !columnIds.has(id));
   if (missing.length) {
     throw new SmartsheetError(
@@ -79,6 +90,9 @@ export function normalizeSheet(sheet) {
   const unavailableApprovals = APPROVALS
     .filter(([, contactId, statusId]) => !columnIds.has(contactId) || !columnIds.has(statusId))
     .map(([department]) => department);
+  const optionalColumns = Object.fromEntries(Object.entries({
+    ecnType: "ecn type", priority: "priority", implementation: "effective when",
+  }).map(([name, title]) => [name, columns.find(column => column.title.trim().toLowerCase() === title)?.columnId]));
   const rows = sheet.rows.map(row => {
     const cells = new Map(row.cells.map(cell => [idString(cell.columnId), cell]));
     const fields = Object.fromEntries(
@@ -88,6 +102,12 @@ export function normalizeSheet(sheet) {
       id: idString(row.id),
       rowNumber: row.rowNumber,
       ...fields,
+      ...Object.fromEntries(Object.entries(optionalColumns).map(([name, id]) => [name, cellText(cells.get(id))])),
+      fields: columns.map(column => ({
+        ...column,
+        locked: column.locked || row.locked === true,
+        value: cellText(cells.get(column.columnId)),
+      })),
       createdAt: row.createdAt || null,
       modifiedAt: row.modifiedAt || null,
       approvals: APPROVALS.map(([department, contactId, statusId]) => ({
@@ -103,6 +123,7 @@ export function normalizeSheet(sheet) {
     name: String(sheet.name || "ENGINEERING CHANGE FORM"),
     version: sheet.version,
     columnCount: sheet.columns.length,
+    columns,
     unavailableApprovals,
     rows,
   };
