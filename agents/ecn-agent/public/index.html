@@ -58,10 +58,11 @@
         <div class="drawer-heading"><div><p class="eyebrow">Строка <span id="detail-row-number">—</span></p><h2 id="detail-title">ECN</h2></div><button id="close-detail" class="icon-button" aria-label="Закрыть карточку" title="Закрыть"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18"/></svg></button></div>
         <div class="detail-layout">
           <section class="detail-fields"><div class="detail-section-heading"><h3>Данные ECN</h3><span>Из исходного Smartsheet</span></div><div id="detail-content" class="drawer-body" tabindex="0"></div></section>
-          <section class="detail-conversation" aria-label="Обсуждения и вложения">
-            <div class="drawer-tabs" role="tablist" aria-label="Обсуждения и вложения"><button id="tab-comments" role="tab" aria-controls="comments-content" aria-selected="true">Комментарии <b id="detail-comment-count">0</b></button><button id="tab-attachments" role="tab" aria-controls="attachments-content" aria-selected="false" tabindex="-1">Вложения <b id="detail-attachment-count">0</b></button></div>
+          <section class="detail-conversation" aria-label="Материалы ECN">
+            <div class="drawer-tabs" role="tablist" aria-label="Материалы ECN"><button id="tab-comments" role="tab" aria-controls="comments-content" aria-selected="true">Комментарии <b id="detail-comment-count">0</b></button><button id="tab-attachments" role="tab" aria-controls="attachments-content" aria-selected="false" tabindex="-1">Вложения <b id="detail-attachment-count">0</b></button><button id="tab-ai" role="tab" aria-controls="ai-content" aria-selected="false" tabindex="-1">ИИ-разбор</button></div>
             <div id="comments-content" class="drawer-body" role="tabpanel" aria-labelledby="tab-comments" tabindex="0"></div>
             <div id="attachments-content" class="drawer-body" role="tabpanel" aria-labelledby="tab-attachments" tabindex="0" hidden></div>
+            <div id="ai-content" class="drawer-body" role="tabpanel" aria-labelledby="tab-ai" tabindex="0" hidden></div>
             <form id="comment-form" class="comment-form">
               <label for="comment-text">Новый комментарий</label>
               <div id="comment-reply-target" class="comment-reply-target" hidden><span></span><button id="cancel-reply" type="button" aria-label="Отменить ответ">×</button></div>

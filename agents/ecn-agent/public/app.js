@@ -1,3 +1,4 @@
+import { createReviewPanel } from "./review.js";
 const $ = id => document.getElementById(id);
 let current = null;
 let page = 0;
@@ -17,8 +18,8 @@ let returnFocus = null;
 const drafts = new Map();
 let seenPending = new Set();
 const perPage = 100;
-const detailTabs = ["comments", "attachments"];
-const detailPanels = ["detail-content", "comments-content", "attachments-content"];
+const detailTabs = ["comments", "attachments", "ai"];
+const detailPanels = ["detail-content", "comments-content", "attachments-content", "ai-content"];
 try {
   const saved = JSON.parse(sessionStorage.getItem("ecn-comment-drafts") || "[]");
   if (Array.isArray(saved)) for (const [id, draft] of saved) {
@@ -336,7 +337,7 @@ function attachmentSize(value) {
 }
 function renderAttachments(row) {
   const fragment = document.createDocumentFragment();
-  fragment.append(element("p", "Файлы и ссылки, прикреплённые к строке ECN и её комментариям. Файл загружается только при открытии.", "conversation-note"));
+  fragment.append(element("p", "Файлы и ссылки, прикреплённые к строке ECN и её комментариям. Файлы для ИИ можно выбрать на вкладке «ИИ-разбор».", "conversation-note"));
   if (!row.attachmentsLoaded) {
     fragment.append(element("p", "Вложения ещё не загружены. Нажми «Проверить сейчас».", "empty"));
   } else if (!row.attachments?.length) {
@@ -371,8 +372,25 @@ function renderAttachments(row) {
   }
   $("attachments-content").replaceChildren(fragment);
 }
+const reviewPanel = createReviewPanel({
+  root: $("ai-content"), element, date,
+  activeId: () => selectedTab === "ai" && selectedRow ? selectedId : null,
+  addDraft(id, text) {
+    if (id !== selectedId || !selectedRow) return false;
+    const draft = draftFor(id);
+    if (draft.busy || draft.operationId) throw new Error("Сначала проверь результат предыдущей отправки.");
+    const combined = draft.text.trim() ? draft.text + "\n\n" + text : text;
+    if (combined.length > 10000) throw new Error("Черновик превышает лимит в 10 000 символов.");
+    draft.text = combined; draft.message = ""; draft.operationStatus = null;
+    saveDrafts(); $("comment-text").value = combined;
+    setTab("comments"); refreshComposerState(); $("comment-text").focus();
+    return true;
+  },
+});
 function setTab(tab, focus = false) {
-  selectedTab = tab === "attachments" ? "attachments" : "comments";
+  selectedTab = detailTabs.includes(tab) ? tab : "comments";
+  $("ai-content").hidden = selectedTab !== "ai";
+  if (selectedTab === "ai" && selectedRow) void reviewPanel.refresh();
   $("comments-content").hidden = selectedTab !== "comments";
   $("attachments-content").hidden = selectedTab !== "attachments";
   $("comment-form").hidden = selectedTab !== "comments";
@@ -560,6 +578,7 @@ async function refreshDetail() {
       $("attachments-content").scrollTop = attachmentScroll;
       if (focusedAttachment) Array.from($("attachments-content").querySelectorAll("a")).find(link => link.dataset.attachmentId === focusedAttachment)?.focus({ preventScroll: true });
     }
+    if (selectedTab === "ai") void reviewPanel.refresh();
     await markVisibleComments();
   } catch (error) {
     if (ticket !== detailTicket) return;
@@ -633,6 +652,7 @@ async function update() {
     const previousAttachmentsSync = current?.attachmentsSyncAt;
     current = await request("/api/state"); render();
     if (selectedId && (previousSync !== current.lastSyncAt || previousAttachmentsSync !== current.attachmentsSyncAt || !selectedRow)) await refreshDetail();
+    else if (selectedRow && selectedTab === "ai") void reviewPanel.refresh();
   } catch {
     report("Нет связи с локальным агентом. Проверь окно терминала и запусти npm start.");
     $("connection").dataset.state = "error";

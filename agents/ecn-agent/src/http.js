@@ -5,10 +5,13 @@ import { SmartsheetError } from "./smartsheet.js";
 import { CommentRequestError, OPERATION_ID } from "./comment-service.js";
 import { MAX_ATTACHMENT_BYTES } from "./smartsheet-write.js";
 
-export function createPanelServer({ config, store, monitor, reader, comments }) {
+import { AiError } from "./ai/reviews.js";
+
+export function createPanelServer({ config, store, monitor, reader, comments, reviews }) {
   const files = new Map([
     ["/", ["index.html", "text/html; charset=utf-8"]],
     ["/app.js", ["app.js", "text/javascript; charset=utf-8"]],
+    ["/review.js", ["review.js", "text/javascript; charset=utf-8"]],
     ["/styles.css", ["styles.css", "text/css; charset=utf-8"]],
   ]);
   const assets = new Map([...files].map(([url, [file, type]]) => [
@@ -67,6 +70,26 @@ export function createPanelServer({ config, store, monitor, reader, comments }) 
       if (req.method === "GET" && /^\/api\/rows\/[1-9]\d*$/.test(url.pathname)) {
         const row = store.row(url.pathname.split("/").at(-1));
         return sendJson(res, row ? 200 : 404, row || { error: "Строка отсутствует в последнем снимке ECF." });
+      }
+      const reviewMatch = /^\/api\/rows\/([1-9]\d*)\/ai-review$/.exec(url.pathname);
+      if (reviewMatch && reviews) {
+        const rowId = reviewMatch[1];
+        if (req.method === "GET") return sendJson(res, 200, reviews.status(rowId));
+        if (req.method === "POST") {
+          if (req.headers.origin !== origin || req.headers["x-ecn-ui"] !== "1") return sendJson(res, 403, { error: "Используй локальную панель." });
+          if (!/^application\/json(?:\s*;|$)/i.test(req.headers["content-type"] || "")) return sendJson(res, 415, { error: "Ожидается JSON." });
+          const chunks = [];
+          let size = 0;
+          for await (const chunk of req) {
+            size += chunk.length;
+            if (size > 2048) return sendJson(res, 413, { error: "Список вложений слишком длинный." });
+            chunks.push(chunk);
+          }
+          let input;
+          try { input = JSON.parse(Buffer.concat(chunks).toString("utf8")); }
+          catch { return sendJson(res, 400, { error: "Некорректный JSON." }); }
+          return sendJson(res, 200, await reviews.analyze(rowId, input));
+        }
       }
       const operationMatch = /^\/api\/rows\/([1-9]\d*)\/comment-operations\/([^/]+)(\/verify)?$/.exec(url.pathname);
       if (operationMatch && req.method === (operationMatch[3] ? "POST" : "GET")) {
@@ -173,7 +196,7 @@ export function createPanelServer({ config, store, monitor, reader, comments }) 
       }
       return sendJson(res, 404, { error: "Маршрут не найден." });
     } catch (error) {
-      if (error instanceof CommentRequestError) return sendJson(res, error.status, { error: error.message });
+      if (error instanceof CommentRequestError || error instanceof AiError) return sendJson(res, error.status, { error: error.message });
       return sendJson(res, 500, { error: "Ошибка локальной панели. Проверь доступ к папке data." });
     }
   });

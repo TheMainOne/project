@@ -324,15 +324,28 @@ export function createSmartsheetReader({ sheetId, token, fetchImpl = fetch, wait
   }
 
   return {
-    async getAttachment(attachmentId) {
+    async getAttachment(attachmentId, signal) {
       const id = idString(attachmentId);
       if (!token) throw new SmartsheetError("missing_token", "Заполни SMARTSHEET_API_TOKEN в .env и перезапусти агента.");
       try {
-        const raw = await readJson(new URL(sheetPath + "/attachments/" + id), AbortSignal.timeout(90_000));
-        const attachment = normalizeAttachment(raw);
-        if (attachment.id !== id) {
+        const timeout = AbortSignal.timeout(90_000);
+        const deadline = signal ? AbortSignal.any([signal, timeout]) : timeout;
+        const raw = await readJson(new URL(sheetPath + "/attachments/" + id), deadline);
+        if (idString(raw?.id) !== id) {
           throw new SmartsheetError("attachment_changed", "Smartsheet вернул другое вложение. Обнови список и попробуй снова.");
         }
+        let data = raw;
+        if (raw.parentId == null || raw.parentType == null) {
+          // Get Attachment may omit parent metadata. Resolve it against a fresh authenticated list.
+          const listed = (await readAttachments(deadline)).find(item => item.id === id);
+          if (!listed || (raw.parentId != null && idString(raw.parentId) !== listed.parentId) ||
+              (raw.parentType != null && raw.parentType !== listed.parentType) ||
+              (raw.attachmentType != null && raw.attachmentType !== listed.attachmentType)) {
+            throw new SmartsheetError("attachment_changed", "Не подтверждена привязка файла по актуальному списку вложений ECF.");
+          }
+          data = { ...listed, ...raw, parentId: listed.parentId, parentType: listed.parentType };
+        }
+        const attachment = normalizeAttachment(data);
         return { ...attachment, url: attachmentUrl(raw.url, attachment.attachmentType) };
       } catch (error) {
         if (error instanceof SmartsheetError) throw error;

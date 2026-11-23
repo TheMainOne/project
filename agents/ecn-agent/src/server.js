@@ -9,6 +9,8 @@ import { createNumberer } from "./numbering.js";
 import { createSmartsheetWriter } from "./smartsheet-write.js";
 import { createCommentService, createWriteQueue } from "./comment-service.js";
 
+import { createReviewService } from "./ai/reviews.js";
+
 if (Number(process.versions.node.split(".")[0]) < 24) {
   console.error("Для этого комплекта нужен Node.js 24 LTS или новее.");
   process.exit(1);
@@ -19,6 +21,7 @@ let server;
 let monitor;
 let numberingStore;
 let comments;
+let reviews;
 try {
   const config = loadConfig();
   store = openStore(config.databasePath, config.sheetId);
@@ -43,7 +46,8 @@ try {
   comments = createCommentService({ filename: config.databasePath, sheetId: config.sheetId, store,
     writer: createSmartsheetWriter({ sheetId: config.sheetId, token: config.token }),
     refresh: () => monitor.refreshAfterWrite(), runExclusive });
-  server = createPanelServer({ config, store, monitor, reader, comments });
+  reviews = createReviewService({ config, store, reader });
+  server = createPanelServer({ config, store, monitor, reader, comments, reviews });
   await new Promise((resolve, reject) => {
     server.once("error", reject);
     server.listen(config.port, "127.0.0.1", resolve);
@@ -54,6 +58,7 @@ try {
   console.log("Состояние и журнал: " + config.databasePath);
   if (!config.token) console.log("Заполни SMARTSHEET_API_TOKEN в agents/ecn-agent/.env и перезапусти приложение.");
 } catch (error) {
+  await reviews?.close();
   await comments?.close();
   numberingStore?.close();
   store?.close();
@@ -71,7 +76,7 @@ if (server?.listening) {
     closing = true;
     console.log("Завершаю текущую проверку и закрываю журнал…");
     server.close();
-    await Promise.all([monitor.stop(), comments.close()]);
+    await Promise.all([monitor.stop(), comments.close(), reviews.close()]);
     server.closeAllConnections();
     store.close();
     numberingStore?.close();

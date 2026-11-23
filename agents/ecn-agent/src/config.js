@@ -27,6 +27,10 @@ export function loadConfig() {
   if (!["true", "false"].includes(autoNumberValue)) throw new Error("ECN_AUTO_NUMBER must be true or false");
   return {
     sheetId: ECF_SHEET_ID,
+    openaiKey: (env.OPENAI_API_KEY || "").trim(),
+    openaiModel: (env.OPENAI_MODEL || "").trim() || "gpt-5.4-mini",
+    reviewDatabasePath: fileURLToPath(new URL("../data/ai-reviews.sqlite", import.meta.url)),
+    knowledgeDirectory: fileURLToPath(new URL("../data/knowledge/", import.meta.url)),
     token: (env.SMARTSHEET_API_TOKEN || "").trim(),
     port: integerSetting(env.ECN_PORT, 4310, 1024, 65535, "ECN_PORT"),
     pollSeconds: integerSetting(env.ECN_POLL_SECONDS, 120, 30, 3600, "ECN_POLL_SECONDS"),

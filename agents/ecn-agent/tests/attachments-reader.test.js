@@ -206,3 +206,24 @@ test("getAttachment never requests a URL without a configured token", async () =
   await assert.rejects(source.getAttachment("7001"), { code: "missing_token" });
   assert.equal(called, false);
 });
+
+test("resolves missing parent from the current attachment list before returning a download URL",async () => {
+  const item = attachment(7001,{parentId:9001,parentType:"COMMENT"});
+  const source = reader({
+    detail: () => Response.json({id:item.id,attachmentType:"FILE",url:item.url}),
+    attachments: () => Response.json(page([item])),
+  });
+  const value = await source.getAttachment("7001");
+  assert.equal(value.parentType,"COMMENT");assert.equal(value.parentId,"9001");
+  assert.equal(value.name,item.name);assert.equal(value.url,item.url);
+});
+test("disappeared file, conflicting partial parent or changed file type cannot use the fallback URL",async () => {
+  const item = attachment();
+  for (const [delta,items] of [[{},[]],[{parentId:999},[item]],[{parentType:"COMMENT"},[item]],[{attachmentType:"LINK"},[item]]]) {
+    const source = reader({
+      detail: () => Response.json({id:item.id,url:item.url,...delta}),
+      attachments: () => Response.json(page(items)),
+    });
+    await assert.rejects(source.getAttachment("7001"),{code:"attachment_changed"});
+  }
+});

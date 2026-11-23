@@ -1,11 +1,12 @@
 {
   "name": "dwk-ecn-agent",
-  "version": "0.4.0",
+  "version": "0.5.0",
   "private": true,
   "type": "module",
   "engines": { "node": ">=24.0.0" },
   "scripts": {
     "start": "node src/server.js",
+    "kb:publish": "node scripts/knowledge.js",
     "test": "node --test tests/*.test.js"
   }
 }
