@@ -43,6 +43,9 @@ export function createCommentService({ filename, sheetId, store, writer, refresh
   const db = new DatabaseSync(filename);
   db.exec("PRAGMA busy_timeout = 5000; PRAGMA synchronous = FULL; CREATE TABLE IF NOT EXISTS comment_operations (" +
     "sheet_id TEXT NOT NULL, id TEXT NOT NULL, row_id TEXT NOT NULL, fingerprint TEXT NOT NULL, result TEXT NOT NULL, PRIMARY KEY(sheet_id,id));");
+  db.exec("CREATE INDEX IF NOT EXISTS comment_followups_by_row ON comment_operations(sheet_id,row_id) WHERE json_type(result,'$.followup')='object'");
+  const rowFollowups = db.prepare("SELECT result FROM comment_operations WHERE sheet_id=? AND row_id=? " +
+    "AND json_type(result,'$.followup')='object' AND json_extract(result,'$.status')<>'rejected'");
   const inFlight = new Map();
   const checks = new Map();
   let stopped = false;
@@ -60,7 +63,27 @@ export function createCommentService({ filename, sheetId, store, writer, refresh
     }
     return operation;
   }
-  function forPanel({ expected, ...operation }) { return operation; }
+  function forPanel({ expected, followup, ...operation }) { return operation; }
+  function followupIds(row,ownerEmail) {
+    const ids = new Set();
+    for (const record of rowFollowups.all(sheetId,row.id)) {
+      const operation = JSON.parse(record.result);
+      const mark = operation.followup;
+      if (operation.commentId && operation.discussionId===mark.threadId) {
+        ids.add(operation.commentId);
+        continue;
+      }
+      // A POST can succeed and lose its receipt. Only match a new identical comment by
+      // the owner in this thread near the write. A later hand-written repeat is a new request.
+      if (!mark.startedAt) continue;
+      const thread = row.discussions?.find(t => t.id===mark.threadId);
+      const match = thread?.comments.find(c => c.author?.email?.trim().toLowerCase()===ownerEmail &&
+        !mark.previousMatches.includes(c.id) && Math.abs(Date.parse(c.createdAt)-mark.startedAt)<=5*60_000 &&
+        commentVerification({text:c.text,discussionId:mark.threadId}).textHash===operation.expected.textHash);
+      if (match) ids.add(match.id);
+    }
+    return ids;
+  }
   function get(rowId, id) {
     const record = find(String(id).toLowerCase());
     return record?.rowId === rowId ? forPanel(operationFrom(record)) : null;
@@ -117,11 +140,13 @@ export function createCommentService({ filename, sheetId, store, writer, refresh
     if (input.discussionId && !row.discussions?.some(thread => thread.id === input.discussionId)) {
       throw new CommentRequestError(409, "Обсуждение больше не принадлежит этому ECN. Обнови данные.");
     }
+    return row;
   }
   return {
     get,
     verify,
-    async submit(value) {
+    followupIds,
+    async submit(value, beforeReply, {followup = false} = {}) {
       const input = validateComment(value);
       const fingerprint = createHash("sha256").update(JSON.stringify({
         rowId: input.rowId, discussionId: input.discussionId, text: input.text,
@@ -133,9 +158,16 @@ export function createCommentService({ filename, sheetId, store, writer, refresh
         return get(input.rowId, input.operationId);
       }
       if (stopped) throw new CommentRequestError(503, "Агент завершает работу. Дождись перезапуска.");
-      checkRow(input);
+      if (followup && (!input.discussionId || typeof beforeReply!=="function")) {
+        throw new CommentRequestError(409,"Для напоминания нужна проверка исходного обсуждения.");
+      }
+      const row = checkRow(input);
       const pending = { id: input.operationId, rowId: input.rowId, status: "pending", createdAt: new Date().toISOString(),
         expected: commentVerification(input) };
+      if (followup) {
+        const thread = row.discussions.find(t=>t.id===input.discussionId);
+        pending.followup = {threadId:thread.id, previousMatches:thread.comments.filter(c=>c.text===input.text).map(c=>c.id)};
+      }
       // Commit intent before the remote call. File bytes and comment text are not stored here.
       const inserted = db.prepare("INSERT OR IGNORE INTO comment_operations (sheet_id,id,row_id,fingerprint,result) VALUES (?,?,?,?,?)")
         .run(sheetId, input.operationId, input.rowId, fingerprint, JSON.stringify(pending));
@@ -144,10 +176,15 @@ export function createCommentService({ filename, sheetId, store, writer, refresh
         let operation;
         try {
           checkRow(input);
+          const beforePost = followup ? async (liveRow,liveThread) => {
+            await beforeReply(liveRow,liveThread);
+            pending.followup.startedAt = Date.now();
+            save(pending);
+          } : beforeReply;
           const result = await writer.postComment(input, receipt => {
             Object.assign(pending, receiptIds(receipt));
             save(pending);
-          });
+          }, beforePost);
           operation = save({ ...pending, ...result, status: "sent" });
         } catch (error) {
           const known = error instanceof SmartsheetError || error instanceof CommentRequestError;

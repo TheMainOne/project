@@ -247,8 +247,8 @@ export function createSmartsheetReader({ sheetId, token, fetchImpl = fetch, wait
     return sheet;
   }
 
-  async function discussionPage(page, signal) {
-    const url = new URL(sheetPath + "/discussions");
+  async function discussionPage(page, signal, path) {
+    const url = new URL(path);
     url.searchParams.set("include", "comments");
     url.searchParams.set("pageSize", "100");
     url.searchParams.set("page", String(page));
@@ -261,11 +261,12 @@ export function createSmartsheetReader({ sheetId, token, fetchImpl = fetch, wait
     return data;
   }
 
-  async function readDiscussions(signal) {
-    const first = await discussionPage(1, signal);
+  async function readDiscussions(signal, rowId = null) {
+    const path = sheetPath + (rowId === null ? "" : "/rows/" + rowId) + "/discussions";
+    const first = await discussionPage(1, signal, path);
     const data = [...first.data];
     for (let page = 2; page <= first.totalPages; page += 1) {
-      const part = await discussionPage(page, signal);
+      const part = await discussionPage(page, signal, path);
       if (part.totalCount !== first.totalCount || part.totalPages !== first.totalPages) {
         throw new SmartsheetError("comments_changed", "Обсуждения изменились во время чтения. Проверка повторится на следующем цикле.");
       }
@@ -275,14 +276,18 @@ export function createSmartsheetReader({ sheetId, token, fetchImpl = fetch, wait
     if (data.length !== first.totalCount || ids.size !== first.totalCount) {
       throw new SmartsheetError("incomplete_comments", "Получен неполный список обсуждений. Сохранён предыдущий снимок.");
     }
+    const withParent = items => rowId === null ? items : items.map(d => ({ ...d, parentType:d.parentType ?? "ROW", parentId:d.parentId ?? rowId }));
     if (first.totalPages > 1) {
-      const verify = await discussionPage(1, signal);
+      const verify = await discussionPage(1, signal, path);
       if (verify.totalCount !== first.totalCount || verify.totalPages !== first.totalPages ||
-          JSON.stringify(normalizeDiscussions(verify.data)) !== JSON.stringify(normalizeDiscussions(first.data))) {
+          JSON.stringify(normalizeDiscussions(withParent(verify.data))) !== JSON.stringify(normalizeDiscussions(withParent(first.data)))) {
         throw new SmartsheetError("comments_changed", "Обсуждения изменились во время чтения. Проверка повторится на следующем цикле.");
       }
     }
-    return normalizeDiscussions(data);
+    if (rowId !== null && data.some(d => (d.parentType != null && d.parentType !== "ROW") || (d.parentId != null && idString(d.parentId) !== rowId))) {
+      throw new SmartsheetError("discussion_changed", "Smartsheet вернул обсуждение другой строки.");
+    }
+    return normalizeDiscussions(withParent(data));
   }
 
   async function attachmentPage(page, signal) {
@@ -324,6 +329,15 @@ export function createSmartsheetReader({ sheetId, token, fetchImpl = fetch, wait
   }
 
   return {
+    async readRowDiscussions(rowId) {
+      if (!token) throw new SmartsheetError("missing_token", "Для сверки нужен токен Smartsheet.");
+      try {
+        return await readDiscussions(AbortSignal.timeout(60_000), idString(rowId));
+      } catch (error) {
+        if (error instanceof SmartsheetError) throw error;
+        throw new SmartsheetError("read_failed", "Не удалось перечитать все обсуждения ECN перед отправкой.");
+      }
+    },
     async getAttachment(attachmentId, signal) {
       const id = idString(attachmentId);
       if (!token) throw new SmartsheetError("missing_token", "Заполни SMARTSHEET_API_TOKEN в .env и перезапусти агента.");

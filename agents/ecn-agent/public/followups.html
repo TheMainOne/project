@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Follow-up · ECN Agent</title>
+  <link rel="stylesheet" href="/styles.css">
+  <script type="module" src="/followups.js"></script>
+</head>
+<body class="followups-page">
+<main>
+  <a href="/">← К таблице ECN</a>
+  <h1>Follow-up</h1>
+  <p id="settings"></p>
+  <button type="button" id="analyze" class="button" disabled>Сверить очередь с ИИ</button>
+  <p id="sync" role="status"></p>
+  <p id="message" role="status"></p>
+  <section id="queue" aria-label="Напоминания к подтверждению"></section>
+  <details id="audit"><summary id="audit-title">Закрытые и неоднозначные вопросы</summary><div id="results"></div></details>
+  <details id="pending"><summary id="pending-title">Ожидают сверки</summary><div id="waiting"></div></details>
+</main>
+</body>
+</html>

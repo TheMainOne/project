@@ -25,8 +25,13 @@ export function loadConfig() {
   const env = { ...process.env, ...file };
   const autoNumberValue = String(env.ECN_AUTO_NUMBER || "false").trim().toLowerCase();
   if (!["true", "false"].includes(autoNumberValue)) throw new Error("ECN_AUTO_NUMBER must be true or false");
+  const followupAuto = String(env.ECN_FOLLOWUP_AI_AUTO || "false").trim().toLowerCase();
+  if (!["true","false"].includes(followupAuto)) throw new Error("ECN_FOLLOWUP_AI_AUTO must be true or false");
   return {
+    followupAiAuto: followupAuto === "true",
     sheetId: ECF_SHEET_ID,
+    followupEmail: (env.ECN_FOLLOWUP_EMAIL || "").trim().toLowerCase(),
+    followupDays: integerSetting(env.ECN_FOLLOWUP_DAYS, 7, 1, 365, "ECN_FOLLOWUP_DAYS"),
     openaiKey: (env.OPENAI_API_KEY || "").trim(),
     openaiModel: (env.OPENAI_MODEL || "").trim() || "gpt-5.4-mini",
     reviewDatabasePath: fileURLToPath(new URL("../data/ai-reviews.sqlite", import.meta.url)),

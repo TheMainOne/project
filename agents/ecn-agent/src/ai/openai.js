@@ -41,12 +41,17 @@ export function validateReview(result, sources) {
 export async function requestReview({ key, model, sources, coverage, files, fetchImpl, signal }) {
   const content = [{ type:"input_text", text:JSON.stringify({ coverage, sources }) }];
   for (const f of files) content.push({ type:"input_text", text:"Attachment source ID: " + f.id }, f.input);
+  const result = await requestStructured({ key, model, content, instructions, schema, name:"ecn_review", fetchImpl, signal });
+  return validateReview(result, sources);
+}
+
+export async function requestStructured({ key, model, content, instructions, schema, name, fetchImpl = fetch, signal, maxTokens = 6000 }) {
   let response;
   try {
     response = await fetchImpl("https://api.openai.com/v1/responses", {
       method:"POST", redirect:"error", signal, headers:{ Authorization:"Bearer " + key, "Content-Type":"application/json" },
       body:JSON.stringify({ model, store:false, instructions, input:[{ role:"user", content }],
-        max_output_tokens:6000, text:{ format:{ type:"json_schema", name:"ecn_review", strict:true, schema } } }),
+        max_output_tokens:maxTokens, text:{ format:{ type:"json_schema", name, strict:true, schema } } }),
     });
   } catch (error) {
     signal.throwIfAborted();
@@ -66,5 +71,5 @@ export async function requestReview({ key, model, sources, coverage, files, fetc
   if (payload?.status !== "completed") throw new AiError(502,"OpenAI не завершил разбор. Частичный ответ не сохранён.");
   let result;
   try { result = JSON.parse(parts.filter(p => p.type === "output_text").map(p => p.text).join("")); } catch { invalid(); }
-  return validateReview(result, sources);
+  return result;
 }

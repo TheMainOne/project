@@ -125,14 +125,16 @@ export function createSmartsheetWriter({ sheetId, token, fetchImpl = fetch }) {
   return {
     // Exactly one POST: the comment and optional file are submitted together.
     // Callers must persist their own operation key before invoking this method.
-    async postComment(input, onReceipt) {
+    async postComment(input, onReceipt, beforeReply) {
       const { rowId, discussionId, text, file } = validateCommentInput(input);
       const signal = input.signal;
       if (!token) throw new SmartsheetError("http_401", "Для отправки нужен токен Smartsheet. Проверь настройки агента.");
       if (signal?.aborted) throw new SmartsheetError("request_aborted", "Отправка отменена до передачи в Smartsheet.");
       if (discussionId) {
+        const liveRow = beforeReply ? await request("/rows/" + rowId + "?level=2&include=objectValue", { signal }) : null;
         const existing = await request(`/discussions/${discussionId}?include=comments`, { signal });
         checkParent(existing, rowId, discussionId);
+        if (beforeReply) await beforeReply(liveRow,existing);
         if (existing.readOnly || existing.accessLevel === "VIEWER") {
           throw new SmartsheetError("http_403", "У этого обсуждения нет доступа для добавления комментариев.");
         }

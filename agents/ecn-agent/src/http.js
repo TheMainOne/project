@@ -7,10 +7,12 @@ import { MAX_ATTACHMENT_BYTES } from "./smartsheet-write.js";
 
 import { AiError } from "./ai/reviews.js";
 
-export function createPanelServer({ config, store, monitor, reader, comments, reviews }) {
+export function createPanelServer({ config, store, monitor, reader, comments, reviews, followups }) {
   const files = new Map([
     ["/", ["index.html", "text/html; charset=utf-8"]],
     ["/app.js", ["app.js", "text/javascript; charset=utf-8"]],
+    ["/followups", ["followups.html", "text/html; charset=utf-8"]],
+    ["/followups.js", ["followups.js", "text/javascript; charset=utf-8"]],
     ["/review.js", ["review.js", "text/javascript; charset=utf-8"]],
     ["/styles.css", ["styles.css", "text/css; charset=utf-8"]],
   ]);
@@ -63,13 +65,32 @@ export function createPanelServer({ config, store, monitor, reader, comments, re
           mode: status.numbering?.enabled ? "auto_number" : "observe",
           numbering: status.numbering || { enabled: false },
           commentsWritable: Boolean(config.token && comments),
-          ...store.state(),
+          ...store.state(followups),
           monitor: status,
         });
       }
       if (req.method === "GET" && /^\/api\/rows\/[1-9]\d*$/.test(url.pathname)) {
         const row = store.row(url.pathname.split("/").at(-1));
         return sendJson(res, row ? 200 : 404, row || { error: "Строка отсутствует в последнем снимке ECF." });
+      }
+      if (followups && req.method === "GET" && url.pathname === "/api/followups") {
+        return sendJson(res,200,followups.overview(store.readRows()));
+      }
+      if (followups && req.method === "POST" && ["/api/followups/confirm","/api/followups/dismiss","/api/followups/analyze"].includes(url.pathname)) {
+        if (req.headers.origin !== origin || req.headers["x-ecn-ui"] !== "1") return sendJson(res,403,{error:"Используй локальную панель."});
+        if (!/^application\/json(?:;|$)/i.test(req.headers["content-type"] || "")) return sendJson(res,415,{error:"Ожидается JSON."});
+        const chunks = [];
+        let size = 0;
+        for await (const chunk of req) {
+          size += chunk.length;
+          if (size > 32768) return sendJson(res,413,{error:"Слишком большой запрос."});
+          chunks.push(chunk);
+        }
+        let input;
+        try { input = JSON.parse(Buffer.concat(chunks).toString()); } catch { return sendJson(res,400,{error:"Некорректный JSON."}); }
+        if (url.pathname === "/api/followups/analyze") return sendJson(res,202,followups.start());
+        if (!input || typeof input.rowId !== "string" || !/^[1-9]\d*$/.test(input.rowId)) return sendJson(res,400,{error:"Некорректная строка."});
+        return sendJson(res,200,await followups.act(url.pathname.split("/").pop(),input));
       }
       const reviewMatch = /^\/api\/rows\/([1-9]\d*)\/ai-review$/.exec(url.pathname);
       if (reviewMatch && reviews) {

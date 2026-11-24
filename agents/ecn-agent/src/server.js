@@ -1,3 +1,4 @@
+import { createFollowups } from "./followups.js";
 import { loadConfig } from "./config.js";
 import { openStore } from "./store.js";
 import { createSmartsheetReader } from "./smartsheet.js";
@@ -22,6 +23,7 @@ let monitor;
 let numberingStore;
 let comments;
 let reviews;
+let followups;
 try {
   const config = loadConfig();
   store = openStore(config.databasePath, config.sheetId);
@@ -41,13 +43,15 @@ try {
     store,
     pollSeconds: config.pollSeconds,
     tokenConfigured: Boolean(config.token),
+    onSnapshotSaved: () => followups?.start(false),
     numberer: numberer ? { run: () => runExclusive(() => numberer.run()), stop: () => numberer.stop(), status: () => numberer.status() } : undefined,
   });
   comments = createCommentService({ filename: config.databasePath, sheetId: config.sheetId, store,
     writer: createSmartsheetWriter({ sheetId: config.sheetId, token: config.token }),
     refresh: () => monitor.refreshAfterWrite(), runExclusive });
   reviews = createReviewService({ config, store, reader });
-  server = createPanelServer({ config, store, monitor, reader, comments, reviews });
+  followups = createFollowups({ config, store, comments, reader, refresh:() => monitor.refreshAfterWrite() });
+  server = createPanelServer({ config, store, monitor, reader, comments, reviews, followups });
   await new Promise((resolve, reject) => {
     server.once("error", reject);
     server.listen(config.port, "127.0.0.1", resolve);
@@ -58,6 +62,7 @@ try {
   console.log("Состояние и журнал: " + config.databasePath);
   if (!config.token) console.log("Заполни SMARTSHEET_API_TOKEN в agents/ecn-agent/.env и перезапусти приложение.");
 } catch (error) {
+  await followups?.close();
   await reviews?.close();
   await comments?.close();
   numberingStore?.close();
@@ -76,7 +81,7 @@ if (server?.listening) {
     closing = true;
     console.log("Завершаю текущую проверку и закрываю журнал…");
     server.close();
-    await Promise.all([monitor.stop(), comments.close(), reviews.close()]);
+    await Promise.all([monitor.stop(), comments.close(), reviews.close(), followups.close()]);
     server.closeAllConnections();
     store.close();
     numberingStore?.close();

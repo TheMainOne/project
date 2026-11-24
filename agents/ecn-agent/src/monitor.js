@@ -1,6 +1,6 @@
 import { SmartsheetError } from "./smartsheet.js";
 
-export function createMonitor({ reader, store, pollSeconds, tokenConfigured, numberer }) {
+export function createMonitor({ reader, store, pollSeconds, tokenConfigured, numberer, onSnapshotSaved }) {
   let timer = null;
   let running = null;
   let readingOnly = false;
@@ -48,6 +48,7 @@ export function createMonitor({ reader, store, pollSeconds, tokenConfigured, num
           summary = store.saveSheet(await reader.read(), runId);
         }
         error = lastNumberingError;
+        onSnapshotSaved?.();
         return { ok: !error, summary, ...(numbering ? { numbering } : {}) };
       } catch (failure) {
         error = failure instanceof SmartsheetError

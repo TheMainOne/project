@@ -44,6 +44,10 @@ export function openStore(filename, sheetId) {
     "CREATE TABLE IF NOT EXISTS events (id INTEGER PRIMARY KEY, at TEXT NOT NULL, kind TEXT NOT NULL, row_id TEXT, message TEXT NOT NULL);" +
     "CREATE TABLE IF NOT EXISTS comment_views (row_id TEXT PRIMARY KEY, fingerprints TEXT NOT NULL);",
   );
+  db.exec("CREATE TABLE IF NOT EXISTS hidden_followups (source TEXT, email TEXT, PRIMARY KEY(source,email))");
+  db.exec("CREATE TABLE IF NOT EXISTS followup_analysis (row_id TEXT, email TEXT, basis TEXT NOT NULL, result TEXT NOT NULL, PRIMARY KEY(row_id,email))");
+  const readAnalysis = db.prepare("SELECT result FROM followup_analysis WHERE row_id=? AND email=? AND basis=?");
+  const saveAnalysis = db.prepare("INSERT INTO followup_analysis VALUES (?,?,?,?) ON CONFLICT(row_id,email) DO UPDATE SET basis=excluded.basis,result=excluded.result");
   const getMeta = key => {
     const record = db.prepare("SELECT value FROM meta WHERE key = ?").get(key);
     return record ? JSON.parse(record.value) : null;
@@ -82,7 +86,21 @@ export function openStore(filename, sheetId) {
     }
   }
 
+  function readRows() {
+    return db.prepare("SELECT snapshot FROM rows").all().map(record => JSON.parse(record.snapshot));
+  }
   return {
+    readRows,
+    followupAnalysis(rowId,email,basis) {
+      const match = readAnalysis.get(rowId,email,basis);
+      return match ? JSON.parse(match.result) : null;
+    },
+    forgetFollowupAnalysis(rowId,email,basis) {
+      db.prepare("DELETE FROM followup_analysis WHERE row_id=? AND email=? AND basis=?").run(rowId,email,basis);
+    },
+    saveFollowupAnalysis(rowId,email,basis,result) { saveAnalysis.run(rowId,email,basis,JSON.stringify(result)); },
+    followupHidden(source,email) { return !!db.prepare("SELECT 1 FROM hidden_followups WHERE source=? AND email=?").get(source,email); },
+    hideFollowup(source,email) { db.prepare("INSERT OR IGNORE INTO hidden_followups VALUES (?,?)").run(source,email); },
     getMeta,
     addEvent,
     recover() {
@@ -224,14 +242,15 @@ export function openStore(filename, sheetId) {
         return "ok";
       });
     },
-    state() {
-      const rows = db.prepare("SELECT snapshot FROM rows").all().map(record => JSON.parse(record.snapshot));
+    state(followups) {
+      const rows = readRows();
       const active = rows.filter(isActiveRow);
       const summaries = rows.map(({ fields, approvals, discussions, attachments, ...summary }) => {
         const { unreadCommentIds, ...comments } = summarizeComments({ discussions }, seenComments(summary.id));
         return { ...summary, ...comments, attachmentCount: (attachments || []).length, active: isActiveRow(summary) };
       });
       return {
+        followupCount: followups ? followups.list(active).length : 0,
         lastSyncAt: getMeta("lastSyncAt"),
         sheet: getMeta("sheet"),
         paused: getMeta("paused") === true,

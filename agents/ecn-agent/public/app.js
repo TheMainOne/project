@@ -245,6 +245,7 @@ function render() {
   if (current.lastSyncAt && !current.attachmentsLoaded) notices.push("Вложения ещё не загружены. Дождись успешной проверки или нажми «Проверить сейчас».");
   $("notice").textContent = notices.join(" "); $("notice").hidden = !notices.length;
   for (const key of ["active", "withoutNumber", "initialReview", "awaitingApprovals", "unreadComments"]) $("count-" + key).textContent = current.lastSyncAt ? String(current.counts[key] || 0) : "—";
+  $("followup-count").textContent = String(current.followupCount || 0);
   $("rail-unread").textContent = current.counts.unreadComments > 99 ? "99+" : String(current.counts.unreadComments || 0);
   $("rail-unread").hidden = !current.counts.unreadComments;
   $("comment-total").textContent = current.commentsLoaded ? "Комментариев: " + current.counts.comments + " · Проверены " + date(current.commentsSyncAt) : "Комментарии ещё не загружены";
@@ -751,4 +752,7 @@ document.addEventListener("keydown", event => {
 document.addEventListener("visibilitychange", () => { if (!document.hidden) { void update(); void markVisibleComments(); } });
 setInterval(() => { if (!document.hidden) void update(); }, 4000);
 changeSheetView(sheetView);
-void update();
+void update().then(() => {
+  const id = new URLSearchParams(location.search).get("row");
+  if (id && current?.rows?.some(row => row.id === id)) void openRow(id,"comments");
+});

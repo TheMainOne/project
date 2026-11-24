@@ -19,3 +19,11 @@
 .ai-review details p,.ai-review details a{margin:5px 0 6px 12px}.ai-warning,.ai-feedback{padding:8px 10px;background:#fff6e3;border-radius:4px}
 .ai-feedback{background:#eaf3fa}.ai-finding{border-left:2px solid #bed4e5;padding-left:10px;display:grid;gap:3px}
 .ai-quote{white-space:pre-wrap;overflow-wrap:anywhere;background:#f4f6f8;padding:8px;border-radius:4px}
+
+body.followups-page{display:block;height:auto;overflow:auto;background:#f5f7fa}
+.followups-page main{max-width:850px;margin:32px auto;padding:0 20px}
+.followups-page article{background:white;border:1px solid var(--border);padding:18px 22px;margin:14px 0;border-radius:6px}
+.followups-page a{color:var(--blue)}.followups-page h2{font-size:18px;margin:0 0 6px}
+.followups-page blockquote,.followups-page article p{white-space:pre-wrap;overflow-wrap:anywhere}.followups-page blockquote{margin:0;padding:8px 12px;border-left:3px solid #adc8dc}
+.followups-page button{margin:4px 8px 0 0}
+.followups-page details{margin:12px 0}.followups-page summary{cursor:pointer;color:var(--blue)}.followups-page details small{display:block;margin:10px 0 4px}.followups-page #sync,.followups-page #settings{color:#455b6b}.followups-page #message:empty{display:none}
