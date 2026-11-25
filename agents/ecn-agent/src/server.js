@@ -1,4 +1,5 @@
 import { createFollowups } from "./followups.js";
+import { createApprovals } from "./approvals.js";
 import { loadConfig } from "./config.js";
 import { openStore } from "./store.js";
 import { createSmartsheetReader } from "./smartsheet.js";
@@ -24,6 +25,7 @@ let numberingStore;
 let comments;
 let reviews;
 let followups;
+let approvals;
 try {
   const config = loadConfig();
   store = openStore(config.databasePath, config.sheetId);
@@ -43,7 +45,7 @@ try {
     store,
     pollSeconds: config.pollSeconds,
     tokenConfigured: Boolean(config.token),
-    onSnapshotSaved: () => followups?.start(false),
+    onSnapshotSaved: () => { followups?.start(false); approvals?.start(); },
     numberer: numberer ? { run: () => runExclusive(() => numberer.run()), stop: () => numberer.stop(), status: () => numberer.status() } : undefined,
   });
   comments = createCommentService({ filename: config.databasePath, sheetId: config.sheetId, store,
@@ -51,7 +53,8 @@ try {
     refresh: () => monitor.refreshAfterWrite(), runExclusive });
   reviews = createReviewService({ config, store, reader });
   followups = createFollowups({ config, store, comments, reader, refresh:() => monitor.refreshAfterWrite() });
-  server = createPanelServer({ config, store, monitor, reader, comments, reviews, followups });
+  approvals = createApprovals({config,store,reader,ledger:numberingStore,runExclusive,refresh:() => monitor.refreshAfterWrite()});
+  server = createPanelServer({ config, store, monitor, reader, comments, reviews, followups, approvals });
   await new Promise((resolve, reject) => {
     server.once("error", reject);
     server.listen(config.port, "127.0.0.1", resolve);
@@ -62,6 +65,7 @@ try {
   console.log("Состояние и журнал: " + config.databasePath);
   if (!config.token) console.log("Заполни SMARTSHEET_API_TOKEN в agents/ecn-agent/.env и перезапусти приложение.");
 } catch (error) {
+  await approvals?.close();
   await followups?.close();
   await reviews?.close();
   await comments?.close();
@@ -81,7 +85,7 @@ if (server?.listening) {
     closing = true;
     console.log("Завершаю текущую проверку и закрываю журнал…");
     server.close();
-    await Promise.all([monitor.stop(), comments.close(), reviews.close(), followups.close()]);
+    await Promise.all([monitor.stop(), comments.close(), reviews.close(), followups.close(), approvals.close()]);
     server.closeAllConnections();
     store.close();
     numberingStore?.close();

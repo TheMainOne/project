@@ -27,3 +27,25 @@ body.followups-page{display:block;height:auto;overflow:auto;background:#f5f7fa}
 .followups-page blockquote,.followups-page article p{white-space:pre-wrap;overflow-wrap:anywhere}.followups-page blockquote{margin:0;padding:8px 12px;border-left:3px solid #adc8dc}
 .followups-page button{margin:4px 8px 0 0}
 .followups-page details{margin:12px 0}.followups-page summary{cursor:pointer;color:var(--blue)}.followups-page details small{display:block;margin:10px 0 4px}.followups-page #sync,.followups-page #settings{color:#455b6b}.followups-page #message:empty{display:none}
+.approval-layout { display:grid; grid-template-columns:minmax(10rem, 1fr) minmax(0, 3fr); gap:24px; align-items:start }
+.approval-layout section { background:white; border:1px solid #d5dbe3; border-radius:8px; padding:18px }
+.approval-layout #queue { display:grid; gap:6px }
+.approval-form { display:grid; gap:15px; margin-top:18px }
+.approval-form label { display:grid; gap:4px; font-weight:600 }
+.approval-form select,.approval-form input { width:100%; padding:8px; border:1px solid #aeb9c9; border-radius:4px; font:inherit }
+.approval-form small { font-weight:400; color:#465770 }
+.approval-recommendation { background:#ecf5fb; border-left:3px solid #1673ad; border-radius:4px; padding:12px 14px; display:grid; gap:4px }
+.approval-recommendation small { color:#465770 }
+.approval-recommendation strong { color:#164e79; font-size:16px }
+.approval-department { padding:11px 12px; border:1px solid #d5dbe3; border-radius:5px }
+.approval-department.included { border-color:#92b6d0 }
+.approval-form .department-toggle { display:flex; align-items:center; gap:8px; cursor:pointer }
+.department-toggle input[type=checkbox] { width:16px; height:16px; margin:0; accent-color:var(--blue) }
+.recipient-details { display:grid; gap:5px; padding:12px 0 0 24px }
+.recipient-details label { color:#465770; font-weight:400 }
+.approval-form .recipient-details details { margin:3px 0 0 }
+.recipient-details details p { margin:8px 0 2px }
+.approval-form .other-departments { margin:0 }
+.other-departments .approval-department { margin-top:8px }
+.selection-hint { margin:0; color:#725219 }
+@media (max-width:720px) { .approval-layout {grid-template-columns:1fr} }

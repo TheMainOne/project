@@ -7,13 +7,15 @@ import { MAX_ATTACHMENT_BYTES } from "./smartsheet-write.js";
 
 import { AiError } from "./ai/reviews.js";
 
-export function createPanelServer({ config, store, monitor, reader, comments, reviews, followups }) {
+export function createPanelServer({ config, store, monitor, reader, comments, reviews, followups, approvals }) {
   const files = new Map([
     ["/", ["index.html", "text/html; charset=utf-8"]],
     ["/app.js", ["app.js", "text/javascript; charset=utf-8"]],
     ["/followups", ["followups.html", "text/html; charset=utf-8"]],
     ["/followups.js", ["followups.js", "text/javascript; charset=utf-8"]],
     ["/review.js", ["review.js", "text/javascript; charset=utf-8"]],
+    ["/approvals", ["approvals.html", "text/html; charset=utf-8"]],
+    ["/approvals.js", ["approvals.js", "text/javascript; charset=utf-8"]],
     ["/styles.css", ["styles.css", "text/css; charset=utf-8"]],
   ]);
   const assets = new Map([...files].map(([url, [file, type]]) => [
@@ -93,6 +95,29 @@ export function createPanelServer({ config, store, monitor, reader, comments, re
         return sendJson(res,200,await followups.act(url.pathname.split("/").pop(),input));
       }
       const reviewMatch = /^\/api\/rows\/([1-9]\d*)\/ai-review$/.exec(url.pathname);
+      if (approvals && req.method === "GET" && url.pathname === "/api/approvals") return sendJson(res,200,approvals.list());
+      const approvalMatch = /^\/api\/approvals\/([1-9]\d{0,15})(?:\/(analyze|confirm|verify|reopen))?$/.exec(url.pathname);
+      if (approvals && approvalMatch) {
+        const [,id,action] = approvalMatch;
+        if (!action && req.method === "GET") return sendJson(res,200,approvals.detail(id));
+        if (action && req.method === "POST") {
+          if (req.headers.origin !== origin || req.headers["x-ecn-ui"] !== "1") return sendJson(res,403,{error:"Используй локальную панель."});
+          if (!/^application\/json(?:;|$)/i.test(req.headers["content-type"] || "")) return sendJson(res,415,{error:"Ожидается JSON."});
+          const chunks = []; let size = 0;
+          for await (const chunk of req) {
+            size += chunk.length;
+            if (size > 10000) return sendJson(res,413,{error:"Список слишком длинный."});
+            chunks.push(chunk);
+          }
+          let input;
+          try { input = JSON.parse(Buffer.concat(chunks)); } catch { return sendJson(res,400,{error:"Некорректный JSON."}); }
+          if (action === "confirm") return sendJson(res,200,await approvals.confirm(id,input));
+          if (action === "verify") return sendJson(res,200,await approvals.verify(id));
+          if (action === "reopen") return sendJson(res,200,await approvals.reopen(id));
+          await approvals.generate(id,true);
+          return sendJson(res,200,approvals.detail(id));
+        }
+      }
       if (reviewMatch && reviews) {
         const rowId = reviewMatch[1];
         if (req.method === "GET") return sendJson(res, 200, reviews.status(rowId));

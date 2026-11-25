@@ -63,7 +63,7 @@ function contactsFrom(cell) {
       email: String(contact.email || ""),
     }));
   }
-  const value = cell?.value === undefined ? "" : String(cell.value);
+  const value = cell?.value == null ? "" : String(cell.value);
   const email = object?.email || (value.includes("@") ? value : "");
   const name = cell?.displayValue || object?.name || (email ? "" : value);
   return name || email ? [{ name: String(name), email: String(email) }] : [];
@@ -77,6 +77,10 @@ export function normalizeSheet(sheet) {
       title: String(column.title || ""),
       type: String(column.type || "TEXT_NUMBER"),
       locked: column.locked === true,
+      ...(APPROVALS.some(([, id]) => id === String(column.id)) ? {
+        restricted: column.validation === true,
+        contactOptions: (column.contactOptions || []).filter(c => c.email).map(c => ({ name: String(c.name || ""), email: String(c.email).toLowerCase() })),
+      } : {}),
       ...(Array.isArray(column.options) ? { options: column.options.map(String) } : {}),
     }));
   const columnIds = new Set(columns.map(column => column.columnId));
@@ -103,7 +107,7 @@ export function normalizeSheet(sheet) {
       rowNumber: row.rowNumber,
       ...fields,
       ...Object.fromEntries(Object.entries(optionalColumns).map(([name, id]) => [name, cellText(cells.get(id))])),
-      fields: columns.map(column => ({
+      fields: columns.map(({ contactOptions, restricted, ...column }) => ({
         ...column,
         locked: column.locked || row.locked === true,
         value: cellText(cells.get(column.columnId)),
